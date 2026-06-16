@@ -1,0 +1,13 @@
+[build]
+  base = "frontend"
+  command = "node scripts/set-env.js && npm install && npx ng build --configuration production"
+  publish = "dist/frontend/browser"
+  ignore = "git diff --quiet HEAD^ HEAD -- frontend/ netlify.toml"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

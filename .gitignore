@@ -1,0 +1,40 @@
+# ── Dependencias ──────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# ── Builds ────────────────────────────────────────────────────
+frontend/dist/
+backend/dist/
+
+# ── Variables de entorno (NUNCA subir .env con credenciales) ──
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# ── Angular ───────────────────────────────────────────────────
+frontend/.angular/
+
+# ── Cobertura y tests ─────────────────────────────────────────
+frontend/coverage/
+backend/coverage/
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editores ──────────────────────────────────────────────────
+.idea/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/mcp.json
