@@ -26,7 +26,7 @@ const ROLE_LABELS: Record<string, string> = {
   IMPULSADOR: 'Impulsador',
 };
 
-const STAFF_ROLES = ['MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BAR', 'MARKETING', 'IMPULSADOR'];
+const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BAR', 'MARKETING', 'IMPULSADOR'];
 
 @Component({
   selector: 'app-users',

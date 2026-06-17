@@ -21,7 +21,7 @@ import {
   SaveTemplateDto,
 } from './dto/event.dto';
 import { AiService } from '../ai/ai.service';
-import { MailService } from '../mail/mail.service';
+import { MailService, EmailDesign } from '../mail/mail.service';
 import { isOwnerScoped } from '../auth/permissions';
 
 function toSlug(title: string): string {
@@ -206,6 +206,9 @@ export class EventsService {
 
     const saved = await reg.save();
 
+    const emailDesign = (event.invitationDesign as Record<string, unknown> | undefined)
+      ?.['emailDesign'] as EmailDesign | undefined;
+
     void this.mail.sendEventConfirmationEmail({
       email: saved.email,
       name: saved.name,
@@ -214,6 +217,7 @@ export class EventsService {
       eventTime: event.startTime,
       ticketCode: saved.ticketCode,
       partySize: saved.partySize,
+      design: emailDesign ?? null,
     });
 
     return saved;

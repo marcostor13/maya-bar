@@ -12,7 +12,8 @@ import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
-const STAFF_ROLES = [
+const CREATABLE_ROLES = [
+  'TENANT_ADMIN',
   'MANAGER',
   'HOST',
   'SERVER',
@@ -42,6 +43,28 @@ export class UsersService implements OnModuleInit {
         'Superadmin created — email: admin@bar.com | password: B4r$uper#2026!',
       );
     }
+    await this.normalizeTenantIds();
+  }
+
+  /**
+   * Migración idempotente: convierte cualquier tenantId guardado como string
+   * a ObjectId. Datos antiguos quedaron como string y no coincidían con las
+   * consultas tipadas (no se listaban los usuarios, fallaba el ref de impulsador).
+   */
+  private async normalizeTenantIds(): Promise<void> {
+    try {
+      const res = await this.userModel.updateMany(
+        { tenantId: { $type: 'string' } },
+        [{ $set: { tenantId: { $toObjectId: '$tenantId' } } }],
+      );
+      if (res.modifiedCount) {
+        this.logger.log(
+          `Normalizados ${res.modifiedCount} tenantId de string a ObjectId`,
+        );
+      }
+    } catch (err) {
+      this.logger.error('Error normalizando tenantId de usuarios', err as Error);
+    }
   }
 
   async create(userData: {
@@ -49,12 +72,22 @@ export class UsersService implements OnModuleInit {
     password: string;
     name?: string;
     role?: string;
-    tenantId?: any;
+    tenantId?: string | Types.ObjectId;
     localIds?: Types.ObjectId[];
     mustChangePassword?: boolean;
   }): Promise<User> {
     const hashedPassword = await bcrypt.hash(userData.password, 10);
-    const user = new this.userModel({ ...userData, password: hashedPassword });
+    // Forzar ObjectId: un tenantId string se guardaba como string y rompía
+    // las consultas tenant-scoped (listar usuarios, ref de impulsador, etc.).
+    const tenantId =
+      typeof userData.tenantId === 'string'
+        ? new Types.ObjectId(userData.tenantId)
+        : userData.tenantId;
+    const user = new this.userModel({
+      ...userData,
+      tenantId,
+      password: hashedPassword,
+    });
     return user.save();
   }
 
@@ -62,7 +95,7 @@ export class UsersService implements OnModuleInit {
     tenantId: string,
     dto: { name: string; email: string; role: string },
   ): Promise<{ user: User; tempPassword: string }> {
-    if (!STAFF_ROLES.includes(dto.role))
+    if (!CREATABLE_ROLES.includes(dto.role))
       throw new ForbiddenException('Rol no permitido');
     const tempPassword = 'Tmp@' + crypto.randomBytes(4).toString('hex');
     const referralCode =
@@ -84,7 +117,7 @@ export class UsersService implements OnModuleInit {
     tenantId: string,
     updates: { name?: string; role?: string; isActive?: boolean },
   ): Promise<User | null> {
-    if (updates.role && !STAFF_ROLES.includes(updates.role))
+    if (updates.role && !CREATABLE_ROLES.includes(updates.role))
       throw new ForbiddenException('Rol no permitido');
     return this.userModel
       .findOneAndUpdate(

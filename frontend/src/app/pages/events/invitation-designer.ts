@@ -12,8 +12,9 @@ import {
   HostListener,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom } from 'rxjs';
-import { LucideAngularModule, Sparkles, Plus, Trash2, AlignCenter, AlignLeft, AlignRight, Image as ImageIcon, Type, Save, X, BookmarkPlus, Film, Wand2, ChevronDown, CopyPlus, Eye, MousePointerClick, Palette, CheckCircle } from 'lucide-angular';
+import { LucideAngularModule, Sparkles, Plus, Trash2, AlignCenter, AlignLeft, AlignRight, Image as ImageIcon, Type, Save, X, BookmarkPlus, Film, Wand2, ChevronDown, CopyPlus, Eye, MousePointerClick, Palette, CheckCircle, Music, Mail } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 
@@ -73,11 +74,33 @@ export interface LandingTheme {
   successMessage: string;  // mensaje de confirmación ('' = default dinámico)
 }
 
+export interface DesignMusic {
+  embedCode: string;
+}
+
+export interface EmailDesign {
+  subject: string;          // asunto ('' = default; admite {eventTitle})
+  headerImageUrl: string;   // imagen de cabecera ('' = logo MAYA)
+  bannerImageUrl: string;   // banner opcional bajo la cabecera
+  title: string;            // encabezado principal
+  intro: string;            // párrafo de introducción (admite {name} {eventTitle})
+  accent: string;           // color del código de ticket
+  bgColor: string;          // fondo del correo
+  cardColor: string;        // fondo de la tarjeta
+  textColor: string;        // color de títulos
+  ticketLabel: string;      // etiqueta del código
+  footerNote: string;       // nota antes del pie
+  footerText: string;       // texto del pie
+  showTicket: boolean;      // mostrar el código de acceso
+}
+
 export interface DesignSpec {
   version: string;
   background: DesignBackground;
   elements: DesignElement[];
   theme?: LandingTheme;
+  music?: DesignMusic;
+  emailDesign?: EmailDesign;
 }
 
 export interface MediaFile {
@@ -127,11 +150,29 @@ const DEFAULT_THEME: LandingTheme = {
   successMessage: '',
 };
 
+const DEFAULT_EMAIL: EmailDesign = {
+  subject: '',
+  headerImageUrl: '',
+  bannerImageUrl: '',
+  title: '¡Tu entrada está lista!',
+  intro: 'Hola {name}, te has registrado con éxito para {eventTitle}.',
+  accent: '#E11D48',
+  bgColor: '#f3f4f6',
+  cardColor: '#ffffff',
+  textColor: '#111827',
+  ticketLabel: 'Tu Código de Acceso',
+  footerNote: 'Presenta este código al llegar para tu check-in.',
+  footerText: '© 2026 MAYA Platform. Gestionado por BAR.',
+  showTicket: true,
+};
+
 const DEFAULT_DESIGN: DesignSpec = {
   version: '1',
   background: { type: 'color', url: '', color: '#1a1a2e', overlay: { color: '#000000', opacity: 0 }, backgroundSize: 'cover' },
   elements: [],
   theme: { ...DEFAULT_THEME },
+  music: { embedCode: '' },
+  emailDesign: { ...DEFAULT_EMAIL },
 };
 
 const FONTS = [
@@ -186,7 +227,7 @@ function rgbaOpacity(rgba: string): number {
     <div class="designer" (mousemove)="onMouseMove($event)">
 
       <!-- ── Left Panel ── -->
-      <div class="d-left" [class.d-left-wide]="leftTab() === 'form'">
+      <div class="d-left" [class.d-left-wide]="configTab()">
         <div class="d-tabs">
           <button class="d-tab" [class.active]="leftTab() === 'ai'" (click)="leftTab.set('ai')" title="IA">
             <lucide-icon [img]="Wand2" [size]="16"></lucide-icon>
@@ -203,6 +244,10 @@ function rgbaOpacity(rgba: string): number {
           <button class="d-tab" [class.active]="leftTab() === 'form'" (click)="leftTab.set('form')" title="Formulario y confirmación">
             <lucide-icon [img]="Palette" [size]="16"></lucide-icon>
             <span class="d-tab-label">Registro</span>
+          </button>
+          <button class="d-tab" [class.active]="leftTab() === 'email'" (click)="leftTab.set('email')" title="Correo de confirmación">
+            <lucide-icon [img]="Mail" [size]="16"></lucide-icon>
+            <span class="d-tab-label">Email</span>
           </button>
         </div>
 
@@ -426,12 +471,143 @@ function rgbaOpacity(rgba: string): number {
             </button>
           </div>
         }
+
+        <!-- Email Tab -->
+        @if (leftTab() === 'email') {
+          <div class="d-panel-body">
+            <p class="d-hint-sm" style="text-align:left;margin:0 0 4px;">
+              Personaliza el correo que recibe el cliente al registrarse. Usa <code>&#123;name&#125;</code> y <code>&#123;eventTitle&#125;</code> como variables.
+            </p>
+
+            <div class="d-section-label">Contenido</div>
+            <div class="d-prop">
+              <label>Asunto</label>
+              <input class="d-input" type="text"
+                [value]="emailDesign().subject"
+                (input)="updateEmail('subject', $any($event.target).value)"
+                placeholder="Confirmación: {eventTitle} - MAYA" />
+            </div>
+            <div class="d-prop">
+              <label>Título</label>
+              <input class="d-input" type="text"
+                [value]="emailDesign().title"
+                (input)="updateEmail('title', $any($event.target).value)"
+                placeholder="¡Tu entrada está lista!" />
+            </div>
+            <div class="d-prop">
+              <label>Texto de introducción</label>
+              <textarea class="d-input" rows="3"
+                [value]="emailDesign().intro"
+                (input)="updateEmail('intro', $any($event.target).value)"
+                placeholder="Hola {name}, te has registrado con éxito para {eventTitle}."></textarea>
+            </div>
+
+            <div class="d-section-label mt-12">Imágenes</div>
+            <div class="d-prop">
+              <label>Imagen de cabecera (logo)</label>
+              <select class="d-input"
+                [value]="emailDesign().headerImageUrl"
+                (change)="updateEmail('headerImageUrl', $any($event.target).value)">
+                <option value="">— Logo MAYA por defecto —</option>
+                @for (f of imageFiles(); track f.url) {
+                  <option [value]="f.url">{{ f.name }}</option>
+                }
+              </select>
+            </div>
+            <div class="d-prop">
+              <label>Imagen banner (opcional)</label>
+              <select class="d-input"
+                [value]="emailDesign().bannerImageUrl"
+                (change)="updateEmail('bannerImageUrl', $any($event.target).value)">
+                <option value="">— Sin banner —</option>
+                @for (f of imageFiles(); track f.url) {
+                  <option [value]="f.url">{{ f.name }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="d-section-label mt-12">Estilos</div>
+            <div class="form-colors">
+              <div class="d-prop">
+                <label>Fondo</label>
+                <div class="color-row">
+                  <input type="color" class="color-swatch" [value]="emailDesign().bgColor"
+                    (input)="updateEmail('bgColor', $any($event.target).value)" />
+                  <span class="color-val">{{ emailDesign().bgColor }}</span>
+                </div>
+              </div>
+              <div class="d-prop">
+                <label>Tarjeta</label>
+                <div class="color-row">
+                  <input type="color" class="color-swatch" [value]="emailDesign().cardColor"
+                    (input)="updateEmail('cardColor', $any($event.target).value)" />
+                  <span class="color-val">{{ emailDesign().cardColor }}</span>
+                </div>
+              </div>
+              <div class="d-prop">
+                <label>Texto</label>
+                <div class="color-row">
+                  <input type="color" class="color-swatch" [value]="emailDesign().textColor"
+                    (input)="updateEmail('textColor', $any($event.target).value)" />
+                  <span class="color-val">{{ emailDesign().textColor }}</span>
+                </div>
+              </div>
+              <div class="d-prop">
+                <label>Acento (ticket)</label>
+                <div class="color-row">
+                  <input type="color" class="color-swatch" [value]="emailDesign().accent"
+                    (input)="updateEmail('accent', $any($event.target).value)" />
+                  <span class="color-val">{{ emailDesign().accent }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="d-section-label mt-12">Código de acceso</div>
+            <label class="d-toggle-row">
+              <input type="checkbox" [checked]="emailDesign().showTicket"
+                (change)="updateEmail('showTicket', $any($event.target).checked)" />
+              <span>Mostrar el código de ticket en el correo</span>
+            </label>
+            @if (emailDesign().showTicket) {
+              <div class="d-prop mt-8">
+                <label>Etiqueta del código</label>
+                <input class="d-input" type="text"
+                  [value]="emailDesign().ticketLabel"
+                  (input)="updateEmail('ticketLabel', $any($event.target).value)"
+                  placeholder="Tu Código de Acceso" />
+              </div>
+            }
+
+            <div class="d-section-label mt-12">Pie</div>
+            <div class="d-prop">
+              <label>Nota final</label>
+              <input class="d-input" type="text"
+                [value]="emailDesign().footerNote"
+                (input)="updateEmail('footerNote', $any($event.target).value)"
+                placeholder="Presenta este código al llegar para tu check-in." />
+            </div>
+            <div class="d-prop">
+              <label>Texto del pie</label>
+              <input class="d-input" type="text"
+                [value]="emailDesign().footerText"
+                (input)="updateEmail('footerText', $any($event.target).value)" />
+            </div>
+
+            <div class="flex gap-2 mt-12">
+              <button class="d-btn-ghost flex-1" (click)="resetEmail()">Restaurar</button>
+              <button class="d-btn-save flex-1" (click)="saveDesign()" [disabled]="saving()" style="justify-content:center;">
+                <lucide-icon [img]="Save" [size]="15"></lucide-icon>
+                {{ saving() ? 'Guardando...' : (eventId ? 'Guardar' : 'Aplicar') }}
+              </button>
+            </div>
+          </div>
+        }
       </div>
 
       <!-- ── Center: Canvas ── -->
       <div class="d-center">
         <div class="d-toolbar">
-          @if (leftTab() !== 'form') {
+          @if (!configTab()) {
             <button class="d-btn-sm" (click)="addTextEl()">
               <lucide-icon [img]="Type" [size]="15"></lucide-icon> Texto
             </button>
@@ -441,13 +617,18 @@ function rgbaOpacity(rgba: string): number {
             <button class="d-btn-sm" (click)="leftTab.set('media')">
               <lucide-icon [img]="ImageIcon" [size]="15"></lucide-icon> Imagen
             </button>
+            <button class="d-btn-sm" [class.d-btn-sm-on]="musicEmbed().trim()" (click)="showMusicModal.set(true)">
+              <lucide-icon [img]="Music" [size]="15"></lucide-icon> Música
+            </button>
             <button class="d-btn-sm" (click)="centerAll()" [disabled]="design().elements.length === 0">
               <lucide-icon [img]="AlignCenter" [size]="15"></lucide-icon> Centrar todo
             </button>
             <div class="d-toolbar-sep"></div>
             <span class="d-hint">Clic para seleccionar · Doble clic para editar · Arrastra para mover</span>
-          } @else {
+          } @else if (leftTab() === 'form') {
             <span class="d-hint">Vista previa del formulario y la confirmación de la landing</span>
+          } @else {
+            <span class="d-hint">Vista previa del correo de confirmación</span>
           }
           <div class="d-toolbar-spacer"></div>
           <button class="d-btn-save" (click)="saveDesign()" [disabled]="saving()">
@@ -500,6 +681,40 @@ function rgbaOpacity(rgba: string): number {
                     <span class="fp-ticket-hint">Presenta este código en el evento</span>
                   </div>
                 }
+              </div>
+            </div>
+          }
+
+          <!-- Live preview of confirmation email -->
+          @if (leftTab() === 'email') {
+            <div class="email-preview">
+              <div class="ep-card" [style.background]="emailDesign().cardColor"
+                [style.box-shadow]="'0 24px 60px rgba(0,0,0,0.5)'">
+                <div class="ep-pad">
+                  <div class="ep-header">
+                    @if (emailDesign().headerImageUrl) {
+                      <img [src]="emailDesign().headerImageUrl" alt="" class="ep-header-img" />
+                    } @else {
+                      <span class="ep-logo">MAYA</span>
+                    }
+                  </div>
+                  @if (emailDesign().bannerImageUrl) {
+                    <img [src]="emailDesign().bannerImageUrl" alt="" class="ep-banner" />
+                  }
+                  <h2 class="ep-title" [style.color]="emailDesign().textColor">{{ previewTitle() }}</h2>
+                  <p class="ep-intro">{{ previewIntro() }}</p>
+                  <div class="ep-box">
+                    <div class="ep-row-label">Evento y Fecha</div>
+                    <div class="ep-row-strong" [style.color]="emailDesign().textColor">Nombre del evento</div>
+                    <div class="ep-row-sub">Sábado, 21 de junio · 21:00</div>
+                    @if (emailDesign().showTicket) {
+                      <div class="ep-row-label" style="margin-top:14px;">{{ emailDesign().ticketLabel }}</div>
+                      <div class="ep-ticket" [style.background]="emailDesign().accent">AB12CD34</div>
+                    }
+                  </div>
+                  <p class="ep-note">{{ previewFooterNote() }}</p>
+                </div>
+                <div class="ep-foot">{{ emailDesign().footerText }}</div>
               </div>
             </div>
           }
@@ -606,7 +821,7 @@ function rgbaOpacity(rgba: string): number {
       </div>
 
       <!-- ── Right Panel: Properties ── -->
-      @if (leftTab() !== 'form' && selectedEl()) {
+      @if (!configTab() && selectedEl()) {
         <div class="d-right">
           <div class="d-right-header">
             <span>{{ selectedEl()!.type === 'text' ? 'Texto' : selectedEl()!.type === 'button' ? 'Botón CTA' : 'Imagen' }}</span>
@@ -995,7 +1210,41 @@ function rgbaOpacity(rgba: string): number {
             Eliminar elemento
           </button>
         </div>
-      } @else if (leftTab() !== 'form') {
+      }
+
+      <!-- ── Music modal ── -->
+      @if (showMusicModal()) {
+        <div class="music-overlay" (click)="showMusicModal.set(false)">
+          <div class="music-modal" (click)="$event.stopPropagation()">
+            <div class="music-modal-header">
+              <span><lucide-icon [img]="Music" [size]="18"></lucide-icon> Música de la landing</span>
+              <button class="d-close-btn" (click)="showMusicModal.set(false)">
+                <lucide-icon [img]="X" [size]="18"></lucide-icon>
+              </button>
+            </div>
+            <p class="d-hint-sm" style="text-align:left;margin:0;">
+              Pega el código <strong>embed</strong> de una canción (Spotify, YouTube, SoundCloud…). En la landing aparecerá un botón de play para reproducirla.
+            </p>
+            <textarea class="d-input" rows="5"
+              [value]="musicEmbed()"
+              (input)="updateMusicEmbed($any($event.target).value)"
+              placeholder='Ej: <iframe src="https://open.spotify.com/embed/track/..."></iframe>'></textarea>
+            @if (musicEmbed().trim()) {
+              <div class="music-preview" [innerHTML]="musicPreviewHtml()"></div>
+            }
+            <div class="music-modal-actions">
+              @if (musicEmbed().trim()) {
+                <button class="d-btn-ghost" (click)="updateMusicEmbed('')">
+                  <lucide-icon [img]="Trash2" [size]="14"></lucide-icon> Quitar
+                </button>
+              }
+              <button class="d-btn-primary" style="width:auto;padding:9px 22px;" (click)="showMusicModal.set(false)">Listo</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      @if (!configTab() && !selectedEl()) {
         <!-- Background controls when nothing selected -->
         <div class="d-right">
           <div class="d-right-header">
@@ -1160,7 +1409,7 @@ function rgbaOpacity(rgba: string): number {
       border-radius: 8px;
       overflow: hidden;
       cursor: pointer;
-      border: 2px solid transparent;
+      border: 2px solid #cbd5e1;
       transition: all 0.15s;
       position: relative;
       display: flex;
@@ -1170,7 +1419,19 @@ function rgbaOpacity(rgba: string): number {
     }
     .bg-thumb:hover { border-color: var(--color-brand); }
     .bg-thumb.selected { border-color: var(--color-brand); outline: 2px solid rgba(var(--color-brand-rgb, 225,29,72), 0.3); }
-    .bg-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .bg-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background-color: #fff;
+      background-image:
+        linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+        linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+    }
     .bg-thumb span { font-size: 9px; color: #fff; position: absolute; bottom: 2px; left: 0; right: 0; text-align: center; background: rgba(0,0,0,0.5); }
     .bg-thumb-color {
       width: 100%;
@@ -1307,15 +1568,24 @@ function rgbaOpacity(rgba: string): number {
     .media-thumb-sm {
       border-radius: 8px;
       overflow: hidden;
-      border: 1px solid var(--color-border);
+      border: 1px solid #cbd5e1;
       position: relative;
-      background: var(--color-bg-app);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
     }
     .media-thumb-sm img {
       width: 100%;
       height: 64px;
       object-fit: cover;
       display: block;
+      /* Checkerboard para que imágenes blancas/transparentes se distingan */
+      background-color: #fff;
+      background-image:
+        linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+        linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
     }
     .media-thumb-actions {
       display: flex;
@@ -1883,6 +2153,100 @@ function rgbaOpacity(rgba: string): number {
     .el-list-item.active { background: var(--color-brand-light); color: var(--color-brand); border-radius: 8px; }
 
     .mt-4 { margin-top: 4px; }
+
+    .music-preview {
+      margin-top: 8px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .music-preview iframe { width: 100%; border: none; border-radius: 12px; display: block; }
+
+    /* ── Toolbar music active state ── */
+    .d-btn-sm-on {
+      background: var(--color-brand-light);
+      color: var(--color-brand);
+      border-color: rgba(225,29,72,0.3);
+    }
+
+    /* ── Music modal ── */
+    .music-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.45);
+      backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .music-modal {
+      width: calc(100% - 48px);
+      max-width: 480px;
+      background: #fff;
+      border-radius: 20px;
+      padding: 24px 28px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 32px 64px rgba(0,0,0,0.3);
+      max-height: 88vh;
+      overflow-y: auto;
+    }
+    .music-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 16px;
+      font-weight: 700;
+      font-family: var(--font-heading, 'Poppins'), sans-serif;
+      color: var(--color-text-main);
+    }
+    .music-modal-header span { display: flex; align-items: center; gap: 8px; }
+    .music-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    /* ── Email confirmation live preview (center stage overlay) ── */
+    .email-preview {
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      background: #121218;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 20px;
+      overflow-y: auto;
+    }
+    .ep-card {
+      width: 360px;
+      max-width: 100%;
+      margin: 0 auto;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+      flex-shrink: 0;
+    }
+    .ep-pad { padding: 26px 22px; }
+    .ep-header { text-align: center; margin-bottom: 20px; }
+    .ep-header-img { max-height: 48px; width: auto; max-width: 100%; }
+    .ep-logo { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 22px; color: #e11d48; letter-spacing: 0.04em; }
+    .ep-banner { width: 100%; border-radius: 14px; display: block; margin-bottom: 18px; }
+    .ep-title { font-size: 18px; font-weight: 800; text-align: center; margin: 0 0 10px; font-family: 'Poppins', sans-serif; }
+    .ep-intro { font-size: 13px; line-height: 1.5; text-align: center; color: #4b5563; margin: 0 0 20px; }
+    .ep-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 16px; padding: 18px; }
+    .ep-row-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 3px; }
+    .ep-row-strong { font-size: 15px; font-weight: 700; }
+    .ep-row-sub { font-size: 13px; color: #4b5563; }
+    .ep-ticket {
+      display: inline-block; color: #fff; padding: 8px 16px; border-radius: 10px;
+      font-family: monospace; font-size: 20px; font-weight: 800; letter-spacing: 3px; margin-top: 6px;
+    }
+    .ep-note { font-size: 12px; color: #4b5563; text-align: center; margin: 18px 0 0; }
+    .ep-foot { background: #111827; color: #9ca3af; font-size: 11px; text-align: center; padding: 16px; }
   `],
 })
 export class InvitationDesignerComponent implements OnInit {
@@ -1897,6 +2261,7 @@ export class InvitationDesignerComponent implements OnInit {
   private http = inject(HttpClient);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private sanitizer = inject(DomSanitizer);
 
   readonly Sparkles = Sparkles; readonly Plus = Plus; readonly Trash2 = Trash2;
   readonly AlignCenter = AlignCenter; readonly AlignLeft = AlignLeft; readonly AlignRight = AlignRight;
@@ -1906,17 +2271,22 @@ export class InvitationDesignerComponent implements OnInit {
   readonly Eye = Eye; readonly MousePointerClick = MousePointerClick;
   readonly Palette = Palette;
   readonly CheckCircle = CheckCircle;
+  readonly Music = Music;
+  readonly Mail = Mail;
   readonly Math = Math;
 
   design = signal<DesignSpec>({ ...DEFAULT_DESIGN, elements: [], background: { ...DEFAULT_DESIGN.background, overlay: { ...DEFAULT_DESIGN.background.overlay } }, theme: { ...DEFAULT_THEME } });
   selectedId = signal<string | null>(null);
   editingId = signal<string | null>(null);
-  leftTab = signal<'ai' | 'media' | 'templates' | 'form'>('ai');
+  leftTab = signal<'ai' | 'media' | 'templates' | 'form' | 'email'>('ai');
+  // Tabs de configuración (sin edición de canvas, con previsualización en el centro)
+  configTab = computed(() => this.leftTab() === 'form' || this.leftTab() === 'email');
   formPreview = signal<'form' | 'success'>('form');
   aiPrompt = signal('');
   aiBackgroundUrl = signal('');
   aiGenerating = signal(false);
   saving = signal(false);
+  showMusicModal = signal(false);
   isDragging = signal(false);
   snapGuideX = signal<number | null>(null);
   snapGuideY = signal<number | null>(null);
@@ -2297,6 +2667,37 @@ export class InvitationDesignerComponent implements OnInit {
     this.emitChange();
   }
 
+  // ── Música embebida ───────────────────────────────────────────────────────
+
+  musicEmbed = computed(() => this.design().music?.embedCode ?? '');
+  musicPreviewHtml = computed<SafeHtml>(() => this.sanitizer.bypassSecurityTrustHtml(this.design().music?.embedCode ?? ''));
+
+  updateMusicEmbed(code: string) {
+    this.design.update(d => ({ ...d, music: { embedCode: code } }));
+    this.emitChange();
+  }
+
+  // ── Correo de confirmación ────────────────────────────────────────────────
+
+  emailDesign = computed<EmailDesign>(() => ({ ...DEFAULT_EMAIL, ...(this.design().emailDesign ?? {}) }));
+
+  private interpolatePreview(tpl: string): string {
+    return tpl.replace(/\{name\}/g, 'María').replace(/\{eventTitle\}/g, 'Nombre del evento');
+  }
+  previewTitle = computed(() => this.interpolatePreview(this.emailDesign().title || DEFAULT_EMAIL.title));
+  previewIntro = computed(() => this.interpolatePreview(this.emailDesign().intro || DEFAULT_EMAIL.intro));
+  previewFooterNote = computed(() => this.interpolatePreview(this.emailDesign().footerNote || DEFAULT_EMAIL.footerNote));
+
+  updateEmail<K extends keyof EmailDesign>(key: K, value: EmailDesign[K]) {
+    this.design.update(d => ({ ...d, emailDesign: { ...DEFAULT_EMAIL, ...(d.emailDesign ?? {}), [key]: value } }));
+    this.emitChange();
+  }
+
+  resetEmail() {
+    this.design.update(d => ({ ...d, emailDesign: { ...DEFAULT_EMAIL } }));
+    this.emitChange();
+  }
+
   // ── Element background color helpers ─────────────────────────────────────
 
   updateBgColor(id: string, hex: string) {
@@ -2469,6 +2870,8 @@ export class InvitationDesignerComponent implements OnInit {
       };
     });
     const t = (d['theme'] as Record<string, unknown>) ?? {};
+    const m = (d['music'] as Record<string, unknown>) ?? {};
+    const em = (d['emailDesign'] as Partial<EmailDesign>) ?? {};
     return {
       version: '1',
       background: {
@@ -2493,6 +2896,8 @@ export class InvitationDesignerComponent implements OnInit {
         successTitle: String(t['successTitle'] ?? ''),
         successMessage: String(t['successMessage'] ?? ''),
       },
+      music: { embedCode: String(m['embedCode'] ?? '') },
+      emailDesign: { ...DEFAULT_EMAIL, ...em },
     };
   }
 

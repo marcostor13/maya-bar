@@ -10,7 +10,8 @@ import { ActivatedRoute } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { NgStyle } from '@angular/common';
-import { LucideAngularModule, Calendar, Clock, Tag, Users, CheckCircle, X, ChevronUp } from 'lucide-angular';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { LucideAngularModule, Calendar, Clock, Tag, Users, CheckCircle, X, ChevronUp, Play, Pause, Music } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -81,6 +82,7 @@ interface InvitationDesign {
   background: DesignBackground;
   elements: DesignElement[];
   theme?: LandingTheme;
+  music?: { embedCode: string };
 }
 
 const DEFAULT_THEME: LandingTheme = {
@@ -226,6 +228,19 @@ function hexToRgba(hex: string, opacity: number): string {
               </div>
             </div>
           </div>
+        }
+
+        <!-- ══════════════════════════════════════════ -->
+        <!-- Embedded music player                      -->
+        <!-- ══════════════════════════════════════════ -->
+        @if (hasMusic()) {
+          <button class="pe-music-btn" [class.playing]="musicPlaying()" (click)="toggleMusic()"
+            [attr.aria-label]="musicPlaying() ? 'Pausar música' : 'Reproducir música'">
+            <lucide-icon [img]="musicPlaying() ? Pause : Play" [size]="22" [strokeWidth]="2.5"></lucide-icon>
+          </button>
+          @if (musicPlaying()) {
+            <div class="pe-music-player" [innerHTML]="safeMusicHtml()"></div>
+          }
         }
 
         <!-- ══════════════════════════════════════════ -->
@@ -626,12 +641,59 @@ function hexToRgba(hex: string, opacity: number): string {
 
     @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
     .animate-fade-in { animation: fadeIn 0.3s ease; }
+
+    /* ── Embedded music ── */
+    .pe-music-btn {
+      position: fixed;
+      top: calc(16px + env(safe-area-inset-top));
+      right: 16px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 65;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+      transition: transform 0.2s, background 0.2s;
+    }
+    .pe-music-btn:hover { transform: scale(1.06); }
+    .pe-music-btn:active { transform: scale(0.96); }
+    .pe-music-btn.playing {
+      background: var(--color-brand, #e11d48);
+      box-shadow: 0 0 0 0 rgba(225,29,72,0.5);
+      animation: musicPulse 1.8s ease-out infinite;
+    }
+    @keyframes musicPulse {
+      0% { box-shadow: 0 0 0 0 rgba(225,29,72,0.5); }
+      70% { box-shadow: 0 0 0 16px rgba(225,29,72,0); }
+      100% { box-shadow: 0 0 0 0 rgba(225,29,72,0); }
+    }
+
+    .pe-music-player {
+      position: fixed;
+      top: calc(76px + env(safe-area-inset-top));
+      right: 16px;
+      width: min(340px, calc(100vw - 32px));
+      z-index: 64;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+      animation: fadeIn 0.25s ease;
+    }
+    .pe-music-player iframe { width: 100%; border: none; display: block; }
   `],
 })
 export class PublicEventComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private http = inject(HttpClient);
   private fb = inject(FormBuilder);
+  private sanitizer = inject(DomSanitizer);
 
   readonly Calendar = Calendar;
   readonly Clock = Clock;
@@ -640,6 +702,9 @@ export class PublicEventComponent implements OnInit {
   readonly CheckCircle = CheckCircle;
   readonly X = X;
   readonly ChevronUp = ChevronUp;
+  readonly Play = Play;
+  readonly Pause = Pause;
+  readonly Music = Music;
 
   readonly Infinity = Infinity;
 
@@ -653,6 +718,7 @@ export class PublicEventComponent implements OnInit {
   submitting = signal(false);
   formError = signal('');
   showForm = signal(false);
+  musicPlaying = signal(false);
   scale = signal(Math.min(window.innerWidth, 480) / 324);
 
   private refCode: string | null = null;
@@ -661,6 +727,13 @@ export class PublicEventComponent implements OnInit {
   hasDesign = computed(() => !!this.ev()?.invitationDesign?.elements?.length);
   hasButtonEl = computed(() => !!this.ev()?.invitationDesign?.elements?.some(e => e.type === 'button'));
   customFields = computed(() => this.ev()?.formFields ?? []);
+
+  hasMusic = computed(() => !!this.ev()?.invitationDesign?.music?.embedCode?.trim());
+  safeMusicHtml = computed<SafeHtml>(() =>
+    this.sanitizer.bypassSecurityTrustHtml(
+      this.withAutoplay(this.ev()?.invitationDesign?.music?.embedCode ?? ''),
+    ),
+  );
 
   canvasBg = computed(() => {
     const bg = this.ev()?.invitationDesign?.background;
@@ -768,6 +841,23 @@ export class PublicEventComponent implements OnInit {
 
   getCustomValue(id: string): string { return this.customFieldValues[id] ?? ''; }
   setCustomValue(id: string, value: string) { this.customFieldValues[id] = value; }
+
+  toggleMusic() {
+    // Montar/desmontar el iframe: al montarlo reproduce (autoplay), al desmontarlo detiene el audio.
+    this.musicPlaying.update(v => !v);
+  }
+
+  /** Inyecta autoplay en el src del embed para que el play del usuario inicie la reproducción. */
+  private withAutoplay(code: string): string {
+    return code.replace(/src=("|')([^"']+)\1/i, (_m, q, url) => {
+      let u = url;
+      const add = (param: string) => { u += (u.includes('?') ? '&' : '?') + param; };
+      if (/youtube\.com|youtu\.be/i.test(u)) add('autoplay=1');
+      else if (/soundcloud\.com/i.test(u)) add('auto_play=true');
+      else if (/spotify\.com/i.test(u)) add('autoplay=1');
+      return `src=${q}${u}${q}`;
+    });
+  }
 
   submitRegistration() {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }

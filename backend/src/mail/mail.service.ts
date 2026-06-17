@@ -4,6 +4,38 @@ import { Resend } from 'resend';
 import * as fs from 'fs';
 import * as path from 'path';
 
+export interface EmailDesign {
+  subject: string;
+  headerImageUrl: string;
+  bannerImageUrl: string;
+  title: string;
+  intro: string;
+  accent: string;
+  bgColor: string;
+  cardColor: string;
+  textColor: string;
+  ticketLabel: string;
+  footerNote: string;
+  footerText: string;
+  showTicket: boolean;
+}
+
+export const DEFAULT_EMAIL_DESIGN: EmailDesign = {
+  subject: '',
+  headerImageUrl: '',
+  bannerImageUrl: '',
+  title: '¡Tu entrada está lista!',
+  intro: 'Hola {name}, te has registrado con éxito para {eventTitle}.',
+  accent: '#E11D48',
+  bgColor: '#f3f4f6',
+  cardColor: '#ffffff',
+  textColor: '#111827',
+  ticketLabel: 'Tu Código de Acceso',
+  footerNote: 'Presenta este código al llegar para tu check-in.',
+  footerText: '© 2026 MAYA Platform. Gestionado por BAR.',
+  showTicket: true,
+};
+
 @Injectable()
 export class MailService {
   private resend: Resend | null = null;
@@ -183,56 +215,80 @@ export class MailService {
     eventTime?: string;
     ticketCode: string;
     partySize: number;
+    design?: EmailDesign | null;
   }) {
     const friendlyDate = this.formatDate(data.eventDate);
-    const subject = `Confirmación: ${data.eventTitle} - MAYA`;
+    const d = { ...DEFAULT_EMAIL_DESIGN, ...(data.design ?? {}) };
+
+    const interpolate = (tpl: string) =>
+      tpl.replace(/\{name\}/g, data.name).replace(/\{eventTitle\}/g, data.eventTitle);
+
+    const subject = d.subject?.trim()
+      ? interpolate(d.subject)
+      : `Confirmación: ${data.eventTitle} - MAYA`;
+
+    // Cabecera: imagen personalizada (URL) o el logo MAYA adjunto vía CID.
+    const usesCustomHeader = !!d.headerImageUrl?.trim();
+    const headerImg = usesCustomHeader
+      ? `<img src="${d.headerImageUrl}" alt="" style="max-height: 80px; width: auto; max-width: 100%;" />`
+      : `<img src="cid:logo" alt="MAYA" style="height: 60px; width: auto;" />`;
+
+    const bannerHtml = d.bannerImageUrl?.trim()
+      ? `<div style="margin-bottom: 32px;"><img src="${d.bannerImageUrl}" alt="" style="width: 100%; border-radius: 20px; display: block;" /></div>`
+      : '';
+
+    const ticketHtml = d.showTicket
+      ? `<div style="margin-bottom: 20px;">
+                <div style="color: #9ca3af; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">${d.ticketLabel}</div>
+                <div style="background: ${d.accent}; color: #fff; display: inline-block; padding: 12px 24px; border-radius: 12px; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 4px; margin-top: 8px;">
+                  ${data.ticketCode}
+                </div>
+              </div>`
+      : '';
 
     const html = `
-      <div style="font-family: 'Inter', 'Poppins', Arial, sans-serif; background-color: #f3f4f6; padding: 48px 20px;">
-        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+      <div style="font-family: 'Inter', 'Poppins', Arial, sans-serif; background-color: ${d.bgColor}; padding: 48px 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: ${d.cardColor}; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
           <div style="padding: 48px 40px;">
             <div style="text-align: center; margin-bottom: 40px;">
-              <img src="cid:logo" alt="MAYA" style="height: 60px; width: auto;" />
+              ${headerImg}
             </div>
 
-            <h2 style="color: #111827; font-size: 26px; font-weight: 700; margin-bottom: 16px; text-align: center;">¡Tu entrada está lista!</h2>
+            ${bannerHtml}
+
+            <h2 style="color: ${d.textColor}; font-size: 26px; font-weight: 700; margin-bottom: 16px; text-align: center;">${interpolate(d.title)}</h2>
             <p style="color: #4b5563; font-size: 18px; line-height: 1.6; text-align: center; margin-bottom: 40px;">
-              Hola ${data.name}, te has registrado con éxito para <strong>${data.eventTitle}</strong>.
+              ${interpolate(d.intro)}
             </p>
-            
+
             <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 24px; padding: 32px; margin-bottom: 40px; text-align: left;">
               <div style="margin-bottom: 20px; border-bottom: 1px solid #f3f4f6; padding-bottom: 20px;">
                 <div style="color: #9ca3af; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Evento y Fecha</div>
-                <div style="color: #111827; font-size: 20px; font-weight: 700;">${data.eventTitle}</div>
+                <div style="color: ${d.textColor}; font-size: 20px; font-weight: 700;">${data.eventTitle}</div>
                 <div style="color: #4b5563; font-size: 16px;">${friendlyDate}${data.eventTime ? ' · ' + data.eventTime : ''}</div>
               </div>
-              
-              <div style="margin-bottom: 20px;">
-                <div style="color: #9ca3af; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Tu Código de Acceso</div>
-                <div style="background: #E11D48; color: #fff; display: inline-block; padding: 12px 24px; border-radius: 12px; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 4px; margin-top: 8px;">
-                  ${data.ticketCode}
-                </div>
-              </div>
+
+              ${ticketHtml}
 
               <div>
                 <div style="color: #9ca3af; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Personas</div>
-                <div style="color: #111827; font-size: 18px; font-weight: 700;">${data.partySize} ${data.partySize === 1 ? 'persona' : 'personas'}</div>
+                <div style="color: ${d.textColor}; font-size: 18px; font-weight: 700;">${data.partySize} ${data.partySize === 1 ? 'persona' : 'personas'}</div>
               </div>
             </div>
 
             <div style="text-align: center;">
               <p style="color: #4b5563; font-size: 15px; margin-bottom: 24px;">
-                Presenta este código al llegar para tu check-in.
+                ${interpolate(d.footerNote)}
               </p>
               <p style="color: #9ca3af; font-size: 13px;">
                 Si tienes dudas, contacta directamente con el local.
               </p>
             </div>
           </div>
-          
+
           <div style="background-color: #111827; padding: 24px; text-align: center;">
             <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              © 2026 MAYA Platform. Gestionado por BAR.
+              ${d.footerText}
             </p>
           </div>
         </div>
@@ -246,8 +302,9 @@ export class MailService {
           to: data.email,
           subject,
           html,
+          // Adjuntar el logo solo si la cabecera lo usa (cid:logo).
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          attachments: this.logoBase64 ? [{ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' } as any] : []
+          attachments: (!usesCustomHeader && this.logoBase64) ? [{ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' } as any] : []
         });
         this.logger.log(`Event confirmation email sent to ${data.email}`);
       } catch (error) {
