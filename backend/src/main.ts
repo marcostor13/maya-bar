@@ -7,7 +7,12 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const frontendUrl = configService.get<string>('FRONTEND_URL');
   app.enableCors({
-    origin: frontendUrl ? [frontendUrl, 'http://localhost:4200'] : true,
+    origin: frontendUrl
+      ? [
+        frontendUrl,
+        'http://localhost:4200,https://casagarbo.netlify.com,https://mayabar.marcostorresalarcon.com',
+      ]
+      : true,
     credentials: true,
   });
   const port = configService.get<number>('PORT') || 3000;

@@ -45,9 +45,7 @@ import {
   Pencil,
   Layers,
   ClipboardList,
-  Sparkles,
   GripVertical,
-  Paperclip,
   LayoutTemplate,
 } from 'lucide-angular';
 import { InvitationDesignerComponent, type DesignSpec } from './invitation-designer';
@@ -57,7 +55,7 @@ const API = environment.apiUrl;
 
 type EventStatus = 'draft' | 'published' | 'cancelled';
 type AiTool = 'copy' | 'social' | 'hashtags' | 'email';
-type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone';
+type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone' | 'date';
 type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 'checkin' | 'stats' | 'invitation';
 
 interface MediaFile {
@@ -116,6 +114,7 @@ const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
   number:   'Número',
   email:    'Email',
   phone:    'Teléfono',
+  date:     'Fecha',
 };
 
 const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
@@ -182,11 +181,11 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                     <span class="tab-badge">{{ formFields().length }}</span>
                   }
                 </button>
+                <button class="tab tab-ai" [class.active]="activeTab() === 'invitation'" (click)="activeTab.set('invitation')">
+                  <lucide-icon [img]="LayoutTemplate" [size]="14"></lucide-icon>
+                  Invitación
+                </button>
                 @if (!isNew()) {
-                  <button class="tab tab-ai" [class.active]="activeTab() === 'invitation'" (click)="activeTab.set('invitation')">
-                    <lucide-icon [img]="LayoutTemplate" [size]="14"></lucide-icon>
-                    Invitación
-                  </button>
                   <button class="tab tab-ai" [class.active]="activeTab() === 'marketing'" (click)="activeTab.set('marketing')">
                     <lucide-icon [img]="Zap" [size]="14"></lucide-icon>
                     Marketing IA
@@ -212,62 +211,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
               @if (activeTab() === 'general') {
                 <div class="p-6">
 
-                  <!-- AI Generation Box -->
-                  <div class="ai-gen-box">
-                    <div class="ai-gen-head">
-                      <div class="ai-gen-title">
-                        <lucide-icon [img]="Sparkles" [size]="18"></lucide-icon>
-                        <strong>Crear con IA</strong>
-                      </div>
-                      <span class="ai-gen-hint">Describe el evento y la IA completará los campos automáticamente.</span>
-                    </div>
-                    @if (mediaFiles().length > 0) {
-                      <div class="ai-media-refs">
-                        <span class="ai-refs-label">Archivos disponibles (puedes mencionarlos):</span>
-                        <div class="ai-refs-chips">
-                          @for (f of mediaFiles(); track f.url) {
-                            <code class="media-ref-chip">{{ f.name }}</code>
-                          }
-                        </div>
-                      </div>
-                    }
-                    <textarea class="textarea" rows="3" [value]="aiPrompt"
-                      (input)="aiPrompt = $any($event.target).value"
-                      placeholder="Ej: Cena degustación 5 tiempos el sábado 14/02 a las 8pm, S/180 p.p., salón romántico con vista al mar (ver foto_salon.jpg)...">
-                    </textarea>
-                    <button class="btn btn-primary ai-gen-btn" (click)="generateFromPrompt()"
-                      [disabled]="aiGenerating() || !aiPrompt.trim()">
-                      <lucide-icon [img]="Sparkles" [size]="16"></lucide-icon>
-                      {{ aiGenerating() ? 'Generando...' : 'Rellenar formulario con IA' }}
-                    </button>
-                  </div>
-
                   <form [formGroup]="form" (ngSubmit)="saveEvent()">
-
-                    <div class="field mb-6">
-                      <label class="field-label">Imagen de portada</label>
-                      @if (previewUrl()) {
-                        <div class="img-preview">
-                          <img [src]="previewUrl()" alt="Preview del evento" />
-                          <button type="button" class="img-clear" (click)="clearImage()" aria-label="Quitar imagen">
-                            <lucide-icon [img]="X" [size]="14" [strokeWidth]="2.5"></lucide-icon>
-                          </button>
-                        </div>
-                      } @else {
-                        <div class="upload-zone" (click)="fileInput.click()" [class.uploading]="uploading()">
-                          @if (uploading()) {
-                            <div class="upload-spinner"></div>
-                            <span>Subiendo...</span>
-                          } @else {
-                            <lucide-icon [img]="Upload" [size]="28" [strokeWidth]="1.5"></lucide-icon>
-                            <span>Haz clic para subir imagen de portada</span>
-                            <small>JPG, PNG, WEBP · máx 10 MB</small>
-                          }
-                        </div>
-                      }
-                      <input #fileInput type="file" accept="image/jpeg,image/png,image/webp,image/gif"
-                        (change)="onFileChange($event)" style="display:none" />
-                    </div>
 
                     <div class="field mb-5">
                       <label class="field-label">Título del evento *</label>
@@ -275,12 +219,6 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                       @if (form.get('title')?.invalid && form.get('title')?.touched) {
                         <span class="field-hint-error">El título es requerido</span>
                       }
-                    </div>
-
-                    <div class="field mb-5">
-                      <label class="field-label">Descripción</label>
-                      <textarea class="textarea" formControlName="description" rows="5"
-                        placeholder="Describe el evento, el ambiente, qué incluye..."></textarea>
                     </div>
 
                     <div class="field-row mb-5">
@@ -441,11 +379,6 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                         <span>Número de teléfono</span>
                         <span class="text-muted-xs">Opcional</span>
                       </div>
-                      <div class="default-field-item">
-                        <span class="field-type-chip chip-number">Número</span>
-                        <span>Número de personas</span>
-                        <span class="badge badge-neutral locked-badge">Obligatorio</span>
-                      </div>
                     </div>
                   </div>
 
@@ -491,6 +424,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                                   <option value="number">Número</option>
                                   <option value="email">Email</option>
                                   <option value="phone">Teléfono</option>
+                                  <option value="date">Fecha</option>
                                 </select>
                               </div>
                             </div>
@@ -567,6 +501,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                                 <option value="number">Número</option>
                                 <option value="email">Email</option>
                                 <option value="phone">Teléfono</option>
+                                <option value="date">Fecha</option>
                               </select>
                             </div>
                           </div>
@@ -609,11 +544,12 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
               <!-- ══════════════════════════════════════════════════════════ -->
               <!-- ── Invitation Tab ── -->
               <!-- ══════════════════════════════════════════════════════════ -->
-              @if (activeTab() === 'invitation' && !isNew()) {
+              @if (activeTab() === 'invitation') {
                 <app-invitation-designer
                   [mediaFiles]="mediaFiles()"
                   [eventId]="eventId()"
-                  [initialDesign]="event()?.invitationDesign ?? null">
+                  [initialDesign]="design()"
+                  (designChange)="onDesignChange($event)">
                 </app-invitation-designer>
               }
 
@@ -835,7 +771,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     </div>
   `,
   styles: [`
-    .page { width: 100%; box-sizing: border-box; padding: 32px 40px; max-width: 1200px; margin: 0 auto; }
+    .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
     .page-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:32px; gap:16px; flex-wrap:wrap; }
     .header-left { display: flex; align-items: center; gap: 16px; }
     .page-header h1 { font-size:26px; font-weight:800; margin:0 0 4px; font-family:var(--font-heading); letter-spacing:-0.5px; }
@@ -870,18 +806,6 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .text-center { text-align: center; }
     .opacity-20 { opacity: 0.2; }
     .mb-4 { margin-bottom: 16px; }
-
-    /* ── AI Generation Box ── */
-    .ai-gen-box { background: linear-gradient(135deg,#fdf2ff,#fff7ed); border: 1px solid #e879f9; border-radius: 16px; padding: 20px 24px; margin-bottom: 28px; display: flex; flex-direction: column; gap: 14px; }
-    .ai-gen-head { display: flex; flex-direction: column; gap: 4px; }
-    .ai-gen-title { display: flex; align-items: center; gap: 8px; color: #a855f7; font-size: 15px; }
-    .ai-gen-hint { font-size: 13px; color: var(--color-text-muted); margin: 0; }
-    .ai-media-refs { display: flex; flex-direction: column; gap: 6px; }
-    .ai-refs-label { font-size: 12px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    .ai-refs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    .media-ref-chip { background: rgba(168,85,247,0.1); color: #7c3aed; font-family: monospace; font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(168,85,247,0.2); }
-    .ai-gen-btn { align-self: flex-start; background: linear-gradient(135deg, #a855f7, #7c3aed); border: none; }
-    .ai-gen-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
 
     /* ── Fields ── */
     .field { display: flex; flex-direction: column; gap: 8px; }
@@ -964,6 +888,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .chip-textarea { background: #f0f9ff; color: #0284c7; }
     .chip-select { background: #fff1f2; color: var(--color-brand); }
     .chip-checkbox { background: #f8fafc; color: #64748b; }
+    .chip-date { background: #fefce8; color: #ca8a04; }
 
     /* ── Btn icon xs ── */
     .btn-icon-xs { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: none; border-radius: 8px; cursor: pointer; color: var(--color-text-muted); transition: all 0.15s; }
@@ -1066,8 +991,7 @@ export class EventDetailComponent implements OnInit {
   readonly QrCode = QrCode; readonly Film = Film; readonly FileText = FileText;
   readonly Plus = Plus; readonly ChevronUp = ChevronUp; readonly ChevronDown = ChevronDown;
   readonly Pencil = Pencil; readonly Layers = Layers; readonly ClipboardList = ClipboardList;
-  readonly Sparkles = Sparkles; readonly GripVertical = GripVertical;
-  readonly Paperclip = Paperclip; readonly LayoutTemplate = LayoutTemplate;
+  readonly GripVertical = GripVertical; readonly LayoutTemplate = LayoutTemplate;
 
   isNew = signal(false);
   eventId = signal<string | null>(null);
@@ -1094,9 +1018,8 @@ export class EventDetailComponent implements OnInit {
   editDraft: { label: string; type: FormFieldType; required: boolean; optionsStr: string } =
     { label: '', type: 'text', required: false, optionsStr: '' };
 
-  // AI from prompt
-  aiPrompt = '';
-  aiGenerating = signal(false);
+  // Invitation design (kept in memory for new events, saved with event)
+  design = signal<DesignSpec | null>(null);
 
   // AI marketing
   aiLoading = signal(false);
@@ -1166,6 +1089,8 @@ export class EventDetailComponent implements OnInit {
         this.loadEvent(id);
       }
     });
+    const tab = this.route.snapshot.queryParamMap.get('tab') as ActiveTab | null;
+    if (tab) this.activeTab.set(tab);
   }
 
   loadEvent(id: string) {
@@ -1176,6 +1101,7 @@ export class EventDetailComponent implements OnInit {
         this.previewUrl.set(ev.imageUrl ?? '');
         this.mediaFiles.set(ev.mediaFiles ?? []);
         this.formFields.set(ev.formFields ?? []);
+        this.design.set(ev.invitationDesign ?? null);
         this.form.patchValue({
           title: ev.title, description: ev.description ?? '',
           date: ev.date ? ev.date.slice(0, 10) : '',
@@ -1258,32 +1184,7 @@ export class EventDetailComponent implements OnInit {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  // ── AI from prompt ────────────────────────────────────────────────────────
-
-  generateFromPrompt() {
-    if (!this.aiPrompt.trim()) return;
-    this.aiGenerating.set(true);
-    const mediaFileNames = this.mediaFiles().map(f => f.name);
-    this.http.post<{ title: string; description: string; price?: number; startTime?: string | null }>(
-      `${API}/events/ai-generate`,
-      { prompt: this.aiPrompt, mediaFileNames }
-    ).subscribe({
-      next: (res) => {
-        this.form.patchValue({
-          title: res.title,
-          description: res.description,
-          ...(res.price !== undefined && res.price > 0 ? { price: res.price } : {}),
-          ...(res.startTime ? { startTime: res.startTime } : {}),
-        });
-        this.aiGenerating.set(false);
-        this.toast.success('Formulario rellenado con IA. Revisa y ajusta los campos.');
-      },
-      error: (err) => {
-        this.toast.error(err.error?.message || 'Error al generar con IA');
-        this.aiGenerating.set(false);
-      }
-    });
-  }
+  onDesignChange(d: DesignSpec) { this.design.set(d); }
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
@@ -1292,7 +1193,7 @@ export class EventDetailComponent implements OnInit {
     this.saving.set(true);
     const val = this.form.value;
     const body = this.isNew()
-      ? { ...val, localId: this.localId(), imageUrl: this.previewUrl() || undefined, mediaFiles: this.mediaFiles(), formFields: this.formFields() }
+      ? { ...val, localId: this.localId(), imageUrl: this.previewUrl() || undefined, mediaFiles: this.mediaFiles(), formFields: this.formFields(), ...(this.design() ? { invitationDesign: this.design() } : {}) }
       : { ...val, imageUrl: this.previewUrl() || undefined, mediaFiles: this.mediaFiles(), formFields: this.formFields() };
 
     const req = this.isNew()
@@ -1304,7 +1205,7 @@ export class EventDetailComponent implements OnInit {
         this.toast.success(this.isNew() ? 'Evento creado' : 'Evento actualizado');
         this.saving.set(false);
         if (this.isNew()) {
-          this.router.navigate(['/events', savedEv._id]);
+          this.router.navigate(['/events', savedEv._id], { queryParams: { tab: 'invitation' } });
         } else {
           this.event.set(savedEv);
         }
@@ -1385,6 +1286,7 @@ export class EventDetailComponent implements OnInit {
     const map: Record<FormFieldType, string> = {
       text: 'chip-text', textarea: 'chip-textarea', select: 'chip-select',
       checkbox: 'chip-checkbox', number: 'chip-number', email: 'chip-email', phone: 'chip-phone',
+      date: 'chip-date',
     };
     return map[type] ?? '';
   }

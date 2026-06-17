@@ -377,10 +377,11 @@ Devuelve SOLO el JSON con esta estructura exacta (sin markdown, sin texto adicio
 Reglas:
 - Canvas 324×576px: título principal=48-60px, subtítulo=28-38px, cuerpo=18-24px, pie=14px
 - Estructura (top %): nombre-local=5, título-fecha=18, artista=42, detalles=62, dirección=86
-- Para texto centrado: left=0, width=100, textAlign="center"
+- CENTRADO HORIZONTAL OBLIGATORIO en TODOS los elementos (texto, imagen, badge, botón): siempre left = (100 - width) / 2. Ejemplos: width=100 → left=0; width=60 → left=20; width=40 → left=30. NUNCA dejes un elemento descentrado.
+- Texto: width=100, left=0, textAlign="center" (preferido). Si usas un ancho menor, recalcula left con la fórmula.
 - Texto blanco (#ffffff) sobre fondos oscuros; overlay.opacity entre 0.25-0.5 con imagen de fondo
 - Badge estilo pill: background="rgba(255,255,255,0.15)", borderRadius="9999px", padding="4px 20px"
-- Para logos/imágenes: type="image", imageUrl=URL del archivo, imageHeight=altura en px, left/width para centrar
+- Para logos/imágenes: type="image", imageUrl=URL del archivo, imageHeight=altura en px, y centra con left = (100 - width) / 2
 - Crea 4-7 elementos ordenados por top ascendente
 - Si hay imagen de fondo disponible: background.type="image", background.url=URL exacta
 - Si hay video de fondo: background.type="video", background.url=URL exacta`;
