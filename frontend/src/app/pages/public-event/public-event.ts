@@ -136,6 +136,14 @@ function hexToRgba(hex: string, opacity: number): string {
           <p>Cargando evento...</p>
         </div>
 
+      } @else if (loadError()) {
+        <div class="pe-notfound">
+          <lucide-icon [img]="Calendar" [size]="56" [strokeWidth]="1.5"></lucide-icon>
+          <h2>No pudimos cargar el evento</h2>
+          <p>Hubo un problema de conexión con el servidor. Inténtalo de nuevo en unos minutos.</p>
+          <button class="pe-cta-btn" style="max-width:240px;margin-top:8px;" (click)="loadEvent()">Reintentar</button>
+        </div>
+
       } @else if (notFound()) {
         <div class="pe-notfound">
           <lucide-icon [img]="Calendar" [size]="56" [strokeWidth]="1.5"></lucide-icon>
@@ -637,6 +645,7 @@ export class PublicEventComponent implements OnInit {
 
   loading = signal(true);
   notFound = signal(false);
+  loadError = signal(false);
   ev = signal<PublicEvent | null>(null);
   registrationsCount = signal(0);
   registered = signal(false);
@@ -687,7 +696,14 @@ export class PublicEventComponent implements OnInit {
   ngOnInit() {
     this.loadFonts();
     this.refCode = this.route.snapshot.queryParamMap.get('ref');
+    this.loadEvent();
+  }
+
+  loadEvent() {
     const slug = this.route.snapshot.paramMap.get('slug') ?? '';
+    this.loading.set(true);
+    this.notFound.set(false);
+    this.loadError.set(false);
     this.http
       .get<{ event: PublicEvent; registrationsCount: number }>(`${API}/public/events/${slug}`)
       .subscribe({
@@ -696,8 +712,10 @@ export class PublicEventComponent implements OnInit {
           this.registrationsCount.set(res.registrationsCount);
           this.loading.set(false);
         },
-        error: () => {
-          this.notFound.set(true);
+        error: (err) => {
+          // 404 = el evento no existe o no está publicado. Otro código (0/5xx) = servidor caído / sin conexión.
+          if (err?.status === 404) this.notFound.set(true);
+          else this.loadError.set(true);
           this.loading.set(false);
         },
       });
