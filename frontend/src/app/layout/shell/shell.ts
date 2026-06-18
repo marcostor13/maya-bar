@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { AuthService } from '../../auth/auth.service';
-import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge } from 'lucide-angular';
+import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot } from 'lucide-angular';
 
 @Component({
   selector: 'app-shell',
@@ -126,6 +126,10 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
               <a class="nav-item" routerLink="/campaigns" routerLinkActive="active">
                 <span class="nav-icon"><lucide-icon [img]="Megaphone" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
                 @if (!collapsed()) { <span>Campañas</span> }
+              </a>
+              <a class="nav-item" routerLink="/ai-agents" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="Bot" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Agentes IA</span> }
               </a>
             }
             @if (showVisitas()) {
@@ -449,6 +453,7 @@ export class ShellComponent {
   readonly Zap = Zap;
   readonly ContactRound = ContactRound;
   readonly Megaphone = Megaphone;
+  readonly Bot = Bot;
   readonly Settings = Settings;
   readonly List = List;
   readonly MapPin = MapPin;

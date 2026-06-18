@@ -5,7 +5,13 @@ import { randomUUID } from 'crypto';
 
 const ALLOWED_IMAGE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm'];
-const ALLOWED_DOC = ['application/pdf'];
+const ALLOWED_DOC = [
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'application/json',
+];
 const ALL_ALLOWED = [...ALLOWED_IMAGE, ...ALLOWED_VIDEO, ...ALLOWED_DOC];
 
 const MAX_SIZE_IMAGE = 10 * 1024 * 1024; // 10 MB

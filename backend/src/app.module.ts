@@ -20,6 +20,8 @@ import { SettingsModule } from './settings/settings.module';
 import { ListsModule } from './lists/lists.module';
 import { VisitsModule } from './visits/visits.module';
 import { ImpulsadorModule } from './impulsador/impulsador.module';
+import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
+import { AiAgentsModule } from './ai-agents/ai-agents.module';
 
 @Module({
   imports: [
@@ -48,6 +50,8 @@ import { ImpulsadorModule } from './impulsador/impulsador.module';
     ListsModule,
     VisitsModule,
     ImpulsadorModule,
+    WhatsAppAccountsModule,
+    AiAgentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

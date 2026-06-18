@@ -3,9 +3,16 @@ import { ConfigService } from '@nestjs/config';
 
 type AiProvider = 'deepseek' | 'claude' | 'openai' | 'auto';
 
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 interface AiOptions {
   provider?: AiProvider;
   maxTokens?: number;
+  model?: string;
+  temperature?: number;
 }
 
 @Injectable()
@@ -35,6 +42,72 @@ export class AiService {
     throw new BadRequestException(
       'No hay API key de IA configurada (DEEPSEEK_API_KEY, CLAUDE_API_KEY o OPENAI_API_KEY)',
     );
+  }
+
+  /** Resuelve qué proveedor usar según las keys disponibles. */
+  private resolveProvider(provider: AiProvider): 'deepseek' | 'claude' | 'openai' {
+    if (provider === 'deepseek' || (provider === 'auto' && this.deepseekKey)) return 'deepseek';
+    if (provider === 'claude' || (provider === 'auto' && this.claudeKey)) return 'claude';
+    if (provider === 'openai' || (provider === 'auto' && this.openaiKey)) return 'openai';
+    throw new BadRequestException(
+      'No hay API key de IA configurada (DEEPSEEK_API_KEY, CLAUDE_API_KEY o OPENAI_API_KEY)',
+    );
+  }
+
+  /** Chat con historial de mensajes (system + turnos). */
+  async chatMessages(messages: ChatMessage[], options: AiOptions = {}): Promise<string> {
+    const { provider = 'auto', maxTokens = 1024, temperature = 0.4 } = options;
+    // trata cadena vacía como "usar el modelo por defecto"
+    const model = options.model?.trim() || undefined;
+    const resolved = this.resolveProvider(provider);
+
+    if (resolved === 'claude') {
+      const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+      const turns = messages.filter((m) => m.role !== 'system');
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.claudeKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model ?? 'claude-haiku-4-5-20251001',
+          // (model ya viene normalizado: undefined si estaba vacío)
+          max_tokens: maxTokens,
+          temperature,
+          system: system || undefined,
+          messages: turns.map((m) => ({ role: m.role, content: m.content })),
+        }),
+      });
+      if (!res.ok) throw new BadRequestException(`Claude API error: ${await res.text()}`);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const data = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      return String(data?.content?.[0]?.text ?? '');
+    }
+
+    // deepseek / openai comparten formato OpenAI-compatible
+    const url = resolved === 'deepseek'
+      ? 'https://api.deepseek.com/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions';
+    const key = resolved === 'deepseek' ? this.deepseekKey : this.openaiKey;
+    const defaultModel = resolved === 'deepseek' ? 'deepseek-v4-flash' : 'gpt-4o-mini';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: model ?? defaultModel,
+        max_tokens: maxTokens,
+        temperature,
+        messages,
+      }),
+    });
+    if (!res.ok) throw new BadRequestException(`${resolved} API error: ${await res.text()}`);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const data = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    return String(data?.choices?.[0]?.message?.content ?? '');
   }
 
   private async callDeepSeek(prompt: string, maxTokens: number): Promise<string> {
