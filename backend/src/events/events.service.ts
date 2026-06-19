@@ -226,13 +226,30 @@ export class EventsService {
   async findRegistrations(
     eventId: string,
     tenantId: string,
+    filters?: { search?: string; status?: string; sortBy?: string; sortOrder?: string },
   ): Promise<EventRegistration[]> {
     const event = await this.eventModel.findById(eventId).exec();
     if (!event) throw new NotFoundException('Evento no encontrado');
     if (event.tenantId.toString() !== tenantId) throw new ForbiddenException();
+
+    const query: Record<string, unknown> = { eventId: new Types.ObjectId(eventId) };
+
+    if (filters?.status && filters.status !== 'all') {
+      query.status = filters.status;
+    }
+
+    if (filters?.search?.trim()) {
+      const re = new RegExp(filters.search.trim(), 'i');
+      query.$or = [{ name: re }, { email: re }, { ticketCode: re }, { phone: re }];
+    }
+
+    const validSortFields = ['name', 'email', 'createdAt', 'partySize'];
+    const sortField = validSortFields.includes(filters?.sortBy ?? '') ? filters!.sortBy! : 'createdAt';
+    const sortDir: 1 | -1 = filters?.sortOrder === 'asc' ? 1 : -1;
+
     return this.regModel
-      .find({ eventId: new Types.ObjectId(eventId) })
-      .sort({ createdAt: -1 })
+      .find(query)
+      .sort({ [sortField]: sortDir })
       .exec();
   }
 

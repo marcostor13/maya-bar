@@ -10,6 +10,7 @@ import {
 import { HttpClient } from '@angular/common/http';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { DatePipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -47,6 +48,10 @@ import {
   ClipboardList,
   GripVertical,
   LayoutTemplate,
+  Download,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-angular';
 import { InvitationDesignerComponent, type DesignSpec } from './invitation-designer';
 
@@ -126,7 +131,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
 @Component({
   selector: 'app-event-detail',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule, RouterLink, InvitationDesignerComponent],
+  imports: [ReactiveFormsModule, LucideAngularModule, RouterLink, InvitationDesignerComponent, DatePipe],
   template: `
     <div class="page animate-fade-in">
 
@@ -624,41 +629,103 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
               <!-- ══════════════════════════════════════════════════════════ -->
               @if (activeTab() === 'registrations' && !isNew()) {
                 <div class="p-6 animate-fade-in">
-                  <div class="flex justify-between items-center mb-6">
-                    <h3 class="font-bold text-lg m-0">Lista de Asistentes</h3>
-                    <div class="badge badge-neutral">{{ registrations().length }} registros</div>
+
+                  <!-- Filter bar -->
+                  <div class="regs-toolbar">
+                    <div class="regs-search-wrap">
+                      <lucide-icon [img]="Search" [size]="16"></lucide-icon>
+                      <input type="text" class="regs-search-input" placeholder="Buscar por nombre, email o ticket..."
+                        [value]="regSearch()" (input)="onRegSearchChange($any($event.target).value)" />
+                    </div>
+                    <select class="input regs-filter-select"
+                      [value]="regStatusFilter()"
+                      (change)="regStatusFilter.set($any($event.target).value); onRegFilterChange()">
+                      <option value="all">Todos los estados</option>
+                      <option value="confirmed">Confirmados</option>
+                      <option value="cancelled">Cancelados</option>
+                    </select>
+                    <button class="btn btn-secondary btn-sm" (click)="downloadExcel()" [disabled]="registrations().length === 0">
+                      <lucide-icon [img]="Download" [size]="15"></lucide-icon>
+                      Excel
+                    </button>
                   </div>
-                  @if (regsLoading()) {
-                    <div class="regs-empty">Cargando...</div>
-                  } @else if (registrations().length === 0) {
+
+                  <div class="regs-meta">
+                    <span class="badge badge-neutral">{{ registrations().length }} registros</span>
+                    @if (regsLoading()) { <span class="text-muted-xs">Cargando...</span> }
+                  </div>
+
+                  @if (!regsLoading() && registrations().length === 0) {
                     <div class="regs-empty">
                       <lucide-icon [img]="Ticket" [size]="48" [strokeWidth]="1.5"></lucide-icon>
-                      <p>Sin registros aún.</p>
+                      <p>Sin registros para este filtro.</p>
                     </div>
                   } @else {
                     <div class="regs-table-wrap">
-                      <table>
+                      <table class="regs-table">
                         <thead>
-                          <tr><th>Nombre</th><th>Email</th><th>Tel.</th><th>Pers.</th><th>Ticket</th><th>Estado</th></tr>
+                          <tr>
+                            @if (formFields().length > 0) { <th class="th-expand"></th> }
+                            <th class="th-sortable" (click)="setSortBy('name')">
+                              Nombre
+                              <lucide-icon [img]="regSortBy()==='name' ? (regSortOrder()==='asc' ? ArrowUp : ArrowDown) : ArrowUpDown" [size]="13"></lucide-icon>
+                            </th>
+                            <th class="th-sortable" (click)="setSortBy('email')">
+                              Email
+                              <lucide-icon [img]="regSortBy()==='email' ? (regSortOrder()==='asc' ? ArrowUp : ArrowDown) : ArrowUpDown" [size]="13"></lucide-icon>
+                            </th>
+                            <th>Teléfono</th>
+                            <th class="th-sortable" (click)="setSortBy('partySize')">
+                              Pers.
+                              <lucide-icon [img]="regSortBy()==='partySize' ? (regSortOrder()==='asc' ? ArrowUp : ArrowDown) : ArrowUpDown" [size]="13"></lucide-icon>
+                            </th>
+                            <th>Ticket</th>
+                            <th>Check-in</th>
+                            <th>Estado</th>
+                            <th class="th-sortable" (click)="setSortBy('createdAt')">
+                              Fecha
+                              <lucide-icon [img]="regSortBy()==='createdAt' ? (regSortOrder()==='asc' ? ArrowUp : ArrowDown) : ArrowUpDown" [size]="13"></lucide-icon>
+                            </th>
+                          </tr>
                         </thead>
                         <tbody>
                           @for (r of registrations(); track r._id) {
-                            <tr>
-                              <td>{{ r.name }}</td>
-                              <td class="text-muted">{{ r.email }}</td>
-                              <td class="text-muted">{{ r.phone || '—' }}</td>
-                              <td>{{ r.partySize }}</td>
+                            <tr class="reg-row" [class.reg-row-expanded]="expandedRegIds().has(r._id)">
+                              @if (formFields().length > 0) {
+                                <td class="td-expand">
+                                  @if (r.customFields && hasCustomFields(r.customFields)) {
+                                    <button class="expand-btn" (click)="toggleExpandReg(r._id)"
+                                      [class.expanded]="expandedRegIds().has(r._id)" title="Ver campos personalizados">
+                                      <lucide-icon [img]="ChevronDown" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                                    </button>
+                                  }
+                                </td>
+                              }
+                              <td class="td-name">{{ r.name }}</td>
+                              <td class="td-muted">{{ r.email }}</td>
+                              <td class="td-muted">{{ r.phone || '—' }}</td>
+                              <td class="td-center">{{ r.partySize }}</td>
                               <td><code class="ticket-code">{{ r.ticketCode }}</code></td>
+                              <td class="td-center">
+                                @if (r.checkedIn) {
+                                  <span class="checkin-pill yes">
+                                    <lucide-icon [img]="Check" [size]="12" [strokeWidth]="3"></lucide-icon> Sí
+                                  </span>
+                                } @else {
+                                  <span class="checkin-pill no">—</span>
+                                }
+                              </td>
                               <td>
                                 <span class="badge" [class.badge-success]="r.status === 'confirmed'"
                                   [class.badge-danger]="r.status === 'cancelled'">
                                   {{ r.status === 'confirmed' ? 'Confirmado' : 'Cancelado' }}
                                 </span>
                               </td>
+                              <td class="td-muted td-date">{{ r.createdAt | date:'dd/MM/yy' }}</td>
                             </tr>
-                            @if (r.customFields && hasCustomFields(r.customFields)) {
+                            @if (expandedRegIds().has(r._id) && r.customFields && hasCustomFields(r.customFields)) {
                               <tr class="custom-fields-row">
-                                <td colspan="6">
+                                <td [colSpan]="formFields().length > 0 ? 9 : 8">
                                   <div class="custom-fields-answers">
                                     @for (field of formFields(); track field.id) {
                                       @if (r.customFields && r.customFields[field.id]) {
@@ -922,19 +989,43 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .btn-icon-sm:hover { color:var(--color-brand); background:var(--color-brand-light); }
 
     /* ── Registrations ── */
+    .regs-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+    .regs-search-wrap { flex:1; min-width:180px; position:relative; display:flex; align-items:center; }
+    .regs-search-wrap lucide-icon { position:absolute; left:12px; color:var(--color-text-muted); pointer-events:none; }
+    .regs-search-input { width:100%; padding:9px 14px 9px 36px; border:1px solid var(--color-border); border-radius:10px; font-size:14px; outline:none; background:var(--color-bg-app); transition:all 0.2s; }
+    .regs-search-input:focus { border-color:var(--color-brand); background:#fff; box-shadow:0 0 0 3px var(--color-brand-light); }
+    .regs-filter-select { width:auto; min-width:160px; padding:9px 14px; font-size:14px; }
+    .regs-meta { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
     .regs-empty { padding:64px 40px; text-align:center; color:var(--color-text-muted); display:flex; flex-direction:column; align-items:center; gap:16px; background:var(--color-bg-app); border-radius:16px; border:1px dashed var(--color-border); }
-    .regs-table-wrap { overflow-x:auto; }
-    table { width:100%; border-collapse:separate; border-spacing:0 8px; }
-    th { padding:0 16px; text-align:left; font-size:13px; font-weight:600; color:var(--color-text-muted); border:none; }
-    td { padding:12px 16px; background:#fff; border:1px solid var(--color-border); border-style:solid none; transition:background 0.2s; font-size:14px; }
-    td:first-child { border-left-style:solid; border-radius:12px 0 0 12px; }
-    td:last-child { border-right-style:solid; border-radius:0 12px 12px 0; }
-    tr:hover td { background:var(--color-bg-app); }
-    .ticket-code { font-family:monospace; font-size:13px; font-weight:700; background:var(--color-bg-app); padding:4px 8px; border-radius:6px; color:var(--color-brand); letter-spacing:0.05em; }
-    .custom-fields-row td { padding: 0 16px 10px; background: #f8f9fa; border-top: none; }
-    .custom-fields-answers { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 0; }
-    .custom-answer-item { font-size: 13px; color: var(--color-text-muted); background: #fff; border: 1px solid var(--color-border); padding: 4px 10px; border-radius: 8px; }
-    .custom-answer-item strong { color: var(--color-text-main); }
+    .regs-table-wrap { overflow-x:auto; border-radius:14px; border:1px solid var(--color-border); }
+    .regs-table { width:100%; border-collapse:collapse; }
+    .regs-table thead { background:var(--color-bg-app); }
+    .regs-table th { padding:11px 14px; text-align:left; font-size:12px; font-weight:700; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:0.04em; border-bottom:1px solid var(--color-border); white-space:nowrap; }
+    .th-sortable { cursor:pointer; user-select:none; }
+    .th-sortable:hover { color:var(--color-text-main); background:rgba(0,0,0,0.02); }
+    .th-sortable lucide-icon { vertical-align:middle; margin-left:4px; }
+    .th-expand { width:36px; padding:0 4px; }
+    .regs-table td { padding:12px 14px; font-size:14px; color:var(--color-text-main); border-bottom:1px solid var(--color-border); vertical-align:middle; }
+    .regs-table tbody tr:last-child td { border-bottom:none; }
+    .regs-table tbody tr:last-child.custom-fields-row td { border-bottom:none; }
+    .reg-row:hover td { background:var(--color-bg-app); }
+    .reg-row-expanded td { background:var(--color-brand-light); }
+    .td-muted { color:var(--color-text-muted); font-size:13px; }
+    .td-center { text-align:center; }
+    .td-name { font-weight:600; }
+    .td-expand { width:36px; padding:0 4px 0 8px; }
+    .td-date { font-size:12px; white-space:nowrap; }
+    .expand-btn { width:26px; height:26px; border:none; background:transparent; border-radius:6px; cursor:pointer; color:var(--color-text-muted); display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+    .expand-btn:hover { background:var(--color-brand-light); color:var(--color-brand); }
+    .expand-btn.expanded { color:var(--color-brand); transform:rotate(180deg); }
+    .checkin-pill { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; padding:3px 8px; border-radius:20px; }
+    .checkin-pill.yes { background:#dcfce7; color:#16a34a; }
+    .checkin-pill.no { background:var(--color-bg-app); color:var(--color-text-muted); }
+    .ticket-code { font-family:monospace; font-size:12px; font-weight:700; background:var(--color-bg-app); padding:3px 7px; border-radius:6px; color:var(--color-brand); letter-spacing:0.05em; }
+    .custom-fields-row td { padding:8px 14px 12px; background:#f8faff; }
+    .custom-fields-answers { display:flex; flex-wrap:wrap; gap:8px; }
+    .custom-answer-item { font-size:12px; color:var(--color-text-muted); background:#fff; border:1px solid var(--color-border); padding:3px 10px; border-radius:8px; }
+    .custom-answer-item strong { color:var(--color-text-main); }
 
     /* ── Skeleton ── */
     .skeleton-form { display:flex; flex-direction:column; gap:24px; padding:32px; }
@@ -992,6 +1083,8 @@ export class EventDetailComponent implements OnInit {
   readonly Plus = Plus; readonly ChevronUp = ChevronUp; readonly ChevronDown = ChevronDown;
   readonly Pencil = Pencil; readonly Layers = Layers; readonly ClipboardList = ClipboardList;
   readonly GripVertical = GripVertical; readonly LayoutTemplate = LayoutTemplate;
+  readonly Download = Download; readonly ArrowUpDown = ArrowUpDown;
+  readonly ArrowUp = ArrowUp; readonly ArrowDown = ArrowDown;
 
   isNew = signal(false);
   eventId = signal<string | null>(null);
@@ -1002,7 +1095,6 @@ export class EventDetailComponent implements OnInit {
   saving = signal(false);
   activeTab = signal<ActiveTab>('general');
 
-  regSearch = signal('');
   checkingInId = signal<string | null>(null);
 
   uploading = signal(false);
@@ -1029,6 +1121,14 @@ export class EventDetailComponent implements OnInit {
 
   registrations = signal<Registration[]>([]);
   regsLoading = signal(false);
+
+  // Registrations filters
+  regSearch = signal('');
+  regStatusFilter = signal('all');
+  regSortBy = signal('createdAt');
+  regSortOrder = signal<'asc' | 'desc'>('desc');
+  expandedRegIds = signal<Set<string>>(new Set());
+  private regSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 
   private role = computed(() => this.auth.currentUser()?.role ?? '');
   canManage = computed(() => ['TENANT_ADMIN', 'MANAGER'].includes(this.role()));
@@ -1118,12 +1218,82 @@ export class EventDetailComponent implements OnInit {
     });
   }
 
-  loadRegistrations(id: string) {
+  loadRegistrations(id?: string) {
+    const eventId = id ?? this.eventId();
+    if (!eventId) return;
     this.regsLoading.set(true);
-    this.http.get<Registration[]>(`${API}/events/${id}/registrations`).subscribe({
+    const params: Record<string, string> = {
+      sortBy: this.regSortBy(),
+      sortOrder: this.regSortOrder(),
+    };
+    if (this.regStatusFilter() !== 'all') params['status'] = this.regStatusFilter();
+    if (this.regSearch().trim()) params['search'] = this.regSearch().trim();
+
+    this.http.get<Registration[]>(`${API}/events/${eventId}/registrations`, { params }).subscribe({
       next: (r) => { this.registrations.set(r); this.regsLoading.set(false); },
       error: () => this.regsLoading.set(false),
     });
+  }
+
+  onRegSearchChange(value: string) {
+    this.regSearch.set(value);
+    if (this.regSearchDebounce) clearTimeout(this.regSearchDebounce);
+    this.regSearchDebounce = setTimeout(() => this.loadRegistrations(), 350);
+  }
+
+  onRegFilterChange() {
+    this.loadRegistrations();
+  }
+
+  setSortBy(field: string) {
+    if (this.regSortBy() === field) {
+      this.regSortOrder.set(this.regSortOrder() === 'asc' ? 'desc' : 'asc');
+    } else {
+      this.regSortBy.set(field);
+      this.regSortOrder.set('asc');
+    }
+    this.loadRegistrations();
+  }
+
+  toggleExpandReg(id: string) {
+    this.expandedRegIds.update(set => {
+      const next = new Set(set);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  downloadExcel() {
+    const regs = this.registrations();
+    const fields = this.formFields();
+    const headers = ['Ticket', 'Nombre', 'Email', 'Teléfono', 'Personas', 'Estado', 'Check-in', 'Fecha Registro',
+      ...fields.map(f => f.label)];
+
+    const rows = regs.map(r => [
+      r.ticketCode,
+      r.name,
+      r.email,
+      r.phone ?? '',
+      r.partySize,
+      r.status === 'confirmed' ? 'Confirmado' : 'Cancelado',
+      r.checkedIn ? 'Sí' : 'No',
+      new Date(r.createdAt).toLocaleDateString('es-PE'),
+      ...fields.map(f => r.customFields?.[f.id] ?? ''),
+    ]);
+
+    const BOM = '﻿';
+    const csv = BOM + [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `asistentes_${this.event()?.title ?? 'evento'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.toast.success('Archivo descargado');
   }
 
   // ── Cover image ───────────────────────────────────────────────────────────

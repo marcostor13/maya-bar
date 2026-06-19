@@ -26,3 +26,12 @@ export class AddDocDto {
 export class TestChatDto {
   messages: { role: 'user' | 'assistant'; content: string }[];
 }
+
+export class AgentFileDto {
+  alias: string;
+  name: string;
+  filename: string;
+  url: string;
+  key?: string;
+  contentType?: string;
+}

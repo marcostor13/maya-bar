@@ -10,6 +10,7 @@ import { AiAgent, AiAgentSchema } from './ai-agent.schema';
 import { KnowledgeDoc, KnowledgeDocSchema } from './knowledge-doc.schema';
 import { KnowledgeChunk, KnowledgeChunkSchema } from './knowledge-chunk.schema';
 import { AgentConversation, AgentConversationSchema } from './agent-conversation.schema';
+import { AgentFile, AgentFileSchema } from './agent-file.schema';
 import { AiModule } from '../ai/ai.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.module';
@@ -22,6 +23,7 @@ import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.m
       { name: KnowledgeDoc.name, schema: KnowledgeDocSchema },
       { name: KnowledgeChunk.name, schema: KnowledgeChunkSchema },
       { name: AgentConversation.name, schema: AgentConversationSchema },
+      { name: AgentFile.name, schema: AgentFileSchema },
     ]),
     AiModule,
     WhatsAppModule,

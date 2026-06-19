@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit, HostListener } from '@angular/core';
+import { Component, inject, signal, OnInit, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
@@ -6,6 +6,7 @@ import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
+  Paperclip, Copy, Link,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 
@@ -52,7 +53,16 @@ interface KDoc {
   error?: string;
 }
 
-type Section = 'general' | 'channels' | 'knowledge' | 'advanced';
+interface AgentFile {
+  _id: string;
+  alias: string;
+  name: string;
+  filename: string;
+  url: string;
+  contentType?: string;
+}
+
+type Section = 'general' | 'channels' | 'knowledge' | 'files' | 'advanced';
 
 function blankAgent(): Agent {
   return {
@@ -183,9 +193,24 @@ function blankAccount(): WaAccount {
               </div>
               <div class="field">
                 <label class="field-label">Prompt del sistema *</label>
-                <textarea class="textarea" [(ngModel)]="form.systemPrompt" rows="7"
+                <textarea class="textarea" #promptTextarea [(ngModel)]="form.systemPrompt" rows="7"
                   placeholder="Define la personalidad, el rol y las reglas del agente…"></textarea>
                 <span class="field-hint">Instrucciones base que guían todas las respuestas del agente.</span>
+                @if (agentFiles().length > 0) {
+                  <div class="token-helper">
+                    <span class="token-helper-label">
+                      <lucide-icon [img]="Paperclip" [size]="13"></lucide-icon>
+                      Insertar token de archivo:
+                    </span>
+                    <div class="token-chips">
+                      @for (f of agentFiles(); track f._id) {
+                        <button type="button" class="token-chip" (click)="insertToken(f.alias)" [title]="f.name">
+                          {{ fileToken(f.alias) }}
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
               </div>
               <div class="field">
                 <label class="field-label">Mensaje de saludo (opcional)</label>
@@ -273,6 +298,64 @@ function blankAccount(): WaAccount {
                   <button class="btn btn-sm btn-ghost" (click)="loadDocs(form._id)">
                     <lucide-icon [img]="RefreshCw" [size]="13"></lucide-icon> Actualizar estado
                   </button>
+                }
+              }
+            }
+
+            <!-- ARCHIVOS -->
+            @if (section() === 'files') {
+              <p class="field-hint" style="margin-bottom:16px">
+                Sube archivos que el agente podrá enviar por WhatsApp cuando sea relevante.
+                En el prompt usa <code>{{ exampleToken }}</code> para indicar cuándo enviarlos.
+              </p>
+
+              @if (!form._id) {
+                <div class="inline-empty">
+                  <lucide-icon [img]="Paperclip" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
+                  <p>Guarda el agente primero para subir archivos.</p>
+                </div>
+              } @else {
+                <div class="file-upload-form">
+                  <div class="field-row">
+                    <div class="field">
+                      <label class="field-label">Alias * <span class="field-hint" style="display:inline">(sin espacios)</span></label>
+                      <input class="input" [(ngModel)]="newFileAlias" (ngModelChange)="sanitizeAlias()"
+                        placeholder="ej: menu, horarios, carta" />
+                    </div>
+                    <div class="field">
+                      <label class="field-label">Nombre descriptivo *</label>
+                      <input class="input" [(ngModel)]="newFileName" placeholder="ej: Carta del restaurante" />
+                    </div>
+                  </div>
+                  <label class="upload-zone" [class.uploading]="uploadingFile()">
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png,.mp4,.webp,image/*,video/*" (change)="onAgentFile($event)" style="display:none" [disabled]="uploadingFile()" />
+                    <lucide-icon [img]="Paperclip" [size]="22" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
+                    <span class="upload-label">{{ uploadingFile() ? 'Subiendo…' : 'Seleccionar archivo' }}</span>
+                    <span class="upload-hint">PDF, imágenes, videos · hasta 20 MB</span>
+                  </label>
+                </div>
+
+                @if (agentFiles().length > 0) {
+                  <div class="doc-list" style="margin-top:16px">
+                    @for (f of agentFiles(); track f._id) {
+                      <div class="doc-row">
+                        <lucide-icon [img]="Paperclip" [size]="18" [strokeWidth]="2" style="color:var(--color-brand)"></lucide-icon>
+                        <div class="doc-info">
+                          <span class="doc-name">{{ f.name }}</span>
+                          <span class="doc-meta">
+                            <code class="alias-code">{{ fileToken(f.alias) }}</code>
+                            · {{ f.filename }}
+                          </span>
+                        </div>
+                        <button class="btn btn-icon btn-ghost btn-sm" (click)="copyToken(f.alias)" title="Copiar token">
+                          <lucide-icon [img]="Copy" [size]="13" style="color:var(--color-text-muted)"></lucide-icon>
+                        </button>
+                        <button class="btn btn-icon btn-ghost btn-sm" (click)="deleteAgentFile(f)" title="Eliminar">
+                          <lucide-icon [img]="Trash2" [size]="14" style="color:var(--color-error)"></lucide-icon>
+                        </button>
+                      </div>
+                    }
+                  </div>
                 }
               }
             }
@@ -514,8 +597,8 @@ function blankAccount(): WaAccount {
     .publish-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     .publish-toggle span { display: inline-flex; align-items: center; gap: 5px; }
 
-    .tabs { display: flex; gap: 4px; padding: 12px 32px 0; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
-    .tab { display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; border: none; background: none; color: var(--color-text-muted); font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tabs { display: flex; gap: 4px; padding: 12px 32px 0; border-bottom: 1px solid var(--color-border); flex-shrink: 0; overflow-x: auto; }
+    .tab { display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; border: none; background: none; color: var(--color-text-muted); font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
     .tab.active { color: var(--color-brand); border-bottom-color: var(--color-brand); }
 
     .drawer-scroll { padding: 24px 32px; overflow-y: auto; flex: 1; }
@@ -527,6 +610,17 @@ function blankAccount(): WaAccount {
     .field-label { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
     .field-hint { font-size: 12px; color: var(--color-text-muted); }
     .textarea { resize: vertical; min-height: 90px; }
+
+    /* Token helper */
+    .token-helper { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 10px 14px; background: var(--color-bg-app); border-radius: var(--radius-lg); border: 1px solid var(--color-border); }
+    .token-helper-label { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
+    .token-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .token-chip { display: inline-flex; align-items: center; padding: 4px 10px; background: var(--color-brand-light); color: var(--color-brand); border: 1px solid var(--color-brand); border-radius: var(--radius-pill); font-size: 11px; font-family: monospace; font-weight: 600; cursor: pointer; transition: all var(--transition-fast); }
+    .token-chip:hover { background: var(--color-brand); color: #fff; }
+
+    /* Files tab */
+    .file-upload-form { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px; background: var(--color-bg-app); margin-bottom: 4px; }
+    .alias-code { font-family: monospace; font-size: 11px; background: var(--color-brand-light); color: var(--color-brand); padding: 2px 6px; border-radius: 4px; }
 
     .inline-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px; text-align: center; color: var(--color-text-muted); font-size: 13px; }
 
@@ -543,14 +637,14 @@ function blankAccount(): WaAccount {
     .switch input:checked + .slider { background: var(--color-brand); }
     .switch input:checked + .slider::before { transform: translateX(20px); }
 
-    .upload-zone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 24px; border: 2px dashed var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-app); cursor: pointer; transition: border-color var(--transition-fast); margin-bottom: 16px; }
+    .upload-zone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 24px; border: 2px dashed var(--color-border); border-radius: var(--radius-lg); background: #fff; cursor: pointer; transition: border-color var(--transition-fast); margin-bottom: 16px; }
     .upload-zone:hover { border-color: var(--color-brand); }
     .upload-zone.uploading { opacity: .6; pointer-events: none; }
     .upload-label { font-size: 14px; font-weight: 600; }
     .upload-hint { font-size: 11px; color: var(--color-text-muted); }
 
     .doc-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-    .doc-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+    .doc-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: #fff; }
     .doc-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
     .doc-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .doc-meta { font-size: 12px; color: var(--color-text-muted); }
@@ -583,16 +677,24 @@ export class AiAgentsComponent implements OnInit {
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
 
+  @ViewChild('promptTextarea') promptTextareaEl?: ElementRef<HTMLTextAreaElement>;
+
+  readonly exampleToken = '{{SEND_FILE:alias}}';
+  fileToken(alias: string) { return '{{SEND_FILE:' + alias + '}}'; }
+
   readonly Bot = Bot; readonly Plus = Plus; readonly X = X; readonly Trash2 = Trash2;
   readonly Send = Send; readonly Upload = Upload; readonly FileText = FileText;
   readonly MessageSquare = MessageSquare; readonly Smartphone = Smartphone; readonly Check = Check;
   readonly Sparkles = Sparkles; readonly BookOpen = BookOpen; readonly Phone = Phone;
-  readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil; readonly FlaskConical = FlaskConical;
+  readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
+  readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
+  readonly Link = Link;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
     { key: 'general', label: 'General', icon: Bot },
     { key: 'channels', label: 'Canales', icon: Smartphone },
     { key: 'knowledge', label: 'Conocimiento', icon: BookOpen },
+    { key: 'files', label: 'Archivos', icon: Paperclip },
     { key: 'advanced', label: 'Avanzado', icon: Sparkles },
   ];
 
@@ -607,6 +709,12 @@ export class AiAgentsComponent implements OnInit {
   saving = signal(false);
   docs = signal<KDoc[]>([]);
   uploading = signal(false);
+
+  // agent files
+  agentFiles = signal<AgentFile[]>([]);
+  uploadingFile = signal(false);
+  newFileAlias = '';
+  newFileName = '';
 
   // playground
   playgroundAgent = signal<Agent | null>(null);
@@ -649,14 +757,26 @@ export class AiAgentsComponent implements OnInit {
   }
 
   // ---- Editor ----
-  openNew() { this.form = blankAgent(); this.docs.set([]); this.section.set('general'); this.drawerOpen.set(true); }
+  openNew() {
+    this.form = blankAgent();
+    this.docs.set([]);
+    this.agentFiles.set([]);
+    this.newFileAlias = '';
+    this.newFileName = '';
+    this.section.set('general');
+    this.drawerOpen.set(true);
+  }
 
   openEdit(a: Agent) {
     this.form = { ...a, accountIds: [...(a.accountIds || [])] };
     this.section.set('general');
     this.docs.set([]);
+    this.agentFiles.set([]);
+    this.newFileAlias = '';
+    this.newFileName = '';
     this.drawerOpen.set(true);
     this.loadDocs(a._id);
+    this.loadFiles(a._id);
   }
 
   closeDrawer() { this.drawerOpen.set(false); }
@@ -682,7 +802,10 @@ export class AiAgentsComponent implements OnInit {
       next: (a) => {
         this.toast.success(this.form._id ? 'Agente actualizado' : 'Agente creado');
         this.saving.set(false);
-        if (!this.form._id) { this.form = { ...this.form, _id: a._id }; }
+        if (!this.form._id) {
+          this.form = { ...this.form, _id: a._id };
+          this.loadFiles(a._id);
+        }
         this.load();
       },
       error: (err) => { this.toast.error(err?.error?.message || 'Error al guardar'); this.saving.set(false); },
@@ -744,6 +867,99 @@ export class AiAgentsComponent implements OnInit {
       next: () => { this.toast.success('Documento eliminado'); this.loadDocs(this.form._id); },
       error: (err) => this.toast.error(err?.error?.message || 'Error al eliminar'),
     });
+  }
+
+  // ---- Agent Files ----
+  loadFiles(agentId: string) {
+    if (!agentId) return;
+    this.http.get<AgentFile[]>(`${API}/ai-agents/${agentId}/files`).subscribe({
+      next: f => this.agentFiles.set(f),
+      error: () => {},
+    });
+  }
+
+  sanitizeAlias() {
+    this.newFileAlias = this.newFileAlias.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '');
+  }
+
+  onAgentFile(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file || !this.form._id) return;
+    if (!this.newFileAlias.trim()) {
+      this.toast.error('Escribe un alias antes de seleccionar el archivo');
+      (event.target as HTMLInputElement).value = '';
+      return;
+    }
+    if (!this.newFileName.trim()) {
+      this.toast.error('Escribe un nombre descriptivo antes de seleccionar el archivo');
+      (event.target as HTMLInputElement).value = '';
+      return;
+    }
+    this.uploadingFile.set(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    this.http.post<{ url: string; key: string; contentType: string }>(`${API}/upload?folder=agent-files`, fd).subscribe({
+      next: (up) => {
+        this.http.post<AgentFile>(`${API}/ai-agents/${this.form._id}/files`, {
+          alias: this.newFileAlias.trim(),
+          name: this.newFileName.trim(),
+          filename: file.name,
+          url: up.url,
+          key: up.key,
+          contentType: up.contentType,
+        }).subscribe({
+          next: () => {
+            this.toast.success('Archivo registrado');
+            this.uploadingFile.set(false);
+            this.newFileAlias = '';
+            this.newFileName = '';
+            (event.target as HTMLInputElement).value = '';
+            this.loadFiles(this.form._id);
+          },
+          error: (err) => {
+            this.toast.error(err?.error?.message || 'Error al registrar archivo');
+            this.uploadingFile.set(false);
+          },
+        });
+      },
+      error: (err) => { this.toast.error(err?.error?.message || 'Error al subir archivo'); this.uploadingFile.set(false); },
+    });
+  }
+
+  async deleteAgentFile(f: AgentFile) {
+    const ok = await this.confirmSvc.confirm({
+      title: 'Eliminar archivo', message: `¿Eliminar "${f.name}"? El token {{SEND_FILE:${f.alias}}} dejará de funcionar.`,
+      confirmText: 'Eliminar', danger: true,
+    });
+    if (!ok) return;
+    this.http.delete(`${API}/ai-agents/${this.form._id}/files/${f._id}`).subscribe({
+      next: () => { this.toast.success('Archivo eliminado'); this.loadFiles(this.form._id); },
+      error: (err) => this.toast.error(err?.error?.message || 'Error al eliminar'),
+    });
+  }
+
+  insertToken(alias: string) {
+    const token = `{{SEND_FILE:${alias}}}`;
+    const ta = this.promptTextareaEl?.nativeElement;
+    if (ta) {
+      const start = ta.selectionStart ?? this.form.systemPrompt.length;
+      const end = ta.selectionEnd ?? start;
+      this.form = {
+        ...this.form,
+        systemPrompt: this.form.systemPrompt.slice(0, start) + token + this.form.systemPrompt.slice(end),
+      };
+      setTimeout(() => {
+        ta.selectionStart = ta.selectionEnd = start + token.length;
+        ta.focus();
+      });
+    } else {
+      this.form = { ...this.form, systemPrompt: this.form.systemPrompt + ' ' + token };
+    }
+  }
+
+  copyToken(alias: string) {
+    const token = `{{SEND_FILE:${alias}}}`;
+    navigator.clipboard.writeText(token).then(() => this.toast.success('Token copiado'));
   }
 
   // ---- Playground ----

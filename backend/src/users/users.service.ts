@@ -53,7 +53,7 @@ export class UsersService implements OnModuleInit {
    */
   private async normalizeTenantIds(): Promise<void> {
     try {
-      const res = await this.userModel.updateMany(
+      const res = await this.userModel.collection.updateMany(
         { tenantId: { $type: 'string' } },
         [{ $set: { tenantId: { $toObjectId: '$tenantId' } } }],
       );

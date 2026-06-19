@@ -91,8 +91,16 @@ export class WhatsAppWebhookController {
       this.logger.warn(`Sin agente publicado para la cuenta ${accountId}`);
       return;
     }
-    const reply = await this.agents.replyForContact(agent, accountId, contact, text);
-    if (!reply) return;
-    await this.wa.sendMessage(contact, reply, this.accounts.toConfig(account));
+    const { text: replyText, filesToSend } = await this.agents.replyForContact(agent, accountId, contact, text);
+    const config = this.accounts.toConfig(account);
+
+    if (replyText) {
+      await this.wa.sendMessage(contact, replyText, config);
+    }
+
+    for (const file of filesToSend) {
+      const mediaType = AiAgentsService.resolveMediaType(file.contentType);
+      await this.wa.sendMessage(contact, file.name, config, file.url, mediaType);
+    }
   }
 }

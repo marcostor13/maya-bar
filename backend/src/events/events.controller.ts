@@ -89,9 +89,16 @@ export class EventsController {
 
   @Get('events/:id/registrations')
   @UseGuards(JwtAuthGuard)
-  findRegistrations(@Param('id') id: string, @Request() req: AuthReq) {
+  findRegistrations(
+    @Param('id') id: string,
+    @Request() req: AuthReq,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.findRegistrations(id, req.user.tenantId);
+    return this.eventsService.findRegistrations(id, req.user.tenantId, { search, status, sortBy, sortOrder });
   }
 
   @Patch('events/:id/registrations/:regId/check-in')
