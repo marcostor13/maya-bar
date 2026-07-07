@@ -788,6 +788,10 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                       <h3 class="section-h3">Links por impulsador</h3>
                       <p class="text-muted-sm">Activa un impulsador para este evento y comparte su link único. Los registros hechos con ese link se atribuyen automáticamente a su nombre.</p>
                     </div>
+                    <button class="btn btn-secondary btn-sm" (click)="downloadImpulsadoresExcel()" [disabled]="impulsadores().length === 0">
+                      <lucide-icon [img]="Download" [size]="15"></lucide-icon>
+                      Excel
+                    </button>
                   </div>
 
                   @if (impulsadoresLoading()) {
@@ -1261,6 +1265,8 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .impulsador-stat-bar-track { height:10px; background:var(--color-bg-app); border-radius:9999px; overflow:hidden; }
     .impulsador-stat-bar-fill { height:100%; background:var(--color-brand); border-radius:9999px; transition:width 0.4s ease; }
 
+    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+
     /* ── Nuevo impulsador externo modal ── */
     .external-modal { width: calc(100% - 48px); max-width: 480px; padding: 28px 32px; background:#fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
 
@@ -1549,6 +1555,34 @@ export class EventDetailComponent implements OnInit {
     const a = document.createElement('a');
     a.href = url;
     a.download = `asistentes_${this.event()?.title ?? 'evento'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.toast.success('Archivo descargado');
+  }
+
+  downloadImpulsadoresExcel() {
+    const list = this.impulsadores();
+    const slug = this.event()?.slug;
+    const headers = ['Nombre', 'Email', 'Tipo', 'Estado', 'Link'];
+
+    const rows = list.map(i => [
+      i.name,
+      i.email ?? '',
+      i.type === 'user' ? 'Usuario plataforma' : 'Externo',
+      i.assigned ? 'Asignado' : 'No asignado',
+      slug && i.referralCode ? `${this.publicUrl(slug)}?ref=${i.referralCode}` : '',
+    ]);
+
+    const BOM = '﻿';
+    const csv = BOM + [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `impulsadores_${this.event()?.title ?? 'evento'}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     this.toast.success('Archivo descargado');
