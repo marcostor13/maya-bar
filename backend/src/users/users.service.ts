@@ -30,6 +30,9 @@ export class UsersService implements OnModuleInit {
   constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
   async onModuleInit() {
+    // Reparar emails con mayúsculas/espacios ANTES de buscar el superadmin,
+    // si no la comparación exacta podría no encontrarlo.
+    await this.normalizeEmails();
     const superadmin = await this.userModel.findOne({ role: 'SUPERADMIN' });
     if (!superadmin) {
       this.logger.log('Creating initial superadmin user...');
@@ -44,6 +47,40 @@ export class UsersService implements OnModuleInit {
       );
     }
     await this.normalizeTenantIds();
+  }
+
+  /**
+   * Normaliza el email: minúsculas + sin espacios. El login, la recuperación
+   * de contraseña y la creación de usuarios deben usar SIEMPRE este formato,
+   * de lo contrario un email guardado con mayúsculas nunca coincide en las
+   * búsquedas (la contraseña temporal "no funciona" y el correo de recuperación
+   * "no llega" porque el usuario no se encuentra).
+   */
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  /**
+   * Migración idempotente: pasa a minúsculas/recorta cualquier email guardado
+   * con mayúsculas o espacios, reparando cuentas existentes que no podían
+   * iniciar sesión ni recibir el correo de recuperación.
+   */
+  private async normalizeEmails(): Promise<void> {
+    try {
+      const res = await this.userModel.collection.updateMany(
+        {
+          $expr: {
+            $ne: ['$email', { $toLower: { $trim: { input: '$email' } } }],
+          },
+        },
+        [{ $set: { email: { $toLower: { $trim: { input: '$email' } } } } }],
+      );
+      if (res.modifiedCount) {
+        this.logger.log(`Normalizados ${res.modifiedCount} emails de usuarios`);
+      }
+    } catch (err) {
+      this.logger.error('Error normalizando emails de usuarios', err as Error);
+    }
   }
 
   /**
@@ -85,6 +122,7 @@ export class UsersService implements OnModuleInit {
         : userData.tenantId;
     const user = new this.userModel({
       ...userData,
+      email: this.normalizeEmail(userData.email),
       tenantId,
       password: hashedPassword,
     });
@@ -168,11 +206,16 @@ export class UsersService implements OnModuleInit {
     user.password = await bcrypt.hash(newPassword, 10);
     user.resetPasswordCode = undefined;
     user.resetPasswordExpires = undefined;
+    // Si la cuenta tenía contraseña temporal, al recuperarla ya estableció una
+    // definitiva: no debe forzarse otro cambio en el siguiente login.
+    user.mustChangePassword = false;
     return user.save();
   }
 
   async findOneByEmail(email: string): Promise<User | null> {
-    return this.userModel.findOne({ email, isActive: true }).exec();
+    return this.userModel
+      .findOne({ email: this.normalizeEmail(email), isActive: true })
+      .exec();
   }
 
   async findById(id: string): Promise<User | null> {
