@@ -52,6 +52,9 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Link2,
+  ScanLine,
+  Camera,
 } from 'lucide-angular';
 import { InvitationDesignerComponent, type DesignSpec } from './invitation-designer';
 
@@ -61,7 +64,7 @@ const API = environment.apiUrl;
 type EventStatus = 'draft' | 'published' | 'cancelled';
 type AiTool = 'copy' | 'social' | 'hashtags' | 'email';
 type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone' | 'date';
-type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 'checkin' | 'stats' | 'invitation';
+type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 'checkin' | 'stats' | 'invitation' | 'impulsadores';
 
 interface MediaFile {
   url: string;
@@ -109,6 +112,23 @@ interface Registration {
   checkedInAt?: string;
   createdAt: string;
   customFields?: Record<string, string>;
+  impulsadorName?: string | null;
+}
+
+interface Impulsador {
+  _id: string;
+  name: string;
+  email: string;
+  referralCode?: string;
+  assigned: boolean;
+  type: 'user' | 'external';
+}
+
+interface ImpulsadorStat {
+  name: string;
+  registrations: number;
+  attendees: number;
+  checkedIn: number;
 }
 
 const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
@@ -198,6 +218,10 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                   <button class="tab" [class.active]="activeTab() === 'registrations'" (click)="activeTab.set('registrations')">
                     <lucide-icon [img]="Users" [size]="14"></lucide-icon>
                     Asistentes
+                  </button>
+                  <button class="tab" [class.active]="activeTab() === 'impulsadores'" (click)="activeTab.set('impulsadores'); loadImpulsadores()">
+                    <lucide-icon [img]="Link2" [size]="14"></lucide-icon>
+                    Impulsadores
                   </button>
                   <button class="tab" [class.active]="activeTab() === 'checkin'" (click)="activeTab.set('checkin')">
                     <lucide-icon [img]="UserCheck" [size]="14"></lucide-icon>
@@ -680,6 +704,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                               <lucide-icon [img]="regSortBy()==='partySize' ? (regSortOrder()==='asc' ? ArrowUp : ArrowDown) : ArrowUpDown" [size]="13"></lucide-icon>
                             </th>
                             <th>Ticket</th>
+                            <th>Impulsador</th>
                             <th>Check-in</th>
                             <th>Estado</th>
                             <th class="th-sortable" (click)="setSortBy('createdAt')">
@@ -706,6 +731,13 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                               <td class="td-muted">{{ r.phone || '—' }}</td>
                               <td class="td-center">{{ r.partySize }}</td>
                               <td><code class="ticket-code">{{ r.ticketCode }}</code></td>
+                              <td>
+                                @if (r.impulsadorName) {
+                                  <span class="badge badge-neutral">{{ r.impulsadorName }}</span>
+                                } @else {
+                                  <span class="td-muted">Directo</span>
+                                }
+                              </td>
                               <td class="td-center">
                                 @if (r.checkedIn) {
                                   <span class="checkin-pill yes">
@@ -725,7 +757,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                             </tr>
                             @if (expandedRegIds().has(r._id) && r.customFields && hasCustomFields(r.customFields)) {
                               <tr class="custom-fields-row">
-                                <td [colSpan]="formFields().length > 0 ? 9 : 8">
+                                <td [colSpan]="formFields().length > 0 ? 10 : 9">
                                   <div class="custom-fields-answers">
                                     @for (field of formFields(); track field.id) {
                                       @if (r.customFields && r.customFields[field.id]) {
@@ -747,6 +779,83 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
               }
 
               <!-- ══════════════════════════════════════════════════════════ -->
+              <!-- ── Impulsadores Tab ── -->
+              <!-- ══════════════════════════════════════════════════════════ -->
+              @if (activeTab() === 'impulsadores' && !isNew()) {
+                <div class="p-6 animate-fade-in">
+                  <div class="mb-5 flex justify-between items-center">
+                    <div>
+                      <h3 class="section-h3">Links por impulsador</h3>
+                      <p class="text-muted-sm">Activa un impulsador para este evento y comparte su link único. Los registros hechos con ese link se atribuyen automáticamente a su nombre.</p>
+                    </div>
+                  </div>
+
+                  @if (impulsadoresLoading()) {
+                    <div class="regs-empty">
+                      <p>Cargando impulsadores...</p>
+                    </div>
+                  } @else {
+                    <div class="impulsador-section-header">
+                      <h4 class="section-sub-title">Con cuenta en la plataforma</h4>
+                    </div>
+                    @if (userImpulsadores().length === 0) {
+                      <div class="regs-empty mb-5">
+                        <p>Sin usuarios con rol Impulsador. Créalos desde Usuarios.</p>
+                      </div>
+                    } @else {
+                      <div class="impulsador-list mb-6">
+                        @for (imp of userImpulsadores(); track imp._id) {
+                          <div class="impulsador-row" [class.is-assigned]="imp.assigned">
+                            <label class="impulsador-toggle">
+                              <input type="checkbox" [checked]="imp.assigned" (change)="toggleImpulsador(imp)" />
+                              <span class="impulsador-name">{{ imp.name }}</span>
+                            </label>
+                            <span class="text-muted-xs">{{ imp.email }}</span>
+                            @if (imp.assigned && imp.referralCode) {
+                              <button class="btn btn-sm btn-secondary" (click)="copyImpulsadorLink(imp)">
+                                <lucide-icon [img]="impulsadorLinkCopiedId() === imp._id ? Check : Copy" [size]="14"></lucide-icon>
+                                {{ impulsadorLinkCopiedId() === imp._id ? 'Copiado' : 'Copiar link' }}
+                              </button>
+                            }
+                          </div>
+                        }
+                      </div>
+                    }
+
+                    <div class="impulsador-section-header">
+                      <h4 class="section-sub-title">Impulsadores externos (sin cuenta)</h4>
+                      <button class="btn btn-sm btn-secondary" (click)="openExternalForm()">
+                        <lucide-icon [img]="Plus" [size]="14"></lucide-icon>
+                        Nuevo impulsador externo
+                      </button>
+                    </div>
+                    @if (externalImpulsadores().length === 0) {
+                      <div class="regs-empty">
+                        <lucide-icon [img]="Link2" [size]="40" [strokeWidth]="1.5"></lucide-icon>
+                        <p>Sin impulsadores externos. Crea uno para generar su link sin necesidad de una cuenta.</p>
+                      </div>
+                    } @else {
+                      <div class="impulsador-list">
+                        @for (imp of externalImpulsadores(); track imp._id) {
+                          <div class="impulsador-row is-assigned">
+                            <span class="impulsador-name flex-1">{{ imp.name }}</span>
+                            @if (imp.email) { <span class="text-muted-xs">{{ imp.email }}</span> }
+                            <button class="btn btn-sm btn-secondary" (click)="copyImpulsadorLink(imp)">
+                              <lucide-icon [img]="impulsadorLinkCopiedId() === imp._id ? Check : Copy" [size]="14"></lucide-icon>
+                              {{ impulsadorLinkCopiedId() === imp._id ? 'Copiado' : 'Copiar link' }}
+                            </button>
+                            <button class="btn-icon-xs danger" (click)="deleteExternalImpulsador(imp)" title="Eliminar">
+                              <lucide-icon [img]="Trash2" [size]="14"></lucide-icon>
+                            </button>
+                          </div>
+                        }
+                      </div>
+                    }
+                  }
+                </div>
+              }
+
+              <!-- ══════════════════════════════════════════════════════════ -->
               <!-- ── Check-in Tab ── -->
               <!-- ══════════════════════════════════════════════════════════ -->
               @if (activeTab() === 'checkin' && !isNew()) {
@@ -757,6 +866,10 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                       <input type="text" placeholder="Buscar por nombre, email o ticket..."
                         [value]="regSearch()" (input)="regSearch.set($any($event.target).value)" />
                     </div>
+                    <button class="btn btn-primary" (click)="openScanner()">
+                      <lucide-icon [img]="ScanLine" [size]="16" [strokeWidth]="2.5"></lucide-icon>
+                      Escanear QR
+                    </button>
                     <div class="stats-mini">
                       <strong>{{ checkedInCount() }}</strong> / {{ totalAttendees() }} presentes
                     </div>
@@ -776,6 +889,8 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                               <span>{{ r.email }}</span>
                               <span class="dot">·</span>
                               <code class="ticket-code-sm">{{ r.ticketCode }}</code>
+                              <span class="dot">·</span>
+                              <span>{{ r.impulsadorName || 'Directo' }}</span>
                             </div>
                           </div>
                           <div class="checkin-action">
@@ -824,9 +939,28 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                       <div class="stat-desc">Basado en precio x personas</div>
                     </div>
                   </div>
-                  <div class="mt-8 p-8 border border-dashed rounded-2xl text-center text-muted">
-                    <lucide-icon [img]="PieChart" [size]="48" class="mb-4 opacity-20"></lucide-icon>
-                    <p>Gráficos de tendencia y demografía próximamente.</p>
+                  <div class="mt-8">
+                    <h3 class="section-h3 mb-4">Asistentes por impulsador</h3>
+                    @if (impulsadorStats().length === 0) {
+                      <div class="p-8 border border-dashed rounded-2xl text-center text-muted">
+                        <lucide-icon [img]="PieChart" [size]="48" class="mb-4 opacity-20"></lucide-icon>
+                        <p>Aún no hay registros para mostrar.</p>
+                      </div>
+                    } @else {
+                      <div class="impulsador-stats-list">
+                        @for (s of impulsadorStats(); track s.name) {
+                          <div class="impulsador-stat-row">
+                            <div class="impulsador-stat-header">
+                              <span class="impulsador-stat-name">{{ s.name }}</span>
+                              <span class="impulsador-stat-nums">{{ s.attendees }} asistentes · {{ s.checkedIn }} en check-in</span>
+                            </div>
+                            <div class="impulsador-stat-bar-track">
+                              <div class="impulsador-stat-bar-fill" [style.width.%]="(s.attendees / maxImpulsadorAttendees()) * 100"></div>
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    }
                   </div>
                 </div>
               }
@@ -836,6 +970,64 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
         </div>
       }
     </div>
+
+    <!-- ── QR Scanner modal ── -->
+    @if (scannerOpen()) {
+      <div class="overlay" role="dialog" aria-modal="true">
+        <div class="scanner-modal">
+          <div class="scanner-header">
+            <h3>Escanear código QR</h3>
+            <button class="btn btn-ghost btn-icon" (click)="closeScanner()" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+            </button>
+          </div>
+          <div id="qr-reader" class="qr-reader"></div>
+          @if (lastScanResult()) {
+            <div class="scan-result" [class.already]="lastScanResult()!.alreadyCheckedIn">
+              <lucide-icon [img]="Check" [size]="20" [strokeWidth]="3"></lucide-icon>
+              <div>
+                <strong>{{ lastScanResult()!.name }}</strong>
+                <span>{{ lastScanResult()!.impulsadorName ? 'Invitado por ' + lastScanResult()!.impulsadorName : 'Invitación directa' }}</span>
+              </div>
+            </div>
+          }
+          <p class="scanner-hint">Apunta la cámara al código QR de la invitación.</p>
+        </div>
+      </div>
+    }
+
+    <!-- ── Nuevo impulsador externo modal ── -->
+    @if (showExternalForm()) {
+      <div class="overlay" (click)="closeExternalForm()" role="dialog" aria-modal="true">
+        <div class="external-modal" (click)="$event.stopPropagation()">
+          <div class="scanner-header">
+            <h3>Nuevo impulsador externo</h3>
+            <button class="btn btn-ghost btn-icon" (click)="closeExternalForm()" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+            </button>
+          </div>
+          <p class="text-muted-sm mb-5">Crea un impulsador sin cuenta en la plataforma. Solo necesitas su nombre para generar un link de invitación único.</p>
+          <div class="field mb-4">
+            <label class="field-label">Nombre *</label>
+            <input class="input" [value]="externalForm.name" (input)="externalForm.name = $any($event.target).value" placeholder="Ej: Juan Pérez" autofocus />
+          </div>
+          <div class="field mb-4">
+            <label class="field-label">Teléfono (opcional)</label>
+            <input class="input" [value]="externalForm.phone" (input)="externalForm.phone = $any($event.target).value" placeholder="+51 999 999 999" />
+          </div>
+          <div class="field mb-5">
+            <label class="field-label">Email (opcional)</label>
+            <input class="input" type="email" [value]="externalForm.email" (input)="externalForm.email = $any($event.target).value" placeholder="correo@ejemplo.com" />
+          </div>
+          <div class="flex justify-end gap-2">
+            <button class="btn btn-secondary" (click)="closeExternalForm()">Cancelar</button>
+            <button class="btn btn-primary" (click)="saveExternalImpulsador()" [disabled]="savingExternal()">
+              {{ savingExternal() ? 'Creando...' : 'Crear impulsador' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
@@ -1033,6 +1225,15 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .skeleton-row:nth-child(2) { height:120px; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
+    /* ── Impulsadores ── */
+    .impulsador-section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .impulsador-list { display:flex; flex-direction:column; gap:10px; }
+    .impulsador-row { display:flex; align-items:center; gap:16px; padding:14px 18px; background:#fff; border:1px solid var(--color-border); border-radius:14px; transition:all 0.2s; }
+    .impulsador-row.is-assigned { background:var(--color-brand-light); border-color:rgba(225,29,72,0.2); }
+    .impulsador-toggle { display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; font-size:14px; flex:1; }
+    .impulsador-toggle input[type="checkbox"] { width:18px; height:18px; cursor:pointer; accent-color:var(--color-brand); }
+    .impulsador-name { color:var(--color-text-main); }
+
     /* ── Check-in ── */
     .search-box { flex:1; position:relative; display:flex; align-items:center; }
     .search-box lucide-icon { position:absolute; left:16px; color:var(--color-text-muted); pointer-events:none; }
@@ -1050,6 +1251,29 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .dot { opacity:0.5; }
     .ticket-code-sm { font-family:monospace; font-weight:700; color:var(--color-brand); background:rgba(255,255,255,0.5); padding:2px 6px; border-radius:4px; }
     .checked-label { display:flex; align-items:center; gap:6px; color:var(--color-brand); font-weight:700; font-size:14px; text-transform:uppercase; }
+
+    /* ── Impulsador stats bars ── */
+    .impulsador-stats-list { display:flex; flex-direction:column; gap:16px; }
+    .impulsador-stat-row { display:flex; flex-direction:column; gap:6px; }
+    .impulsador-stat-header { display:flex; justify-content:space-between; align-items:baseline; font-size:14px; }
+    .impulsador-stat-name { font-weight:700; color:var(--color-text-main); }
+    .impulsador-stat-nums { color:var(--color-text-muted); font-size:13px; }
+    .impulsador-stat-bar-track { height:10px; background:var(--color-bg-app); border-radius:9999px; overflow:hidden; }
+    .impulsador-stat-bar-fill { height:100%; background:var(--color-brand); border-radius:9999px; transition:width 0.4s ease; }
+
+    /* ── Nuevo impulsador externo modal ── */
+    .external-modal { width: calc(100% - 48px); max-width: 480px; padding: 28px 32px; background:#fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+
+    /* ── QR Scanner modal ── */
+    .scanner-modal { width:calc(100% - 48px); max-width:420px; padding:28px 32px; background:#fff; border-radius:24px; box-shadow:var(--shadow-lg); }
+    .scanner-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+    .scanner-header h3 { margin:0; font-size:18px; font-weight:700; font-family:var(--font-heading); }
+    .qr-reader { width:100%; border-radius:16px; overflow:hidden; background:#000; min-height:250px; }
+    .scanner-hint { text-align:center; color:var(--color-text-muted); font-size:13px; margin:16px 0 0; }
+    .scan-result { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:14px; background:#dcfce7; color:#16a34a; margin-top:16px; }
+    .scan-result.already { background:#fef3c7; color:#92400e; }
+    .scan-result div { display:flex; flex-direction:column; gap:2px; font-size:13px; }
+    .scan-result strong { font-size:15px; }
 
     /* ── Stats ── */
     .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:20px; }
@@ -1085,6 +1309,7 @@ export class EventDetailComponent implements OnInit {
   readonly GripVertical = GripVertical; readonly LayoutTemplate = LayoutTemplate;
   readonly Download = Download; readonly ArrowUpDown = ArrowUpDown;
   readonly ArrowUp = ArrowUp; readonly ArrowDown = ArrowDown;
+  readonly Link2 = Link2; readonly ScanLine = ScanLine; readonly Camera = Camera;
 
   isNew = signal(false);
   eventId = signal<string | null>(null);
@@ -1130,6 +1355,23 @@ export class EventDetailComponent implements OnInit {
   expandedRegIds = signal<Set<string>>(new Set());
   private regSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 
+  // Impulsadores
+  impulsadores = signal<Impulsador[]>([]);
+  impulsadoresLoading = signal(false);
+  impulsadorLinkCopiedId = signal('');
+  userImpulsadores = computed(() => this.impulsadores().filter(i => i.type === 'user'));
+  externalImpulsadores = computed(() => this.impulsadores().filter(i => i.type === 'external'));
+
+  showExternalForm = signal(false);
+  savingExternal = signal(false);
+  externalForm: { name: string; phone: string; email: string } = { name: '', phone: '', email: '' };
+
+  // Check-in QR scan
+  scannerOpen = signal(false);
+  scanning = signal(false);
+  lastScanResult = signal<{ name: string; impulsadorName: string | null; alreadyCheckedIn: boolean } | null>(null);
+  private html5Qrcode: import('html5-qrcode').Html5Qrcode | null = null;
+
   private role = computed(() => this.auth.currentUser()?.role ?? '');
   canManage = computed(() => ['TENANT_ADMIN', 'MANAGER'].includes(this.role()));
 
@@ -1161,6 +1403,21 @@ export class EventDetailComponent implements OnInit {
     const p = this.event()?.price || 0;
     return this.totalAttendees() * p;
   });
+
+  impulsadorStats = computed<ImpulsadorStat[]>(() => {
+    const map = new Map<string, ImpulsadorStat>();
+    for (const r of this.registrations()) {
+      const key = r.impulsadorName || 'Directo';
+      const stat = map.get(key) ?? { name: key, registrations: 0, attendees: 0, checkedIn: 0 };
+      stat.registrations += 1;
+      stat.attendees += r.partySize;
+      if (r.checkedIn) stat.checkedIn += 1;
+      map.set(key, stat);
+    }
+    return [...map.values()].sort((a, b) => b.attendees - a.attendees);
+  });
+
+  maxImpulsadorAttendees = computed(() => Math.max(1, ...this.impulsadorStats().map(s => s.attendees)));
 
   form = this.fb.group({
     title:       ['', Validators.required],
@@ -1266,7 +1523,7 @@ export class EventDetailComponent implements OnInit {
   downloadExcel() {
     const regs = this.registrations();
     const fields = this.formFields();
-    const headers = ['Ticket', 'Nombre', 'Email', 'Teléfono', 'Personas', 'Estado', 'Check-in', 'Fecha Registro',
+    const headers = ['Ticket', 'Nombre', 'Email', 'Teléfono', 'Personas', 'Impulsador', 'Estado', 'Check-in', 'Fecha Registro',
       ...fields.map(f => f.label)];
 
     const rows = regs.map(r => [
@@ -1275,6 +1532,7 @@ export class EventDetailComponent implements OnInit {
       r.email,
       r.phone ?? '',
       r.partySize,
+      r.impulsadorName ?? 'Directo',
       r.status === 'confirmed' ? 'Confirmado' : 'Cancelado',
       r.checkedIn ? 'Sí' : 'No',
       new Date(r.createdAt).toLocaleDateString('es-PE'),
@@ -1536,5 +1794,149 @@ export class EventDetailComponent implements OnInit {
         this.checkingInId.set(null);
       }
     });
+  }
+
+  // ── Impulsadores ──────────────────────────────────────────────────────────
+
+  loadImpulsadores() {
+    const id = this.eventId();
+    if (!id) return;
+    this.impulsadoresLoading.set(true);
+    this.http.get<Impulsador[]>(`${API}/events/${id}/impulsadores`).subscribe({
+      next: (list) => { this.impulsadores.set(list); this.impulsadoresLoading.set(false); },
+      error: () => { this.impulsadoresLoading.set(false); this.toast.error('No se pudo cargar impulsadores'); },
+    });
+  }
+
+  toggleImpulsador(imp: Impulsador) {
+    const id = this.eventId();
+    if (!id) return;
+    const current = this.userImpulsadores();
+    const nextAssigned = !imp.assigned;
+    const sharedWith = current.filter(i => (i._id === imp._id ? nextAssigned : i.assigned)).map(i => i._id);
+
+    this.http.patch<{ sharedWith: string[] }>(`${API}/events/${id}/share`, { sharedWith }).subscribe({
+      next: () => {
+        this.impulsadores.update(list => list.map(i => i._id === imp._id ? { ...i, assigned: nextAssigned } : i));
+        this.toast.success(nextAssigned ? `${imp.name} activado para este evento` : `${imp.name} desactivado`);
+      },
+      error: (err) => this.toast.error(err.error?.message || 'Error al actualizar impulsador'),
+    });
+  }
+
+  copyImpulsadorLink(imp: Impulsador) {
+    const slug = this.event()?.slug;
+    if (!slug || !imp.referralCode) return;
+    const url = `${this.publicUrl(slug)}?ref=${imp.referralCode}`;
+    void navigator.clipboard.writeText(url).then(() => {
+      this.impulsadorLinkCopiedId.set(imp._id);
+      this.toast.success('Link copiado al portapapeles');
+      setTimeout(() => this.impulsadorLinkCopiedId.set(''), 2000);
+    });
+  }
+
+  openExternalForm() {
+    this.externalForm = { name: '', phone: '', email: '' };
+    this.showExternalForm.set(true);
+  }
+
+  closeExternalForm() {
+    this.showExternalForm.set(false);
+  }
+
+  saveExternalImpulsador() {
+    if (!this.externalForm.name.trim()) { this.toast.error('El nombre es requerido'); return; }
+    this.savingExternal.set(true);
+    const body = {
+      name: this.externalForm.name.trim(),
+      phone: this.externalForm.phone.trim() || undefined,
+      email: this.externalForm.email.trim() || undefined,
+    };
+    this.http.post<{ _id: string; name: string; email?: string; code: string }>(`${API}/impulsadores/external`, body).subscribe({
+      next: (created) => {
+        this.impulsadores.update(list => [...list, {
+          _id: created._id, name: created.name, email: created.email ?? '',
+          referralCode: created.code, assigned: true, type: 'external',
+        }]);
+        this.savingExternal.set(false);
+        this.showExternalForm.set(false);
+        this.toast.success('Impulsador externo creado');
+      },
+      error: (err) => {
+        this.savingExternal.set(false);
+        this.toast.error(err.error?.message || 'Error al crear impulsador');
+      },
+    });
+  }
+
+  async deleteExternalImpulsador(imp: Impulsador) {
+    const ok = await this.confirm.confirm({
+      title: 'Eliminar impulsador',
+      message: `¿Eliminar a "${imp.name}"? Su link dejará de funcionar para nuevos registros.`,
+      confirmText: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.http.delete(`${API}/impulsadores/external/${imp._id}`).subscribe({
+      next: () => {
+        this.impulsadores.update(list => list.filter(i => i._id !== imp._id));
+        this.toast.success('Impulsador eliminado');
+      },
+      error: (err) => this.toast.error(err.error?.message || 'Error al eliminar'),
+    });
+  }
+
+  // ── Check-in por QR ──────────────────────────────────────────────────────
+
+  async openScanner() {
+    this.lastScanResult.set(null);
+    this.scannerOpen.set(true);
+    this.scanning.set(true);
+    const { Html5Qrcode } = await import('html5-qrcode');
+    setTimeout(async () => {
+      try {
+        this.html5Qrcode = new Html5Qrcode('qr-reader');
+        await this.html5Qrcode.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: 250 },
+          (decodedText) => this.onQrDecoded(decodedText),
+          () => { /* ignore per-frame decode errors */ },
+        );
+      } catch {
+        this.toast.error('No se pudo acceder a la cámara');
+        this.scanning.set(false);
+      }
+    });
+  }
+
+  async closeScanner() {
+    if (this.html5Qrcode) {
+      try { await this.html5Qrcode.stop(); this.html5Qrcode.clear(); } catch { /* already stopped */ }
+      this.html5Qrcode = null;
+    }
+    this.scanning.set(false);
+    this.scannerOpen.set(false);
+  }
+
+  private scanLocked = false;
+  private async onQrDecoded(code: string) {
+    if (this.scanLocked) return;
+    this.scanLocked = true;
+    const id = this.eventId();
+    if (!id) { this.scanLocked = false; return; }
+
+    try {
+      const res = await firstValueFrom(this.http.patch<Registration & { impulsadorName: string | null; alreadyCheckedIn: boolean }>(
+        `${API}/events/${id}/registrations/check-in/by-code`, { code },
+      ));
+      this.registrations.update(prev => prev.map(r => r._id === res._id ? res : r));
+      this.lastScanResult.set({ name: res.name, impulsadorName: res.impulsadorName, alreadyCheckedIn: res.alreadyCheckedIn });
+      this.toast.success(res.alreadyCheckedIn ? `${res.name} ya tenía check-in` : `Check-in de ${res.name} completado`);
+    } catch (err: unknown) {
+      const e = err as { error?: { message?: string } };
+      this.toast.error(e.error?.message || 'Código no válido');
+    } finally {
+      setTimeout(() => { this.scanLocked = false; }, 2000);
+    }
   }
 }

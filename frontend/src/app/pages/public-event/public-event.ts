@@ -389,8 +389,11 @@ function hexToRgba(hex: string, opacity: number): string {
               }
               <div class="ticket-box">
                 <span class="ticket-label">Tu código de ticket</span>
+                @if (ticketQrDataUrl()) {
+                  <img [src]="ticketQrDataUrl()" alt="Código QR de la invitación" class="ticket-qr" />
+                }
                 <code class="ticket-code">{{ registration()!.ticketCode }}</code>
-                <span class="ticket-hint">Presenta este código en el evento</span>
+                <span class="ticket-hint">Presenta este código QR en el evento</span>
               </div>
               <p class="ticket-email">Confirmación enviada a <strong>{{ registration()!.email }}</strong></p>
             </div>
@@ -634,6 +637,7 @@ function hexToRgba(hex: string, opacity: number): string {
     .pe-success-card p { margin:0; color:var(--color-text-muted); font-size:15px; line-height:1.5; }
 
     .ticket-box { background:var(--color-bg-app); border:2px dashed var(--color-border); border-radius:var(--radius-lg); padding:20px 28px; display:flex; flex-direction:column; align-items:center; gap:8px; width:100%; box-sizing:border-box; }
+    .ticket-qr { width:160px; height:160px; margin:4px 0; }
     .ticket-label { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--color-text-muted); }
     .ticket-code { font-family:monospace; font-size:28px; font-weight:800; color:var(--form-accent, var(--color-brand)); letter-spacing:.15em; }
     .ticket-hint { font-size:12px; color:var(--color-text-muted); }
@@ -720,6 +724,7 @@ export class PublicEventComponent implements OnInit {
   showForm = signal(false);
   musicPlaying = signal(false);
   scale = signal(Math.min(window.innerWidth, 480) / 324);
+  ticketQrDataUrl = signal('');
 
   private refCode: string | null = null;
   private customFieldValues: Record<string, string> = {};
@@ -859,6 +864,15 @@ export class PublicEventComponent implements OnInit {
     });
   }
 
+  private async generateTicketQr(ticketCode: string): Promise<void> {
+    try {
+      const QRCode = await import('qrcode');
+      this.ticketQrDataUrl.set(await QRCode.default.toDataURL(ticketCode, { width: 200, margin: 1 }));
+    } catch {
+      this.ticketQrDataUrl.set('');
+    }
+  }
+
   submitRegistration() {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
 
@@ -886,6 +900,7 @@ export class PublicEventComponent implements OnInit {
           this.registered.set(true);
           this.showForm.set(false);
           this.submitting.set(false);
+          void this.generateTicketQr(res.ticketCode);
         },
         error: (err) => {
           this.formError.set(err.error?.message || 'Error al registrarse');

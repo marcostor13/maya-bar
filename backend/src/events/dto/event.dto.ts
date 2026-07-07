@@ -69,6 +69,16 @@ export class ShareEventDto {
   sharedWithAll?: boolean;
 }
 
+export class CheckInByCodeDto {
+  code!: string;
+}
+
+export class CreateExternalImpulsadorDto {
+  name!: string;
+  phone?: string;
+  email?: string;
+}
+
 export class GenerateFromPromptDto {
   prompt!: string;
   mediaFileNames?: string[];

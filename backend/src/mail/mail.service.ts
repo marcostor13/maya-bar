@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as QRCode from 'qrcode';
 
 export interface EmailDesign {
   subject: string;
@@ -237,11 +238,23 @@ export class MailService {
       ? `<div style="margin-bottom: 32px;"><img src="${d.bannerImageUrl}" alt="" style="width: 100%; border-radius: 20px; display: block;" /></div>`
       : '';
 
+    let qrBuffer: Buffer | null = null;
+    if (d.showTicket) {
+      try {
+        qrBuffer = await QRCode.toBuffer(data.ticketCode, { width: 240, margin: 1 });
+      } catch (error) {
+        this.logger.error('No se pudo generar el QR de la invitación', error);
+      }
+    }
+
     const ticketHtml = d.showTicket
-      ? `<div style="margin-bottom: 20px;">
+      ? `<div style="margin-bottom: 20px; text-align: center;">
                 <div style="color: #9ca3af; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">${d.ticketLabel}</div>
+                ${qrBuffer ? `<img src="cid:ticketqr" alt="Código QR" style="width:180px;height:180px;margin:8px 0;" />` : ''}
+                <div>
                 <div style="background: ${d.accent}; color: #fff; display: inline-block; padding: 12px 24px; border-radius: 12px; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 4px; margin-top: 8px;">
                   ${data.ticketCode}
+                </div>
                 </div>
               </div>`
       : '';
@@ -297,14 +310,20 @@ export class MailService {
 
     if (this.resend) {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const attachments: any[] = [];
+        if (!usesCustomHeader && this.logoBase64) {
+          attachments.push({ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' });
+        }
+        if (qrBuffer) {
+          attachments.push({ filename: 'ticket-qr.png', content: qrBuffer, cid: 'ticketqr' });
+        }
         await this.resend.emails.send({
           from: 'MAYA <no_reply@mayasend.marcostorresalarcon.com>',
           to: data.email,
           subject,
           html,
-          // Adjuntar el logo solo si la cabecera lo usa (cid:logo).
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          attachments: (!usesCustomHeader && this.logoBase64) ? [{ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' } as any] : []
+          attachments,
         });
         this.logger.log(`Event confirmation email sent to ${data.email}`);
       } catch (error) {

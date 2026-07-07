@@ -21,6 +21,8 @@ import {
   GenerateFromPromptDto,
   GenerateDesignDto,
   SaveTemplateDto,
+  CheckInByCodeDto,
+  CreateExternalImpulsadorDto,
 } from './dto/event.dto';
 
 @Controller()
@@ -110,6 +112,39 @@ export class EventsController {
   ) {
     assertRole(req.user.role, MANAGE_ROLES);
     return this.eventsService.checkIn(id, regId, req.user.tenantId);
+  }
+
+  @Patch('events/:id/registrations/check-in/by-code')
+  @UseGuards(JwtAuthGuard)
+  checkInByCode(
+    @Param('id') id: string,
+    @Body() dto: CheckInByCodeDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.eventsService.checkInByCode(id, req.user.tenantId, dto.code);
+  }
+
+  @Get('events/:id/impulsadores')
+  @UseGuards(JwtAuthGuard)
+  findImpulsadores(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.eventsService.findImpulsadores(id, req.user.tenantId);
+  }
+
+  @Post('impulsadores/external')
+  @UseGuards(JwtAuthGuard)
+  createExternalImpulsador(@Body() dto: CreateExternalImpulsadorDto, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.eventsService.createExternalImpulsador(req.user.tenantId, req.user.userId, dto);
+  }
+
+  @Delete('impulsadores/external/:extId')
+  @UseGuards(JwtAuthGuard)
+  async deactivateExternalImpulsador(@Param('extId') extId: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    await this.eventsService.deactivateExternalImpulsador(extId, req.user.tenantId);
+    return { ok: true };
   }
 
   // ─── AI Endpoints ─────────────────────────────────────────────────────────

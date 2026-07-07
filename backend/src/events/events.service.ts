@@ -6,10 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
 import { Event } from './event.schema';
 import { EventRegistration } from './event-registration.schema';
 import { EventTemplate } from './event-template.schema';
+import { ExternalImpulsador } from './external-impulsador.schema';
 import { User } from '../users/user.schema';
 import {
   CreateEventDto,
@@ -19,6 +20,7 @@ import {
   GenerateFromPromptDto,
   GenerateDesignDto,
   SaveTemplateDto,
+  CreateExternalImpulsadorDto,
 } from './dto/event.dto';
 import { AiService } from '../ai/ai.service';
 import { MailService, EmailDesign } from '../mail/mail.service';
@@ -50,6 +52,7 @@ export class EventsService {
     @InjectModel(Event.name) private eventModel: Model<Event>,
     @InjectModel(EventRegistration.name) private regModel: Model<EventRegistration>,
     @InjectModel(EventTemplate.name) private templateModel: Model<EventTemplate>,
+    @InjectModel(ExternalImpulsador.name) private extImpulsadorModel: Model<ExternalImpulsador>,
     @InjectModel(User.name) private userModel: Model<User>,
     private ai: AiService,
     private mail: MailService,
@@ -183,11 +186,16 @@ export class EventsService {
     let impulsadorCode: string | undefined;
     if (dto.ref) {
       const impulsador = await this.userModel
-        .findOne({ referralCode: dto.ref, tenantId: event.tenantId, role: 'IMPULSADOR' })
+        .findOne({ referralCode: dto.ref, tenantId: event.tenantId, role: 'IMPULSADOR', isActive: true })
         .exec();
       if (impulsador) {
         impulsadorId = impulsador._id as Types.ObjectId;
         impulsadorCode = dto.ref;
+      } else {
+        const external = await this.extImpulsadorModel
+          .findOne({ code: dto.ref, tenantId: event.tenantId, active: true })
+          .exec();
+        if (external) impulsadorCode = dto.ref;
       }
     }
 
@@ -201,7 +209,7 @@ export class EventsService {
       tenantId: event.tenantId,
       ticketCode,
       customFields: dto.customFields ?? {},
-      ...(impulsadorId ? { impulsadorId, impulsadorCode } : {}),
+      ...(impulsadorCode ? { impulsadorCode, ...(impulsadorId ? { impulsadorId } : {}) } : {}),
     });
 
     const saved = await reg.save();
@@ -227,7 +235,7 @@ export class EventsService {
     eventId: string,
     tenantId: string,
     filters?: { search?: string; status?: string; sortBy?: string; sortOrder?: string },
-  ): Promise<EventRegistration[]> {
+  ): Promise<(EventRegistration & { impulsadorName?: string | null })[]> {
     const event = await this.eventModel.findById(eventId).exec();
     if (!event) throw new NotFoundException('Evento no encontrado');
     if (event.tenantId.toString() !== tenantId) throw new ForbiddenException();
@@ -247,10 +255,128 @@ export class EventsService {
     const sortField = validSortFields.includes(filters?.sortBy ?? '') ? filters!.sortBy! : 'createdAt';
     const sortDir: 1 | -1 = filters?.sortOrder === 'asc' ? 1 : -1;
 
-    return this.regModel
+    const regs = await this.regModel
       .find(query)
       .sort({ [sortField]: sortDir })
       .exec();
+
+    return this.withImpulsadorNames(regs);
+  }
+
+  private async withImpulsadorNames(
+    regs: EventRegistration[],
+  ): Promise<(EventRegistration & { impulsadorName?: string | null })[]> {
+    const codes = [...new Set(
+      regs.filter(r => r.impulsadorCode).map(r => r.impulsadorCode!)
+    )];
+    if (codes.length === 0) {
+      return regs.map(r => Object.assign(r.toObject(), { impulsadorName: null }));
+    }
+    const [users, externals] = await Promise.all([
+      this.userModel.find({ referralCode: { $in: codes } }, { name: 1, email: 1, referralCode: 1 }).lean().exec(),
+      this.extImpulsadorModel.find({ code: { $in: codes } }, { name: 1, code: 1 }).lean().exec(),
+    ]);
+    const nameMap = new Map<string, string>();
+    for (const u of users) if (u.referralCode) nameMap.set(u.referralCode, u.name || u.email);
+    for (const e of externals) nameMap.set(e.code, e.name);
+    return regs.map(r => Object.assign(r.toObject(), {
+      impulsadorName: r.impulsadorCode ? (nameMap.get(r.impulsadorCode) ?? null) : null,
+    }));
+  }
+
+  async findImpulsadores(
+    eventId: string,
+    tenantId: string,
+  ): Promise<{ _id: string; name: string; email: string; referralCode?: string; assigned: boolean; type: 'user' | 'external' }[]> {
+    const event = await this.eventModel.findById(eventId).exec();
+    if (!event) throw new NotFoundException('Evento no encontrado');
+    if (event.tenantId.toString() !== tenantId) throw new ForbiddenException();
+
+    const [impulsadores, externals] = await Promise.all([
+      this.userModel
+        .find({ tenantId: event.tenantId, role: 'IMPULSADOR', isActive: true }, { name: 1, email: 1, referralCode: 1 })
+        .sort({ name: 1 })
+        .lean()
+        .exec(),
+      this.extImpulsadorModel
+        .find({ tenantId: event.tenantId, active: true }, { name: 1, email: 1, code: 1 })
+        .sort({ name: 1 })
+        .lean()
+        .exec(),
+    ]);
+
+    const sharedWith = new Set((event.sharedWith ?? []).map(id => id.toString()));
+
+    const userList = impulsadores.map(u => ({
+      _id: u._id.toString(),
+      name: u.name || u.email,
+      email: u.email,
+      referralCode: u.referralCode,
+      assigned: event.sharedWithAll || sharedWith.has(u._id.toString()),
+      type: 'user' as const,
+    }));
+
+    const externalList = externals.map(e => ({
+      _id: e._id.toString(),
+      name: e.name,
+      email: e.email ?? '',
+      referralCode: e.code,
+      assigned: true,
+      type: 'external' as const,
+    }));
+
+    return [...userList, ...externalList];
+  }
+
+  async createExternalImpulsador(
+    tenantId: string,
+    userId: string,
+    dto: CreateExternalImpulsadorDto,
+  ): Promise<ExternalImpulsador> {
+    if (!dto.name?.trim()) throw new BadRequestException('El nombre es requerido');
+    const code = randomBytes(4).toString('hex').toUpperCase();
+    const external = new this.extImpulsadorModel({
+      tenantId: new Types.ObjectId(tenantId),
+      name: dto.name.trim(),
+      phone: dto.phone,
+      email: dto.email,
+      code,
+      createdBy: new Types.ObjectId(userId),
+    });
+    return external.save();
+  }
+
+  async deactivateExternalImpulsador(id: string, tenantId: string): Promise<void> {
+    const external = await this.extImpulsadorModel.findById(id).exec();
+    if (!external) throw new NotFoundException('Impulsador no encontrado');
+    if (external.tenantId.toString() !== tenantId) throw new ForbiddenException();
+    external.active = false;
+    await external.save();
+  }
+
+  async checkInByCode(
+    eventId: string,
+    tenantId: string,
+    code: string,
+  ): Promise<EventRegistration & { impulsadorName?: string | null; alreadyCheckedIn: boolean }> {
+    const event = await this.eventModel.findById(eventId).exec();
+    if (!event) throw new NotFoundException('Evento no encontrado');
+    if (event.tenantId.toString() !== tenantId) throw new ForbiddenException();
+
+    const reg = await this.regModel
+      .findOne({ eventId: new Types.ObjectId(eventId), ticketCode: code.trim().toUpperCase() })
+      .exec();
+    if (!reg) throw new NotFoundException('Código de invitación no encontrado');
+
+    const alreadyCheckedIn = reg.checkedIn;
+    if (!alreadyCheckedIn) {
+      reg.checkedIn = true;
+      reg.checkedInAt = new Date();
+      await reg.save();
+    }
+
+    const [withName] = await this.withImpulsadorNames([reg]);
+    return Object.assign(withName, { alreadyCheckedIn });
   }
 
   async findMyRegistrations(impulsadorId: string, tenantId: string): Promise<(EventRegistration & { eventTitle?: string; eventDate?: Date })[]> {
