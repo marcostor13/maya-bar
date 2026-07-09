@@ -17,6 +17,26 @@ export class WhatsAppAccountsController {
     return this.service.findAll(req.user.tenantId);
   }
 
+  /** Datos públicos (App ID + Configuration ID) para que el frontend abra el popup de Embedded Signup. */
+  @Get('oauth/config')
+  oauthConfig(@Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.service.getOAuthConfig();
+  }
+
+  @Post('oauth/connect')
+  oauthConnect(@Body() dto: { code: string; wabaId: string; phoneNumberId: string }, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    if (!dto.code || !dto.wabaId || !dto.phoneNumberId) throw new BadRequestException('Faltan datos del Embedded Signup');
+    return this.service.connectViaOAuth(req.user.tenantId, dto);
+  }
+
+  @Post(':id/oauth/refresh')
+  refreshOAuthToken(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.service.refreshOAuthToken(id, req.user.tenantId);
+  }
+
   @Post()
   create(@Body() dto: CreateWhatsAppAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, HostListener, ViewChild, ElementRef } from '@angular/core';
+import { Component, inject, signal, OnInit, OnDestroy, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -25,8 +25,11 @@ interface WaAccount {
   waAccessToken?: string;
   waBusinessAccountId?: string;
   waVerifyToken?: string;
+  tokenExpiresAt?: string;
   active: boolean;
 }
+
+declare const FB: any;
 
 interface IgAccount {
   _id: string;
@@ -516,7 +519,7 @@ function blankIgAccount(): IgAccount {
           <div class="drawer-header">
             <div class="drawer-title-group">
               <h2><lucide-icon [img]="Smartphone" [size]="20" [strokeWidth]="2.5"></lucide-icon> Cuentas de WhatsApp</h2>
-              <p class="subtitle">Conecta varios números vía WAHA o Cloud API.</p>
+              <p class="subtitle">Conecta varios números — Cloud API con un click, o WAHA (QR) manualmente.</p>
             </div>
             <button class="btn btn-ghost btn-icon" (click)="closeAccounts()" aria-label="Cerrar">
               <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
@@ -525,6 +528,10 @@ function blankIgAccount(): IgAccount {
 
           <div class="drawer-scroll">
             @if (!accForm()) {
+              <button class="btn btn-primary" style="width:100%;margin-bottom:16px" [disabled]="connectingWa()" (click)="connectWhatsApp()">
+                <lucide-icon [img]="Smartphone" [size]="16"></lucide-icon>
+                {{ connectingWa() ? 'Conectando…' : 'Conectar con WhatsApp' }}
+              </button>
               @for (acc of accounts(); track acc._id) {
                 <div class="acc-card">
                   <div class="acc-card-head">
@@ -533,6 +540,16 @@ function blankIgAccount(): IgAccount {
                       <span class="account-sub">{{ acc.provider === 'waha' ? 'WAHA' : 'Cloud API' }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</span>
                     </div>
                     <div class="acc-card-actions">
+                      @if (acc.tokenExpiresAt) {
+                        <button class="btn btn-sm btn-ghost btn-icon" (click)="renewWaToken(acc)" title="Renovar token">
+                          <lucide-icon [img]="RefreshCw" [size]="14" style="color:var(--color-brand)"></lucide-icon>
+                        </button>
+                      }
+                      @if (acc.provider === 'cloudapi') {
+                        <button class="btn btn-sm btn-ghost btn-icon" (click)="subscribeWaWebhook(acc)" title="Suscribir webhook">
+                          <lucide-icon [img]="Link" [size]="14"></lucide-icon>
+                        </button>
+                      }
                       <button class="btn btn-sm btn-ghost btn-icon" (click)="checkStatus(acc)" title="Estado">
                         <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
                       </button>
@@ -551,14 +568,19 @@ function blankIgAccount(): IgAccount {
                       {{ statusMap()[acc._id].error || '' }}
                     </div>
                   }
+                  @if (acc.tokenExpiresAt) {
+                    <div class="webhook-hint">
+                      <span>Token vence:</span> {{ acc.tokenExpiresAt | date:'d MMM y' }}
+                    </div>
+                  }
                   <div class="webhook-hint">
                     <span>Webhook entrante:</span>
                     <code>{{ webhookUrl(acc) }}</code>
                   </div>
                 </div>
               }
-              <button class="btn btn-secondary" style="width:100%;margin-top:8px" (click)="newAccount()">
-                <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir cuenta
+              <button class="btn btn-ghost" style="width:100%;margin-top:8px" (click)="newAccount()">
+                <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir manualmente (WAHA / avanzado)
               </button>
             } @else {
               <!-- Form de cuenta -->
@@ -840,7 +862,7 @@ function blankIgAccount(): IgAccount {
     .webhook-hint code { display: block; margin-top: 4px; background: var(--color-bg-app); padding: 6px 8px; border-radius: 8px; word-break: break-all; }
   `],
 })
-export class AiAgentsComponent implements OnInit {
+export class AiAgentsComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
@@ -895,7 +917,20 @@ export class AiAgentsComponent implements OnInit {
   accountsOpen = signal(false);
   accForm = signal<WaAccount | null>(null);
   savingAcc = signal(false);
+  connectingWa = signal(false);
   statusMap = signal<Record<string, { connected: boolean; state?: string; error?: string }>>({});
+
+  private fbSdkPromise: Promise<void> | null = null;
+  private waSignupData: { wabaId: string; phoneNumberId: string } | null = null;
+  private waMessageListener = (event: MessageEvent) => {
+    if (!event.origin.endsWith('facebook.com')) return;
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
+        this.waSignupData = { wabaId: data.data.waba_id, phoneNumberId: data.data.phone_number_id };
+      }
+    } catch { /* mensajes no relacionados al Embedded Signup */ }
+  };
 
   // instagram accounts manager
   igAccountsOpen = signal(false);
@@ -919,6 +954,11 @@ export class AiAgentsComponent implements OnInit {
     this.loadAccounts();
     this.loadIgAccounts();
     this.handleIgOAuthReturn();
+    window.addEventListener('message', this.waMessageListener);
+  }
+
+  ngOnDestroy() {
+    window.removeEventListener('message', this.waMessageListener);
   }
 
   /** Procesa el redirect de vuelta desde el callback OAuth de Instagram (ver instagram-oauth-callback.controller.ts). */
@@ -1250,6 +1290,92 @@ export class AiAgentsComponent implements OnInit {
     this.http.get<{ connected: boolean; state?: string; error?: string }>(`${API}/whatsapp-accounts/${a._id}/status`).subscribe({
       next: (s) => this.statusMap.update(m => ({ ...m, [a._id]: s })),
       error: (err) => this.statusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err?.error?.message || 'Error' } })),
+    });
+  }
+
+  subscribeWaWebhook(a: WaAccount) {
+    this.http.post<{ success: boolean; message: string }>(`${API}/whatsapp-accounts/${a._id}/webhook`, {}).subscribe({
+      next: (r) => r.success ? this.toast.success(r.message) : this.toast.error(r.message),
+      error: (err) => this.toast.error(err?.error?.message || 'No se pudo suscribir el webhook'),
+    });
+  }
+
+  renewWaToken(a: WaAccount) {
+    this.http.post<{ success: boolean; tokenExpiresAt: string }>(`${API}/whatsapp-accounts/${a._id}/oauth/refresh`, {}).subscribe({
+      next: () => { this.toast.success('Token renovado'); this.loadAccounts(); },
+      error: (err) => this.toast.error(err?.error?.message || 'No se pudo renovar el token'),
+    });
+  }
+
+  /** Carga el SDK de JavaScript de Facebook una sola vez (memoizado). */
+  private loadFacebookSdk(appId: string): Promise<void> {
+    if (this.fbSdkPromise) return this.fbSdkPromise;
+    this.fbSdkPromise = new Promise((resolve) => {
+      const w = window as any;
+      if (w.FB) { w.FB.init({ appId, xfbml: true, version: 'v21.0' }); resolve(); return; }
+      w.fbAsyncInit = () => { w.FB.init({ appId, xfbml: true, version: 'v21.0' }); resolve(); };
+      const script = document.createElement('script');
+      script.src = 'https://connect.facebook.net/en_US/sdk.js';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    });
+    return this.fbSdkPromise;
+  }
+
+  connectWhatsApp() {
+    this.connectingWa.set(true);
+    this.waSignupData = null;
+    this.http.get<{ appId?: string; configId?: string }>(`${API}/whatsapp-accounts/oauth/config`).subscribe({
+      next: async (cfg) => {
+        if (!cfg.appId || !cfg.configId) {
+          this.toast.error('La conexión con WhatsApp no está configurada en el servidor');
+          this.connectingWa.set(false);
+          return;
+        }
+        await this.loadFacebookSdk(cfg.appId);
+        FB.login((response: any) => {
+          if (response?.authResponse?.code) {
+            this.finishWaConnect(response.authResponse.code);
+          } else {
+            this.connectingWa.set(false);
+          }
+        }, {
+          config_id: cfg.configId,
+          response_type: 'code',
+          override_default_response_type: true,
+        });
+      },
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'No se pudo iniciar la conexión con WhatsApp');
+        this.connectingWa.set(false);
+      },
+    });
+  }
+
+  /** El postMessage con waba_id/phone_number_id puede llegar unos ms después del callback de FB.login. */
+  private finishWaConnect(code: string, attempt = 0) {
+    if (!this.waSignupData && attempt < 20) {
+      setTimeout(() => this.finishWaConnect(code, attempt + 1), 100);
+      return;
+    }
+    if (!this.waSignupData) {
+      this.toast.error('No se recibió la información de la cuenta de WhatsApp. Intenta de nuevo.');
+      this.connectingWa.set(false);
+      return;
+    }
+    this.http.post<WaAccount>(`${API}/whatsapp-accounts/oauth/connect`, {
+      code, wabaId: this.waSignupData.wabaId, phoneNumberId: this.waSignupData.phoneNumberId,
+    }).subscribe({
+      next: () => {
+        this.toast.success('Cuenta de WhatsApp conectada');
+        this.connectingWa.set(false);
+        this.loadAccounts();
+      },
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'No se pudo conectar la cuenta de WhatsApp');
+        this.connectingWa.set(false);
+      },
     });
   }
 

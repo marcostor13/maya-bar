@@ -26,6 +26,9 @@ export class WhatsAppAccount extends Document {
   @Prop() waBusinessAccountId?: string;
   @Prop() waVerifyToken?: string; // token de verificación del webhook (Meta)
 
+  @Prop({ type: Date })
+  tokenExpiresAt?: Date; // vencimiento del access token (solo cuentas conectadas vía OAuth)
+
   @Prop({ default: true })
   active: boolean;
 

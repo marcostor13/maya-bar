@@ -7,7 +7,8 @@ export interface WaConfig {
   wahaSession?: string;
   waPhoneNumberId?: string;
   waAccessToken?: string;
-  webhookUrl?: string; // URL a la que WAHA debe reenviar los mensajes entrantes
+  waBusinessAccountId?: string;
+  webhookUrl?: string; // URL a la que WAHA/Cloud API debe reenviar los mensajes entrantes
 }
 
 export interface WaStatus {
@@ -111,6 +112,25 @@ export class WhatsAppService {
       if (!putRes.ok) return { success: false, message: `No se pudo actualizar el webhook: ${await putRes.text()}` };
       await fetch(`${config.wahaApiUrl}/api/sessions/${session}/restart`, { method: 'POST', headers }).catch(() => undefined);
       return { success: true, message: 'Webhook registrado correctamente. Ya recibirás los mensajes.' };
+    } catch (err) {
+      return { success: false, message: String(err) };
+    }
+  }
+
+  /** Registra el webhook con URL propia por WABA (override_callback_uri) — necesario con múltiples cuentas Cloud API bajo la misma app de Meta. */
+  async registerCloudApiWebhook(config: WaConfig, verifyToken?: string): Promise<{ success: boolean; message: string }> {
+    if (config.provider !== 'cloudapi') return { success: false, message: 'Solo aplica a cuentas Cloud API' };
+    if (!config.waBusinessAccountId) return { success: false, message: 'Falta el WhatsApp Business Account ID' };
+    if (!config.webhookUrl) return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
+    try {
+      const res = await fetch(`https://graph.facebook.com/v21.0/${config.waBusinessAccountId}/subscribed_apps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
+        body: JSON.stringify({ override_callback_uri: config.webhookUrl, verify_token: verifyToken ?? '' }),
+      });
+      const data = await res.json() as { success?: boolean; error?: { message?: string } };
+      if (!res.ok || data.error) return { success: false, message: data.error?.message ?? `Error ${res.status}` };
+      return { success: true, message: 'Webhook suscripto correctamente' };
     } catch (err) {
       return { success: false, message: String(err) };
     }
