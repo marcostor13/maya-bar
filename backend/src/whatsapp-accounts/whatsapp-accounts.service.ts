@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
 import { WhatsAppAccount } from './whatsapp-account.schema';
 import { CreateWhatsAppAccountDto, UpdateWhatsAppAccountDto } from './dto/whatsapp-account.dto';
@@ -10,7 +11,16 @@ export class WhatsAppAccountsService {
   constructor(
     @InjectModel(WhatsAppAccount.name) private model: Model<WhatsAppAccount>,
     private wa: WhatsAppService,
+    private config: ConfigService,
   ) {}
+
+  /** URL pública a la que WAHA/Cloud debe reenviar los mensajes entrantes. */
+  private webhookUrlFor(account: WhatsAppAccount): string | undefined {
+    const base = this.config.get<string>('PUBLIC_API_URL');
+    if (!base) return undefined;
+    const kind = account.provider === 'waha' ? 'waha' : 'cloud';
+    return `${base.replace(/\/$/, '')}/wa/webhook/${kind}/${String(account._id)}`;
+  }
 
   findAll(tenantId: string) {
     return this.model
@@ -105,7 +115,16 @@ export class WhatsAppAccountsService {
 
   async qr(id: string, tenantId: string) {
     const account = await this.findOne(id, tenantId);
-    return this.wa.getQr(this.toConfig(account));
+    const config = this.toConfig(account);
+    config.webhookUrl = this.webhookUrlFor(account);
+    return this.wa.getQr(config);
+  }
+
+  async configureWebhook(id: string, tenantId: string) {
+    const account = await this.findOne(id, tenantId);
+    const config = this.toConfig(account);
+    config.webhookUrl = this.webhookUrlFor(account);
+    return this.wa.ensureWahaWebhook(config);
   }
 
   async test(id: string, tenantId: string, phone: string) {

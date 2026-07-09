@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, MessageSquare, CheckCircle2, XCircle, RefreshCw,
   Save, WifiOff, QrCode, Eye, EyeOff, Plus, Trash2, X, Layout, Sparkles,
-  Smartphone, Pencil, Star
+  Smartphone, Pencil, Star, Webhook
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -128,6 +128,9 @@ function blankAccount(): WaAccount {
                       @if (acc.provider === 'waha') {
                         <button class="btn btn-sm btn-ghost btn-icon" (click)="toggleQr(acc)" title="Conectar (QR)">
                           <lucide-icon [img]="QrCode" [size]="14"></lucide-icon>
+                        </button>
+                        <button class="btn btn-sm btn-ghost btn-icon" (click)="configureWebhook(acc)" [disabled]="webhookLoading() === acc._id" title="Reconfigurar webhook">
+                          <lucide-icon [img]="Webhook" [size]="14" [class.spin]="webhookLoading() === acc._id"></lucide-icon>
                         </button>
                       }
                       <button class="btn btn-sm btn-ghost btn-icon" (click)="toggleTest(acc)" title="Probar envío">
@@ -557,6 +560,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly Smartphone = Smartphone;
   readonly Pencil = Pencil;
   readonly Star = Star;
+  readonly Webhook = Webhook;
 
   // Accounts
   accounts = signal<WaAccount[]>([]);
@@ -574,6 +578,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   testResult = signal<{ success: boolean; formattedPhone?: string; error?: string } | null>(null);
   showKey = signal(false);
   showToken = signal(false);
+  webhookLoading = signal('');
 
   defaultProvider = computed(() => this.accounts().find(a => a.isDefault)?.provider ?? '');
 
@@ -681,6 +686,18 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.http.patch(`${API}/whatsapp-accounts/${a._id}/default`, {}).subscribe({
       next: () => { this.toast.success(`"${a.label}" es ahora la cuenta predeterminada`); this.loadAccounts(); },
       error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'Error'),
+    });
+  }
+
+  configureWebhook(a: WaAccount) {
+    this.webhookLoading.set(a._id);
+    this.http.post<{ success: boolean; message: string }>(`${API}/whatsapp-accounts/${a._id}/webhook`, {}).subscribe({
+      next: (r) => {
+        this.webhookLoading.set('');
+        if (r.success) this.toast.success(r.message);
+        else this.toast.error(r.message);
+      },
+      error: (err: { error?: { message?: string } }) => { this.webhookLoading.set(''); this.toast.error(err.error?.message || 'Error al configurar webhook'); },
     });
   }
 

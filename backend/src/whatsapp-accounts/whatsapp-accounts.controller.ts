@@ -43,6 +43,12 @@ export class WhatsAppAccountsController {
     return this.service.test(id, req.user.tenantId, dto.phone);
   }
 
+  @Post(':id/webhook')
+  configureWebhook(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.service.configureWebhook(id, req.user.tenantId);
+  }
+
   @Patch(':id/default')
   setDefault(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

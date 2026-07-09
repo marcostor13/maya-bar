@@ -7,6 +7,7 @@ export interface WaConfig {
   wahaSession?: string;
   waPhoneNumberId?: string;
   waAccessToken?: string;
+  webhookUrl?: string; // URL a la que WAHA debe reenviar los mensajes entrantes
 }
 
 export interface WaStatus {
@@ -83,29 +84,75 @@ export class WhatsAppService {
     return { provider: 'none', configured: false, connected: false };
   }
 
+  /** Registra (o vuelve a registrar) el webhook entrante en la sesión de WAHA. */
+  async ensureWahaWebhook(config: WaConfig): Promise<{ success: boolean; message: string }> {
+    if (config.provider !== 'waha') return { success: false, message: 'Solo aplica a cuentas WAHA' };
+    if (!config.wahaApiUrl) return { success: false, message: 'Falta la URL de WAHA' };
+    if (!config.webhookUrl) return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
+    const session = config.wahaSession ?? 'default';
+    const headers = { 'X-Api-Key': config.wahaApiKey ?? '', 'Content-Type': 'application/json', Accept: 'application/json' };
+    const hook = { url: config.webhookUrl, events: ['message'] };
+    try {
+      const statusRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, { headers });
+      if (statusRes.status === 404) {
+        const createRes = await fetch(`${config.wahaApiUrl}/api/sessions`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ name: session, start: true, config: { webhooks: [hook] } }),
+        });
+        if (!createRes.ok) return { success: false, message: `No se pudo crear la sesión: ${await createRes.text()}` };
+        return { success: true, message: 'Sesión creada y webhook registrado. Escanea el QR para conectar.' };
+      }
+      if (!statusRes.ok) return { success: false, message: `WAHA ${statusRes.status}: ${await statusRes.text()}` };
+      const data = await statusRes.json() as { config?: { webhooks?: { url?: string }[] } };
+      const webhooks = [...(data.config?.webhooks ?? []).filter(w => w.url !== hook.url), hook];
+      const putRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, {
+        method: 'PUT', headers, body: JSON.stringify({ config: { webhooks } }),
+      });
+      if (!putRes.ok) return { success: false, message: `No se pudo actualizar el webhook: ${await putRes.text()}` };
+      await fetch(`${config.wahaApiUrl}/api/sessions/${session}/restart`, { method: 'POST', headers }).catch(() => undefined);
+      return { success: true, message: 'Webhook registrado correctamente. Ya recibirás los mensajes.' };
+    } catch (err) {
+      return { success: false, message: String(err) };
+    }
+  }
+
   async getQr(config: WaConfig): Promise<{ qrcode?: string; error?: string }> {
     if (config.provider !== 'waha') return { error: 'QR solo disponible con WAHA' };
     if (!config.wahaApiUrl) return { error: 'Falta la URL de WAHA' };
     const session = config.wahaSession ?? 'default';
     const headers = { 'X-Api-Key': config.wahaApiKey ?? '', 'Content-Type': 'application/json', Accept: 'application/json' };
+    const hook = config.webhookUrl ? { url: config.webhookUrl, events: ['message'] } : null;
     try {
+      let status: string | undefined;
       const statusRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, { headers });
       if (!statusRes.ok) {
         if (statusRes.status === 404) {
           const createRes = await fetch(`${config.wahaApiUrl}/api/sessions`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ name: session, start: true }),
+            body: JSON.stringify({ name: session, start: true, config: hook ? { webhooks: [hook] } : undefined }),
           });
           if (!createRes.ok) return { error: `No se pudo crear la sesión "${session}": ${await createRes.text()}` };
           await new Promise(r => setTimeout(r, 2500));
         } else {
           return { error: `WAHA ${statusRes.status}: ${await statusRes.text()}` };
         }
+      } else {
+        const data = await statusRes.json() as { status?: string; config?: { webhooks?: { url?: string }[] } };
+        status = data.status;
+        // Asegura que el webhook esté registrado (idempotente: solo parchea si falta).
+        if (hook && !(data.config?.webhooks ?? []).some(w => w.url === hook.url)) {
+          const webhooks = [...(data.config?.webhooks ?? []).filter(w => w.url !== hook.url), hook];
+          await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, {
+            method: 'PUT', headers, body: JSON.stringify({ config: { webhooks } }),
+          }).catch(() => undefined);
+          await fetch(`${config.wahaApiUrl}/api/sessions/${session}/restart`, { method: 'POST', headers }).catch(() => undefined);
+          await new Promise(r => setTimeout(r, 1500));
+        }
       }
-      const { status } = statusRes.ok
-        ? await statusRes.json() as { status?: string }
-        : { status: undefined };
+      if (status === 'WORKING') {
+        return { error: 'La sesión ya está conectada. Webhook configurado — ya recibirás los mensajes.' };
+      }
       if (status === 'FAILED' || status === 'STOPPED') {
         if (status === 'FAILED') {
           await fetch(`${config.wahaApiUrl}/api/sessions/${session}/stop`, { method: 'POST', headers });
