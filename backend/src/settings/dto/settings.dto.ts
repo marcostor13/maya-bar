@@ -7,4 +7,8 @@ export class SaveSettingsDto {
   waPhoneNumberId?: string;
   waAccessToken?: string;
   waBusinessAccountId?: string;
+  openaiApiKey?: string;
+  deepseekApiKey?: string;
+  geminiApiKey?: string;
+  claudeApiKey?: string;
 }

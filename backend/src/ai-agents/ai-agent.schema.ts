@@ -15,7 +15,7 @@ export class AiAgent extends Document {
   @Prop({ required: true })
   systemPrompt: string;
 
-  @Prop({ enum: ['auto', 'openai', 'claude', 'deepseek'], default: 'auto' })
+  @Prop({ enum: ['auto', 'openai', 'claude', 'deepseek', 'gemini'], default: 'auto' })
   provider: string;
 
   @Prop()

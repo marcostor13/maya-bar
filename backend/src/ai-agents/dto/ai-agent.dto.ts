@@ -2,7 +2,7 @@ export class CreateAiAgentDto {
   name: string;
   description?: string;
   systemPrompt: string;
-  provider?: 'auto' | 'openai' | 'claude' | 'deepseek';
+  provider?: 'auto' | 'openai' | 'claude' | 'deepseek' | 'gemini';
   aiModel?: string;
   temperature?: number;
   maxTokens?: number;

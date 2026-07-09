@@ -7,7 +7,8 @@ import { AgentConversation } from './agent-conversation.schema';
 import { AgentFile } from './agent-file.schema';
 import { CreateAiAgentDto, UpdateAiAgentDto, AddDocDto, AgentFileDto } from './dto/ai-agent.dto';
 import { RagService } from './rag.service';
-import { AiService, ChatMessage } from '../ai/ai.service';
+import { AiService, ChatMessage, AiApiKeys } from '../ai/ai.service';
+import { TenantConfig } from '../settings/tenant-config.schema';
 import { WaMediaType } from '../whatsapp/whatsapp.service';
 
 const HISTORY_LIMIT = 10;
@@ -33,9 +34,21 @@ export class AiAgentsService {
     @InjectModel(KnowledgeDoc.name) private docModel: Model<KnowledgeDoc>,
     @InjectModel(AgentConversation.name) private convModel: Model<AgentConversation>,
     @InjectModel(AgentFile.name) private fileModel: Model<AgentFile>,
+    @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
     private rag: RagService,
     private ai: AiService,
   ) {}
+
+  /** Lee las API keys de IA configuradas por el tenant. */
+  private async getTenantApiKeys(tenantId: string | Types.ObjectId): Promise<AiApiKeys> {
+    const cfg = await this.configModel.findOne({ tenantId: new Types.ObjectId(String(tenantId)) }).exec();
+    return {
+      openai: cfg?.openaiApiKey,
+      deepseek: cfg?.deepseekApiKey,
+      gemini: cfg?.geminiApiKey,
+      claude: cfg?.claudeApiKey,
+    };
+  }
 
   // ---- CRUD agentes ----
 
@@ -250,11 +263,13 @@ export class AiAgentsService {
       { role: 'user', content: userMessage },
     ];
 
+    const apiKeys = await this.getTenantApiKeys(agent.tenantId);
     const raw = await this.ai.chatMessages(messages, {
-      provider: agent.provider as 'auto' | 'openai' | 'claude' | 'deepseek',
+      provider: agent.provider as 'auto' | 'openai' | 'claude' | 'deepseek' | 'gemini',
       model: agent.aiModel,
       temperature: agent.temperature,
       maxTokens: agent.maxTokens,
+      apiKeys,
     });
 
     const rawReply = raw.trim() || agent.fallbackMessage;

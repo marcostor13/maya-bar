@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, MessageSquare, CheckCircle2, XCircle, RefreshCw,
-  Save, Wifi, WifiOff, QrCode, ExternalLink, Eye, EyeOff, Plus, Trash2, X, Layout
+  Save, Wifi, WifiOff, QrCode, ExternalLink, Eye, EyeOff, Plus, Trash2, X, Layout, Sparkles
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -20,6 +20,10 @@ interface TenantConfig {
   waAccessToken?: string;
   waBusinessAccountId?: string;
   waDailyLimit?: number;
+  openaiApiKey?: string;
+  deepseekApiKey?: string;
+  geminiApiKey?: string;
+  claudeApiKey?: string;
 }
 
 interface WaStatus {
@@ -261,6 +265,69 @@ interface WaTemplate {
               {{ saving() ? 'Guardando...' : 'Guardar configuración' }}
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- IA / Agentes Card -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-icon" style="background: #EEF2FF;">
+            <lucide-icon [img]="Sparkles" [size]="22" style="color: #4F46E5;"></lucide-icon>
+          </div>
+          <div>
+            <h2 class="section-title">Inteligencia Artificial</h2>
+            <p class="section-desc">API keys para los agentes de IA. Selecciona el proveedor en cada agente.</p>
+          </div>
+        </div>
+
+        <div class="fields-grid">
+          <div class="field">
+            <label class="label">OpenAI API Key</label>
+            <div class="input-wrap">
+              <input class="input" [type]="showAiKey()['openai'] ? 'text' : 'password'" [(ngModel)]="form.openaiApiKey" placeholder="sk-..." />
+              <button class="eye-btn" (click)="toggleAiKey('openai')" type="button">
+                <lucide-icon [img]="showAiKey()['openai'] ? EyeOff : Eye" [size]="16"></lucide-icon>
+              </button>
+            </div>
+            <span class="field-hint">platform.openai.com/api-keys</span>
+          </div>
+          <div class="field">
+            <label class="label">DeepSeek API Key</label>
+            <div class="input-wrap">
+              <input class="input" [type]="showAiKey()['deepseek'] ? 'text' : 'password'" [(ngModel)]="form.deepseekApiKey" placeholder="sk-..." />
+              <button class="eye-btn" (click)="toggleAiKey('deepseek')" type="button">
+                <lucide-icon [img]="showAiKey()['deepseek'] ? EyeOff : Eye" [size]="16"></lucide-icon>
+              </button>
+            </div>
+            <span class="field-hint">platform.deepseek.com</span>
+          </div>
+          <div class="field">
+            <label class="label">Gemini API Key (Google)</label>
+            <div class="input-wrap">
+              <input class="input" [type]="showAiKey()['gemini'] ? 'text' : 'password'" [(ngModel)]="form.geminiApiKey" placeholder="AIza..." />
+              <button class="eye-btn" (click)="toggleAiKey('gemini')" type="button">
+                <lucide-icon [img]="showAiKey()['gemini'] ? EyeOff : Eye" [size]="16"></lucide-icon>
+              </button>
+            </div>
+            <span class="field-hint">aistudio.google.com/apikey</span>
+          </div>
+          <div class="field">
+            <label class="label">Claude API Key (Anthropic)</label>
+            <div class="input-wrap">
+              <input class="input" [type]="showAiKey()['claude'] ? 'text' : 'password'" [(ngModel)]="form.claudeApiKey" placeholder="sk-ant-..." />
+              <button class="eye-btn" (click)="toggleAiKey('claude')" type="button">
+                <lucide-icon [img]="showAiKey()['claude'] ? EyeOff : Eye" [size]="16"></lucide-icon>
+              </button>
+            </div>
+            <span class="field-hint">console.anthropic.com</span>
+          </div>
+        </div>
+
+        <div class="section-footer">
+          <button class="btn btn-primary" (click)="saveAi()" [disabled]="savingAi()">
+            <lucide-icon [img]="Save" [size]="16"></lucide-icon>
+            {{ savingAi() ? 'Guardando...' : 'Guardar keys de IA' }}
+          </button>
         </div>
       </div>
 
@@ -590,6 +657,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly Trash2 = Trash2;
   readonly X = X;
   readonly Layout = Layout;
+  readonly Sparkles = Sparkles;
 
   form: TenantConfig = {
     whatsappProvider: 'none',
@@ -600,7 +668,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
     waAccessToken: '',
     waBusinessAccountId: '',
     waDailyLimit: 50,
+    openaiApiKey: '',
+    deepseekApiKey: '',
+    geminiApiKey: '',
+    claudeApiKey: '',
   };
+
+  showAiKey = signal<Record<string, boolean>>({});
+  savingAi = signal(false);
+  toggleAiKey(k: string) { this.showAiKey.update(m => ({ ...m, [k]: !m[k] })); }
 
   saving = signal(false);
   saved = signal(false);
@@ -667,6 +743,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
             waAccessToken: cfg.waAccessToken ?? '',
             waBusinessAccountId: cfg.waBusinessAccountId ?? '',
             waDailyLimit: cfg.waDailyLimit ?? 50,
+            openaiApiKey: cfg.openaiApiKey ?? '',
+            deepseekApiKey: cfg.deepseekApiKey ?? '',
+            geminiApiKey: cfg.geminiApiKey ?? '',
+            claudeApiKey: cfg.claudeApiKey ?? '',
           };
           this.saved.set(true);
           this.savedProvider.set(cfg.whatsappProvider ?? 'none');
@@ -697,6 +777,21 @@ export class SettingsComponent implements OnInit, OnDestroy {
       error: (err: { error?: { message?: string } }) => {
         this.toast.error(err.error?.message || 'Error al guardar');
         this.saving.set(false);
+      },
+    });
+  }
+
+  saveAi() {
+    this.savingAi.set(true);
+    this.http.put<TenantConfig>(`${API}/settings`, { ...this.form, waDailyLimit: Number(this.form.waDailyLimit) || 50 }).subscribe({
+      next: () => {
+        this.toast.success('API keys de IA guardadas');
+        this.savingAi.set(false);
+        this.saved.set(true);
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.toast.error(err.error?.message || 'Error al guardar');
+        this.savingAi.set(false);
       },
     });
   }

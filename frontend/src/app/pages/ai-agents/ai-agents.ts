@@ -369,6 +369,7 @@ function blankAccount(): WaAccount {
                   <option value="openai">OpenAI</option>
                   <option value="claude">Claude (Anthropic)</option>
                   <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini (Google)</option>
                 </select>
               </div>
               <div class="field">

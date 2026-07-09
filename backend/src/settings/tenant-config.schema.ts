@@ -19,6 +19,12 @@ export class TenantConfig extends Document {
   @Prop() waPhoneNumberId?: string;
   @Prop() waAccessToken?: string;
   @Prop() waBusinessAccountId?: string;
+
+  // API keys de IA (por tenant, usadas por el agente)
+  @Prop() openaiApiKey?: string;
+  @Prop() deepseekApiKey?: string;
+  @Prop() geminiApiKey?: string;
+  @Prop() claudeApiKey?: string;
 }
 
 export const TenantConfigSchema = SchemaFactory.createForClass(TenantConfig);
