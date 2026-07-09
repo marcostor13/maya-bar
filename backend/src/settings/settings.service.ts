@@ -4,12 +4,14 @@ import { Model, Types } from 'mongoose';
 import { TenantConfig } from './tenant-config.schema';
 import { SaveSettingsDto } from './dto/settings.dto';
 import { WhatsAppService, WaConfig, WaStatus, WaMediaType } from '../whatsapp/whatsapp.service';
+import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 
 @Injectable()
 export class SettingsService {
   constructor(
     @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
     private wa: WhatsAppService,
+    private accounts: WhatsAppAccountsService,
   ) {}
 
   async get(tenantId: string): Promise<TenantConfig | null> {
@@ -79,6 +81,10 @@ export class SettingsService {
   }
 
   private async resolveConfig(tenantId: string): Promise<WaConfig> {
+    // Fuente principal: cuenta predeterminada del tenant.
+    const account = await this.accounts.getDefault(tenantId);
+    if (account) return this.accounts.toConfig(account);
+    // Fallback legacy: config única de TenantConfig.
     const doc = await this.get(tenantId);
     return {
       provider: doc?.whatsappProvider ?? 'none',

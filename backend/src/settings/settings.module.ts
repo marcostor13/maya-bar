@@ -6,6 +6,7 @@ import { WaTemplatesService } from './wa-templates.service';
 import { TenantConfig, TenantConfigSchema } from './tenant-config.schema';
 import { WaTemplate, WaTemplateSchema } from './wa-template.schema';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
       { name: WaTemplate.name, schema: WaTemplateSchema },
     ]),
     WhatsAppModule,
+    WhatsAppAccountsModule,
   ],
   controllers: [SettingsController],
   providers: [SettingsService, WaTemplatesService],

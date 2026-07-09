@@ -1,9 +1,10 @@
-import { Component, inject, signal, OnInit, OnDestroy, HostListener } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, MessageSquare, CheckCircle2, XCircle, RefreshCw,
-  Save, Wifi, WifiOff, QrCode, ExternalLink, Eye, EyeOff, Plus, Trash2, X, Layout, Sparkles
+  Save, WifiOff, QrCode, Eye, EyeOff, Plus, Trash2, X, Layout, Sparkles,
+  Smartphone, Pencil, Star
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -11,14 +12,7 @@ import { ConfirmService } from '../../shared/confirm';
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
 
-interface TenantConfig {
-  whatsappProvider: string;
-  wahaApiUrl?: string;
-  wahaApiKey?: string;
-  wahaSession?: string;
-  waPhoneNumberId?: string;
-  waAccessToken?: string;
-  waBusinessAccountId?: string;
+interface AiKeys {
   waDailyLimit?: number;
   openaiApiKey?: string;
   deepseekApiKey?: string;
@@ -26,13 +20,26 @@ interface TenantConfig {
   claudeApiKey?: string;
 }
 
-interface WaStatus {
-  provider: string;
-  configured: boolean;
-  connected: boolean;
-  instance?: string;
+interface WaAccount {
+  _id: string;
+  label: string;
+  provider: 'waha' | 'cloudapi';
   phoneNumber?: string;
+  wahaApiUrl?: string;
+  wahaApiKey?: string;
+  wahaSession?: string;
+  waPhoneNumberId?: string;
+  waAccessToken?: string;
+  waBusinessAccountId?: string;
+  waVerifyToken?: string;
+  active: boolean;
+  isDefault?: boolean;
+}
+
+interface WaStatus {
+  connected: boolean;
   state?: string;
+  phoneNumber?: string;
   error?: string;
 }
 
@@ -45,6 +52,14 @@ interface WaTemplate {
   body: string;
   headerText?: string;
   footer?: string;
+}
+
+function blankAccount(): WaAccount {
+  return {
+    _id: '', label: '', provider: 'waha', phoneNumber: '', wahaApiUrl: '', wahaApiKey: '',
+    wahaSession: 'default', waPhoneNumberId: '', waAccessToken: '', waBusinessAccountId: '',
+    waVerifyToken: '', active: true,
+  };
 }
 
 @Component({
@@ -60,7 +75,7 @@ interface WaTemplate {
         </div>
       </div>
 
-      <!-- WhatsApp Card -->
+      <!-- WhatsApp Accounts Card -->
       <div class="section-card">
         <div class="section-header">
           <div class="section-icon">
@@ -68,204 +83,198 @@ interface WaTemplate {
           </div>
           <div>
             <h2 class="section-title">WhatsApp</h2>
-            <p class="section-desc">Conecta WhatsApp para enviar campañas y mensajes a tus clientes</p>
-          </div>
-          <div class="status-pill"
-            [class.connected]="waStatus()?.provider === form.whatsappProvider && waStatus()?.connected"
-            [class.disconnected]="waStatus()?.provider === form.whatsappProvider && !waStatus()!.connected">
-            @if (statusLoading()) {
-              <lucide-icon [img]="RefreshCw" [size]="13" class="spin"></lucide-icon>
-              Verificando...
-            } @else if (waStatus()?.provider === form.whatsappProvider && waStatus()?.connected) {
-              <lucide-icon [img]="CheckCircle2" [size]="13"></lucide-icon>
-              Conectado
-            } @else if (waStatus()?.provider === form.whatsappProvider && waStatus()?.configured) {
-              <lucide-icon [img]="WifiOff" [size]="13"></lucide-icon>
-              Desconectado
-            } @else {
-              <lucide-icon [img]="XCircle" [size]="13"></lucide-icon>
-              No configurado
-            }
+            <p class="section-desc">Conecta uno o varios números vía WAHA o Cloud API. La cuenta predeterminada se usa para campañas y envíos.</p>
           </div>
         </div>
 
-        <!-- Provider selector -->
-        <div class="provider-tabs">
-          <button class="provider-tab" [class.active]="form.whatsappProvider === 'none'" (click)="setProvider('none')">
-            Desactivado
-          </button>
-          <button class="provider-tab" [class.active]="form.whatsappProvider === 'waha'" (click)="setProvider('waha')">
-            WAHA
-          </button>
-          <button class="provider-tab" [class.active]="form.whatsappProvider === 'cloudapi'" (click)="setProvider('cloudapi')">
-            WhatsApp Cloud API
-          </button>
-        </div>
-
-        <!-- WAHA fields -->
-        @if (form.whatsappProvider === 'waha') {
-          <div class="fields-grid">
-            <div class="field">
-              <label class="label">URL de WAHA *</label>
-              <input class="input" [(ngModel)]="form.wahaApiUrl" placeholder="http://localhost:3000" />
-              <span class="field-hint">URL donde corre tu instancia de WAHA</span>
-            </div>
-            <div class="field">
-              <label class="label">API Key</label>
-              <div class="input-wrap">
-                <input class="input" [type]="showKey() ? 'text' : 'password'" [(ngModel)]="form.wahaApiKey" placeholder="tu-api-key-secreta" />
-                <button class="eye-btn" (click)="showKey.set(!showKey())" type="button">
-                  <lucide-icon [img]="showKey() ? EyeOff : Eye" [size]="16"></lucide-icon>
-                </button>
-              </div>
-              <span class="field-hint">El valor de WHATSAPP_API_KEY en tu configuración de WAHA</span>
-            </div>
-            <div class="field">
-              <label class="label">Nombre de sesión</label>
-              <input class="input" [(ngModel)]="form.wahaSession" placeholder="default" />
-              <span class="field-hint">Nombre de la sesión WAHA (por defecto: "default")</span>
-            </div>
-            <div class="field">
-              <label class="label">Límite diario de mensajes</label>
-              <input class="input" type="number" [(ngModel)]="form.waDailyLimit" min="1" max="500" placeholder="50" style="max-width: 140px;" />
-              <span class="field-hint">Máximo de mensajes WhatsApp por día. Recomendado: 50 para números nuevos, hasta 150 para números con historial.</span>
-            </div>
+        @if (!accForm()) {
+          <div class="field" style="max-width: 260px; margin-bottom: 20px;">
+            <label class="label">Límite diario de mensajes</label>
+            <input class="input" type="number" [(ngModel)]="dailyLimit" min="1" max="500" placeholder="50"
+              (change)="saveDailyLimit()" />
+            <span class="field-hint">Aplica a todo el tenant. 50 para números nuevos, hasta 150 con historial.</span>
           </div>
 
-          <!-- QR Section -->
-          @if (saved() && form.whatsappProvider === 'waha') {
-            <div class="qr-section">
-              <div class="qr-header">
-                <lucide-icon [img]="QrCode" [size]="20" style="color: var(--color-brand);"></lucide-icon>
-                <span class="qr-title">Escanear QR para conectar</span>
-                @if (waStatus()?.provider === 'waha' && waStatus()?.connected) {
-                  <span class="badge-success">Conectado — {{ waStatus()?.instance }}</span>
-                }
-              </div>
-
-              @if (!waStatus()?.connected || waStatus()?.provider !== 'waha') {
-                <p style="font-size: 14px; color: var(--color-text-muted); margin-bottom: 20px;">
-                  Abre WhatsApp en tu teléfono → <strong>Dispositivos vinculados</strong> → <strong>Vincular un dispositivo</strong> → Escanea el QR.
-                </p>
-
-                @if (qrLoading()) {
-                  <div class="qr-placeholder">
-                    <lucide-icon [img]="RefreshCw" [size]="32" class="spin" style="color: var(--color-text-muted);"></lucide-icon>
-                    <span style="color: var(--color-text-muted);">Generando QR...</span>
+          @if (accountsLoading()) {
+            <div class="loading-row">
+              <lucide-icon [img]="RefreshCw" [size]="20" class="spin"></lucide-icon> Cargando cuentas…
+            </div>
+          } @else if (accounts().length === 0) {
+            <div class="empty-accounts">
+              <lucide-icon [img]="Smartphone" [size]="28" [strokeWidth]="1.5" style="color: var(--color-text-muted);"></lucide-icon>
+              <p>Aún no hay cuentas de WhatsApp.</p>
+            </div>
+          } @else {
+            <div class="acc-list">
+              @for (acc of accounts(); track acc._id) {
+                <div class="acc-card">
+                  <div class="acc-card-head">
+                    <div class="acc-id">
+                      <span class="account-label">{{ acc.label }}</span>
+                      @if (acc.isDefault) {
+                        <span class="badge-default"><lucide-icon [img]="Star" [size]="11"></lucide-icon> Predeterminada</span>
+                      }
+                      <span class="account-sub">{{ acc.provider === 'waha' ? 'WAHA' : 'Cloud API' }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</span>
+                    </div>
+                    <div class="acc-card-actions">
+                      @if (!acc.isDefault) {
+                        <button class="btn btn-sm btn-ghost btn-icon" (click)="setDefault(acc)" title="Marcar como predeterminada">
+                          <lucide-icon [img]="Star" [size]="14"></lucide-icon>
+                        </button>
+                      }
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="checkStatus(acc)" title="Verificar estado">
+                        <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
+                      </button>
+                      @if (acc.provider === 'waha') {
+                        <button class="btn btn-sm btn-ghost btn-icon" (click)="toggleQr(acc)" title="Conectar (QR)">
+                          <lucide-icon [img]="QrCode" [size]="14"></lucide-icon>
+                        </button>
+                      }
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="toggleTest(acc)" title="Probar envío">
+                        <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
+                      </button>
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="editAccount(acc)" title="Editar">
+                        <lucide-icon [img]="Pencil" [size]="14"></lucide-icon>
+                      </button>
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="deleteAccount(acc)" title="Eliminar">
+                        <lucide-icon [img]="Trash2" [size]="14" style="color: var(--color-error);"></lucide-icon>
+                      </button>
+                    </div>
                   </div>
-                } @else if (qrCode()) {
-                  <div class="qr-container">
-                    <img [src]="qrCode()!" alt="QR WhatsApp" class="qr-image" />
-                    <p style="font-size: 12px; color: var(--color-text-muted); margin-top: 12px; text-align: center;">
-                      El QR expira en ~45 segundos. Se actualiza automáticamente.
-                    </p>
-                  </div>
-                } @else if (qrError()) {
-                  <div class="error-box">{{ qrError() }}</div>
-                }
 
-                <button class="btn btn-secondary btn-sm" (click)="loadQr()" style="margin-top: 16px;">
-                  <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
-                  Actualizar QR
-                </button>
-              } @else {
-                <div class="success-box">
-                  <lucide-icon [img]="CheckCircle2" [size]="18"></lucide-icon>
-                  WhatsApp conectado correctamente. Ya puedes enviar campañas.
+                  @if (statusMap()[acc._id]) {
+                    <div class="acc-status" [class.ok]="statusMap()[acc._id].connected">
+                      @if (statusMap()[acc._id].connected) {
+                        <lucide-icon [img]="CheckCircle2" [size]="13"></lucide-icon> Conectado
+                      } @else {
+                        <lucide-icon [img]="WifiOff" [size]="13"></lucide-icon> Desconectado
+                      }
+                      {{ statusMap()[acc._id].state ? '· ' + statusMap()[acc._id].state : '' }}
+                      {{ statusMap()[acc._id].error || '' }}
+                    </div>
+                  }
+
+                  <!-- QR panel -->
+                  @if (qrActiveId() === acc._id) {
+                    <div class="acc-panel">
+                      <p class="panel-hint">WhatsApp → Dispositivos vinculados → Vincular un dispositivo → escanea:</p>
+                      @if (qrLoading()) {
+                        <div class="qr-placeholder">
+                          <lucide-icon [img]="RefreshCw" [size]="28" class="spin" style="color: var(--color-text-muted);"></lucide-icon>
+                        </div>
+                      } @else if (qrMap()[acc._id]) {
+                        <img [src]="qrMap()[acc._id]" alt="QR WhatsApp" class="qr-image" />
+                      } @else if (qrError()) {
+                        <div class="error-box">{{ qrError() }}</div>
+                      }
+                      <button class="btn btn-secondary btn-sm" (click)="loadQr(acc)" style="margin-top: 12px;">
+                        <lucide-icon [img]="RefreshCw" [size]="13"></lucide-icon> Actualizar QR
+                      </button>
+                    </div>
+                  }
+
+                  <!-- Test panel -->
+                  @if (testActiveId() === acc._id) {
+                    <div class="acc-panel">
+                      <div class="test-row">
+                        <input class="input" [(ngModel)]="testPhone" placeholder="51999999999 (con código de país)" style="flex:1" />
+                        <button class="btn btn-secondary btn-sm" (click)="testAccount(acc)" [disabled]="testLoading()">
+                          @if (testLoading()) { <lucide-icon [img]="RefreshCw" [size]="13" class="spin"></lucide-icon> }
+                          @else { <lucide-icon [img]="MessageSquare" [size]="13"></lucide-icon> }
+                          Enviar prueba
+                        </button>
+                      </div>
+                      @if (testResult()) {
+                        <div [class]="testResult()!.success ? 'success-box' : 'error-box'" style="margin-top:10px;font-size:13px">
+                          @if (testResult()!.success) { ✅ Enviado a {{ testResult()!.formattedPhone }}&#64;c.us }
+                          @else { ❌ {{ testResult()!.error }} }
+                        </div>
+                      }
+                    </div>
+                  }
+
+                  <div class="webhook-hint">
+                    <span>Webhook entrante:</span>
+                    <code>{{ webhookUrl(acc) }}</code>
+                  </div>
                 </div>
               }
             </div>
           }
-        }
 
-        <!-- WAHA test send -->
-        @if (saved() && form.whatsappProvider === 'waha') {
-          <div class="test-panel">
-            <div class="test-panel-title">
-              <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
-              Probar envío
-            </div>
-            <div class="test-row">
-              <input class="input" [(ngModel)]="testPhone" placeholder="Ej: 51999999999 (con código de país)" style="flex:1" />
-              <button class="btn btn-secondary btn-sm" (click)="testWaha()" [disabled]="testLoading()">
-                @if (testLoading()) {
-                  <lucide-icon [img]="RefreshCw" [size]="13" class="spin"></lucide-icon>
-                } @else {
-                  <lucide-icon [img]="MessageSquare" [size]="13"></lucide-icon>
-                }
-                Enviar prueba
-              </button>
-            </div>
-            @if (testResult()) {
-              <div [class]="testResult()!.success ? 'success-box' : 'error-box'" style="margin-top:10px;white-space:pre-wrap;word-break:break-all;font-size:13px">
-                @if (testResult()!.success) {
-                  ✅ Mensaje enviado correctamente a {{ testResult()!.formattedPhone }}&#64;c.us
-                } @else {
-                  ❌ Error: {{ testResult()!.error }}
-                  Provider: {{ testResult()!.provider }} · URL: {{ testResult()!.wahaApiUrl || '(vacío)' }} · Sesión: {{ testResult()!.wahaSession }}
-                }
-              </div>
-            }
-          </div>
-        }
-
-        <!-- Cloud API fields -->
-        @if (form.whatsappProvider === 'cloudapi') {
+          <button class="btn btn-secondary" style="margin-top: 16px;" (click)="newAccount()">
+            <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir cuenta
+          </button>
+        } @else {
+          <!-- Account form -->
           <div class="fields-grid">
             <div class="field">
-              <label class="label">Phone Number ID *</label>
-              <input class="input" [(ngModel)]="form.waPhoneNumberId" placeholder="123456789012345" />
-              <span class="field-hint">WhatsApp → API Setup → From → Phone Number ID en Meta Developers</span>
+              <label class="label">Nombre de la cuenta *</label>
+              <input class="input" [(ngModel)]="accForm()!.label" placeholder="Ej: Línea Reservas" />
             </div>
             <div class="field">
-              <label class="label">Access Token *</label>
-              <div class="input-wrap">
-                <input class="input" [type]="showToken() ? 'text' : 'password'" [(ngModel)]="form.waAccessToken" placeholder="EAAAxxxxx..." />
-                <button class="eye-btn" (click)="showToken.set(!showToken())" type="button">
-                  <lucide-icon [img]="showToken() ? EyeOff : Eye" [size]="16"></lucide-icon>
-                </button>
+              <label class="label">Proveedor *</label>
+              <select class="select" [(ngModel)]="accForm()!.provider">
+                <option value="waha">WAHA</option>
+                <option value="cloudapi">WhatsApp Cloud API</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label">Número (informativo)</label>
+              <input class="input" [(ngModel)]="accForm()!.phoneNumber" placeholder="+51 999 999 999" />
+            </div>
+
+            @if (accForm()!.provider === 'waha') {
+              <div class="field">
+                <label class="label">URL de WAHA *</label>
+                <input class="input" [(ngModel)]="accForm()!.wahaApiUrl" placeholder="https://waha.midominio.com" />
               </div>
-              <span class="field-hint">Token permanente de System User en Meta Business Settings</span>
-            </div>
-            <div class="field">
-              <label class="label">WhatsApp Business Account ID (WABA ID) *</label>
-              <input class="input" [(ngModel)]="form.waBusinessAccountId" placeholder="123456789012345" />
-              <span class="field-hint">Meta Business Suite → WhatsApp → Configuración de la cuenta. Necesario para gestionar plantillas.</span>
-            </div>
+              <div class="field">
+                <label class="label">API Key</label>
+                <div class="input-wrap">
+                  <input class="input" [type]="showKey() ? 'text' : 'password'" [(ngModel)]="accForm()!.wahaApiKey" placeholder="X-Api-Key" />
+                  <button class="eye-btn" (click)="showKey.set(!showKey())" type="button">
+                    <lucide-icon [img]="showKey() ? EyeOff : Eye" [size]="16"></lucide-icon>
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Nombre de sesión</label>
+                <input class="input" [(ngModel)]="accForm()!.wahaSession" placeholder="default" />
+              </div>
+            } @else {
+              <div class="field">
+                <label class="label">Phone Number ID *</label>
+                <input class="input" [(ngModel)]="accForm()!.waPhoneNumberId" placeholder="1234567890" />
+              </div>
+              <div class="field">
+                <label class="label">Access Token *</label>
+                <div class="input-wrap">
+                  <input class="input" [type]="showToken() ? 'text' : 'password'" [(ngModel)]="accForm()!.waAccessToken" placeholder="EAAG…" />
+                  <button class="eye-btn" (click)="showToken.set(!showToken())" type="button">
+                    <lucide-icon [img]="showToken() ? EyeOff : Eye" [size]="16"></lucide-icon>
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">WhatsApp Business Account ID</label>
+                <input class="input" [(ngModel)]="accForm()!.waBusinessAccountId" placeholder="(opcional, para plantillas)" />
+              </div>
+              <div class="field">
+                <label class="label">Verify Token (webhook)</label>
+                <input class="input" [(ngModel)]="accForm()!.waVerifyToken" placeholder="token-secreto-para-meta" />
+              </div>
+            }
           </div>
 
-          @if (waStatus()?.provider === 'cloudapi' && waStatus()?.connected) {
-            <div class="success-box" style="margin-top: 20px;">
-              <lucide-icon [img]="CheckCircle2" [size]="18"></lucide-icon>
-              Conectado — Número: <strong>{{ waStatus()?.phoneNumber }}</strong>
-              @if (waStatus()?.state) { · {{ waStatus()?.state }} }
-            </div>
-          } @else if (waStatus()?.provider === 'cloudapi' && waStatus()?.error && saved()) {
-            <div class="error-box" style="margin-top: 20px;">{{ waStatus()?.error }}</div>
-          }
-        }
-
-        @if (form.whatsappProvider === 'none') {
-          <p style="font-size: 14px; color: var(--color-text-muted); padding: 16px 0;">
-            WhatsApp desactivado. Las campañas de tipo WhatsApp se registrarán como enviadas sin enviar mensajes reales.
-          </p>
-        }
-
-        <!-- Save + docs link -->
-        <div class="section-footer">
-          <div style="display: flex; gap: 10px; align-items: center;">
-            @if (waStatus() && form.whatsappProvider !== 'none') {
-              <button class="btn btn-secondary btn-sm" (click)="checkStatus()" [disabled]="statusLoading()">
-                <lucide-icon [img]="RefreshCw" [size]="14" [class.spin]="statusLoading()"></lucide-icon>
-                Verificar conexión
-              </button>
-            }
-            <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+          <div class="section-footer" style="justify-content: space-between;">
+            <button class="btn btn-ghost" (click)="accForm.set(null)">Cancelar</button>
+            <button class="btn btn-primary" [disabled]="savingAcc()" (click)="saveAccount()">
               <lucide-icon [img]="Save" [size]="16"></lucide-icon>
-              {{ saving() ? 'Guardando...' : 'Guardar configuración' }}
+              {{ savingAcc() ? 'Guardando…' : 'Guardar cuenta' }}
             </button>
           </div>
-        </div>
+        }
       </div>
 
       <!-- IA / Agentes Card -->
@@ -284,7 +293,7 @@ interface WaTemplate {
           <div class="field">
             <label class="label">OpenAI API Key</label>
             <div class="input-wrap">
-              <input class="input" [type]="showAiKey()['openai'] ? 'text' : 'password'" [(ngModel)]="form.openaiApiKey" placeholder="sk-..." />
+              <input class="input" [type]="showAiKey()['openai'] ? 'text' : 'password'" [(ngModel)]="aiKeys.openaiApiKey" placeholder="sk-..." />
               <button class="eye-btn" (click)="toggleAiKey('openai')" type="button">
                 <lucide-icon [img]="showAiKey()['openai'] ? EyeOff : Eye" [size]="16"></lucide-icon>
               </button>
@@ -294,7 +303,7 @@ interface WaTemplate {
           <div class="field">
             <label class="label">DeepSeek API Key</label>
             <div class="input-wrap">
-              <input class="input" [type]="showAiKey()['deepseek'] ? 'text' : 'password'" [(ngModel)]="form.deepseekApiKey" placeholder="sk-..." />
+              <input class="input" [type]="showAiKey()['deepseek'] ? 'text' : 'password'" [(ngModel)]="aiKeys.deepseekApiKey" placeholder="sk-..." />
               <button class="eye-btn" (click)="toggleAiKey('deepseek')" type="button">
                 <lucide-icon [img]="showAiKey()['deepseek'] ? EyeOff : Eye" [size]="16"></lucide-icon>
               </button>
@@ -304,7 +313,7 @@ interface WaTemplate {
           <div class="field">
             <label class="label">Gemini API Key (Google)</label>
             <div class="input-wrap">
-              <input class="input" [type]="showAiKey()['gemini'] ? 'text' : 'password'" [(ngModel)]="form.geminiApiKey" placeholder="AIza..." />
+              <input class="input" [type]="showAiKey()['gemini'] ? 'text' : 'password'" [(ngModel)]="aiKeys.geminiApiKey" placeholder="AIza..." />
               <button class="eye-btn" (click)="toggleAiKey('gemini')" type="button">
                 <lucide-icon [img]="showAiKey()['gemini'] ? EyeOff : Eye" [size]="16"></lucide-icon>
               </button>
@@ -314,7 +323,7 @@ interface WaTemplate {
           <div class="field">
             <label class="label">Claude API Key (Anthropic)</label>
             <div class="input-wrap">
-              <input class="input" [type]="showAiKey()['claude'] ? 'text' : 'password'" [(ngModel)]="form.claudeApiKey" placeholder="sk-ant-..." />
+              <input class="input" [type]="showAiKey()['claude'] ? 'text' : 'password'" [(ngModel)]="aiKeys.claudeApiKey" placeholder="sk-ant-..." />
               <button class="eye-btn" (click)="toggleAiKey('claude')" type="button">
                 <lucide-icon [img]="showAiKey()['claude'] ? EyeOff : Eye" [size]="16"></lucide-icon>
               </button>
@@ -331,8 +340,8 @@ interface WaTemplate {
         </div>
       </div>
 
-      <!-- Templates Card (Cloud API only) -->
-      @if (savedProvider() === 'cloudapi' && saved()) {
+      <!-- Templates Card (default account is Cloud API) -->
+      @if (defaultProvider() === 'cloudapi') {
         <div class="section-card">
           <div class="section-header">
             <div class="section-icon" style="background: #F5F3FF;">
@@ -449,76 +458,16 @@ interface WaTemplate {
     }
   `,
   styles: [`
-    .page {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 32px 40px;
-      max-width: 900px;
-    }
-
+    .page { width: 100%; box-sizing: border-box; padding: 32px 40px; max-width: 900px; }
     .page-header { margin-bottom: 32px; }
-
-    .page-title {
-      font-family: var(--font-heading);
-      font-size: 26px;
-      font-weight: 700;
-      color: var(--color-text-main);
-      margin: 0 0 4px;
-    }
-
+    .page-title { font-family: var(--font-heading); font-size: 26px; font-weight: 700; color: var(--color-text-main); margin: 0 0 4px; }
     .page-subtitle { font-size: 14px; color: var(--color-text-muted); margin: 0; }
 
-    .section-card {
-      background: var(--color-white);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-lg);
-      padding: 28px 32px;
-      margin-bottom: 24px;
-    }
-
-    .section-header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    .section-icon {
-      width: 44px; height: 44px;
-      border-radius: var(--radius-lg);
-      background: #F0FDF4;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-
+    .section-card { background: var(--color-white); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 28px 32px; margin-bottom: 24px; }
+    .section-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+    .section-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); background: #F0FDF4; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .section-title { font-family: var(--font-heading); font-size: 17px; font-weight: 700; margin: 0 0 2px; }
     .section-desc { font-size: 13px; color: var(--color-text-muted); margin: 0; }
-
-    .status-pill {
-      margin-left: auto;
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 12px; font-weight: 600;
-      padding: 6px 12px; border-radius: var(--radius-pill);
-      background: var(--color-bg-app); color: var(--color-text-muted);
-      border: 1px solid var(--color-border); white-space: nowrap;
-    }
-    .status-pill.connected { background: #F0FDF4; color: #16A34A; border-color: #BBF7D0; }
-    .status-pill.disconnected { background: #FEF2F2; color: var(--color-error); border-color: #FECACA; }
-
-    .provider-tabs {
-      display: flex; gap: 8px;
-      margin-bottom: 24px;
-      border-bottom: 1px solid var(--color-border);
-    }
-
-    .provider-tab {
-      padding: 10px 20px; border: none; background: transparent;
-      color: var(--color-text-muted); font-size: 14px; font-weight: 600;
-      cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
-      transition: all var(--transition-fast);
-    }
-    .provider-tab:hover { color: var(--color-text-main); }
-    .provider-tab.active { color: var(--color-brand); border-bottom-color: var(--color-brand); }
 
     .fields-grid { display: flex; flex-direction: column; gap: 20px; }
     .field { display: flex; flex-direction: column; gap: 6px; }
@@ -527,77 +476,47 @@ interface WaTemplate {
 
     .input-wrap { position: relative; display: flex; }
     .input-wrap .input { padding-right: 44px; flex: 1; }
-    .eye-btn {
-      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; cursor: pointer; color: var(--color-text-muted);
-      display: flex; align-items: center;
-    }
+    .eye-btn { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted); display: flex; align-items: center; }
     .eye-btn:hover { color: var(--color-text-main); }
 
-    .qr-section {
-      margin-top: 28px; padding-top: 28px;
-      border-top: 1px solid var(--color-border);
-    }
-    .qr-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-    .qr-title { font-size: 15px; font-weight: 700; color: var(--color-text-main); }
-    .qr-placeholder {
-      width: 256px; height: 256px;
-      border: 2px dashed var(--color-border); border-radius: var(--radius-lg);
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
-    }
-    .qr-container { display: flex; flex-direction: column; align-items: flex-start; }
-    .qr-image {
-      width: 256px; height: 256px;
-      border-radius: var(--radius-lg); border: 4px solid var(--color-white);
-      box-shadow: var(--shadow-lg);
-    }
+    .loading-row { display: flex; align-items: center; gap: 10px; color: var(--color-text-muted); font-size: 14px; padding: 12px 0; }
+    .empty-accounts { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px; color: var(--color-text-muted); font-size: 14px; }
 
-    .error-box {
-      padding: 12px 16px;
-      background: #FEF2F2; border: 1px solid #FECACA;
-      border-radius: var(--radius-lg); font-size: 13px; color: var(--color-error);
-    }
-    .success-box {
-      display: flex; align-items: center; gap: 10px;
-      padding: 14px 18px; background: #F0FDF4; border: 1px solid #BBF7D0;
-      border-radius: var(--radius-lg); font-size: 14px; color: #15803D;
-    }
-    .badge-success {
-      margin-left: auto; background: #DCFCE7; color: #15803D;
-      font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: var(--radius-pill);
-    }
+    /* Account cards */
+    .acc-list { display: flex; flex-direction: column; gap: 14px; }
+    .acc-card { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 18px 20px; }
+    .acc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .acc-id { display: flex; flex-direction: column; gap: 3px; }
+    .account-label { font-weight: 700; font-size: 15px; color: var(--color-text-main); }
+    .account-sub { font-size: 12px; color: var(--color-text-muted); }
+    .badge-default { display: inline-flex; align-items: center; gap: 4px; width: fit-content; background: #FEF9C3; color: #854D0E; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); }
+    .acc-card-actions { display: flex; gap: 2px; flex-shrink: 0; }
+    .acc-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 12px; font-weight: 600; color: var(--color-error); }
+    .acc-status.ok { color: #16A34A; }
 
-    .test-panel {
-      margin-top: 20px; padding: 16px; background: var(--color-bg-app);
-      border: 1px solid var(--color-border); border-radius: var(--radius-lg);
-    }
-    .test-panel-title {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 13px; font-weight: 700; color: var(--color-text-main); margin-bottom: 10px;
-    }
+    .acc-panel { margin-top: 14px; padding: 16px; background: var(--color-bg-app); border-radius: var(--radius-lg); }
+    .panel-hint { font-size: 12px; color: var(--color-text-muted); margin: 0 0 12px; }
     .test-row { display: flex; align-items: center; gap: 8px; }
+    .qr-placeholder { width: 220px; height: 220px; border: 2px dashed var(--color-border); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; }
+    .qr-image { width: 220px; height: 220px; border-radius: var(--radius-lg); border: 4px solid var(--color-white); box-shadow: var(--shadow-lg); }
 
-    .section-footer {
-      display: flex; align-items: center; justify-content: flex-end;
-      margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--color-border);
-    }
+    .webhook-hint { margin-top: 14px; font-size: 11px; color: var(--color-text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .webhook-hint code { background: var(--color-bg-app); padding: 3px 8px; border-radius: 6px; font-size: 11px; word-break: break-all; }
+
+    .error-box { padding: 12px 16px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: var(--radius-lg); font-size: 13px; color: var(--color-error); }
+    .success-box { display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: var(--radius-lg); font-size: 14px; color: #15803D; }
+
+    .section-footer { display: flex; align-items: center; justify-content: flex-end; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--color-border); }
 
     /* Templates list */
     .templates-list { display: flex; flex-direction: column; gap: 0; }
-    .tpl-row {
-      display: flex; align-items: center; gap: 16px;
-      padding: 14px 0; border-bottom: 1px solid var(--color-border);
-    }
+    .tpl-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--color-border); }
     .tpl-row:last-child { border-bottom: none; }
     .tpl-row-main { flex: 1; min-width: 0; }
     .tpl-name { font-weight: 700; font-size: 13px; color: var(--color-text-main); font-family: monospace; }
     .tpl-body { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tpl-badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-    .tpl-badge {
-      font-size: 11px; font-weight: 700; padding: 3px 8px;
-      border-radius: var(--radius-pill); background: var(--color-bg-app);
-      color: var(--color-text-muted); border: 1px solid var(--color-border);
-    }
+    .tpl-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: var(--radius-pill); background: var(--color-bg-app); color: var(--color-text-muted); border: 1px solid var(--color-border); }
     .tpl-status-approved { background: #F0FDF4; color: #15803D; border-color: #BBF7D0; }
     .tpl-status-pending  { background: #FEFCE8; color: #854D0E; border-color: #FEF08A; }
     .tpl-status-rejected { background: #FEF2F2; color: #DC2626; border-color: #FECACA; }
@@ -605,33 +524,12 @@ interface WaTemplate {
     .tpl-del-btn:hover { color: var(--color-error) !important; background: #FEF2F2 !important; }
 
     /* Modal */
-    .overlay {
-      position: fixed; inset: 0;
-      background: rgba(15,23,42,0.45); backdrop-filter: blur(3px);
-      display: flex; align-items: center; justify-content: center; z-index: 100;
-    }
-    .modal-card {
-      background: var(--color-white);
-      border-radius: var(--radius-lg);
-      width: calc(100% - 48px);
-      max-width: 520px;
-      box-shadow: var(--shadow-lg);
-      display: flex; flex-direction: column;
-      max-height: 90vh;
-    }
-    .modal-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0;
-    }
+    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal-card { background: var(--color-white); border-radius: var(--radius-lg); width: calc(100% - 48px); max-width: 520px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; max-height: 90vh; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
     .modal-title { font-family: var(--font-heading); font-size: 17px; font-weight: 700; margin: 0; }
-    .modal-body {
-      padding: 20px 24px; overflow-y: auto; flex: 1;
-      display: flex; flex-direction: column; gap: 16px;
-    }
-    .modal-footer {
-      padding: 16px 24px; border-top: 1px solid var(--color-border);
-      display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0;
-    }
+    .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0; }
 
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { animation: spin 1s linear infinite; display: inline-block; }
@@ -647,10 +545,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly XCircle = XCircle;
   readonly RefreshCw = RefreshCw;
   readonly Save = Save;
-  readonly Wifi = Wifi;
   readonly WifiOff = WifiOff;
   readonly QrCode = QrCode;
-  readonly ExternalLink = ExternalLink;
   readonly Eye = Eye;
   readonly EyeOff = EyeOff;
   readonly Plus = Plus;
@@ -658,191 +554,200 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly X = X;
   readonly Layout = Layout;
   readonly Sparkles = Sparkles;
+  readonly Smartphone = Smartphone;
+  readonly Pencil = Pencil;
+  readonly Star = Star;
 
-  form: TenantConfig = {
-    whatsappProvider: 'none',
-    wahaApiUrl: '',
-    wahaApiKey: '',
-    wahaSession: 'default',
-    waPhoneNumberId: '',
-    waAccessToken: '',
-    waBusinessAccountId: '',
-    waDailyLimit: 50,
-    openaiApiKey: '',
-    deepseekApiKey: '',
-    geminiApiKey: '',
-    claudeApiKey: '',
-  };
+  // Accounts
+  accounts = signal<WaAccount[]>([]);
+  accountsLoading = signal(false);
+  accForm = signal<WaAccount | null>(null);
+  savingAcc = signal(false);
+  statusMap = signal<Record<string, WaStatus>>({});
+  qrMap = signal<Record<string, string>>({});
+  qrActiveId = signal('');
+  qrLoading = signal(false);
+  qrError = signal('');
+  testActiveId = signal('');
+  testPhone = '';
+  testLoading = signal(false);
+  testResult = signal<{ success: boolean; formattedPhone?: string; error?: string } | null>(null);
+  showKey = signal(false);
+  showToken = signal(false);
 
+  defaultProvider = computed(() => this.accounts().find(a => a.isDefault)?.provider ?? '');
+
+  // Daily limit + AI keys
+  dailyLimit = 50;
+  aiKeys: AiKeys = { openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', claudeApiKey: '' };
   showAiKey = signal<Record<string, boolean>>({});
   savingAi = signal(false);
   toggleAiKey(k: string) { this.showAiKey.update(m => ({ ...m, [k]: !m[k] })); }
 
-  saving = signal(false);
-  saved = signal(false);
-  savedProvider = signal('none');
-  statusLoading = signal(false);
-  qrLoading = signal(false);
-  waStatus = signal<WaStatus | null>(null);
-  qrCode = signal<string | null>(null);
-  qrError = signal('');
-  showKey = signal(false);
-  showToken = signal(false);
-  testPhone = '';
-  testLoading = signal(false);
-  testResult = signal<{ success: boolean; provider: string; wahaApiUrl?: string; wahaSession?: string; formattedPhone: string; error?: string } | null>(null);
-
+  // Templates
   templates = signal<WaTemplate[]>([]);
   templatesLoading = signal(false);
   syncingTemplates = signal(false);
   templateModalOpen = signal(false);
   savingTemplate = signal(false);
   tplError = signal('');
+  tplForm = { name: '', category: 'MARKETING' as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION', language: 'es', body: '', headerText: '', footer: '' };
 
-  tplForm = {
-    name: '',
-    category: 'MARKETING' as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION',
-    language: 'es',
-    body: '',
-    headerText: '',
-    footer: '',
-  };
-
-  private qrInterval: ReturnType<typeof setInterval> | null = null;
   private statusInterval: ReturnType<typeof setInterval> | null = null;
 
-  ngOnInit() { this.loadConfig(); }
+  ngOnInit() { this.loadConfig(); this.loadAccounts(); }
   ngOnDestroy() { this.stopPolling(); }
 
   @HostListener('document:keydown.escape')
-  onEsc() { if (this.templateModalOpen()) this.closeTemplateModal(); }
-
-  setProvider(p: string) {
-    this.form.whatsappProvider = p;
-    this.qrCode.set(null);
-    this.qrError.set('');
-    this.stopPolling();
-    if (p !== this.savedProvider()) {
-      this.waStatus.set(null);
-    } else {
-      this.checkStatus();
-    }
-    if (p === 'cloudapi' && this.saved()) this.loadTemplates();
+  onEsc() {
+    if (this.templateModalOpen()) { this.closeTemplateModal(); return; }
+    if (this.accForm()) this.accForm.set(null);
   }
 
+  // ---- Config (AI keys + daily limit) ----
   loadConfig() {
-    this.http.get<TenantConfig>(`${API}/settings`).subscribe({
+    this.http.get<AiKeys>(`${API}/settings`).subscribe({
       next: (cfg) => {
-        if (cfg) {
-          this.form = {
-            whatsappProvider: cfg.whatsappProvider ?? 'none',
-            wahaApiUrl: cfg.wahaApiUrl ?? '',
-            wahaApiKey: cfg.wahaApiKey ?? '',
-            wahaSession: cfg.wahaSession ?? 'default',
-            waPhoneNumberId: cfg.waPhoneNumberId ?? '',
-            waAccessToken: cfg.waAccessToken ?? '',
-            waBusinessAccountId: cfg.waBusinessAccountId ?? '',
-            waDailyLimit: cfg.waDailyLimit ?? 50,
-            openaiApiKey: cfg.openaiApiKey ?? '',
-            deepseekApiKey: cfg.deepseekApiKey ?? '',
-            geminiApiKey: cfg.geminiApiKey ?? '',
-            claudeApiKey: cfg.claudeApiKey ?? '',
-          };
-          this.saved.set(true);
-          this.savedProvider.set(cfg.whatsappProvider ?? 'none');
-          this.checkStatus();
-          if (cfg.whatsappProvider === 'cloudapi') this.loadTemplates();
-        }
+        if (!cfg) return;
+        this.dailyLimit = cfg.waDailyLimit ?? 50;
+        this.aiKeys = {
+          openaiApiKey: cfg.openaiApiKey ?? '',
+          deepseekApiKey: cfg.deepseekApiKey ?? '',
+          geminiApiKey: cfg.geminiApiKey ?? '',
+          claudeApiKey: cfg.claudeApiKey ?? '',
+        };
       },
       error: () => {},
     });
   }
 
-  save() {
-    this.saving.set(true);
-    const dto = { ...this.form, waDailyLimit: Number(this.form.waDailyLimit) || 50 };
-    this.http.put<TenantConfig>(`${API}/settings`, dto).subscribe({
-      next: () => {
-        this.toast.success('Configuración guardada');
-        this.saving.set(false);
-        this.saved.set(true);
-        this.savedProvider.set(this.form.whatsappProvider);
-        this.checkStatus();
-        if (this.form.whatsappProvider === 'waha') {
-          this.loadQr();
-          this.startStatusPolling();
-        }
-        if (this.form.whatsappProvider === 'cloudapi') this.loadTemplates();
-      },
-      error: (err: { error?: { message?: string } }) => {
-        this.toast.error(err.error?.message || 'Error al guardar');
-        this.saving.set(false);
-      },
+  saveDailyLimit() {
+    this.http.put(`${API}/settings`, { waDailyLimit: Number(this.dailyLimit) || 50 }).subscribe({
+      next: () => this.toast.success('Límite diario guardado'),
+      error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'Error al guardar'),
     });
   }
 
   saveAi() {
     this.savingAi.set(true);
-    this.http.put<TenantConfig>(`${API}/settings`, { ...this.form, waDailyLimit: Number(this.form.waDailyLimit) || 50 }).subscribe({
-      next: () => {
-        this.toast.success('API keys de IA guardadas');
-        this.savingAi.set(false);
-        this.saved.set(true);
-      },
-      error: (err: { error?: { message?: string } }) => {
-        this.toast.error(err.error?.message || 'Error al guardar');
-        this.savingAi.set(false);
-      },
+    this.http.put(`${API}/settings`, { ...this.aiKeys }).subscribe({
+      next: () => { this.toast.success('API keys de IA guardadas'); this.savingAi.set(false); },
+      error: (err: { error?: { message?: string } }) => { this.toast.error(err.error?.message || 'Error al guardar'); this.savingAi.set(false); },
     });
   }
 
-  checkStatus() {
-    this.statusLoading.set(true);
-    this.http.get<WaStatus>(`${API}/settings/whatsapp/status`).subscribe({
-      next: (s) => {
-        this.waStatus.set(s);
-        this.statusLoading.set(false);
-        if (s.connected && this.qrInterval) this.stopPolling();
-      },
-      error: () => this.statusLoading.set(false),
+  // ---- Accounts ----
+  loadAccounts() {
+    this.accountsLoading.set(true);
+    this.http.get<WaAccount[]>(`${API}/whatsapp-accounts`).subscribe({
+      next: (a) => { this.accounts.set(a); this.accountsLoading.set(false); if (this.defaultProvider() === 'cloudapi') this.loadTemplates(); },
+      error: () => this.accountsLoading.set(false),
     });
   }
 
-  testWaha() {
-    if (!this.testPhone.trim()) { this.toast.error('Ingresa un número de teléfono'); return; }
-    this.testLoading.set(true);
-    this.testResult.set(null);
-    this.http.post<{ success: boolean; provider: string; wahaApiUrl?: string; wahaSession?: string; formattedPhone: string; error?: string }>(
-      `${API}/settings/whatsapp/test`, { phone: this.testPhone }
-    ).subscribe({
-      next: (r) => { this.testResult.set(r); this.testLoading.set(false); },
-      error: (err: { error?: { message?: string } }) => {
-        this.testResult.set({ success: false, provider: '?', formattedPhone: this.testPhone, error: err.error?.message || 'Error de red' });
-        this.testLoading.set(false);
-      },
+  newAccount() { this.accForm.set(blankAccount()); this.showKey.set(false); this.showToken.set(false); }
+  editAccount(a: WaAccount) { this.accForm.set({ ...a }); this.showKey.set(false); this.showToken.set(false); }
+
+  webhookUrl(a: WaAccount): string {
+    const kind = a.provider === 'waha' ? 'waha' : 'cloud';
+    return `${API}/wa/webhook/${kind}/${a._id}`;
+  }
+
+  saveAccount() {
+    const acc = this.accForm();
+    if (!acc) return;
+    if (!acc.label.trim()) { this.toast.error('El nombre es obligatorio'); return; }
+    this.savingAcc.set(true);
+    const { _id, ...body } = acc;
+    const req = _id
+      ? this.http.patch<WaAccount>(`${API}/whatsapp-accounts/${_id}`, body)
+      : this.http.post<WaAccount>(`${API}/whatsapp-accounts`, body);
+    req.subscribe({
+      next: () => { this.toast.success('Cuenta guardada'); this.savingAcc.set(false); this.accForm.set(null); this.loadAccounts(); },
+      error: (err: { error?: { message?: string } }) => { this.toast.error(err.error?.message || 'Error al guardar'); this.savingAcc.set(false); },
     });
   }
 
-  loadQr() {
+  async deleteAccount(a: WaAccount) {
+    const ok = await this.confirm.confirm({ title: 'Eliminar cuenta', message: `¿Eliminar la cuenta "${a.label}"?`, confirmText: 'Eliminar', danger: true });
+    if (!ok) return;
+    this.http.delete(`${API}/whatsapp-accounts/${a._id}`).subscribe({
+      next: () => { this.toast.success('Cuenta eliminada'); this.loadAccounts(); },
+      error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'Error al eliminar'),
+    });
+  }
+
+  setDefault(a: WaAccount) {
+    this.http.patch(`${API}/whatsapp-accounts/${a._id}/default`, {}).subscribe({
+      next: () => { this.toast.success(`"${a.label}" es ahora la cuenta predeterminada`); this.loadAccounts(); },
+      error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'Error'),
+    });
+  }
+
+  checkStatus(a: WaAccount) {
+    this.http.get<WaStatus>(`${API}/whatsapp-accounts/${a._id}/status`).subscribe({
+      next: (s) => this.statusMap.update(m => ({ ...m, [a._id]: s })),
+      error: (err: { error?: { message?: string } }) => this.statusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err.error?.message || 'Error' } })),
+    });
+  }
+
+  toggleQr(a: WaAccount) {
+    if (this.qrActiveId() === a._id) { this.qrActiveId.set(''); this.stopPolling(); return; }
+    this.testActiveId.set('');
+    this.qrActiveId.set(a._id);
+    this.loadQr(a);
+    this.startPolling(a);
+  }
+
+  loadQr(a: WaAccount) {
     this.qrLoading.set(true);
     this.qrError.set('');
-    this.http.get<{ qrcode?: string; error?: string }>(`${API}/settings/whatsapp/qr`).subscribe({
+    this.http.get<{ qrcode?: string; error?: string }>(`${API}/whatsapp-accounts/${a._id}/qr`).subscribe({
       next: (r) => {
         this.qrLoading.set(false);
         if (r.qrcode) {
           const src = r.qrcode.startsWith('data:') ? r.qrcode : `data:image/png;base64,${r.qrcode}`;
-          this.qrCode.set(src);
+          this.qrMap.update(m => ({ ...m, [a._id]: src }));
         } else {
           this.qrError.set(r.error ?? 'No se pudo obtener el QR');
         }
       },
-      error: () => {
-        this.qrLoading.set(false);
-        this.qrError.set('Error al conectar con WAHA');
-      },
+      error: () => { this.qrLoading.set(false); this.qrError.set('Error al conectar con WAHA'); },
     });
   }
 
+  toggleTest(a: WaAccount) {
+    if (this.testActiveId() === a._id) { this.testActiveId.set(''); return; }
+    this.qrActiveId.set('');
+    this.stopPolling();
+    this.testActiveId.set(a._id);
+    this.testResult.set(null);
+  }
+
+  testAccount(a: WaAccount) {
+    if (!this.testPhone.trim()) { this.toast.error('Ingresa un número'); return; }
+    this.testLoading.set(true);
+    this.testResult.set(null);
+    this.http.post<{ success: boolean; formattedPhone?: string; error?: string }>(`${API}/whatsapp-accounts/${a._id}/test`, { phone: this.testPhone }).subscribe({
+      next: (r) => { this.testResult.set(r); this.testLoading.set(false); },
+      error: (err: { error?: { message?: string } }) => { this.testResult.set({ success: false, formattedPhone: this.testPhone, error: err.error?.message || 'Error de red' }); this.testLoading.set(false); },
+    });
+  }
+
+  private startPolling(a: WaAccount) {
+    this.stopPolling();
+    this.statusInterval = setInterval(() => {
+      this.checkStatus(a);
+      if (this.statusMap()[a._id]?.connected) { this.stopPolling(); return; }
+      if (this.qrActiveId() === a._id) this.loadQr(a);
+    }, 10000);
+  }
+
+  private stopPolling() {
+    if (this.statusInterval) { clearInterval(this.statusInterval); this.statusInterval = null; }
+  }
+
+  // ---- Templates ----
   loadTemplates() {
     if (this.templatesLoading()) return;
     this.templatesLoading.set(true);
@@ -855,15 +760,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   syncTemplates() {
     this.syncingTemplates.set(true);
     this.http.post<WaTemplate[]>(`${API}/settings/templates/sync`, {}).subscribe({
-      next: (data) => {
-        this.templates.set(data);
-        this.syncingTemplates.set(false);
-        this.toast.success(`${data.length} plantilla(s) sincronizadas desde Meta`);
-      },
-      error: (err: { error?: { message?: string } }) => {
-        this.syncingTemplates.set(false);
-        this.toast.error(err.error?.message || 'Error al sincronizar plantillas');
-      },
+      next: (data) => { this.templates.set(data); this.syncingTemplates.set(false); this.toast.success(`${data.length} plantilla(s) sincronizadas desde Meta`); },
+      error: (err: { error?: { message?: string } }) => { this.syncingTemplates.set(false); this.toast.error(err.error?.message || 'Error al sincronizar plantillas'); },
     });
   }
 
@@ -889,46 +787,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
       footer: this.tplForm.footer?.trim() || undefined,
     };
     this.http.post<WaTemplate>(`${API}/settings/templates`, dto).subscribe({
-      next: (t) => {
-        this.templates.update(list => [...list, t]);
-        this.savingTemplate.set(false);
-        this.closeTemplateModal();
-        this.toast.success('Plantilla creada. Pendiente de aprobación por Meta.');
-      },
-      error: (err: { error?: { message?: string } }) => {
-        this.tplError.set(err.error?.message || 'Error al crear plantilla');
-        this.savingTemplate.set(false);
-      },
+      next: (t) => { this.templates.update(list => [...list, t]); this.savingTemplate.set(false); this.closeTemplateModal(); this.toast.success('Plantilla creada. Pendiente de aprobación por Meta.'); },
+      error: (err: { error?: { message?: string } }) => { this.tplError.set(err.error?.message || 'Error al crear plantilla'); this.savingTemplate.set(false); },
     });
   }
 
   async deleteTemplate(t: WaTemplate) {
-    const ok = await this.confirm.confirm({
-      title: 'Eliminar plantilla',
-      message: `¿Eliminar la plantilla "${t.name}"? Esta acción también la eliminará de Meta.`,
-      confirmText: 'Eliminar',
-      danger: true,
-    });
+    const ok = await this.confirm.confirm({ title: 'Eliminar plantilla', message: `¿Eliminar la plantilla "${t.name}"? Esta acción también la eliminará de Meta.`, confirmText: 'Eliminar', danger: true });
     if (!ok) return;
     this.http.delete(`${API}/settings/templates/${t._id}`).subscribe({
-      next: () => {
-        this.templates.update(list => list.filter(x => x._id !== t._id));
-        this.toast.success('Plantilla eliminada');
-      },
+      next: () => { this.templates.update(list => list.filter(x => x._id !== t._id)); this.toast.success('Plantilla eliminada'); },
       error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'Error al eliminar'),
     });
-  }
-
-  private startStatusPolling() {
-    this.stopPolling();
-    this.qrInterval = setInterval(() => {
-      if (!this.waStatus()?.connected) this.loadQr();
-    }, 18000);
-    this.statusInterval = setInterval(() => this.checkStatus(), 5000);
-  }
-
-  private stopPolling() {
-    if (this.qrInterval) { clearInterval(this.qrInterval); this.qrInterval = null; }
-    if (this.statusInterval) { clearInterval(this.statusInterval); this.statusInterval = null; }
   }
 }

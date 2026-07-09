@@ -32,11 +32,33 @@ export class WhatsAppAccountsService {
     return this.model.findById(new Types.ObjectId(id)).exec();
   }
 
-  create(tenantId: string, dto: CreateWhatsAppAccountDto) {
+  async create(tenantId: string, dto: CreateWhatsAppAccountDto) {
+    const tid = new Types.ObjectId(tenantId);
+    const count = await this.model.countDocuments({ tenantId: tid }).exec();
     return this.model.create({
       ...dto,
-      tenantId: new Types.ObjectId(tenantId),
+      tenantId: tid,
+      isDefault: count === 0, // la primera cuenta del tenant queda como predeterminada
     });
+  }
+
+  /** Cuenta predeterminada del tenant (para campañas y envíos salientes). */
+  async getDefault(tenantId: string): Promise<WhatsAppAccount | null> {
+    const tid = new Types.ObjectId(tenantId);
+    return (
+      (await this.model.findOne({ tenantId: tid, isDefault: true, active: true }).exec()) ??
+      (await this.model.findOne({ tenantId: tid, active: true }).sort({ createdAt: 1 }).exec())
+    );
+  }
+
+  /** Marca una cuenta como predeterminada y desmarca el resto. */
+  async setDefault(id: string, tenantId: string): Promise<WhatsAppAccount> {
+    const tid = new Types.ObjectId(tenantId);
+    const account = await this.findOne(id, tenantId);
+    await this.model.updateMany({ tenantId: tid }, { $set: { isDefault: false } }).exec();
+    account.isDefault = true;
+    await account.save();
+    return account;
   }
 
   async update(id: string, tenantId: string, dto: UpdateWhatsAppAccountDto) {
@@ -52,10 +74,15 @@ export class WhatsAppAccountsService {
   }
 
   async remove(id: string, tenantId: string) {
-    const res = await this.model
-      .deleteOne({ _id: new Types.ObjectId(id), tenantId: new Types.ObjectId(tenantId) })
-      .exec();
-    if (res.deletedCount === 0) throw new NotFoundException('Cuenta de WhatsApp no encontrada');
+    const tid = new Types.ObjectId(tenantId);
+    const account = await this.model.findOne({ _id: new Types.ObjectId(id), tenantId: tid }).exec();
+    if (!account) throw new NotFoundException('Cuenta de WhatsApp no encontrada');
+    await this.model.deleteOne({ _id: account._id }).exec();
+    // si era la predeterminada, promueve otra
+    if (account.isDefault) {
+      const next = await this.model.findOne({ tenantId: tid }).sort({ createdAt: 1 }).exec();
+      if (next) { next.isDefault = true; await next.save(); }
+    }
     return { deleted: true };
   }
 

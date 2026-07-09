@@ -43,6 +43,12 @@ export class WhatsAppAccountsController {
     return this.service.test(id, req.user.tenantId, dto.phone);
   }
 
+  @Patch(':id/default')
+  setDefault(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.service.setDefault(id, req.user.tenantId);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateWhatsAppAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
