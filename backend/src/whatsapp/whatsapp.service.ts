@@ -90,8 +90,22 @@ export class WhatsAppService {
     const headers = { 'X-Api-Key': config.wahaApiKey ?? '', 'Content-Type': 'application/json', Accept: 'application/json' };
     try {
       const statusRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, { headers });
-      if (!statusRes.ok) return { error: `Sesión "${session}" no encontrada. Créala con POST /api/sessions.` };
-      const { status } = await statusRes.json() as { status?: string };
+      if (!statusRes.ok) {
+        if (statusRes.status === 404) {
+          const createRes = await fetch(`${config.wahaApiUrl}/api/sessions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ name: session, start: true }),
+          });
+          if (!createRes.ok) return { error: `No se pudo crear la sesión "${session}": ${await createRes.text()}` };
+          await new Promise(r => setTimeout(r, 2500));
+        } else {
+          return { error: `WAHA ${statusRes.status}: ${await statusRes.text()}` };
+        }
+      }
+      const { status } = statusRes.ok
+        ? await statusRes.json() as { status?: string }
+        : { status: undefined };
       if (status === 'FAILED' || status === 'STOPPED') {
         if (status === 'FAILED') {
           await fetch(`${config.wahaApiUrl}/api/sessions/${session}/stop`, { method: 'POST', headers });
