@@ -21,6 +21,7 @@ import { ListsModule } from './lists/lists.module';
 import { VisitsModule } from './visits/visits.module';
 import { ImpulsadorModule } from './impulsador/impulsador.module';
 import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
+import { InstagramAccountsModule } from './instagram-accounts/instagram-accounts.module';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 
 @Module({
@@ -51,6 +52,7 @@ import { AiAgentsModule } from './ai-agents/ai-agents.module';
     VisitsModule,
     ImpulsadorModule,
     WhatsAppAccountsModule,
+    InstagramAccountsModule,
     AiAgentsModule,
   ],
   controllers: [AppController],

@@ -77,6 +77,7 @@ export class AiAgentsService {
     return this.agentModel.create({
       ...dto,
       accountIds: (dto.accountIds ?? []).map((a) => new Types.ObjectId(a)),
+      instagramAccountIds: (dto.instagramAccountIds ?? []).map((a) => new Types.ObjectId(a)),
       tenantId: new Types.ObjectId(tenantId),
       createdBy: new Types.ObjectId(userId),
     });
@@ -85,6 +86,7 @@ export class AiAgentsService {
   async update(id: string, tenantId: string, dto: UpdateAiAgentDto) {
     const patch: Record<string, unknown> = { ...dto };
     if (dto.accountIds) patch.accountIds = dto.accountIds.map((a) => new Types.ObjectId(a));
+    if (dto.instagramAccountIds) patch.instagramAccountIds = dto.instagramAccountIds.map((a) => new Types.ObjectId(a));
     const doc = await this.agentModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), tenantId: this.tenantMatch(tenantId) },
@@ -322,6 +324,12 @@ export class AiAgentsService {
   async findPublishedByAccount(accountId: string): Promise<AiAgent | null> {
     return this.agentModel
       .findOne({ published: true, accountIds: new Types.ObjectId(accountId) })
+      .exec();
+  }
+
+  async findPublishedByInstagramAccount(accountId: string): Promise<AiAgent | null> {
+    return this.agentModel
+      .findOne({ published: true, instagramAccountIds: new Types.ObjectId(accountId) })
       .exec();
   }
 

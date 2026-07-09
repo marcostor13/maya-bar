@@ -43,6 +43,10 @@ export class AiAgent extends Document {
   @Prop({ type: [{ type: Types.ObjectId, ref: 'WhatsAppAccount' }], default: [] })
   accountIds: Types.ObjectId[];
 
+  // Cuentas de Instagram (DM) por las que responde
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'InstagramAccount' }], default: [] })
+  instagramAccountIds: Types.ObjectId[];
+
   @Prop({ default: false })
   published: boolean;
 

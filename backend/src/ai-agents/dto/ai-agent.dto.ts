@@ -11,6 +11,7 @@ export class CreateAiAgentDto {
   ragEnabled?: boolean;
   topK?: number;
   accountIds?: string[];
+  instagramAccountIds?: string[];
   published?: boolean;
 }
 

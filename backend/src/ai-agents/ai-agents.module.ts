@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AiAgentsController } from './ai-agents.controller';
 import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
+import { InstagramWebhookController } from './instagram-webhook.controller';
 import { AiAgentsService } from './ai-agents.service';
 import { RagService } from './rag.service';
 import { EmbeddingsService } from './embeddings.service';
@@ -15,6 +16,8 @@ import { TenantConfig, TenantConfigSchema } from '../settings/tenant-config.sche
 import { AiModule } from '../ai/ai.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.module';
+import { InstagramModule } from '../instagram/instagram.module';
+import { InstagramAccountsModule } from '../instagram-accounts/instagram-accounts.module';
 
 @Module({
   imports: [
@@ -30,8 +33,10 @@ import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.m
     AiModule,
     WhatsAppModule,
     WhatsAppAccountsModule,
+    InstagramModule,
+    InstagramAccountsModule,
   ],
-  controllers: [AiAgentsController, WhatsAppWebhookController],
+  controllers: [AiAgentsController, WhatsAppWebhookController, InstagramWebhookController],
   providers: [AiAgentsService, RagService, EmbeddingsService],
 })
 export class AiAgentsModule {}

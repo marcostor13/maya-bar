@@ -1,12 +1,13 @@
 import { Component, inject, signal, OnInit, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Link,
+  Paperclip, Copy, Link, Instagram,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 
@@ -27,6 +28,17 @@ interface WaAccount {
   active: boolean;
 }
 
+interface IgAccount {
+  _id: string;
+  label: string;
+  username?: string;
+  igBusinessAccountId?: string;
+  pageId?: string;
+  pageAccessToken?: string;
+  tokenExpiresAt?: string;
+  active: boolean;
+}
+
 interface Agent {
   _id: string;
   name: string;
@@ -41,6 +53,7 @@ interface Agent {
   ragEnabled: boolean;
   topK: number;
   accountIds: string[];
+  instagramAccountIds: string[];
   published: boolean;
 }
 
@@ -69,7 +82,7 @@ function blankAgent(): Agent {
     _id: '', name: '', description: '', systemPrompt: 'Eres un asistente amable y servicial. Responde de forma clara y breve.',
     provider: 'auto', aiModel: '', temperature: 0.4, maxTokens: 800, greeting: '',
     fallbackMessage: 'Lo siento, no tengo esa información en este momento.',
-    ragEnabled: true, topK: 5, accountIds: [], published: false,
+    ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [], published: false,
   };
 }
 
@@ -81,10 +94,17 @@ function blankAccount(): WaAccount {
   };
 }
 
+function blankIgAccount(): IgAccount {
+  return {
+    _id: '', label: '', username: '', igBusinessAccountId: '', pageId: '',
+    pageAccessToken: '', active: true,
+  };
+}
+
 @Component({
   selector: 'app-ai-agents',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, DatePipe],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -96,6 +116,10 @@ function blankAccount(): WaAccount {
           <button class="btn btn-secondary" (click)="openAccounts()">
             <lucide-icon [img]="Smartphone" [size]="16" [strokeWidth]="2.5"></lucide-icon>
             Cuentas WhatsApp
+          </button>
+          <button class="btn btn-secondary" (click)="openIgAccounts()">
+            <lucide-icon [img]="Instagram" [size]="16" [strokeWidth]="2.5"></lucide-icon>
+            Cuentas Instagram
           </button>
           <button class="btn btn-primary" (click)="openNew()">
             <lucide-icon [img]="Plus" [size]="16" [strokeWidth]="2.5"></lucide-icon>
@@ -130,7 +154,15 @@ function blankAccount(): WaAccount {
               <h3>{{ a.name }}</h3>
               <p class="agent-desc">{{ a.description || a.systemPrompt }}</p>
               <div class="agent-meta">
-                <span class="meta-pill"><lucide-icon [img]="Smartphone" [size]="13"></lucide-icon> {{ a.accountIds.length }} cuenta(s)</span>
+                @if (a.accountIds.length > 0) {
+                  <span class="meta-pill"><lucide-icon [img]="Smartphone" [size]="13"></lucide-icon> {{ a.accountIds.length }} WhatsApp</span>
+                }
+                @if (a.instagramAccountIds.length > 0) {
+                  <span class="meta-pill"><lucide-icon [img]="Instagram" [size]="13"></lucide-icon> {{ a.instagramAccountIds.length }} Instagram</span>
+                }
+                @if (a.accountIds.length === 0 && a.instagramAccountIds.length === 0) {
+                  <span class="meta-pill">Sin canales</span>
+                }
                 @if (a.ragEnabled) {
                   <span class="meta-pill"><lucide-icon [img]="BookOpen" [size]="13"></lucide-icon> RAG</span>
                 }
@@ -224,6 +256,9 @@ function blankAccount(): WaAccount {
 
             <!-- CANALES -->
             @if (section() === 'channels') {
+              <p class="channel-group-title">
+                <lucide-icon [img]="Smartphone" [size]="14"></lucide-icon> WhatsApp
+              </p>
               @if (accounts().length === 0) {
                 <div class="inline-empty">
                   <lucide-icon [img]="Smartphone" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
@@ -245,6 +280,32 @@ function blankAccount(): WaAccount {
                   </label>
                 }
                 <button class="btn btn-sm btn-ghost" style="margin-top:8px" (click)="openAccounts()">
+                  <lucide-icon [img]="Plus" [size]="14"></lucide-icon> Gestionar cuentas
+                </button>
+              }
+
+              <p class="channel-group-title" style="margin-top:24px">
+                <lucide-icon [img]="Instagram" [size]="14"></lucide-icon> Instagram (DM)
+              </p>
+              @if (igAccounts().length === 0) {
+                <div class="inline-empty">
+                  <lucide-icon [img]="Instagram" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
+                  <p>No hay cuentas de Instagram configuradas.</p>
+                  <button class="btn btn-sm btn-secondary" (click)="openIgAccounts()">Configurar cuentas</button>
+                </div>
+              } @else {
+                <p class="field-hint" style="margin-bottom:12px">Selecciona por qué cuentas de Instagram responderá este agente.</p>
+                @for (acc of igAccounts(); track acc._id) {
+                  <label class="account-row" [class.selected]="form.instagramAccountIds.includes(acc._id)">
+                    <input type="checkbox" [checked]="form.instagramAccountIds.includes(acc._id)" (change)="toggleIgAccount(acc._id)" />
+                    <div class="account-info">
+                      <span class="account-label">{{ acc.label }}</span>
+                      <span class="account-sub">{{ acc.username ? '@' + acc.username : 'Instagram Messaging' }}</span>
+                    </div>
+                    @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }
+                  </label>
+                }
+                <button class="btn btn-sm btn-ghost" style="margin-top:8px" (click)="openIgAccounts()">
                   <lucide-icon [img]="Plus" [size]="14"></lucide-icon> Gestionar cuentas
                 </button>
               }
@@ -560,6 +621,111 @@ function blankAccount(): WaAccount {
         </aside>
       </div>
     }
+
+    <!-- ───────── Instagram Accounts Drawer ───────── -->
+    @if (igAccountsOpen()) {
+      <div class="overlay" (click)="closeIgAccounts()" role="dialog" aria-modal="true">
+        <aside class="drawer" (click)="$event.stopPropagation()">
+          <div class="drawer-header">
+            <div class="drawer-title-group">
+              <h2><lucide-icon [img]="Instagram" [size]="20" [strokeWidth]="2.5"></lucide-icon> Cuentas de Instagram</h2>
+              <p class="subtitle">Conecta varias cuentas de Instagram (DM) vía Meta Graph API.</p>
+            </div>
+            <button class="btn btn-ghost btn-icon" (click)="closeIgAccounts()" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+            </button>
+          </div>
+
+          <div class="drawer-scroll">
+            @if (!igAccForm()) {
+              <button class="btn btn-primary" style="width:100%;margin-bottom:12px" [disabled]="connectingIg()" (click)="connectInstagram()">
+                <lucide-icon [img]="Instagram" [size]="16"></lucide-icon>
+                {{ connectingIg() ? 'Redirigiendo…' : 'Conectar con Instagram' }}
+              </button>
+              <div class="webhook-hint" style="margin-bottom:16px">
+                <span>Webhook de la app (se configura una sola vez en Meta, aplica a todas las cuentas):</span>
+                <code>{{ igWebhookUrl() }}</code>
+              </div>
+              @for (acc of igAccounts(); track acc._id) {
+                <div class="acc-card">
+                  <div class="acc-card-head">
+                    <div>
+                      <span class="account-label">{{ acc.label }}</span>
+                      <span class="account-sub">{{ acc.username ? '@' + acc.username : 'Instagram Messaging' }}</span>
+                    </div>
+                    <div class="acc-card-actions">
+                      @if (acc.tokenExpiresAt) {
+                        <button class="btn btn-sm btn-ghost btn-icon" (click)="renewIgToken(acc)" title="Renovar token">
+                          <lucide-icon [img]="RefreshCw" [size]="14" style="color:var(--color-brand)"></lucide-icon>
+                        </button>
+                      }
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="subscribeIgWebhook(acc)" title="Suscribir webhook">
+                        <lucide-icon [img]="Link" [size]="14"></lucide-icon>
+                      </button>
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="checkIgStatus(acc)" title="Estado">
+                        <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
+                      </button>
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="editIgAccount(acc)" title="Editar">
+                        <lucide-icon [img]="Pencil" [size]="14"></lucide-icon>
+                      </button>
+                      <button class="btn btn-sm btn-ghost btn-icon" (click)="deleteIgAccount(acc)" title="Eliminar">
+                        <lucide-icon [img]="Trash2" [size]="14" style="color:var(--color-error)"></lucide-icon>
+                      </button>
+                    </div>
+                  </div>
+                  @if (igStatusMap()[acc._id]) {
+                    <div class="acc-status" [class.ok]="igStatusMap()[acc._id].connected">
+                      {{ igStatusMap()[acc._id].connected ? 'Conectado' : 'Desconectado' }}
+                      {{ igStatusMap()[acc._id].username ? '· @' + igStatusMap()[acc._id].username : '' }}
+                      {{ igStatusMap()[acc._id].error || '' }}
+                    </div>
+                  }
+                  @if (acc.tokenExpiresAt) {
+                    <div class="webhook-hint">
+                      <span>Token vence:</span> {{ acc.tokenExpiresAt | date:'d MMM y' }}
+                    </div>
+                  }
+                </div>
+              }
+              <button class="btn btn-ghost" style="width:100%;margin-top:8px" (click)="newIgAccount()">
+                <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir manualmente (avanzado)
+              </button>
+            } @else {
+              <!-- Form de cuenta -->
+              <div class="field">
+                <label class="field-label">Nombre de la cuenta *</label>
+                <input class="input" [(ngModel)]="igAccForm()!.label" placeholder="Ej: Instagram Principal" />
+              </div>
+              <div class="field">
+                <label class="field-label">Usuario (informativo)</label>
+                <input class="input" [(ngModel)]="igAccForm()!.username" placeholder="mi_restaurante" />
+              </div>
+              <div class="field">
+                <label class="field-label">Instagram User ID *</label>
+                <input class="input" [(ngModel)]="igAccForm()!.igBusinessAccountId" placeholder="1789…" />
+                <span class="field-hint">ID de la cuenta profesional de Instagram (Instagram Login).</span>
+              </div>
+              <div class="field">
+                <label class="field-label">Access Token de Instagram *</label>
+                <input class="input" [(ngModel)]="igAccForm()!.pageAccessToken" placeholder="IGAAG…" />
+                <span class="field-hint">Token de larga duración con permisos instagram_business_basic e instagram_business_manage_messages. Después de guardar, usa el botón de enlace para suscribir el webhook.</span>
+              </div>
+              <div class="field">
+                <label class="field-label">Facebook Page ID (opcional)</label>
+                <input class="input" [(ngModel)]="igAccForm()!.pageId" placeholder="Solo si usas el flujo clásico ligado a una Página" />
+              </div>
+
+              <div class="drawer-actions">
+                <button class="btn btn-secondary" (click)="igAccForm.set(null)">Cancelar</button>
+                <button class="btn btn-primary" [disabled]="savingIgAcc()" (click)="saveIgAccount()">
+                  {{ savingIgAcc() ? 'Guardando…' : 'Guardar cuenta' }}
+                </button>
+              </div>
+            }
+          </div>
+        </aside>
+      </div>
+    }
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
@@ -625,6 +791,7 @@ function blankAccount(): WaAccount {
 
     .inline-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px; text-align: center; color: var(--color-text-muted); font-size: 13px; }
 
+    .channel-group-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--color-text-muted); margin: 0 0 12px; }
     .account-row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1.5px solid var(--color-border); border-radius: var(--radius-lg); margin-bottom: 10px; cursor: pointer; transition: all var(--transition-fast); }
     .account-row.selected { border-color: var(--color-brand); background: var(--color-brand-light); }
     .account-info { display: flex; flex-direction: column; flex: 1; }
@@ -689,7 +856,7 @@ export class AiAgentsComponent implements OnInit {
   readonly Sparkles = Sparkles; readonly BookOpen = BookOpen; readonly Phone = Phone;
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
-  readonly Link = Link;
+  readonly Link = Link; readonly Instagram = Instagram;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
     { key: 'general', label: 'General', icon: Bot },
@@ -701,6 +868,7 @@ export class AiAgentsComponent implements OnInit {
 
   agents = signal<Agent[]>([]);
   accounts = signal<WaAccount[]>([]);
+  igAccounts = signal<IgAccount[]>([]);
   loading = signal(true);
 
   // editor
@@ -729,10 +897,19 @@ export class AiAgentsComponent implements OnInit {
   savingAcc = signal(false);
   statusMap = signal<Record<string, { connected: boolean; state?: string; error?: string }>>({});
 
+  // instagram accounts manager
+  igAccountsOpen = signal(false);
+  igAccForm = signal<IgAccount | null>(null);
+  savingIgAcc = signal(false);
+  connectingIg = signal(false);
+  igStatusMap = signal<Record<string, { connected: boolean; username?: string; error?: string }>>({});
+
   @HostListener('document:keydown.escape')
   onEsc() {
     if (this.accForm()) { this.accForm.set(null); return; }
     if (this.accountsOpen()) { this.closeAccounts(); return; }
+    if (this.igAccForm()) { this.igAccForm.set(null); return; }
+    if (this.igAccountsOpen()) { this.closeIgAccounts(); return; }
     if (this.playgroundAgent()) { this.closePlayground(); return; }
     if (this.drawerOpen()) this.closeDrawer();
   }
@@ -740,6 +917,26 @@ export class AiAgentsComponent implements OnInit {
   ngOnInit() {
     this.load();
     this.loadAccounts();
+    this.loadIgAccounts();
+    this.handleIgOAuthReturn();
+  }
+
+  /** Procesa el redirect de vuelta desde el callback OAuth de Instagram (ver instagram-oauth-callback.controller.ts). */
+  private handleIgOAuthReturn() {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('ig_oauth');
+    if (!result) return;
+    if (result === 'success') {
+      this.toast.success('Cuenta de Instagram conectada');
+      this.loadIgAccounts();
+      this.igAccountsOpen.set(true);
+    } else {
+      this.toast.error(params.get('reason') || 'No se pudo conectar la cuenta de Instagram');
+    }
+    params.delete('ig_oauth');
+    params.delete('reason');
+    const query = params.toString();
+    history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : ''));
   }
 
   load() {
@@ -757,6 +954,13 @@ export class AiAgentsComponent implements OnInit {
     });
   }
 
+  loadIgAccounts() {
+    this.http.get<IgAccount[]>(`${API}/instagram-accounts`).subscribe({
+      next: a => this.igAccounts.set(a),
+      error: () => {},
+    });
+  }
+
   // ---- Editor ----
   openNew() {
     this.form = blankAgent();
@@ -769,7 +973,7 @@ export class AiAgentsComponent implements OnInit {
   }
 
   openEdit(a: Agent) {
-    this.form = { ...a, accountIds: [...(a.accountIds || [])] };
+    this.form = { ...a, accountIds: [...(a.accountIds || [])], instagramAccountIds: [...(a.instagramAccountIds || [])] };
     this.section.set('general');
     this.docs.set([]);
     this.agentFiles.set([]);
@@ -787,6 +991,13 @@ export class AiAgentsComponent implements OnInit {
       ? this.form.accountIds.filter(x => x !== id)
       : [...this.form.accountIds, id];
     this.form = { ...this.form, accountIds: ids };
+  }
+
+  toggleIgAccount(id: string) {
+    const ids = this.form.instagramAccountIds.includes(id)
+      ? this.form.instagramAccountIds.filter(x => x !== id)
+      : [...this.form.instagramAccountIds, id];
+    this.form = { ...this.form, instagramAccountIds: ids };
   }
 
   save() {
@@ -1039,6 +1250,80 @@ export class AiAgentsComponent implements OnInit {
     this.http.get<{ connected: boolean; state?: string; error?: string }>(`${API}/whatsapp-accounts/${a._id}/status`).subscribe({
       next: (s) => this.statusMap.update(m => ({ ...m, [a._id]: s })),
       error: (err) => this.statusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err?.error?.message || 'Error' } })),
+    });
+  }
+
+  // ---- Instagram Accounts ----
+  connectInstagram() {
+    this.connectingIg.set(true);
+    this.http.get<{ url: string }>(`${API}/instagram-accounts/oauth/start`).subscribe({
+      next: (r) => { window.location.href = r.url; },
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'No se pudo iniciar la conexión con Instagram');
+        this.connectingIg.set(false);
+      },
+    });
+  }
+
+  renewIgToken(a: IgAccount) {
+    this.http.post<{ success: boolean; tokenExpiresAt: string }>(`${API}/instagram-accounts/${a._id}/oauth/refresh`, {}).subscribe({
+      next: () => { this.toast.success('Token renovado'); this.loadIgAccounts(); },
+      error: (err) => this.toast.error(err?.error?.message || 'No se pudo renovar el token'),
+    });
+  }
+
+  openIgAccounts() { this.igAccForm.set(null); this.igAccountsOpen.set(true); this.loadIgAccounts(); }
+  closeIgAccounts() { this.igAccountsOpen.set(false); this.igAccForm.set(null); }
+  newIgAccount() { this.igAccForm.set(blankIgAccount()); }
+  editIgAccount(a: IgAccount) { this.igAccForm.set({ ...a }); }
+
+  igWebhookUrl(): string {
+    return `${API}/ig/webhook`;
+  }
+
+  subscribeIgWebhook(a: IgAccount) {
+    this.http.post<{ success: boolean; message: string }>(`${API}/instagram-accounts/${a._id}/subscribe`, {}).subscribe({
+      next: (r) => r.success ? this.toast.success(r.message) : this.toast.error(r.message),
+      error: (err) => this.toast.error(err?.error?.message || 'No se pudo suscribir el webhook'),
+    });
+  }
+
+  saveIgAccount() {
+    const acc = this.igAccForm();
+    if (!acc) return;
+    if (!acc.label.trim()) { this.toast.error('El nombre es obligatorio'); return; }
+    this.savingIgAcc.set(true);
+    const { _id, ...body } = acc;
+    const req = _id
+      ? this.http.patch<IgAccount>(`${API}/instagram-accounts/${_id}`, body)
+      : this.http.post<IgAccount>(`${API}/instagram-accounts`, body);
+    req.subscribe({
+      next: () => {
+        this.toast.success('Cuenta guardada');
+        this.savingIgAcc.set(false);
+        this.igAccForm.set(null);
+        this.loadIgAccounts();
+      },
+      error: (err) => { this.toast.error(err?.error?.message || 'Error al guardar'); this.savingIgAcc.set(false); },
+    });
+  }
+
+  async deleteIgAccount(a: IgAccount) {
+    const ok = await this.confirmSvc.confirm({
+      title: 'Eliminar cuenta', message: `¿Eliminar la cuenta de Instagram "${a.label}"?`,
+      confirmText: 'Eliminar', danger: true,
+    });
+    if (!ok) return;
+    this.http.delete(`${API}/instagram-accounts/${a._id}`).subscribe({
+      next: () => { this.toast.success('Cuenta eliminada'); this.loadIgAccounts(); },
+      error: (err) => this.toast.error(err?.error?.message || 'Error al eliminar'),
+    });
+  }
+
+  checkIgStatus(a: IgAccount) {
+    this.http.get<{ connected: boolean; username?: string; error?: string }>(`${API}/instagram-accounts/${a._id}/status`).subscribe({
+      next: (s) => this.igStatusMap.update(m => ({ ...m, [a._id]: s })),
+      error: (err) => this.igStatusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err?.error?.message || 'Error' } })),
     });
   }
 }
