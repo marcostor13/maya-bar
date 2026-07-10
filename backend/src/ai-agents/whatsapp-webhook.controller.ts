@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Param, Query, Body, Logger, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  Body,
+  Logger,
+  HttpCode,
+} from '@nestjs/common';
 import { AiAgentsService } from './ai-agents.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -30,7 +39,12 @@ export class WhatsAppWebhookController {
     @Query('hub.challenge') challenge: string,
   ) {
     const account = await this.accounts.findById(accountId);
-    if (mode === 'subscribe' && account && token && token === account.waVerifyToken) {
+    if (
+      mode === 'subscribe' &&
+      account &&
+      token &&
+      token === account.waVerifyToken
+    ) {
       return challenge;
     }
     return 'forbidden';
@@ -55,7 +69,17 @@ export class WhatsAppWebhookController {
   private async handleCloud(accountId: string, body: unknown) {
     try {
       const b = body as {
-        entry?: { changes?: { value?: { messages?: { from?: string; type?: string; text?: { body?: string } }[] } }[] }[];
+        entry?: {
+          changes?: {
+            value?: {
+              messages?: {
+                from?: string;
+                type?: string;
+                text?: { body?: string };
+              }[];
+            };
+          }[];
+        }[];
       };
       const change = b.entry?.[0]?.changes?.[0]?.value;
       const msg = change?.messages?.[0];
@@ -75,7 +99,9 @@ export class WhatsAppWebhookController {
       if (b.event && b.event !== 'message') return;
       const p = b.payload;
       if (!p || p.fromMe || !p.from || !p.body) return;
-      const contact = p.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+      const contact = p.from
+        .replace('@c.us', '')
+        .replace('@s.whatsapp.net', '');
       await this.respond(accountId, contact, p.body);
     } catch (err) {
       this.logger.error(`WAHA webhook error: ${String(err)}`);
@@ -91,7 +117,12 @@ export class WhatsAppWebhookController {
       this.logger.warn(`Sin agente publicado para la cuenta ${accountId}`);
       return;
     }
-    const { text: replyText, filesToSend } = await this.agents.replyForContact(agent, accountId, contact, text);
+    const { text: replyText, filesToSend } = await this.agents.replyForContact(
+      agent,
+      accountId,
+      contact,
+      text,
+    );
     const config = this.accounts.toConfig(account);
 
     if (replyText) {
@@ -100,7 +131,13 @@ export class WhatsAppWebhookController {
 
     for (const file of filesToSend) {
       const mediaType = AiAgentsService.resolveMediaType(file.contentType);
-      await this.wa.sendMessage(contact, file.name, config, file.url, mediaType);
+      await this.wa.sendMessage(
+        contact,
+        file.name,
+        config,
+        file.url,
+        mediaType,
+      );
     }
   }
 }

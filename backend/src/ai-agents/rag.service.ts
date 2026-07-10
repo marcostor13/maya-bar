@@ -27,7 +27,10 @@ export class RagService implements OnModuleInit {
     // Crea el índice Atlas Vector Search si no existe (no-op fuera de Atlas).
     try {
       const coll = this.chunkModel.collection;
-      const existing = await coll.listSearchIndexes().toArray().catch(() => []);
+      const existing = await coll
+        .listSearchIndexes()
+        .toArray()
+        .catch(() => []);
       if (existing.some((i: { name?: string }) => i.name === VECTOR_INDEX)) {
         this.vectorReady = true;
         return;
@@ -37,7 +40,12 @@ export class RagService implements OnModuleInit {
         type: 'vectorSearch',
         definition: {
           fields: [
-            { type: 'vector', path: 'embedding', numDimensions: EMBEDDING_DIMS, similarity: 'cosine' },
+            {
+              type: 'vector',
+              path: 'embedding',
+              numDimensions: EMBEDDING_DIMS,
+              similarity: 'cosine',
+            },
             { type: 'filter', path: 'aId' },
             { type: 'filter', path: 'tId' },
           ],
@@ -69,7 +77,11 @@ export class RagService implements OnModuleInit {
   }
 
   chunk(text: string): string[] {
-    const clean = text.replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    const clean = text
+      .replace(/\r/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
     if (!clean) return [];
     const chunks: string[] = [];
     let i = 0;
@@ -78,7 +90,10 @@ export class RagService implements OnModuleInit {
       // intenta cortar en un límite de párrafo/oración
       if (end < clean.length) {
         const slice = clean.slice(i, end);
-        const lastBreak = Math.max(slice.lastIndexOf('\n\n'), slice.lastIndexOf('. '));
+        const lastBreak = Math.max(
+          slice.lastIndexOf('\n\n'),
+          slice.lastIndexOf('. '),
+        );
         if (lastBreak > CHUNK_SIZE * 0.5) end = i + lastBreak + 1;
       }
       const piece = clean.slice(i, end).trim();
@@ -126,17 +141,28 @@ export class RagService implements OnModuleInit {
   }
 
   async deleteByDoc(docId: string) {
-    await this.chunkModel.deleteMany({ docId: new Types.ObjectId(docId) }).exec();
+    await this.chunkModel
+      .deleteMany({ docId: new Types.ObjectId(docId) })
+      .exec();
   }
 
   async deleteByAgent(agentId: string) {
-    await this.chunkModel.deleteMany({ agentId: new Types.ObjectId(agentId) }).exec();
+    await this.chunkModel
+      .deleteMany({ agentId: new Types.ObjectId(agentId) })
+      .exec();
   }
 
   // ---- Recuperación ----
 
-  async retrieve(tenantId: string, agentId: string, query: string, topK = 5): Promise<RetrievedChunk[]> {
-    const total = await this.chunkModel.countDocuments({ agentId: new Types.ObjectId(agentId) }).exec();
+  async retrieve(
+    tenantId: string,
+    agentId: string,
+    query: string,
+    topK = 5,
+  ): Promise<RetrievedChunk[]> {
+    const total = await this.chunkModel
+      .countDocuments({ agentId: new Types.ObjectId(agentId) })
+      .exec();
     if (total === 0) return [];
     const queryVector = await this.embeddings.embedOne(query);
 
@@ -151,15 +177,26 @@ export class RagService implements OnModuleInit {
                 queryVector,
                 numCandidates: Math.max(topK * 20, 100),
                 limit: topK,
-                filter: { aId: { $eq: String(agentId) }, tId: { $eq: String(tenantId) } },
+                filter: {
+                  aId: { $eq: String(agentId) },
+                  tId: { $eq: String(tenantId) },
+                },
               },
             },
-            { $project: { _id: 0, text: 1, score: { $meta: 'vectorSearchScore' } } },
+            {
+              $project: {
+                _id: 0,
+                text: 1,
+                score: { $meta: 'vectorSearchScore' },
+              },
+            },
           ])
           .exec();
         if (results.length > 0) return results;
       } catch (err) {
-        this.logger.warn(`$vectorSearch falló, usando fallback coseno: ${String(err)}`);
+        this.logger.warn(
+          `$vectorSearch falló, usando fallback coseno: ${String(err)}`,
+        );
       }
     }
 
@@ -169,14 +206,19 @@ export class RagService implements OnModuleInit {
       .lean()
       .exec();
     return chunks
-      .map((c) => ({ text: c.text as string, score: cosine(queryVector, c.embedding as number[]) }))
+      .map((c) => ({
+        text: c.text,
+        score: cosine(queryVector, c.embedding),
+      }))
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
   }
 }
 
 function cosine(a: number[], b: number[]): number {
-  let dot = 0, na = 0, nb = 0;
+  let dot = 0,
+    na = 0,
+    nb = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     na += a[i] * a[i];

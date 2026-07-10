@@ -31,7 +31,12 @@ export class ImpulsadorController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, ['IMPULSADOR']);
-    return this.service.sendDirectMessage(regId, req.user.userId, req.user.tenantId, dto);
+    return this.service.sendDirectMessage(
+      regId,
+      req.user.userId,
+      req.user.tenantId,
+      dto,
+    );
   }
 
   @Patch('registrations/:regId/check-in')

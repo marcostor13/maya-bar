@@ -66,18 +66,28 @@ export class AiService {
   }
 
   /** Resuelve qué proveedor usar según las keys disponibles. */
-  private resolveProvider(provider: AiProvider, keys: Required<AiApiKeys>): 'deepseek' | 'claude' | 'openai' | 'gemini' {
-    if (provider === 'deepseek' || (provider === 'auto' && keys.deepseek)) return 'deepseek';
-    if (provider === 'claude' || (provider === 'auto' && keys.claude)) return 'claude';
-    if (provider === 'openai' || (provider === 'auto' && keys.openai)) return 'openai';
-    if (provider === 'gemini' || (provider === 'auto' && keys.gemini)) return 'gemini';
+  private resolveProvider(
+    provider: AiProvider,
+    keys: Required<AiApiKeys>,
+  ): 'deepseek' | 'claude' | 'openai' | 'gemini' {
+    if (provider === 'deepseek' || (provider === 'auto' && keys.deepseek))
+      return 'deepseek';
+    if (provider === 'claude' || (provider === 'auto' && keys.claude))
+      return 'claude';
+    if (provider === 'openai' || (provider === 'auto' && keys.openai))
+      return 'openai';
+    if (provider === 'gemini' || (provider === 'auto' && keys.gemini))
+      return 'gemini';
     throw new BadRequestException(
       'No hay API key de IA configurada (DeepSeek, Claude, OpenAI o Gemini)',
     );
   }
 
   /** Chat con historial de mensajes (system + turnos). */
-  async chatMessages(messages: ChatMessage[], options: AiOptions = {}): Promise<string> {
+  async chatMessages(
+    messages: ChatMessage[],
+    options: AiOptions = {},
+  ): Promise<string> {
     const { provider = 'auto', maxTokens = 1024, temperature = 0.4 } = options;
     // trata cadena vacía como "usar el modelo por defecto"
     const model = options.model?.trim() || undefined;
@@ -85,7 +95,10 @@ export class AiService {
     const resolved = this.resolveProvider(provider, keys);
 
     if (resolved === 'claude') {
-      const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+      const system = messages
+        .filter((m) => m.role === 'system')
+        .map((m) => m.content)
+        .join('\n\n');
       const turns = messages.filter((m) => m.role !== 'system');
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -103,7 +116,8 @@ export class AiService {
           messages: turns.map((m) => ({ role: m.role, content: m.content })),
         }),
       });
-      if (!res.ok) throw new BadRequestException(`Claude API error: ${await res.text()}`);
+      if (!res.ok)
+        throw new BadRequestException(`Claude API error: ${await res.text()}`);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const data = await res.json();
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -111,10 +125,16 @@ export class AiService {
     }
 
     if (resolved === 'gemini') {
-      const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+      const system = messages
+        .filter((m) => m.role === 'system')
+        .map((m) => m.content)
+        .join('\n\n');
       const contents = messages
         .filter((m) => m.role !== 'system')
-        .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+        .map((m) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        }));
       const gModel = model ?? 'gemini-2.0-flash';
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${keys.gemini}`,
@@ -122,13 +142,16 @@ export class AiService {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+            systemInstruction: system
+              ? { parts: [{ text: system }] }
+              : undefined,
             contents,
             generationConfig: { temperature, maxOutputTokens: maxTokens },
           }),
         },
       );
-      if (!res.ok) throw new BadRequestException(`Gemini API error: ${await res.text()}`);
+      if (!res.ok)
+        throw new BadRequestException(`Gemini API error: ${await res.text()}`);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const data = await res.json();
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -136,14 +159,19 @@ export class AiService {
     }
 
     // deepseek / openai comparten formato OpenAI-compatible
-    const url = resolved === 'deepseek'
-      ? 'https://api.deepseek.com/v1/chat/completions'
-      : 'https://api.openai.com/v1/chat/completions';
+    const url =
+      resolved === 'deepseek'
+        ? 'https://api.deepseek.com/v1/chat/completions'
+        : 'https://api.openai.com/v1/chat/completions';
     const key = resolved === 'deepseek' ? keys.deepseek : keys.openai;
-    const defaultModel = resolved === 'deepseek' ? 'deepseek-v4-flash' : 'gpt-4o-mini';
+    const defaultModel =
+      resolved === 'deepseek' ? 'deepseek-v4-flash' : 'gpt-4o-mini';
     const res = await fetch(url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({
         model: model ?? defaultModel,
         max_tokens: maxTokens,
@@ -151,18 +179,23 @@ export class AiService {
         messages,
       }),
     });
-    if (!res.ok) throw new BadRequestException(`${resolved} API error: ${await res.text()}`);
+    if (!res.ok)
+      throw new BadRequestException(
+        `${resolved} API error: ${await res.text()}`,
+      );
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const data = await res.json();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     return String(data?.choices?.[0]?.message?.content ?? '');
   }
 
-  private async callDeepSeek(prompt: string, maxTokens: number): Promise<string> {
+  private async callDeepSeek(
+    prompt: string,
+    maxTokens: number,
+  ): Promise<string> {
     if (!this.deepseekKey)
       throw new BadRequestException('DEEPSEEK_API_KEY no configurada');
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -191,7 +224,6 @@ export class AiService {
     if (!this.claudeKey)
       throw new BadRequestException('CLAUDE_API_KEY no configurada');
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -221,7 +253,6 @@ export class AiService {
     if (!this.openaiKey)
       throw new BadRequestException('OPENAI_API_KEY no configurada');
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -248,7 +279,8 @@ export class AiService {
 
   parseJson<T>(text: string): T {
     const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-    if (!match) throw new BadRequestException('La IA devolvió una respuesta inválida');
+    if (!match)
+      throw new BadRequestException('La IA devolvió una respuesta inválida');
     return JSON.parse(match[0]) as T;
   }
 }

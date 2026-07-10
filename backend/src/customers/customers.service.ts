@@ -17,11 +17,20 @@ export class CustomersService {
   constructor(
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
     @InjectModel(Reservation.name) private reservationModel: Model<Reservation>,
-    @InjectModel(EventRegistration.name) private eventRegModel: Model<EventRegistration>,
+    @InjectModel(EventRegistration.name)
+    private eventRegModel: Model<EventRegistration>,
   ) {}
 
-  async findAll(tenantId: string, userId: string, role: string, search?: string, tag?: string): Promise<Customer[]> {
-    const filter: Record<string, unknown> = { tenantId: new Types.ObjectId(tenantId) };
+  async findAll(
+    tenantId: string,
+    userId: string,
+    role: string,
+    search?: string,
+    tag?: string,
+  ): Promise<Customer[]> {
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+    };
     if (isOwnerScoped(role)) filter['createdBy'] = new Types.ObjectId(userId);
     if (tag) filter['tags'] = tag;
     if (search) {
@@ -31,7 +40,12 @@ export class CustomersService {
     return this.customerModel.find(filter).sort({ name: 1 }).exec();
   }
 
-  async create(tenantId: string, userId: string, role: string, dto: CreateCustomerDto): Promise<Customer> {
+  async create(
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: CreateCustomerDto,
+  ): Promise<Customer> {
     try {
       const customer = new this.customerModel({
         ...dto,
@@ -39,21 +53,32 @@ export class CustomersService {
         tenantId: new Types.ObjectId(tenantId),
         tags: dto.tags ?? [],
         source: 'manual',
-        ...(isOwnerScoped(role) ? { createdBy: new Types.ObjectId(userId) } : {}),
+        ...(isOwnerScoped(role)
+          ? { createdBy: new Types.ObjectId(userId) }
+          : {}),
       });
       return await customer.save();
     } catch (err: unknown) {
       const mongoErr = err as { code?: number };
-      if (mongoErr.code === 11000) throw new ConflictException('Ya existe un contacto con ese email');
+      if (mongoErr.code === 11000)
+        throw new ConflictException('Ya existe un contacto con ese email');
       throw err;
     }
   }
 
-  async update(id: string, tenantId: string, userId: string, role: string, dto: UpdateCustomerDto): Promise<Customer> {
+  async update(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: UpdateCustomerDto,
+  ): Promise<Customer> {
     const customer = await this.customerModel.findById(id).exec();
     if (!customer) throw new NotFoundException('Contacto no encontrado');
-    if (customer.tenantId.toString() !== tenantId) throw new ForbiddenException();
-    if (isOwnerScoped(role) && customer.createdBy?.toString() !== userId) throw new ForbiddenException();
+    if (customer.tenantId.toString() !== tenantId)
+      throw new ForbiddenException();
+    if (isOwnerScoped(role) && customer.createdBy?.toString() !== userId)
+      throw new ForbiddenException();
     Object.assign(customer, {
       ...dto,
       ...(dto.email ? { email: dto.email.toLowerCase().trim() } : {}),
@@ -61,11 +86,18 @@ export class CustomersService {
     return customer.save();
   }
 
-  async delete(id: string, tenantId: string, userId: string, role: string): Promise<void> {
+  async delete(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<void> {
     const customer = await this.customerModel.findById(id).exec();
     if (!customer) throw new NotFoundException('Contacto no encontrado');
-    if (customer.tenantId.toString() !== tenantId) throw new ForbiddenException();
-    if (isOwnerScoped(role) && customer.createdBy?.toString() !== userId) throw new ForbiddenException();
+    if (customer.tenantId.toString() !== tenantId)
+      throw new ForbiddenException();
+    if (isOwnerScoped(role) && customer.createdBy?.toString() !== userId)
+      throw new ForbiddenException();
     await this.customerModel.findByIdAndDelete(id).exec();
   }
 
@@ -77,7 +109,10 @@ export class CustomersService {
       this.eventRegModel.find({ tenantId: tid }).lean().exec(),
     ]);
 
-    const contacts = new Map<string, { name: string; phone?: string; source: string; lastVisit?: Date }>();
+    const contacts = new Map<
+      string,
+      { name: string; phone?: string; source: string; lastVisit?: Date }
+    >();
 
     for (const er of eventRegs) {
       contacts.set(er.email.toLowerCase(), {
@@ -119,8 +154,14 @@ export class CustomersService {
     await Promise.all(
       emailList.map(async (email) => {
         const [resCount, evCount] = await Promise.all([
-          this.reservationModel.countDocuments({ tenantId: tid, guestEmail: { $regex: new RegExp(`^${email}$`, 'i') } }),
-          this.eventRegModel.countDocuments({ tenantId: tid, email: { $regex: new RegExp(`^${email}$`, 'i') } }),
+          this.reservationModel.countDocuments({
+            tenantId: tid,
+            guestEmail: { $regex: new RegExp(`^${email}$`, 'i') },
+          }),
+          this.eventRegModel.countDocuments({
+            tenantId: tid,
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
+          }),
         ]);
         await this.customerModel.updateOne(
           { email, tenantId: tid, createdBy: { $exists: false } },
@@ -132,9 +173,14 @@ export class CustomersService {
     return { imported: result.upsertedCount, updated: result.modifiedCount };
   }
 
-  async exportCsv(tenantId: string, userId: string, role: string): Promise<string> {
+  async exportCsv(
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<string> {
     const customers = await this.findAll(tenantId, userId, role);
-    const header = 'Nombre,Email,Teléfono,Tags,Origen,Última visita,Reservas,Eventos\n';
+    const header =
+      'Nombre,Email,Teléfono,Tags,Origen,Última visita,Reservas,Eventos\n';
     const rows = customers
       .map((c) =>
         [

@@ -20,8 +20,12 @@ export class EmbeddingsService {
   /** Genera embeddings para uno o varios textos (batch). */
   async embed(input: string | string[]): Promise<number[][]> {
     if (!this.openaiKey)
-      throw new BadRequestException('OPENAI_API_KEY no configurada (requerida para embeddings/RAG)');
-    const texts = (Array.isArray(input) ? input : [input]).map((t) => t.replace(/\n/g, ' ').slice(0, 8000));
+      throw new BadRequestException(
+        'OPENAI_API_KEY no configurada (requerida para embeddings/RAG)',
+      );
+    const texts = (Array.isArray(input) ? input : [input]).map((t) =>
+      t.replace(/\n/g, ' ').slice(0, 8000),
+    );
     const res = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {

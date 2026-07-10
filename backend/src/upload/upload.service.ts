@@ -1,6 +1,10 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 
 const ALLOWED_IMAGE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -38,7 +42,8 @@ export class UploadService {
       region: this.region,
       credentials: {
         accessKeyId: configService.get<string>('AWS_ACCESS_KEY_ID') ?? '',
-        secretAccessKey: configService.get<string>('AWS_SECRET_ACCESS_KEY') ?? '',
+        secretAccessKey:
+          configService.get<string>('AWS_SECRET_ACCESS_KEY') ?? '',
       },
     });
   }

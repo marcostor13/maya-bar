@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthReq } from '../auth/permissions';
 import { UsersService } from './users.service';
+import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -26,10 +27,7 @@ export class UsersController {
   }
 
   @Post()
-  async createUser(
-    @Body() body: { name: string; email: string; role: string },
-    @Request() req: AuthReq,
-  ) {
+  async createUser(@Body() body: CreateUserDto, @Request() req: AuthReq) {
     if (req.user.role !== 'TENANT_ADMIN') throw new ForbiddenException();
     return this.usersService.createTenantUser(req.user.tenantId, body);
   }
@@ -37,7 +35,7 @@ export class UsersController {
   @Patch(':id')
   updateUser(
     @Param('id') id: string,
-    @Body() body: { name?: string; role?: string; isActive?: boolean },
+    @Body() body: UpdateUserDto,
     @Request() req: AuthReq,
   ) {
     if (req.user.role !== 'TENANT_ADMIN') throw new ForbiddenException();

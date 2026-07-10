@@ -45,9 +45,23 @@ export const ADVANCE_ORDER_ROLES: UserRole[] = [
   'BAR',
 ];
 export const ADMIN_ONLY: UserRole[] = ['TENANT_ADMIN'];
-export const CRM_ROLES: UserRole[] = ['TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR'];
-export const EVENT_ROLES: UserRole[] = ['TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR'];
-export const VISIT_ROLES: UserRole[] = ['TENANT_ADMIN', 'MANAGER', 'IMPULSADOR'];
+export const CRM_ROLES: UserRole[] = [
+  'TENANT_ADMIN',
+  'MANAGER',
+  'MARKETING',
+  'IMPULSADOR',
+];
+export const EVENT_ROLES: UserRole[] = [
+  'TENANT_ADMIN',
+  'MANAGER',
+  'MARKETING',
+  'IMPULSADOR',
+];
+export const VISIT_ROLES: UserRole[] = [
+  'TENANT_ADMIN',
+  'MANAGER',
+  'IMPULSADOR',
+];
 
 /** True when the role's data is scoped to the owner (not the whole tenant). */
 export function isOwnerScoped(role: string): boolean {

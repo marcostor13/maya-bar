@@ -15,7 +15,10 @@ export class AiAgent extends Document {
   @Prop({ required: true })
   systemPrompt: string;
 
-  @Prop({ enum: ['auto', 'openai', 'claude', 'deepseek', 'gemini'], default: 'auto' })
+  @Prop({
+    enum: ['auto', 'openai', 'claude', 'deepseek', 'gemini'],
+    default: 'auto',
+  })
   provider: string;
 
   @Prop()
@@ -40,11 +43,17 @@ export class AiAgent extends Document {
   topK: number;
 
   // Cuentas de WhatsApp por las que responde
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'WhatsAppAccount' }], default: [] })
+  @Prop({
+    type: [{ type: Types.ObjectId, ref: 'WhatsAppAccount' }],
+    default: [],
+  })
   accountIds: Types.ObjectId[];
 
   // Cuentas de Instagram (DM) por las que responde
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'InstagramAccount' }], default: [] })
+  @Prop({
+    type: [{ type: Types.ObjectId, ref: 'InstagramAccount' }],
+    default: [],
+  })
   instagramAccountIds: Types.ObjectId[];
 
   @Prop({ default: false })

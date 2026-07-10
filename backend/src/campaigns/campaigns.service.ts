@@ -41,16 +41,24 @@ export class CampaignsService {
       tenantId: new Types.ObjectId(tenantId),
       targeting: dto.targeting ?? 'tags',
       recipientTags: dto.recipientTags ?? [],
-      listIds: (dto.listIds ?? []).map(id => new Types.ObjectId(id)),
+      listIds: (dto.listIds ?? []).map((id) => new Types.ObjectId(id)),
     });
     return campaign.save();
   }
 
-  async update(id: string, tenantId: string, dto: UpdateCampaignDto): Promise<Campaign> {
+  async update(
+    id: string,
+    tenantId: string,
+    dto: UpdateCampaignDto,
+  ): Promise<Campaign> {
     const campaign = await this.campaignModel.findById(id).exec();
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
-    if (campaign.tenantId.toString() !== tenantId) throw new ForbiddenException();
-    if (campaign.status === 'sending') throw new BadRequestException('No se puede editar una campaña mientras se envía');
+    if (campaign.tenantId.toString() !== tenantId)
+      throw new ForbiddenException();
+    if (campaign.status === 'sending')
+      throw new BadRequestException(
+        'No se puede editar una campaña mientras se envía',
+      );
     Object.assign(campaign, dto);
     return campaign.save();
   }
@@ -58,8 +66,10 @@ export class CampaignsService {
   async resend(id: string, tenantId: string): Promise<Campaign> {
     const campaign = await this.campaignModel.findById(id).exec();
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
-    if (campaign.tenantId.toString() !== tenantId) throw new ForbiddenException();
-    if (campaign.status === 'sending') throw new BadRequestException('La campaña ya está en proceso de envío');
+    if (campaign.tenantId.toString() !== tenantId)
+      throw new ForbiddenException();
+    if (campaign.status === 'sending')
+      throw new BadRequestException('La campaña ya está en proceso de envío');
     campaign.status = 'draft';
     campaign.errorMessage = undefined;
     campaign.sentAt = undefined;
@@ -70,18 +80,27 @@ export class CampaignsService {
   async delete(id: string, tenantId: string): Promise<void> {
     const campaign = await this.campaignModel.findById(id).exec();
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
-    if (campaign.tenantId.toString() !== tenantId) throw new ForbiddenException();
+    if (campaign.tenantId.toString() !== tenantId)
+      throw new ForbiddenException();
     await this.campaignModel.findByIdAndDelete(id).exec();
   }
 
-  async previewCount(tenantId: string, tags: string[]): Promise<{ count: number }> {
-    const filter: Record<string, unknown> = { tenantId: new Types.ObjectId(tenantId) };
+  async previewCount(
+    tenantId: string,
+    tags: string[],
+  ): Promise<{ count: number }> {
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+    };
     if (tags.length > 0) filter['tags'] = { $in: tags };
     const count = await this.customerModel.countDocuments(filter);
     return { count };
   }
 
-  async estimate(id: string, tenantId: string): Promise<{
+  async estimate(
+    id: string,
+    tenantId: string,
+  ): Promise<{
     recipientCount: number;
     estimatedMinutes: number;
     dailyLimit: number;
@@ -91,31 +110,55 @@ export class CampaignsService {
   }> {
     const campaign = await this.campaignModel.findById(id).exec();
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
-    if (campaign.tenantId.toString() !== tenantId) throw new ForbiddenException();
+    if (campaign.tenantId.toString() !== tenantId)
+      throw new ForbiddenException();
 
     const customers = await this.resolveCustomers(campaign, tenantId);
-    const withPhone = campaign.type === 'whatsapp' ? customers.filter(c => c.phone) : customers;
+    const withPhone =
+      campaign.type === 'whatsapp'
+        ? customers.filter((c) => c.phone)
+        : customers;
     const recipientCount = withPhone.length;
 
     if (campaign.waProvider === 'cloudapi') {
-      return { recipientCount, estimatedMinutes: 0, dailyLimit: 0, sentToday: 0, remaining: recipientCount, cloudApiPricePerMsg: 0.0625 };
+      return {
+        recipientCount,
+        estimatedMinutes: 0,
+        dailyLimit: 0,
+        sentToday: 0,
+        remaining: recipientCount,
+        cloudApiPricePerMsg: 0.0625,
+      };
     }
 
     const dailyLimit = await this.settings.getWaDailyLimit(tenantId);
-    const sentToday = campaign.type === 'whatsapp' ? await this.countWaSentToday(tenantId) : 0;
+    const sentToday =
+      campaign.type === 'whatsapp' ? await this.countWaSentToday(tenantId) : 0;
     const remaining = Math.max(0, dailyLimit - sentToday);
-    const willSend = campaign.type === 'whatsapp' ? Math.min(recipientCount, remaining) : recipientCount;
-    const estimatedMinutes = Math.ceil(willSend * 45 / 60);
+    const willSend =
+      campaign.type === 'whatsapp'
+        ? Math.min(recipientCount, remaining)
+        : recipientCount;
+    const estimatedMinutes = Math.ceil((willSend * 45) / 60);
 
-    return { recipientCount, estimatedMinutes, dailyLimit, sentToday, remaining };
+    return {
+      recipientCount,
+      estimatedMinutes,
+      dailyLimit,
+      sentToday,
+      remaining,
+    };
   }
 
   async send(id: string, tenantId: string): Promise<Campaign> {
     const campaign = await this.campaignModel.findById(id).exec();
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
-    if (campaign.tenantId.toString() !== tenantId) throw new ForbiddenException();
-    if (campaign.status === 'sent') throw new BadRequestException('La campaña ya fue enviada');
-    if (campaign.status === 'sending') throw new BadRequestException('La campaña ya está en proceso de envío');
+    if (campaign.tenantId.toString() !== tenantId)
+      throw new ForbiddenException();
+    if (campaign.status === 'sent')
+      throw new BadRequestException('La campaña ya fue enviada');
+    if (campaign.status === 'sending')
+      throw new BadRequestException('La campaña ya está en proceso de envío');
 
     const customers = await this.resolveCustomers(campaign, tenantId);
     campaign.status = 'sending';
@@ -131,15 +174,18 @@ export class CampaignsService {
             subject: campaign.subject ?? campaign.name,
             body: campaign.body.replace(/\{nombre\}/gi, c.name),
             mediaUrl: campaign.mediaUrl,
-            mediaType: (campaign.mediaType === 'image' || campaign.mediaType === 'video') ? campaign.mediaType : undefined,
+            mediaType:
+              campaign.mediaType === 'image' || campaign.mediaType === 'video'
+                ? campaign.mediaType
+                : undefined,
           }),
         ),
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       campaign.status = 'sent';
       campaign.sentAt = new Date();
-      if (failed > 0) campaign.errorMessage = `${failed} email(s) no se pudieron enviar`;
-
+      if (failed > 0)
+        campaign.errorMessage = `${failed} email(s) no se pudieron enviar`;
     } else if (campaign.waProvider === 'cloudapi') {
       // Cloud API: parallel, no daily limit
       const withPhone = customers.filter((c) => c.phone);
@@ -150,39 +196,48 @@ export class CampaignsService {
         results = await Promise.allSettled(
           withPhone.map((c) =>
             this.settings.sendWhatsAppTemplate(
-              c.phone!,
+              c.phone,
               campaign.templateName!,
               campaign.templateLanguage ?? 'es',
-              (campaign.templateVars ?? []).map((v) => v.replace(/\{nombre\}/gi, c.name)),
+              (campaign.templateVars ?? []).map((v) =>
+                v.replace(/\{nombre\}/gi, c.name),
+              ),
               tenantId,
-            )
-          )
+            ),
+          ),
         );
       } else {
         results = await Promise.allSettled(
           withPhone.map((c) =>
             this.settings.sendWhatsApp(
-              c.phone!,
+              c.phone,
               campaign.body.replace(/\{nombre\}/gi, c.name),
               tenantId,
               campaign.mediaUrl,
               campaign.mediaType,
               'cloudapi',
-            )
-          )
+            ),
+          ),
         );
       }
 
       const failed = results.filter((r) => r.status === 'rejected').length;
-      const firstError = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult)?.reason;
+      const firstError = (
+        results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+      )?.reason;
       campaign.status = 'sent';
       campaign.sentAt = new Date();
 
       const errors: string[] = [];
-      if (failed > 0) errors.push(`${failed} mensaje(s) fallaron${firstError ? ': ' + String(firstError) : ''}`);
-      if (customers.length - withPhone.length > 0) errors.push(`${customers.length - withPhone.length} sin teléfono (omitidos)`);
+      if (failed > 0)
+        errors.push(
+          `${failed} mensaje(s) fallaron${firstError ? ': ' + String(firstError) : ''}`,
+        );
+      if (customers.length - withPhone.length > 0)
+        errors.push(
+          `${customers.length - withPhone.length} sin teléfono (omitidos)`,
+        );
       if (errors.length > 0) campaign.errorMessage = errors.join(' · ');
-
     } else {
       // WAHA: sequential + daily limit — processed async to avoid HTTP timeout
       const withPhone = customers.filter((c) => c.phone);
@@ -221,26 +276,36 @@ export class CampaignsService {
     return campaign.save();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async resolveCustomers(campaign: Campaign, tenantId: string): Promise<any[]> {
+  private async resolveCustomers(
+    campaign: Campaign,
+    tenantId: string,
+  ): Promise<any[]> {
     const tid = new Types.ObjectId(tenantId);
     if (campaign.targeting === 'lists' && campaign.listIds?.length > 0) {
-      return this.lists.resolveCustomers(campaign.listIds.map(id => id.toString()), tenantId);
+      return this.lists.resolveCustomers(
+        campaign.listIds.map((id) => id.toString()),
+        tenantId,
+      );
     }
     if (campaign.targeting === 'all') {
       return this.customerModel.find({ tenantId: tid }).lean().exec();
     }
     const filter: Record<string, unknown> = { tenantId: tid };
-    if (campaign.recipientTags.length > 0) filter['tags'] = { $in: campaign.recipientTags };
+    if (campaign.recipientTags.length > 0)
+      filter['tags'] = { $in: campaign.recipientTags };
     return this.customerModel.find(filter).lean().exec();
   }
 
-  async generateEmail(dto: { topic: string; tone?: string }): Promise<{ subject: string; body: string }> {
+  async generateEmail(dto: {
+    topic: string;
+    tone?: string;
+  }): Promise<{ subject: string; body: string }> {
     const toneMap: Record<string, string> = {
       amigable: 'amigable y cercano, como si hablaras con un amigo',
       profesional: 'profesional y formal',
       exclusivo: 'exclusivo y premium, dirigido a clientes de alto valor',
-      urgente: 'urgente con fuerte llamada a la acción, generando sensación de escasez',
+      urgente:
+        'urgente con fuerte llamada a la acción, generando sensación de escasez',
     };
     const toneDesc = toneMap[dto.tone ?? 'amigable'] ?? 'amigable y cercano';
     const prompt = `Eres un experto en email marketing para restaurantes y negocios de hospitalidad premium en Latinoamérica.
@@ -265,7 +330,7 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
 
   private async runWahaQueue(
     campaignId: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     toSend: any[],
     tenantId: string,
     body: string,
@@ -279,7 +344,7 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
       const c = toSend[i];
       const result = await Promise.allSettled([
         this.settings.sendWhatsApp(
-          c.phone!,
+          c.phone,
           body.replace(/\{nombre\}/gi, c.name),
           tenantId,
           mediaUrl,
@@ -290,7 +355,7 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
       results.push(result[0]);
 
       if (result[0].status === 'rejected') {
-        this.logger.error(`WA failed for ${c.phone}: ${(result[0] as PromiseRejectedResult).reason}`);
+        this.logger.error(`WA failed for ${c.phone}: ${result[0].reason}`);
       }
 
       if (i < toSend.length - 1) {
@@ -303,14 +368,20 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
     if (!campaign) return;
 
     const failed = results.filter((r) => r.status === 'rejected').length;
-    const firstError = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult)?.reason;
+    const firstError = (
+      results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+    )?.reason;
     campaign.status = 'sent';
     campaign.sentAt = new Date();
 
     const errors: string[] = [];
-    if (failed > 0) errors.push(`${failed} mensaje(s) fallaron${firstError ? ': ' + String(firstError) : ''}`);
+    if (failed > 0)
+      errors.push(
+        `${failed} mensaje(s) fallaron${firstError ? ': ' + String(firstError) : ''}`,
+      );
     if (noPhone > 0) errors.push(`${noPhone} sin teléfono (omitidos)`);
-    if (skippedByLimit > 0) errors.push(`${skippedByLimit} omitidos por límite diario`);
+    if (skippedByLimit > 0)
+      errors.push(`${skippedByLimit} omitidos por límite diario`);
     if (errors.length > 0) campaign.errorMessage = errors.join(' · ');
 
     await campaign.save();
@@ -319,12 +390,14 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
   private async countWaSentToday(tenantId: string): Promise<number> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const campaigns = await this.campaignModel.find({
-      tenantId: new Types.ObjectId(tenantId),
-      type: 'whatsapp',
-      status: 'sent',
-      sentAt: { $gte: startOfDay },
-    }).exec();
+    const campaigns = await this.campaignModel
+      .find({
+        tenantId: new Types.ObjectId(tenantId),
+        type: 'whatsapp',
+        status: 'sent',
+        sentAt: { $gte: startOfDay },
+      })
+      .exec();
     return campaigns.reduce((sum, c) => sum + (c.recipientCount ?? 0), 0);
   }
 }
