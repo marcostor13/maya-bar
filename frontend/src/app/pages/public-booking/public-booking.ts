@@ -283,6 +283,25 @@ const OCCASION_OPTIONS = [
     .res-detail { background: var(--color-white); border-radius: var(--radius-md);
       padding: 14px 18px; text-align: left; margin: 12px 0;
       display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+
+    @media (max-width: 768px) {
+      .booking-shell { padding: 0; align-items: stretch; }
+      .booking-card { max-width: 100%; border-radius: 0; min-height: 100vh; box-shadow: none; }
+      .booking-header { padding: 28px 20px 24px; }
+      .step-body { padding: 20px; }
+      .info-block { padding: 32px 20px; }
+      .back-btn { min-height: 44px; padding: 8px 0; margin-bottom: 8px; }
+    }
+
+    @media (max-width: 480px) {
+      .booking-title { font-size: 20px; }
+      .booking-header { padding: 24px 16px 20px; }
+      .step-body { padding: 16px; }
+      .slots-grid { gap: 8px; }
+      .slot-btn { padding: 12px 8px; }
+      .info-block { padding: 28px 16px; }
+      .res-detail { padding: 12px 14px; }
+    }
   `],
 })
 export class PublicBookingComponent implements OnInit {

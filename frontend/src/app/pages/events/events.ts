@@ -221,7 +221,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     <!-- ── QR / Share modal ── -->
     @if (qrModalOpen() && qrEvent()) {
       <div class="overlay" (click)="qrModalOpen.set(false)" role="dialog" aria-modal="true">
-        <div class="qr-modal" (click)="$event.stopPropagation()">
+        <div class="qr-modal card animate-fade-in" (click)="$event.stopPropagation()">
           <div class="qr-modal-header">
             <div>
               <h3>Compartir evento</h3>
@@ -304,7 +304,53 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .btn-icon-sm { background:none; border:none; padding:4px; color:var(--color-text-muted); cursor:pointer; display:inline-flex; border-radius:6px; transition:all .2s; }
     .btn-icon-sm:hover { background:var(--color-bg-app); color:var(--color-brand); }
 
+    /* ── Empty state ── */
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 40px; gap:16px; text-align:center; }
+    .empty-state h3 { margin:0; font-size:18px; font-weight:700; }
+    .empty-state p { margin:0; color:var(--color-text-muted); max-width:360px; line-height:1.5; }
+    .empty-icon { color:var(--color-brand); opacity:.3; }
 
+    /* ── QR / Share modal ── */
+    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; z-index:100; padding:24px; box-sizing:border-box; }
+    .qr-modal { width:calc(100% - 48px); max-width:420px; padding:28px 32px; }
+    .qr-modal-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:16px; }
+    .qr-modal-header h3 { margin:0 0 2px; font-size:18px; }
+    .modal-subtitle { margin:0; font-size:13px; color:var(--color-text-muted); }
+    .qr-draft-warn { display:flex; align-items:flex-start; gap:8px; background:#FFFBEB; color:#92400E; border:1px solid #FDE68A; border-radius:var(--radius-md); padding:10px 12px; font-size:12.5px; line-height:1.4; margin-bottom:16px; }
+    .qr-body { display:flex; flex-direction:column; align-items:center; gap:16px; }
+    .qr-image-wrap { padding:12px; background:#fff; border:1px solid var(--color-border); border-radius:var(--radius-md); }
+    .qr-img { width:200px; height:200px; display:block; max-width:100%; }
+    .qr-url-row { display:flex; gap:8px; width:100%; }
+    .qr-url-input { flex:1; min-width:0; font-size:13px; }
+    .qr-download { width:100%; justify-content:center; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px; }
+      .page-header { margin-bottom:24px; }
+      .header-actions { width:100%; }
+      .local-select { flex:1; min-width:0; }
+      .events-grid { grid-template-columns: repeat(2, 1fr); gap:16px; }
+      .event-card-img { height:160px; }
+      .event-card-body { padding:18px; gap:12px; }
+      .event-title { font-size:16px; }
+      .empty-state { padding:60px 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px; }
+      .page-header { flex-direction:column; align-items:stretch; }
+      .header-actions { flex-direction:column; align-items:stretch; }
+      .local-select { width:100%; }
+      .header-actions .btn { width:100%; justify-content:center; }
+      .events-grid { grid-template-columns: 1fr; }
+      .event-card-img { height:180px; }
+      .event-footer { flex-direction:column; align-items:stretch; gap:12px; }
+      .event-actions { justify-content:flex-end; }
+      .qr-modal { width:calc(100% - 32px); padding:22px 20px; }
+      .qr-modal-header { flex-wrap:wrap; }
+      .qr-url-row { flex-direction:column; }
+      .qr-url-row .btn { width:100%; justify-content:center; }
+    }
   `],
 })
 export class EventsComponent implements OnInit {

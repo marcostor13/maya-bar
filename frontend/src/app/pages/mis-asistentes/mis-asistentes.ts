@@ -283,6 +283,24 @@ interface Registration {
     .media-preview { position: relative; border-radius: var(--radius-lg); overflow: hidden; background: var(--color-bg-app); border: 1px solid var(--color-border); }
     .media-thumb { width: 100%; max-height: 200px; object-fit: cover; display: block; }
     .media-clear { position: absolute; top: 8px; right: 8px; background: var(--color-white) !important; box-shadow: var(--shadow-sm); border-radius: 50%; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .filter-bar { padding: 12px 16px; }
+      .filter-select { max-width: none; }
+      .filter-count { margin-left: 0; width: 100%; }
+      table { min-width: 640px; }
+      .modal-card { width: calc(100% - 24px); }
+      .modal-header, .modal-body, .modal-footer { padding-left: 18px; padding-right: 18px; }
+      .channel-selector { flex-wrap: wrap; }
+      .channel-btn { flex: 1 1 45%; justify-content: center; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .page-header h1 { font-size: 22px; }
+      th, td { padding: 10px 12px; font-size: 13px; }
+    }
   `],
 })
 export class MisAsistentesComponent implements OnInit {

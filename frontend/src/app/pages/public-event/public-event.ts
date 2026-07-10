@@ -691,6 +691,30 @@ function hexToRgba(hex: string, opacity: number): string {
       animation: fadeIn 0.25s ease;
     }
     .pe-music-player iframe { width: 100%; border: none; display: block; }
+
+    @media (max-width: 768px) {
+      .pe-title { font-size: 22px; }
+      .pe-hero { height: 220px; }
+      .pe-fallback-info { padding: 20px 20px 100px; }
+      .pe-drawer-content { padding: 8px 20px calc(28px + env(safe-area-inset-bottom)); }
+      .pe-success-card { padding: 32px 24px; }
+      .pe-cta-btn { padding: 16px 24px; font-size: 16px; }
+      .pe-cta-bar { padding: 14px 20px calc(14px + env(safe-area-inset-bottom)); }
+    }
+
+    @media (max-width: 480px) {
+      .pe-title { font-size: 20px; }
+      .pe-meta { gap: 8px; }
+      .pe-meta-item { font-size: 12px; padding: 5px 10px; }
+      .pe-drawer-close { width: 44px; height: 44px; }
+      .checkbox-field { padding: 13px 16px; min-height: 44px; box-sizing: border-box; }
+      .ticket-box { padding: 16px 20px; }
+      .ticket-qr { width: 140px; height: 140px; }
+      .ticket-code { font-size: 22px; }
+      .pe-music-btn { top: calc(12px + env(safe-area-inset-top)); right: 12px; width: 46px; height: 46px; }
+      .pe-music-player { top: calc(66px + env(safe-area-inset-top)); right: 12px; }
+      .pe-success-card { padding: 28px 20px; }
+    }
   `],
 })
 export class PublicEventComponent implements OnInit {

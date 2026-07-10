@@ -14,7 +14,7 @@ import {
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom } from 'rxjs';
-import { LucideAngularModule, Sparkles, Plus, Trash2, AlignCenter, AlignLeft, AlignRight, Image as ImageIcon, Type, Save, X, BookmarkPlus, Film, Wand2, ChevronDown, CopyPlus, Eye, MousePointerClick, Palette, CheckCircle, Music, Mail } from 'lucide-angular';
+import { LucideAngularModule, Sparkles, Plus, Trash2, AlignCenter, AlignLeft, AlignRight, Image as ImageIcon, Type, Save, X, BookmarkPlus, Film, Wand2, ChevronDown, CopyPlus, Eye, MousePointerClick, Palette, CheckCircle, Music, Mail, Menu, Layers } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 
@@ -227,7 +227,13 @@ function rgbaOpacity(rgba: string): number {
     <div class="designer" (mousemove)="onMouseMove($event)">
 
       <!-- ── Left Panel ── -->
-      <div class="d-left" [class.d-left-wide]="configTab()">
+      <div class="d-left" [class.d-left-wide]="configTab()" [class.mobile-open]="mobileLeftOpen()">
+        <div class="d-mobile-panel-header">
+          <span>Herramientas</span>
+          <button class="d-close-btn" (click)="mobileLeftOpen.set(false)">
+            <lucide-icon [img]="X" [size]="18"></lucide-icon>
+          </button>
+        </div>
         <div class="d-tabs">
           <button class="d-tab" [class.active]="leftTab() === 'ai'" (click)="leftTab.set('ai')" title="IA">
             <lucide-icon [img]="Wand2" [size]="16"></lucide-icon>
@@ -607,6 +613,9 @@ function rgbaOpacity(rgba: string): number {
       <!-- ── Center: Canvas ── -->
       <div class="d-center">
         <div class="d-toolbar">
+          <button class="d-btn-sm d-mobile-toggle" (click)="mobileLeftOpen.set(true)" title="Herramientas">
+            <lucide-icon [img]="Menu" [size]="15"></lucide-icon>
+          </button>
           @if (!configTab()) {
             <button class="d-btn-sm" (click)="addTextEl()">
               <lucide-icon [img]="Type" [size]="15"></lucide-icon> Texto
@@ -622,6 +631,9 @@ function rgbaOpacity(rgba: string): number {
             </button>
             <button class="d-btn-sm" (click)="centerAll()" [disabled]="design().elements.length === 0">
               <lucide-icon [img]="AlignCenter" [size]="15"></lucide-icon> Centrar todo
+            </button>
+            <button class="d-btn-sm d-mobile-toggle" (click)="rightDrawerOpen.set(true)" title="Capas y fondo">
+              <lucide-icon [img]="Layers" [size]="15"></lucide-icon> Capas
             </button>
             <div class="d-toolbar-sep"></div>
             <span class="d-hint">Clic para seleccionar · Doble clic para editar · Arrastra para mover</span>
@@ -822,7 +834,7 @@ function rgbaOpacity(rgba: string): number {
 
       <!-- ── Right Panel: Properties ── -->
       @if (!configTab() && selectedEl()) {
-        <div class="d-right">
+        <div class="d-right" [class.mobile-open]="true">
           <div class="d-right-header">
             <span>{{ selectedEl()!.type === 'text' ? 'Texto' : selectedEl()!.type === 'button' ? 'Botón CTA' : 'Imagen' }}</span>
             <button class="d-close-btn" (click)="selectedId.set(null)">
@@ -1246,9 +1258,12 @@ function rgbaOpacity(rgba: string): number {
 
       @if (!configTab() && !selectedEl()) {
         <!-- Background controls when nothing selected -->
-        <div class="d-right">
+        <div class="d-right" [class.mobile-open]="rightDrawerOpen()">
           <div class="d-right-header">
             <span>Canvas</span>
+            <button class="d-close-btn d-drawer-close" (click)="rightDrawerOpen.set(false)">
+              <lucide-icon [img]="X" [size]="16"></lucide-icon>
+            </button>
           </div>
           <div class="d-props">
             <div class="d-section-label">Fondo</div>
@@ -1297,6 +1312,10 @@ function rgbaOpacity(rgba: string): number {
             }
           </div>
         </div>
+      }
+
+      @if (mobileLeftOpen() || rightDrawerOpen() || (!configTab() && selectedEl())) {
+        <div class="d-drawer-backdrop" (click)="closeMobilePanels()"></div>
       }
 
     </div>
@@ -2247,6 +2266,89 @@ function rgbaOpacity(rgba: string): number {
     }
     .ep-note { font-size: 12px; color: #4b5563; text-align: center; margin: 18px 0 0; }
     .ep-foot { background: #111827; color: #9ca3af; font-size: 11px; text-align: center; padding: 16px; }
+
+    /* ── Mobile drawers ── */
+    .d-mobile-toggle { display: none; }
+    .d-mobile-panel-header { display: none; }
+    .d-drawer-close { display: none; }
+    .d-drawer-backdrop { display: none; }
+
+    @media (max-width: 968px) {
+      .d-left { width: 210px; }
+      .d-left.d-left-wide { width: 300px; }
+      .d-right { width: 210px; }
+    }
+
+    @media (max-width: 768px) {
+      .designer { position: relative; height: 640px; border-radius: 0 0 12px 12px; }
+
+      .d-mobile-toggle { display: flex; }
+      .d-mobile-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--color-border);
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--color-text-main);
+        flex-shrink: 0;
+      }
+      .d-drawer-close { display: flex; }
+      .d-drawer-backdrop {
+        display: block;
+        position: absolute;
+        inset: 0;
+        background: rgba(15,23,42,0.45);
+        z-index: 90;
+      }
+
+      .d-left {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 85%;
+        max-width: 320px;
+        transform: translateX(-105%);
+        transition: transform 0.25s ease;
+        z-index: 95;
+        box-shadow: 8px 0 24px rgba(0,0,0,0.25);
+      }
+      .d-left.d-left-wide { width: 85%; max-width: 320px; }
+      .d-left.mobile-open { transform: translateX(0); }
+
+      .d-right {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        left: auto;
+        width: 85%;
+        max-width: 320px;
+        transform: translateX(105%);
+        transition: transform 0.25s ease;
+        z-index: 95;
+        box-shadow: -8px 0 24px rgba(0,0,0,0.25);
+      }
+      .d-right.mobile-open { transform: translateX(0); }
+
+      .d-toolbar { flex-wrap: wrap; row-gap: 8px; padding: 8px 10px; }
+      .d-hint { display: none; }
+      .d-btn-sm { padding: 6px 10px; font-size: 12px; }
+
+      .d-stage { padding: 14px; overflow-x: auto; }
+
+      .form-preview, .email-preview { padding: 16px 12px; }
+    }
+
+    @media (max-width: 480px) {
+      .designer { height: 560px; }
+      .d-left, .d-right { width: 90%; }
+      .d-stage { padding: 10px; }
+      .canvas { transform: scale(0.88); transform-origin: top center; }
+      .music-modal { padding: 20px 20px 18px; }
+    }
   `],
 })
 export class InvitationDesignerComponent implements OnInit {
@@ -2274,6 +2376,8 @@ export class InvitationDesignerComponent implements OnInit {
   readonly Music = Music;
   readonly Mail = Mail;
   readonly Math = Math;
+  readonly Menu = Menu;
+  readonly Layers = Layers;
 
   design = signal<DesignSpec>({ ...DEFAULT_DESIGN, elements: [], background: { ...DEFAULT_DESIGN.background, overlay: { ...DEFAULT_DESIGN.background.overlay } }, theme: { ...DEFAULT_THEME } });
   selectedId = signal<string | null>(null);
@@ -2290,6 +2394,14 @@ export class InvitationDesignerComponent implements OnInit {
   isDragging = signal(false);
   snapGuideX = signal<number | null>(null);
   snapGuideY = signal<number | null>(null);
+  mobileLeftOpen = signal(false);
+  rightDrawerOpen = signal(false);
+
+  closeMobilePanels() {
+    this.mobileLeftOpen.set(false);
+    this.rightDrawerOpen.set(false);
+    this.selectedId.set(null);
+  }
 
   @Output() designChange = new EventEmitter<DesignSpec>();
 

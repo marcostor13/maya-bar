@@ -88,13 +88,13 @@ interface Stats {
                     <lucide-icon [img]="MapPin" [size]="14" [strokeWidth]="2.5" style="color: var(--color-brand); flex-shrink:0"></lucide-icon>
                     {{ v.reference }}
                   </td>
-                  <td>
+                  <td data-label="Ubicación">
                     <a [href]="mapsLink(v.location)" target="_blank" class="maps-link">
                       <lucide-icon [img]="Navigation" [size]="13" [strokeWidth]="2.5"></lucide-icon>
                       {{ v.location.lat.toFixed(5) }}, {{ v.location.lng.toFixed(5) }}
                     </a>
                   </td>
-                  <td class="date-cell">{{ formatDate(v.createdAt) }}</td>
+                  <td class="date-cell" data-label="Fecha y hora">{{ formatDate(v.createdAt) }}</td>
                   <td class="actions-cell">
                     <button class="btn btn-sm btn-danger" (click)="deleteVisit(v)" aria-label="Eliminar visita">
                       <lucide-icon [img]="Trash2" [size]="14" [strokeWidth]="2.5"></lucide-icon>
@@ -214,6 +214,30 @@ interface Stats {
     .geo-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-muted); }
     .geo-ok { color: #16A34A; font-weight: 600; }
     .geo-err { color: var(--color-error); }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .stat-pill { flex: 1 1 auto; min-width: 100px; padding: 16px 24px; }
+
+      table, thead, tbody, tr, th, td { display: block; }
+      thead { display: none; }
+      tbody tr { border: 1px solid var(--color-border); border-radius: 12px; margin-bottom: 12px; padding: 12px 14px; }
+      tbody tr:last-child { margin-bottom: 0; }
+      td { border-bottom: none; padding: 6px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      td::before { content: attr(data-label); font-size: 11px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .04em; flex-shrink: 0; }
+      td.ref-cell { justify-content: flex-start; padding-bottom: 8px; border-bottom: 1px solid var(--color-border); margin-bottom: 6px; }
+      td.ref-cell::before { content: none; }
+      td.actions-cell { justify-content: flex-end; padding-top: 6px; }
+      td.actions-cell::before { content: none; }
+
+      .drawer-header { padding: 20px; }
+      .drawer-body { padding: 20px; }
+      .drawer-footer { padding: 16px 20px; }
+    }
+
+    @media (max-width: 480px) {
+      .drawer { width: 100vw; max-width: 100vw; }
+    }
   `],
 })
 export class VisitsComponent implements OnInit {

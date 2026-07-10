@@ -213,8 +213,8 @@ const API = environment.apiUrl;
     .copy-btn:hover { background: var(--color-brand); color: white; border-color: var(--color-brand); }
     .copied-msg { font-size: 12px; color: var(--color-success); margin-top: 8px; text-align: center; }
 
-    .table-card { padding: 0; overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; }
+    .table-card { padding: 0; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
     th {
       text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted);
@@ -250,6 +250,27 @@ const API = environment.apiUrl;
     .empty-icon { font-size: 40px; margin-bottom: 16px; color: var(--color-text-muted); }
     .empty-state h3 { margin-bottom: 8px; }
     .empty-state p { color: var(--color-text-muted); margin-bottom: 24px; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .page-header { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 24px; }
+      .page-header .btn { width: 100%; }
+
+      .form-row { grid-template-columns: 1fr; }
+      .cred-row { flex-wrap: wrap; }
+      .cred-label { width: 100%; }
+
+      th, td { padding: 10px 12px; }
+      .empty-state { padding: 48px 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .page-header h1 { font-size: 22px; }
+      .modal { padding: 20px; }
+      table { min-width: 640px; }
+      th, td { font-size: 12px; padding: 8px 10px; }
+    }
   `],
 })
 export class AdminTenantsComponent implements OnInit {

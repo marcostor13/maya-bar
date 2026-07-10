@@ -362,6 +362,7 @@ function blankIgAccount(): IgAccount {
                     <div class="acc-id">
                       <span class="account-label">{{ acc.label }}</span>
                       <span class="account-sub">{{ acc.username ? '@' + acc.username : 'Instagram Messaging' }}</span>
+                      <span class="account-sub">IG ID: {{ acc.igBusinessAccountId || '(sin ID)' }}</span>
                     </div>
                     <div class="acc-card-actions">
                       @if (acc.tokenExpiresAt) {
@@ -525,7 +526,7 @@ function blankIgAccount(): IgAccount {
               <h2 class="section-title">Plantillas WhatsApp</h2>
               <p class="section-desc">Gestiona las plantillas aprobadas por Meta para campañas Cloud API</p>
             </div>
-            <div style="margin-left: auto; display: flex; gap: 8px;">
+            <div class="section-actions">
               <button class="btn btn-secondary btn-sm" (click)="syncTemplates()" [disabled]="syncingTemplates()">
                 <lucide-icon [img]="RefreshCw" [size]="14" [class.spin]="syncingTemplates()"></lucide-icon>
                 Sincronizar desde Meta
@@ -638,10 +639,11 @@ function blankIgAccount(): IgAccount {
     .page-subtitle { font-size: 14px; color: var(--color-text-muted); margin: 0; }
 
     .section-card { background: var(--color-white); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 28px 32px; margin-bottom: 24px; }
-    .section-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+    .section-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
     .section-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); background: #F0FDF4; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .section-title { font-family: var(--font-heading); font-size: 17px; font-weight: 700; margin: 0 0 2px; }
     .section-desc { font-size: 13px; color: var(--color-text-muted); margin: 0; }
+    .section-actions { margin-left: auto; display: flex; gap: 8px; }
 
     .fields-grid { display: flex; flex-direction: column; gap: 20px; }
     .field { display: flex; flex-direction: column; gap: 6px; }
@@ -707,6 +709,38 @@ function blankIgAccount(): IgAccount {
 
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { animation: spin 1s linear infinite; display: inline-block; }
+
+    @media (max-width: 968px) {
+      .page { padding: 28px 24px; }
+    }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .page-title { font-size: 22px; }
+      .section-card { padding: 20px; }
+      .section-header { gap: 12px; margin-bottom: 20px; }
+      .section-actions { margin-left: 0; width: 100%; }
+      .section-actions .btn { flex: 1; justify-content: center; }
+      .acc-card { padding: 14px 16px; }
+      .acc-card-head { flex-wrap: wrap; }
+      .acc-card-actions { flex-wrap: wrap; justify-content: flex-start; }
+      .test-row { flex-direction: column; align-items: stretch; }
+      .section-footer { flex-wrap: wrap; gap: 10px; }
+      .section-footer > .btn { flex: 1; justify-content: center; }
+      .tpl-row { flex-wrap: wrap; }
+      .tpl-row-main { flex: 1 1 100%; }
+      .tpl-del-btn { margin-left: auto; }
+      .modal-header, .modal-body, .modal-footer { padding-left: 16px; padding-right: 16px; }
+      .qr-image, .qr-placeholder { max-width: 100%; height: auto; aspect-ratio: 1 / 1; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .section-card { padding: 16px; margin-bottom: 16px; }
+      .section-card > .btn { width: 100%; justify-content: center; }
+      .fields-grid { gap: 14px; }
+      .modal-card { width: calc(100% - 24px); }
+    }
   `],
 })
 export class SettingsComponent implements OnInit, OnDestroy {

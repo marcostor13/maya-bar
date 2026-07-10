@@ -281,6 +281,23 @@ const LOCAL_TYPES = [
       font-size: 13px;
       margin-bottom: 20px;
     }
+
+    @media (max-width: 768px) {
+      .onboarding-page { padding: 20px 12px; }
+      .onboarding-card { padding: 28px 22px; }
+      .step-actions { flex-wrap: wrap; }
+      .step-actions .btn { flex: 1 1 auto; }
+    }
+
+    @media (max-width: 480px) {
+      .onboarding-card { padding: 22px 16px; }
+      .step h2 { font-size: 20px; }
+      .type-grid { grid-template-columns: repeat(2, 1fr); }
+      .form-row { grid-template-columns: 1fr; gap: 14px; }
+      .step-actions { flex-direction: column; }
+      .step-actions .btn { width: 100%; }
+      .summary-card { padding: 16px; }
+    }
   `],
 })
 export class OnboardingComponent {

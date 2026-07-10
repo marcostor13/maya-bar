@@ -282,6 +282,31 @@ const DIET_ICONS: Record<string, string> = {
     .confirm-card p { color: var(--color-text-muted); font-size: 14px; margin: 0; }
     .animate-scale-in { animation: scaleIn 200ms ease forwards; }
     @keyframes scaleIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+
+    @media (max-width: 768px) {
+      .pub-header { padding: 14px 16px; }
+      .cat-nav { padding: 10px 12px; }
+      .pub-items { padding: 10px 12px; gap: 8px; }
+      .item-card { padding: 12px 14px; gap: 10px; }
+      .item-photo { width: 68px; height: 68px; }
+      .add-btn { width: 44px; height: 44px; }
+      .qty-btn { width: 36px; height: 36px; }
+      .drawer-close { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+      .drawer { max-width: 100%; }
+      .cart-actions { padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+      .cart-fab { bottom: calc(20px + env(safe-area-inset-bottom)); }
+    }
+
+    @media (max-width: 480px) {
+      .pub-local-name { font-size: 14px; }
+      .item-name { font-size: 14px; }
+      .item-photo { width: 56px; height: 56px; }
+      .item-card { padding: 10px 12px; }
+      .add-btn { bottom: 8px; right: 8px; }
+      .cart-item-controls { gap: 16px; }
+      .confirm-card { padding: 24px 20px; }
+      .cart-fab { padding: 10px 16px; font-size: 14px; }
+    }
   `],
 })
 export class PublicMenuComponent implements OnInit {

@@ -584,6 +584,27 @@ function blankAgent(): Agent {
     .bubble.typing { opacity: .6; font-style: italic; }
     .chat-input { display: flex; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--color-border); flex-shrink: 0; align-items: flex-end; }
     .chat-input .input { flex: 1; resize: none; max-height: 120px; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .grid { grid-template-columns: 1fr; }
+      .drawer-header { padding: 20px 18px 14px; flex-wrap: wrap; }
+      .header-right { flex-wrap: wrap; }
+      .tabs { padding: 10px 18px 0; }
+      .drawer-scroll { padding: 18px; }
+      .field-row { flex-direction: column; gap: 0; }
+      .chat-scroll { padding: 18px; }
+      .chat-input { padding: 12px 16px; }
+      .bubble { max-width: 90%; }
+    }
+
+    @media (max-width: 480px) {
+      .page-header h1 { font-size: 22px; }
+      .agent-card { padding: 18px; }
+      .drawer-title-group h2 { font-size: 19px; }
+      .drawer-actions { flex-wrap: wrap; }
+      .drawer-actions .btn { flex: 1 1 auto; }
+    }
   `],
 })
 export class AiAgentsComponent implements OnInit {

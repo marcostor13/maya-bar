@@ -176,6 +176,17 @@ import { AuthService } from '../../auth/auth.service';
       text-decoration: none;
       font-weight: 500;
     }
+
+    @media (max-width: 768px) {
+      .register-page { padding: 20px 12px; }
+      .register-card { padding: 28px 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .register-card { padding: 24px 18px; }
+      .register-header h1 { font-size: 20px; }
+      .form-row { grid-template-columns: 1fr; gap: 14px; }
+    }
   `],
 })
 export class RegisterComponent {

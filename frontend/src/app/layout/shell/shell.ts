@@ -1,7 +1,8 @@
 import { Component, inject, signal, computed } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import { AuthService } from '../../auth/auth.service';
-import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot } from 'lucide-angular';
+import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X } from 'lucide-angular';
 
 @Component({
   selector: 'app-shell',
@@ -9,19 +10,34 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
   imports: [RouterOutlet, RouterLink, RouterLinkActive, LucideAngularModule],
   template: `
     <div class="shell">
-      <aside class="sidebar" [class.collapsed]="collapsed()">
+      <header class="mobile-topbar">
+        <button class="mobile-menu-btn" (click)="mobileOpen.set(true)" aria-label="Abrir menú">
+          <lucide-icon [img]="Menu" [size]="22" [strokeWidth]="2.5"></lucide-icon>
+        </button>
+        <img src="/logo.png" alt="BAR" class="mobile-logo-img" />
+        <div class="mobile-topbar-spacer"></div>
+      </header>
+
+      @if (mobileOpen()) {
+        <div class="mobile-backdrop" (click)="mobileOpen.set(false)"></div>
+      }
+
+      <aside class="sidebar" [class.collapsed]="collapsed()" [class.mobile-open]="mobileOpen()">
         <div class="sidebar-header" [class.collapsed-header]="collapsed()">
           @if (!collapsed()) {
             <div class="logo">
               <img src="/logo.png" alt="BAR" class="logo-img" />
             </div>
           }
-          <button class="collapse-btn" (click)="collapsed.set(!collapsed())" [title]="collapsed() ? 'Expandir' : 'Colapsar'">
+          <button class="collapse-btn desktop-only" (click)="collapsed.set(!collapsed())" [title]="collapsed() ? 'Expandir' : 'Colapsar'">
             <lucide-icon [img]="collapsed() ? ChevronRight : ChevronLeft" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+          </button>
+          <button class="collapse-btn mobile-only" (click)="mobileOpen.set(false)" title="Cerrar" aria-label="Cerrar menú">
+            <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
           </button>
         </div>
 
-        <nav class="nav">
+        <nav class="nav" (click)="mobileOpen.set(false)">
           @if (isSuperAdmin()) {
             @if (!collapsed()) {
               <span class="nav-label">PLATAFORMA</span>
@@ -180,10 +196,58 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
     :host {
       --sidebar-width: 260px;
       --sidebar-collapsed: 80px;
+      --mobile-topbar-height: 60px;
     }
 
     * {
       box-sizing: border-box;
+    }
+
+    .desktop-only { display: flex; }
+    .mobile-only { display: none; }
+
+    /* ── Mobile top bar ── */
+    .mobile-topbar {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      height: var(--mobile-topbar-height);
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top, 0);
+      background: var(--color-white);
+      border-bottom: 1px solid var(--color-border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      flex-shrink: 0;
+    }
+
+    .mobile-menu-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--color-border);
+      background: var(--color-bg-app);
+      color: var(--color-text-main);
+      cursor: pointer;
+    }
+
+    .mobile-logo-img {
+      height: 28px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .mobile-topbar-spacer {
+      flex: 1;
+    }
+
+    .mobile-backdrop {
+      display: none;
     }
 
     .shell {
@@ -432,6 +496,81 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
       background: var(--color-bg-app);
       min-width: 0;
     }
+
+    /* ── Mobile layout (≤968px) ── */
+    @media (max-width: 968px) {
+      .desktop-only { display: none; }
+      .mobile-only { display: flex; }
+
+      .mobile-topbar {
+        display: flex;
+      }
+
+      .shell {
+        flex-direction: column;
+      }
+
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 200;
+        width: min(300px, 84vw);
+        min-width: 0;
+        max-width: 300px;
+        transform: translateX(-100%);
+        box-shadow: var(--shadow-lg);
+        padding-top: env(safe-area-inset-top, 0);
+      }
+
+      .sidebar.collapsed {
+        width: min(300px, 84vw);
+        min-width: 0;
+      }
+
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+
+      .sidebar.collapsed:not(.mobile-open) .nav-item span:not(.nav-icon),
+      .sidebar.collapsed:not(.mobile-open) .user-meta,
+      .sidebar.collapsed:not(.mobile-open) .logout-btn span:not(.nav-icon),
+      .sidebar.collapsed:not(.mobile-open) .nav-label {
+        display: none;
+      }
+
+      .sidebar.mobile-open .nav-item,
+      .sidebar.mobile-open .logout-btn {
+        padding: 12px 16px;
+        justify-content: flex-start;
+      }
+
+      .sidebar.mobile-open .nav-icon {
+        min-width: 24px;
+      }
+
+      .mobile-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(2px);
+        z-index: 150;
+      }
+
+      .main-content {
+        width: 100%;
+      }
+
+      .nav-item, .logout-btn {
+        min-height: 44px;
+      }
+
+      .mobile-menu-btn {
+        min-height: 44px;
+      }
+    }
   `],
 })
 export class ShellComponent {
@@ -458,9 +597,18 @@ export class ShellComponent {
   readonly List = List;
   readonly MapPin = MapPin;
   readonly Gauge = Gauge;
+  readonly Menu = Menu;
+  readonly X = X;
 
   collapsed = signal(false);
+  mobileOpen = signal(false);
   user = this.auth.currentUser;
+
+  constructor() {
+    this.router.events.pipe(filter(e => e instanceof NavigationStart)).subscribe(() => {
+      this.mobileOpen.set(false);
+    });
+  }
 
   private role = computed(() => this.user()?.role ?? '');
   isSuperAdmin    = computed(() => this.role() === 'SUPERADMIN');

@@ -189,6 +189,18 @@ const API = environment.apiUrl;
     .btn-primary {
       margin-top: 4px;
     }
+
+    @media (max-width: 768px) {
+      .cp-wrap { padding: 16px; }
+      .cp-card { padding: 28px 22px; }
+      .eye-btn { min-width: 44px; min-height: 44px; justify-content: center; right: 0; }
+      .input-eye-wrap .input { padding-right: 46px; }
+    }
+
+    @media (max-width: 480px) {
+      .cp-card { padding: 24px 16px; }
+      h1 { font-size: 20px; }
+    }
   `],
 })
 export class ChangePasswordComponent {

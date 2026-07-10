@@ -287,6 +287,30 @@ const TYPE_LABELS: Record<string, string> = {
       .page-header, .status-tabs, .header-actions, .qr-toolbar { display: none; }
       .tables-grid { grid-template-columns: repeat(4, 1fr); }
     }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .header-actions { width: 100%; }
+      .local-select { flex: 1 1 100%; min-width: 0; }
+      .status-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+      .tab-btn { flex: 0 0 auto; white-space: nowrap; min-height: 44px; }
+      .orders-grid { grid-template-columns: 1fr; }
+      .tables-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+      .order-foot { flex-wrap: wrap; }
+      .order-actions { width: 100%; }
+      .order-actions .btn { flex: 1; min-height: 44px; }
+      .qr-toolbar { flex-wrap: wrap; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .page-header h1 { font-size: 22px; }
+      .header-actions { flex-direction: column; align-items: stretch; }
+      .ws-indicator { justify-content: center; }
+      .order-badges { justify-content: flex-start; }
+      .order-head { flex-wrap: wrap; gap: 6px; }
+      .qr-img, .qr-placeholder { width: 120px; height: 120px; }
+    }
   `],
 })
 export class OrdersComponent implements OnInit, OnDestroy {

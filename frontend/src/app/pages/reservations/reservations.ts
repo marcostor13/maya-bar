@@ -319,6 +319,28 @@ const OCCASION_LABELS: Record<string, string> = {
       font-size: 16px; padding: 0; line-height: 1; }
     .add-turno-row { display: flex; gap: 8px; align-items: center; }
     .time-input { max-width: 130px; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .header-actions { width: 100%; }
+      .local-select { flex: 1 1 100%; min-width: 0; }
+      .filter-row { flex-direction: column; align-items: stretch; }
+      .date-input, .status-select { max-width: none; width: 100%; }
+      .booking-link { margin-left: 0; width: 100%; text-align: center; }
+      .row-actions { flex-wrap: wrap; }
+      .row-actions .btn { min-height: 44px; }
+      .form-row-2 { grid-template-columns: 1fr; }
+      .config-card { max-width: 100%; }
+      .add-turno-row { width: 100%; }
+      .time-input { flex: 1 1 auto; max-width: none; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .page-header h1 { font-size: 22px; }
+      th, td { padding: 10px; font-size: 12px; }
+      .td-notes { max-width: 100px; }
+    }
   `],
 })
 export class ReservationsComponent implements OnInit {

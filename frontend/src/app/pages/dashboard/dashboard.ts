@@ -221,6 +221,32 @@ const API = environment.apiUrl;
 
     .empty-state h3 { margin-bottom: 8px; }
     .empty-state p { color: var(--color-text-muted); margin-bottom: 24px; }
+
+    @media (max-width: 768px) {
+      .dashboard { padding: 20px 16px; }
+
+      .page-header { flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+      .page-header .btn { width: 100%; text-align: center; }
+
+      .stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 28px; }
+
+      .stat-card { padding: 16px 18px; }
+      .stat-value { font-size: 24px; }
+
+      .section-header { flex-wrap: wrap; gap: 8px; }
+
+      .locals-grid { grid-template-columns: 1fr; }
+
+      .empty-state { padding: 40px 20px; }
+    }
+
+    @media (max-width: 480px) {
+      .dashboard { padding: 16px 12px; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .stat-card { padding: 14px 16px; }
+      .local-actions { flex-direction: column; }
+      .local-actions .btn { width: 100%; text-align: center; }
+    }
   `],
 })
 export class DashboardComponent implements OnInit {

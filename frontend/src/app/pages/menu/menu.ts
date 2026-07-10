@@ -216,16 +216,14 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
                   </div>
                 </div>
 
-                <!-- Category -->
-                <span class="item-cat">{{ catName(item.categoryId) }}</span>
-
-                <!-- Price -->
-                <span class="item-price">S/. {{ item.price | number:'1.2-2' }}</span>
-
-                <!-- Status pill -->
-                <span class="status-pill" [class.pill-on]="item.isAvailable" [class.pill-off]="!item.isAvailable">
-                  {{ item.isAvailable ? 'Disponible' : '86' }}
-                </span>
+                <!-- Category / Price / Status (grouped for mobile stacking) -->
+                <div class="item-meta">
+                  <span class="item-cat">{{ catName(item.categoryId) }}</span>
+                  <span class="item-price">S/. {{ item.price | number:'1.2-2' }}</span>
+                  <span class="status-pill" [class.pill-on]="item.isAvailable" [class.pill-off]="!item.isAvailable">
+                    {{ item.isAvailable ? 'Disponible' : '86' }}
+                  </span>
+                </div>
 
                 <!-- Actions -->
                 <div class="item-acts">
@@ -518,6 +516,7 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
     .chip-diet { background: #F0FDF4; color: #15803D; }
     .chip-warn { background: #FFFBEB; color: #B45309; }
 
+    .item-meta { display: contents; }
     .item-cat { font-size: 12px; color: var(--color-text-muted); text-align: center; }
     .item-price { font-size: 14px; font-weight: 700; color: var(--color-text-main); text-align: right; }
 
@@ -618,6 +617,55 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
     .pill-warn.pill-selected { background: #FFFBEB; color: #B45309; border-color: #FDE68A; }
 
     .drawer-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 24px; margin-top: 8px; border-top: 1px solid var(--color-border); }
+
+    @media (max-width: 768px) {
+      .menu-page { padding: 20px 16px; }
+
+      .topbar { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 20px; }
+      .local-picker { width: 100%; box-sizing: border-box; }
+      .local-select { min-width: 0; width: 100%; }
+
+      .stats-bar { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .stat { padding: 12px 16px; flex-shrink: 0; }
+
+      .layout { grid-template-columns: 1fr; gap: 12px; }
+
+      .sidebar { display: flex; flex-direction: row; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 10px; gap: 8px; }
+      .sidebar-head { flex-shrink: 0; padding: 0 8px 0 0; border-bottom: none; border-right: 1px solid var(--color-border); }
+      .cat-row {
+        flex-shrink: 0; border-left: none; border-bottom: none;
+        border: 1px solid var(--color-border); border-radius: 20px;
+        padding: 7px 12px; white-space: nowrap; gap: 8px;
+      }
+      .cat-row.active { border-color: var(--color-brand); }
+      .cat-acts { opacity: 1; }
+
+      .toolbar { flex-wrap: wrap; }
+      .toolbar-right { width: 100%; flex-wrap: wrap; }
+      .search-wrap { flex: 1 1 auto; width: 100%; }
+      .search-input { width: 100%; }
+
+      .item-row {
+        display: flex; flex-wrap: wrap; align-items: center;
+        row-gap: 8px; padding: 14px;
+      }
+      .sw { order: 1; }
+      .item-info { order: 2; flex: 1 1 180px; min-width: 0; }
+      .item-acts { order: 3; }
+      .item-meta { display: flex; order: 4; flex: 0 0 100%; justify-content: space-between; align-items: center; padding-left: 52px; gap: 8px; }
+      .item-cat { text-align: left; }
+
+      .drawer, .drawer-wide { width: 100%; max-width: 100vw; }
+      .drawer-body { padding: 20px 16px; }
+      .drawer-head { padding: 20px 16px 16px; }
+      .fields-row { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 480px) {
+      .menu-page { padding: 16px 12px; }
+      .item-meta { padding-left: 0; flex-wrap: wrap; }
+      .item-acts { margin-left: auto; }
+    }
   `],
 })
 export class MenuComponent implements OnInit {

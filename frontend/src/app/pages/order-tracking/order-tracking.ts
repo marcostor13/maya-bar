@@ -185,6 +185,24 @@ const TIMELINE_STEPS: OrderStatus[] = ['pending', 'preparing', 'ready', 'served'
     .history-row:last-child { border-bottom: none; }
     .hist-label { font-weight: 500; }
     .hist-time { color: var(--color-text-muted); }
+
+    @media (max-width: 768px) {
+      .track-header { padding: 14px 16px; }
+      .status-card { margin: 12px; padding: 20px 16px; }
+      .items-card, .history-card { margin: 10px 12px; padding: 14px 16px; }
+      .track-actions { margin: 10px 12px; }
+      .action-btn { min-height: 44px; }
+    }
+
+    @media (max-width: 480px) {
+      .track-title { font-size: 15px; }
+      .step-dot { width: 24px; height: 24px; font-size: 11px; }
+      .step-label { font-size: 10px; }
+      .timeline-line { margin-top: 11px; }
+      .status-card { padding: 18px 14px; }
+      .track-item-row { flex-wrap: wrap; }
+      .track-notes { flex-basis: 100%; }
+    }
   `],
 })
 export class OrderTrackingComponent implements OnInit, OnDestroy {

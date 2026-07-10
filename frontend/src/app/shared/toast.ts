@@ -97,6 +97,20 @@ export class ToastService {
       position: relative;
     }
 
+    @media (max-width: 480px) {
+      .toast-container {
+        left: 12px;
+        right: 12px;
+        bottom: max(12px, env(safe-area-inset-bottom, 0px));
+      }
+
+      .toast {
+        min-width: 0;
+        max-width: none;
+        width: 100%;
+      }
+    }
+
     .toast[data-type="success"] { border-left-color: #22C55E; }
     .toast[data-type="error"]   { border-left-color: #EF4444; }
     .toast[data-type="warning"] { border-left-color: #F59E0B; }

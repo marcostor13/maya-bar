@@ -197,10 +197,29 @@ interface RecentVisit {
     .activity-title { font-size: 14px; font-weight: 600; color: var(--color-text-main); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .activity-meta { font-size: 12px; color: var(--color-text-muted); display: block; }
 
-    @media (max-width: 900px) {
+    @media (max-width: 968px) {
       .stats-row { grid-template-columns: repeat(2, 1fr); }
       .activity-section { grid-template-columns: 1fr; }
-      .actions-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .page-header h1 { font-size: 22px; }
+      .stats-row { gap: 12px; margin-bottom: 24px; }
+      .stat-card { padding: 16px; gap: 12px; }
+      .stat-icon { width: 40px; height: 40px; }
+      .stat-value { font-size: 22px; }
+      .actions-row { margin-bottom: 24px; }
+      .actions-grid { grid-template-columns: repeat(2, 1fr); }
+      .action-btn { padding: 20px 16px; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .ref-badge { width: 100%; justify-content: space-between; box-sizing: border-box; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .actions-grid { grid-template-columns: 1fr; }
+      .action-btn { flex-direction: row; justify-content: flex-start; padding: 16px 20px; }
     }
   `],
 })

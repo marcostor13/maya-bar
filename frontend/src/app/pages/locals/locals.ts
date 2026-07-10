@@ -52,12 +52,12 @@ const API = environment.apiUrl;
               @for (local of locals(); track local._id) {
                 <tr>
                   <td class="td-name">{{ local.name }}</td>
-                  <td>
+                  <td data-label="Tipo">
                     <span class="badge badge-type">{{ typeLabel(local.type) }}</span>
                   </td>
-                  <td class="td-muted">{{ local.address || '—' }}</td>
-                  <td class="td-muted">{{ local.tableCount || 0 }}</td>
-                  <td>
+                  <td class="td-muted" data-label="Dirección">{{ local.address || '—' }}</td>
+                  <td class="td-muted" data-label="Mesas">{{ local.tableCount || 0 }}</td>
+                  <td data-label="Estado">
                     <span class="badge" [class.badge-active]="local.isActive" [class.badge-inactive]="!local.isActive">
                       {{ local.isActive ? 'Activo' : 'Inactivo' }}
                     </span>
@@ -241,6 +241,34 @@ const API = environment.apiUrl;
       display: flex; gap: 10px; justify-content: flex-end;
       padding-top: 24px; margin-top: 8px;
       border-top: 1px solid var(--color-border);
+    }
+
+    @media (max-width: 768px) {
+      .locals-page { padding: 20px 16px; }
+      .page-header { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 24px; }
+      .page-header .btn { width: 100%; }
+
+      .empty-state { padding: 48px 24px; }
+
+      table thead { display: none; }
+      table, tbody { display: block; width: 100%; }
+      tr { display: block; padding: 14px 16px; border-bottom: 1px solid var(--color-border); }
+      tr:last-child { border-bottom: none; }
+      td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: none; }
+      td.td-name { display: block; font-size: 15px; font-weight: 600; padding: 0 0 8px; }
+      td:not(.td-name)::before { content: attr(data-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+      td:last-child { justify-content: flex-end; padding-top: 10px; }
+      .row-actions { justify-content: flex-end; }
+
+      .drawer { width: 100%; max-width: 100vw; }
+      .drawer-head { padding: 20px 16px 16px; }
+      .drawer-body { padding: 20px 16px; }
+      .fields-row { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 480px) {
+      .locals-page { padding: 16px 12px; }
+      .page-header h1 { font-size: 22px; }
     }
   `],
 })

@@ -204,7 +204,7 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
                       [checked]="selectedIds().includes(c._id)"
                       (change)="toggleSelect(c._id)" />
                   </td>
-                  <td>
+                  <td class="contact-td">
                     <div class="contact-cell">
                       <div class="contact-avatar">{{ initials(c.name) }}</div>
                       <div class="contact-info">
@@ -213,8 +213,8 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
                       </div>
                     </div>
                   </td>
-                  <td class="text-muted">{{ c.phone || '—' }}</td>
-                  <td>
+                  <td class="text-muted" data-label="Teléfono">{{ c.phone || '—' }}</td>
+                  <td data-label="Tags">
                     <div class="tags-cell">
                       @for (tag of c.tags.slice(0, 3); track tag) {
                         <span class="badge badge-neutral tag-badge">{{ tag }}</span>
@@ -224,11 +224,11 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
                       }
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Origen">
                     <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
                   </td>
-                  <td class="text-muted">{{ formatDate(c.lastVisit) }}</td>
-                  <td>
+                  <td class="text-muted" data-label="Última visita">{{ formatDate(c.lastVisit) }}</td>
+                  <td data-label="Historial">
                     <div class="history-cell">
                       @if (c.totalReservations > 0) {
                         <span class="history-pill" title="Reservas">
@@ -244,7 +244,7 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
                       }
                     </div>
                   </td>
-                  <td>
+                  <td class="td-actions">
                     <div class="row-actions">
                       <button class="btn btn-ghost btn-sm btn-icon" (click)="openDrawer(c)" title="Editar">
                         <lucide-icon [img]="Pencil" [size]="15" [strokeWidth]="2.5"></lucide-icon>
@@ -527,6 +527,45 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
 
     @media (max-width: 1024px) {
       .stats-row { grid-template-columns:repeat(2, 1fr); }
+    }
+
+    @media (max-width: 768px) {
+      .page { padding:20px 16px; }
+      .page-header { margin-bottom:20px; }
+      .filters-row { flex-direction:column; align-items:stretch; }
+      .search-wrap { min-width:0; width:100%; }
+      .tag-filters { width:100%; }
+
+      .bulk-bar { flex-direction:column; align-items:stretch; gap:10px; }
+      .bulk-actions { width:100%; }
+      .bulk-actions .btn { flex:1; }
+
+      .drawer { width:100%; }
+      .drawer-header { padding:20px 20px 16px; }
+      .drawer-scroll { padding:20px; }
+      .field-row { flex-direction:column; gap:20px; }
+
+      .table-wrap table, .table-wrap thead, .table-wrap tbody,
+      .table-wrap tr, .table-wrap th, .table-wrap td { display:block; }
+      .table-wrap thead { display:none; }
+      .table-wrap tbody tr { border:1px solid var(--color-border); border-radius:12px; margin:12px; padding:12px 14px; }
+      .table-wrap tr:hover td { background:none; }
+      .table-wrap tr.row-selected { background:var(--color-brand-light); border-radius:12px; }
+      .table-wrap td { border-bottom:none; padding:7px 0; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .table-wrap td::before { content:attr(data-label); font-size:11px; font-weight:700; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.04em; flex-shrink:0; }
+      .table-wrap td.td-check { justify-content:flex-start; padding-bottom:6px; }
+      .table-wrap td.td-check::before { content:none; }
+      .table-wrap td.contact-td { display:block; padding:4px 0 12px; border-bottom:1px solid var(--color-border); margin-bottom:6px; }
+      .table-wrap td.contact-td::before { content:none; }
+      .table-wrap td.td-actions { justify-content:flex-end; padding-top:8px; }
+      .table-wrap td.td-actions::before { content:none; }
+      .table-footer { border-radius:0 0 12px 12px; }
+    }
+
+    @media (max-width: 480px) {
+      .stats-row { grid-template-columns:1fr 1fr; }
+      .header-actions { width:100%; }
+      .header-actions .btn { flex:1; }
     }
   `],
 })

@@ -903,6 +903,40 @@ const PRESET_TAGS = ['VIP', 'Vegetariano', 'Cumpleañero', 'Corporativo', 'Deliv
       padding: 20px 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0;
     }
     .email-preview-scroll { flex: 1; overflow-y: auto; background: #f9fafb; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .page-header { flex-wrap: wrap; gap: 12px; }
+      .page-header .btn { width: 100%; justify-content: center; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .status-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+      .status-tab { flex: 0 0 auto; white-space: nowrap; min-height: 40px; }
+      .search-wrap { min-width: 0; width: 100%; }
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .table-wrap table { min-width: 800px; }
+      .drawer { width: 100%; }
+      .drawer-header, .drawer-body, .drawer-footer { padding-left: 18px; padding-right: 18px; }
+      .channel-tabs { flex-direction: column; border-radius: var(--radius-lg); }
+      .channel-tab { width: 100%; padding: 10px 12px; }
+      .media-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+      .media-tab { flex: 0 0 auto; white-space: nowrap; }
+      .targeting-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+      .targeting-tab { flex: 0 0 auto; white-space: nowrap; }
+      .email-toolbar { flex-wrap: wrap; }
+      .email-preview-modal { width: calc(100% - 24px); max-height: 85vh; }
+      .email-preview-header { padding: 16px 18px; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .page-title { font-size: 22px; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .stat-card { padding: 14px 16px; }
+      .stat-value { font-size: 22px; }
+      .templates-picker { max-height: 200px; }
+      .ai-box select.select { min-width: 0; width: 100%; }
+    }
   `],
 })
 export class CampaignsComponent implements OnInit, OnDestroy {

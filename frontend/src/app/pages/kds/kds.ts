@@ -192,6 +192,23 @@ const TYPE_LABELS: Record<string, string> = {
     .empty-icon { font-size: 40px; margin-bottom: 16px; }
     .empty-state h3 { margin-bottom: 8px; }
     .empty-state p { color: var(--color-text-muted); margin-bottom: 0; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .header-actions { width: 100%; }
+      .local-select { flex: 1 1 100%; min-width: 0; }
+      .kds-grid { grid-template-columns: 1fr; }
+      .kds-actions { flex-wrap: wrap; }
+      .bump-btn { width: 100%; margin-left: 0; min-height: 44px; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .page-header h1 { font-size: 20px; }
+      .kds-head { flex-wrap: wrap; gap: 6px; }
+      .kds-table { font-size: 15px; }
+      .alert-badge { font-size: 11px; }
+    }
   `],
 })
 export class KdsComponent implements OnInit, OnDestroy {

@@ -717,7 +717,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                           @for (r of registrations(); track r._id) {
                             <tr class="reg-row" [class.reg-row-expanded]="expandedRegIds().has(r._id)">
                               @if (formFields().length > 0) {
-                                <td class="td-expand">
+                                <td class="td-expand" data-label="Detalle">
                                   @if (r.customFields && hasCustomFields(r.customFields)) {
                                     <button class="expand-btn" (click)="toggleExpandReg(r._id)"
                                       [class.expanded]="expandedRegIds().has(r._id)" title="Ver campos personalizados">
@@ -726,19 +726,19 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                                   }
                                 </td>
                               }
-                              <td class="td-name">{{ r.name }}</td>
-                              <td class="td-muted">{{ r.email }}</td>
-                              <td class="td-muted">{{ r.phone || '—' }}</td>
-                              <td class="td-center">{{ r.partySize }}</td>
-                              <td><code class="ticket-code">{{ r.ticketCode }}</code></td>
-                              <td>
+                              <td class="td-name" data-label="Nombre">{{ r.name }}</td>
+                              <td class="td-muted" data-label="Email">{{ r.email }}</td>
+                              <td class="td-muted" data-label="Teléfono">{{ r.phone || '—' }}</td>
+                              <td class="td-center" data-label="Personas">{{ r.partySize }}</td>
+                              <td data-label="Ticket"><code class="ticket-code">{{ r.ticketCode }}</code></td>
+                              <td data-label="Impulsador">
                                 @if (r.impulsadorName) {
                                   <span class="badge badge-neutral">{{ r.impulsadorName }}</span>
                                 } @else {
                                   <span class="td-muted">Directo</span>
                                 }
                               </td>
-                              <td class="td-center">
+                              <td class="td-center" data-label="Check-in">
                                 @if (r.checkedIn) {
                                   <span class="checkin-pill yes">
                                     <lucide-icon [img]="Check" [size]="12" [strokeWidth]="3"></lucide-icon> Sí
@@ -747,13 +747,13 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
                                   <span class="checkin-pill no">—</span>
                                 }
                               </td>
-                              <td>
+                              <td data-label="Estado">
                                 <span class="badge" [class.badge-success]="r.status === 'confirmed'"
                                   [class.badge-danger]="r.status === 'cancelled'">
                                   {{ r.status === 'confirmed' ? 'Confirmado' : 'Cancelado' }}
                                 </span>
                               </td>
-                              <td class="td-muted td-date">{{ r.createdAt | date:'dd/MM/yy' }}</td>
+                              <td class="td-muted td-date" data-label="Fecha">{{ r.createdAt | date:'dd/MM/yy' }}</td>
                             </tr>
                             @if (expandedRegIds().has(r._id) && r.customFields && hasCustomFields(r.customFields)) {
                               <tr class="custom-fields-row">
@@ -1289,6 +1289,98 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .stat-label { font-size:13px; font-weight:600; text-transform:uppercase; color:var(--color-text-muted); }
     .stat-value { font-size:32px; font-weight:800; font-family:var(--font-heading); }
     .stat-desc { font-size:12px; color:var(--color-text-muted); }
+
+    /* ══════════════════════════════════════════════════════════ */
+    /* ── Mobile ── */
+    /* ══════════════════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .page-header { margin-bottom: 20px; }
+      .page-header h1 { font-size: 21px; }
+      .subtitle { font-size: 13px; }
+      .header-actions { width: 100%; }
+      .header-actions .btn { width: 100%; justify-content: center; }
+
+      .tabs { padding: 0 8px; }
+      .tab { padding: 12px 14px; font-size: 13px; }
+
+      .p-6 { padding: 16px; }
+      .p-8 { padding: 20px; }
+
+      .field-row { flex-direction: column; gap: 16px; }
+
+      .media-header { flex-direction: column; align-items: stretch; }
+      .media-header .btn { width: 100%; justify-content: center; }
+      .media-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+
+      .form-builder-header, .custom-fields-header { flex-wrap: wrap; gap: 10px; }
+      .custom-fields-header .btn { width: 100%; justify-content: center; }
+      .default-field-item { flex-wrap: wrap; }
+
+      .field-edit-row { flex-direction: column; gap: 12px; align-items: stretch; }
+      .field-edit-row .field { width: 100% !important; }
+      .field-edit-footer { flex-direction: column; align-items: stretch; gap: 12px; }
+      .field-edit-footer .flex { justify-content: stretch; }
+      .field-edit-footer .btn { flex: 1; justify-content: center; }
+
+      .field-item-row { flex-wrap: wrap; }
+      .field-item-actions { margin-left: 0; width: 100%; justify-content: flex-end; }
+
+      .ai-hero-card { flex-direction: column; text-align: center; padding: 24px; gap: 16px; }
+      .ai-tools-list { grid-template-columns: 1fr; }
+
+      .regs-toolbar { flex-direction: column; align-items: stretch; }
+      .regs-search-wrap, .regs-filter-select { width: 100%; min-width: 0; }
+      .regs-toolbar .btn { width: 100%; justify-content: center; }
+
+      .regs-table-wrap { border: none; overflow: visible; }
+      .regs-table thead { display: none; }
+      .regs-table, .regs-table tbody, .regs-table tr { display: block; width: 100%; }
+      .regs-table tr.reg-row { background: #fff; border: 1px solid var(--color-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
+      .regs-table tr.custom-fields-row { border: none; margin-top: -12px; margin-bottom: 12px; padding: 0 4px; }
+      .regs-table td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 2px; border-bottom: 1px dashed var(--color-border); text-align: right; }
+      .regs-table td:last-child { border-bottom: none; }
+      .regs-table td::before { content: attr(data-label); font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; text-align: left; }
+      .regs-table td.td-name { display: block; text-align: left; font-size: 16px; font-weight: 700; border-bottom: 1px solid var(--color-border); padding: 0 2px 10px; margin-bottom: 6px; }
+      .regs-table td.td-name::before { content: none; }
+      .regs-table td.td-expand { display: flex; justify-content: flex-end; border-bottom: none; padding: 0 0 6px; width: 100%; }
+      .regs-table td.td-expand::before { content: none; }
+      .regs-table tr.custom-fields-row td { display: block; text-align: left; border-bottom: none; padding: 0 4px; }
+      .regs-table tr.custom-fields-row td::before { content: none; }
+      .regs-table .custom-fields-answers { justify-content: flex-start; }
+
+      .impulsador-row { flex-wrap: wrap; }
+      .impulsador-toggle { flex: 1 1 100%; }
+
+      .checkin-card { flex-wrap: wrap; gap: 12px; }
+      .checkin-action { width: 100%; }
+      .checkin-action .btn { width: 100%; justify-content: center; }
+      .checkin-meta { flex-wrap: wrap; }
+
+      .search-box { width: 100%; }
+      .stats-mini { width: 100%; text-align: left; }
+
+      .stats-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      .overlay { padding: 0; }
+      .external-modal, .scanner-modal { padding: 22px 20px; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      .page-header h1 { font-size: 19px; }
+      .header-left { gap: 10px; }
+
+      .stats-grid { grid-template-columns: 1fr; }
+      .stat-value { font-size: 26px; }
+
+      .media-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+
+      .ai-hero-text h3 { font-size: 19px; }
+      .ai-item-btn { padding: 16px; }
+
+      .checkin-card { padding: 14px; }
+    }
   `],
 })
 export class EventDetailComponent implements OnInit {

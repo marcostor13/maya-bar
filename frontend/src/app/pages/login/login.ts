@@ -186,6 +186,18 @@ import { ToastService } from '../../shared/toast';
     }
     .eye-btn:hover { color: var(--color-text-main); }
     .eye-btn:focus-visible { outline: 2px solid var(--color-brand); }
+
+    @media (max-width: 768px) {
+      .login-page { padding: 20px 12px; }
+      .login-card { padding: 28px 24px; }
+      .eye-btn { min-width: 44px; min-height: 44px; justify-content: center; right: 0; }
+      .input-eye-wrap .input { padding-right: 46px; }
+    }
+
+    @media (max-width: 480px) {
+      .login-card { padding: 24px 18px; }
+      .login-header h1 { font-size: 20px; }
+    }
   `],
 })
 export class LoginComponent {

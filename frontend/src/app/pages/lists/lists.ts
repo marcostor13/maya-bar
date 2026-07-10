@@ -388,7 +388,7 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
-    .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 16px; }
     .page-title { font-family: var(--font-heading); font-size: 26px; font-weight: 700; color: var(--color-text-main); margin: 0 0 4px; }
     .page-subtitle { font-size: 14px; color: var(--color-text-muted); margin: 0; }
 
@@ -484,6 +484,24 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
 
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { animation: spin 1s linear infinite; display: inline-block; }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .lists-grid { grid-template-columns: 1fr; }
+
+      .drawer { width: 100%; }
+      .drawer-header { padding: 20px; }
+      .drawer-body { padding: 20px; }
+      .drawer-footer { padding: 16px 20px; flex-wrap: wrap; }
+
+      .type-toggle { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 480px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .page-header .btn-lg { width: 100%; justify-content: center; }
+    }
   `],
 })
 export class ListsComponent implements OnInit {

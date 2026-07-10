@@ -64,15 +64,15 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
             <tbody>
               @for (u of users(); track u._id) {
                 <tr [class.row-inactive]="!u.isActive">
-                  <td>
+                  <td class="td-name">
                     {{ u.name || '—' }}
                     @if (u.mustChangePassword) {
                       <span class="badge-warning" title="Contraseña temporal">Temp</span>
                     }
                   </td>
-                  <td>{{ u.email }}</td>
-                  <td>{{ roleLabel(u.role) }}</td>
-                  <td>
+                  <td data-label="Email">{{ u.email }}</td>
+                  <td data-label="Rol">{{ roleLabel(u.role) }}</td>
+                  <td data-label="Estado">
                     <span [class]="u.isActive ? 'badge-success' : 'badge-neutral'">
                       {{ u.isActive ? 'Activo' : 'Inactivo' }}
                     </span>
@@ -391,6 +391,30 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
       font-size: 12px;
       color: var(--color-text-muted);
       margin: 0 0 20px;
+    }
+
+    @media (max-width: 768px) {
+      .page { padding: 20px 16px; }
+      .page-header { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 24px; }
+      .page-header .btn { width: 100%; }
+
+      table thead { display: none; }
+      table, tbody { display: block; width: 100%; }
+      tr { display: block; padding: 14px; border-bottom: 1px solid var(--color-border); }
+      tr:last-child { border-bottom: none; }
+      td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: none; }
+      td.td-name { display: block; font-size: 15px; font-weight: 600; padding: 0 0 8px; }
+      td:not(.td-name)::before { content: attr(data-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+      .actions { justify-content: flex-end; flex-wrap: wrap; padding-top: 10px; }
+
+      .drawer { width: 100%; }
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 16px 12px; }
+      h1 { font-size: 22px; }
+      .modal { padding: 20px; }
+      .cred-val { word-break: break-all; }
     }
   `],
 })
