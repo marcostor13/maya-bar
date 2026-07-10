@@ -209,6 +209,16 @@ export class ListsService {
     tenantId: Types.ObjectId,
   ): Record<string, unknown> {
     const filter: Record<string, unknown> = { tenantId };
+    // gte+lte sobre el mismo campo deben componer un rango, no sobrescribirse.
+    const merge = (field: string, cond: Record<string, unknown>) => {
+      const existing = filter[field];
+      filter[field] =
+        typeof existing === 'object' &&
+        existing !== null &&
+        !Array.isArray(existing)
+          ? { ...existing, ...cond }
+          : cond;
+    };
     for (const rule of rules) {
       switch (rule.field) {
         case 'tags':
@@ -228,29 +238,29 @@ export class ListsService {
           break;
         case 'totalReservations':
           if (rule.operator === 'gte')
-            filter['totalReservations'] = { $gte: Number(rule.value) };
+            merge('totalReservations', { $gte: Number(rule.value) });
           else if (rule.operator === 'lte')
-            filter['totalReservations'] = { $lte: Number(rule.value) };
+            merge('totalReservations', { $lte: Number(rule.value) });
           else if (rule.operator === 'equals')
             filter['totalReservations'] = Number(rule.value);
           break;
         case 'totalEvents':
           if (rule.operator === 'gte')
-            filter['totalEvents'] = { $gte: Number(rule.value) };
+            merge('totalEvents', { $gte: Number(rule.value) });
           else if (rule.operator === 'lte')
-            filter['totalEvents'] = { $lte: Number(rule.value) };
+            merge('totalEvents', { $lte: Number(rule.value) });
           else if (rule.operator === 'equals')
             filter['totalEvents'] = Number(rule.value);
           break;
         case 'daysSinceLastVisit':
           if (rule.operator === 'lte') {
-            filter['lastVisit'] = {
+            merge('lastVisit', {
               $gte: new Date(Date.now() - Number(rule.value) * 86_400_000),
-            };
+            });
           } else if (rule.operator === 'gte') {
-            filter['lastVisit'] = {
+            merge('lastVisit', {
               $lte: new Date(Date.now() - Number(rule.value) * 86_400_000),
-            };
+            });
           }
           break;
       }

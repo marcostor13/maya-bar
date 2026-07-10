@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
@@ -112,15 +112,16 @@ export class AuthService {
 
   async resetPassword(email: string, code: string, newPassword: string) {
     const user = await this.usersService.findOneByEmail(email);
-    if (!user) throw new Error('Usuario no encontrado');
-
+    // Mensaje único para TODAS las ramas de fallo: igual que forgotPassword,
+    // no se debe revelar si el email existe (anti-enumeración).
     if (
+      !user ||
       !user.resetPasswordCode ||
       user.resetPasswordCode !== code ||
       !user.resetPasswordExpires ||
       new Date() > user.resetPasswordExpires
     ) {
-      throw new Error('El código es inválido o ha expirado');
+      throw new BadRequestException('El código es inválido o ha expirado');
     }
 
     await this.usersService.resetPassword(String(user._id), newPassword);

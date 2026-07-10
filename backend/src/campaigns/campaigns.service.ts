@@ -1,4 +1,5 @@
 import {
+  OnModuleInit,
   Injectable,
   Logger,
   NotFoundException,
@@ -16,8 +17,34 @@ import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
 import { AiService } from '../ai/ai.service';
 
 @Injectable()
-export class CampaignsService {
+export class CampaignsService implements OnModuleInit {
   private readonly logger = new Logger(CampaignsService.name);
+
+  /**
+   * La cola de envío WAHA vive en memoria: si el proceso se reinicia a mitad
+   * de un envío, la campaña queda en 'sending' para siempre (y update/resend
+   * la bloquean). Al arrancar, toda campaña 'sending' es huérfana por
+   * definición — se marca como fallida para poder reintentarla.
+   */
+  async onModuleInit() {
+    const res = await this.campaignModel
+      .updateMany(
+        { status: 'sending' },
+        {
+          $set: {
+            status: 'failed',
+            errorMessage:
+              'Envío interrumpido por un reinicio del servidor — vuelve a enviarla',
+          },
+        },
+      )
+      .exec();
+    if (res.modifiedCount > 0) {
+      this.logger.warn(
+        `${res.modifiedCount} campaña(s) en 'sending' huérfanas marcadas como fallidas`,
+      );
+    }
+  }
 
   constructor(
     @InjectModel(Campaign.name) private campaignModel: Model<Campaign>,
@@ -397,12 +424,16 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
   private async countWaSentToday(tenantId: string): Promise<number> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
+    // Cuenta lo enviado hoy Y lo que está en vuelo: una campaña 'sending'
+    // ya reservó su cuota aunque todavía no tenga sentAt.
     const campaigns = await this.campaignModel
       .find({
         tenantId: new Types.ObjectId(tenantId),
         type: 'whatsapp',
-        status: 'sent',
-        sentAt: { $gte: startOfDay },
+        $or: [
+          { status: 'sent', sentAt: { $gte: startOfDay } },
+          { status: 'sending' },
+        ],
       })
       .exec();
     return campaigns.reduce((sum, c) => sum + (c.recipientCount ?? 0), 0);
