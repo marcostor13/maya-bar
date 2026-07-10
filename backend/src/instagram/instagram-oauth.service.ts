@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
 
 export interface IgOAuthState {
   tenantId: string;
@@ -17,8 +18,8 @@ export interface IgLongLivedToken {
 }
 
 const AUTHORIZE_URL = 'https://www.instagram.com/oauth/authorize';
-const TOKEN_URL = 'https://api.instagram.com/oauth/access_token';
-const GRAPH_URL = 'https://graph.instagram.com/v21.0';
+const IG_API_HOST = 'https://api.instagram.com';
+const IG_GRAPH_HOST = 'https://graph.instagram.com';
 const SCOPES = [
   'instagram_business_basic',
   'instagram_business_manage_messages',
@@ -27,7 +28,10 @@ const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
 @Injectable()
 export class InstagramOAuthService {
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private graph: MetaGraphClient,
+  ) {}
 
   private appId(): string {
     const id = this.config.get<string>('INSTAGRAM_APP_ID');
@@ -107,22 +111,25 @@ export class InstagramOAuthService {
 
   /** Canjea el `code` del callback por un access token de corta duración. */
   async exchangeCodeForToken(code: string): Promise<IgShortLivedToken> {
-    const body = new URLSearchParams({
-      client_id: this.appId(),
-      client_secret: this.appSecret(),
-      grant_type: 'authorization_code',
-      redirect_uri: this.redirectUri(),
-      code,
-    });
-    const res = await fetch(TOKEN_URL, { method: 'POST', body });
-    const data = (await res.json()) as {
+    const data = await this.request<{
       access_token?: string;
       user_id?: string;
-      error_message?: string;
-    };
-    if (!res.ok || !data.access_token || !data.user_id) {
+    }>('No se pudo canjear el código de autorización', () =>
+      this.graph.post('/oauth/access_token', {
+        host: IG_API_HOST,
+        unversioned: true,
+        form: {
+          client_id: this.appId(),
+          client_secret: this.appSecret(),
+          grant_type: 'authorization_code',
+          redirect_uri: this.redirectUri(),
+          code,
+        },
+      }),
+    );
+    if (!data.access_token || !data.user_id) {
       throw new BadRequestException(
-        data.error_message || 'No se pudo canjear el código de autorización',
+        'No se pudo canjear el código de autorización',
       );
     }
     return { accessToken: data.access_token, userId: String(data.user_id) };
@@ -132,22 +139,23 @@ export class InstagramOAuthService {
   async exchangeForLongLivedToken(
     shortLivedToken: string,
   ): Promise<IgLongLivedToken> {
-    const params = new URLSearchParams({
-      grant_type: 'ig_exchange_token',
-      client_secret: this.appSecret(),
-      access_token: shortLivedToken,
-    });
-    const res = await fetch(
-      `${GRAPH_URL.replace('/v21.0', '')}/access_token?${params.toString()}`,
-    );
-    const data = (await res.json()) as {
+    const data = await this.request<{
       access_token?: string;
       expires_in?: number;
-      error?: { message?: string };
-    };
-    if (!res.ok || !data.access_token) {
+    }>('No se pudo generar el token de larga duración', () =>
+      this.graph.get('/access_token', {
+        host: IG_GRAPH_HOST,
+        unversioned: true,
+        params: {
+          grant_type: 'ig_exchange_token',
+          client_secret: this.appSecret(),
+          access_token: shortLivedToken,
+        },
+      }),
+    );
+    if (!data.access_token) {
       throw new BadRequestException(
-        data.error?.message || 'No se pudo generar el token de larga duración',
+        'No se pudo generar el token de larga duración',
       );
     }
     return {
@@ -158,22 +166,21 @@ export class InstagramOAuthService {
 
   /** Renueva un token de larga duración vigente (debe tener > 24h de antigüedad). */
   async refreshLongLivedToken(currentToken: string): Promise<IgLongLivedToken> {
-    const params = new URLSearchParams({
-      grant_type: 'ig_refresh_token',
-      access_token: currentToken,
-    });
-    const res = await fetch(
-      `${GRAPH_URL.replace('/v21.0', '')}/refresh_access_token?${params.toString()}`,
-    );
-    const data = (await res.json()) as {
+    const data = await this.request<{
       access_token?: string;
       expires_in?: number;
-      error?: { message?: string };
-    };
-    if (!res.ok || !data.access_token) {
-      throw new BadRequestException(
-        data.error?.message || 'No se pudo renovar el token',
-      );
+    }>('No se pudo renovar el token', () =>
+      this.graph.get('/refresh_access_token', {
+        host: IG_GRAPH_HOST,
+        unversioned: true,
+        params: {
+          grant_type: 'ig_refresh_token',
+          access_token: currentToken,
+        },
+      }),
+    );
+    if (!data.access_token) {
+      throw new BadRequestException('No se pudo renovar el token');
     }
     return {
       accessToken: data.access_token,
@@ -190,21 +197,34 @@ export class InstagramOAuthService {
     accessToken: string,
   ): Promise<{ userId?: string; username?: string }> {
     try {
-      const res = await fetch(`${GRAPH_URL}/me?fields=user_id,username`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const data = (await res.json()) as {
+      const data = await this.graph.get<{
         user_id?: string | number;
         username?: string;
-        error?: { message?: string };
-      };
-      if (data.error) return {};
+      }>('/me', {
+        host: IG_GRAPH_HOST,
+        accessToken,
+        params: { fields: 'user_id,username' },
+      });
       return {
         userId: data.user_id != null ? String(data.user_id) : undefined,
         username: data.username,
       };
     } catch {
       return {};
+    }
+  }
+
+  /** Traduce errores de Meta a BadRequestException con mensaje legible para el frontend. */
+  private async request<T>(
+    fallbackMessage: string,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await call();
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof MetaApiError ? err.message : fallbackMessage,
+      );
     }
   }
 }

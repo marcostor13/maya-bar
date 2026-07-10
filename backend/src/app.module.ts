@@ -23,10 +23,12 @@ import { ImpulsadorModule } from './impulsador/impulsador.module';
 import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramAccountsModule } from './instagram-accounts/instagram-accounts.module';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    SharedModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

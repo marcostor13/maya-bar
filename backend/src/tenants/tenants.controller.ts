@@ -14,14 +14,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthReq } from '../auth/permissions';
 import { TenantsService } from './tenants.service';
 import { UsersService } from '../users/users.service';
-
-interface TenantBody {
-  name: string;
-  email: string;
-  ruc?: string;
-  phone?: string;
-  ownerName?: string;
-}
+import { CreateTenantDto, UpdateTenantDto } from './dto/create-tenant.dto';
 
 @Controller('tenants')
 @UseGuards(JwtAuthGuard)
@@ -40,7 +33,7 @@ export class TenantsController {
 
   // SUPERADMIN: crear tenant + TENANT_ADMIN, devuelve credenciales
   @Post()
-  async createTenant(@Body() body: TenantBody, @Request() req: AuthReq) {
+  async createTenant(@Body() body: CreateTenantDto, @Request() req: AuthReq) {
     if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
 
     const tenant = await this.tenantsService.create(body);
@@ -67,7 +60,7 @@ export class TenantsController {
   @Patch(':id')
   updateTenant(
     @Param('id') id: string,
-    @Body() body: Partial<TenantBody>,
+    @Body() body: UpdateTenantDto,
     @Request() req: AuthReq,
   ) {
     if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
@@ -80,7 +73,7 @@ export class TenantsController {
   }
 
   @Patch('me')
-  updateMyTenant(@Request() req: AuthReq, @Body() body: Partial<TenantBody>) {
+  updateMyTenant(@Request() req: AuthReq, @Body() body: UpdateTenantDto) {
     return this.tenantsService.update(req.user.tenantId, body);
   }
 }

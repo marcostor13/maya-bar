@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import { AllExceptionsFilter } from './shared/http-exception.filter';
 
 async function bootstrap() {
   // Fail-fast: sin secreto de firma la app no debe arrancar (nunca usar un fallback).
@@ -18,6 +19,7 @@ async function bootstrap() {
   // en services que hacen `$set: dto`). Sin forbidNonWhitelisted: el frontend envía objetos
   // completos (_id, createdAt, ...) en varios PATCH y deben recortarse sin error.
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   const corsOrigins = configService.get<string>('CORS_ORIGINS');
   const frontendUrl = configService.get<string>('FRONTEND_URL');

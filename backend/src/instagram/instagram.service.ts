@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
 
 export interface IgConfig {
   igBusinessAccountId?: string; // Instagram User ID (IG_ID) de la cuenta profesional
@@ -17,11 +18,13 @@ export interface IgStatus {
 export type IgMediaType = 'image' | 'video' | 'audio' | 'document';
 
 // Instagram API with Instagram Login — no requiere Página de Facebook vinculada.
-const GRAPH_URL = 'https://graph.instagram.com/v21.0';
+const IG_HOST = 'https://graph.instagram.com';
 
 @Injectable()
 export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
+
+  constructor(private readonly graph: MetaGraphClient) {}
 
   /** Envía un DM de Instagram. `to` es el Instagram-Scoped ID (IGSID) del contacto. */
   async sendMessage(
@@ -69,17 +72,11 @@ export class InstagramService {
   }
 
   private async post(config: IgConfig, payload: object): Promise<void> {
-    const url = `${GRAPH_URL}/${config.igBusinessAccountId}/messages`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.pageAccessToken}`,
-      },
-      body: JSON.stringify(payload),
+    await this.graph.post(`/${config.igBusinessAccountId}/messages`, {
+      host: IG_HOST,
+      accessToken: config.pageAccessToken,
+      json: payload,
     });
-    if (!res.ok)
-      throw new Error(`Instagram ${res.status}: ${await res.text()}`);
   }
 
   /** Suscribe la cuenta al webhook de la app (obligatorio: Meta no envía eventos hasta que se llama esto). */
@@ -88,27 +85,15 @@ export class InstagramService {
   ): Promise<{ success: boolean; message: string }> {
     if (!config.pageAccessToken)
       return { success: false, message: 'Falta el access token' };
-    const params = new URLSearchParams({
-      subscribed_fields: 'messages',
-      access_token: config.pageAccessToken,
-    });
     try {
-      const res = await fetch(
-        `${GRAPH_URL}/me/subscribed_apps?${params.toString()}`,
-        { method: 'POST' },
-      );
-      const data = (await res.json()) as {
-        success?: boolean;
-        error?: { message?: string };
-      };
-      if (!res.ok || data.error)
-        return {
-          success: false,
-          message: data.error?.message ?? `Error ${res.status}`,
-        };
+      await this.graph.post('/me/subscribed_apps', {
+        host: IG_HOST,
+        accessToken: config.pageAccessToken,
+        params: { subscribed_fields: 'messages' },
+      });
       return { success: true, message: 'Webhook suscripto correctamente' };
     } catch (err) {
-      return { success: false, message: String(err) };
+      return { success: false, message: this.errorMessage(err) };
     }
   }
 
@@ -121,18 +106,25 @@ export class InstagramService {
       };
     }
     try {
-      const res = await fetch(
-        `${GRAPH_URL}/${config.igBusinessAccountId}?fields=username`,
-        { headers: { Authorization: `Bearer ${config.pageAccessToken}` } },
+      const data = await this.graph.get<{ username?: string }>(
+        `/${config.igBusinessAccountId}`,
+        {
+          host: IG_HOST,
+          accessToken: config.pageAccessToken,
+          params: { fields: 'username' },
+        },
       );
-      const data = (await res.json()) as {
-        username?: string;
-        error?: { message?: string };
-      };
-      if (data.error) throw new Error(data.error.message);
       return { configured: true, connected: true, username: data.username };
     } catch (err) {
-      return { configured: true, connected: false, error: String(err) };
+      return {
+        configured: true,
+        connected: false,
+        error: this.errorMessage(err),
+      };
     }
+  }
+
+  private errorMessage(err: unknown): string {
+    return err instanceof MetaApiError ? err.message : String(err);
   }
 }
