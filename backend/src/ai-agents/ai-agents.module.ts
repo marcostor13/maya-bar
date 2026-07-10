@@ -20,6 +20,8 @@ import {
   TenantConfigSchema,
 } from '../settings/tenant-config.schema';
 import { AiModule } from '../ai/ai.module';
+import { EMBEDDINGS_PROVIDER } from '../ai/providers/ai-provider.interface';
+import { HttpEmbeddingsProvider } from '../ai/providers/http-embeddings.provider';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramModule } from '../instagram/instagram.module';
@@ -47,6 +49,11 @@ import { InstagramAccountsModule } from '../instagram-accounts/instagram-account
     WhatsAppWebhookController,
     InstagramWebhookController,
   ],
-  providers: [AiAgentsService, RagService, EmbeddingsService],
+  providers: [
+    AiAgentsService,
+    RagService,
+    EmbeddingsService,
+    { provide: EMBEDDINGS_PROVIDER, useClass: HttpEmbeddingsProvider },
+  ],
 })
 export class AiAgentsModule {}
