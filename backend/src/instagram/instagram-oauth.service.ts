@@ -126,15 +126,21 @@ export class InstagramOAuthService {
     return { accessToken: data.access_token, expiresIn: data.expires_in ?? 5184000 };
   }
 
-  async fetchUsername(userId: string, accessToken: string): Promise<string | undefined> {
+  /**
+   * Obtiene el perfil vía /me. El `user_id` del token exchange es un ID app-scoped que
+   * Graph no acepta en /{id} ni en messaging/webhooks; el `user_id` de /me es el ID real
+   * de la cuenta profesional y es el que debe persistirse como igBusinessAccountId.
+   */
+  async fetchProfile(accessToken: string): Promise<{ userId?: string; username?: string }> {
     try {
-      const res = await fetch(`${GRAPH_URL}/${userId}?fields=username`, {
+      const res = await fetch(`${GRAPH_URL}/me?fields=user_id,username`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      const data = await res.json() as { username?: string };
-      return data.username;
+      const data = await res.json() as { user_id?: string | number; username?: string; error?: { message?: string } };
+      if (data.error) return {};
+      return { userId: data.user_id != null ? String(data.user_id) : undefined, username: data.username };
     } catch {
-      return undefined;
+      return {};
     }
   }
 }
