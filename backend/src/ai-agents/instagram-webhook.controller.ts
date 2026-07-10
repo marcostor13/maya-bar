@@ -46,6 +46,7 @@ export class InstagramWebhookController {
   }
 
   private async handleInbound(body: unknown) {
+    this.logger.log(`Inbound payload: ${JSON.stringify(body)}`);
     try {
       const b = body as {
         entry?: {
@@ -61,7 +62,10 @@ export class InstagramWebhookController {
       const event = entry?.messaging?.[0];
       const senderId = event?.sender?.id;
       const message = event?.message;
-      if (!igUserId || !senderId || !message || message.is_echo || !message.text) return;
+      if (!igUserId || !senderId || !message || message.is_echo || !message.text) {
+        this.logger.warn('Payload ignorado: faltan igUserId/senderId/message, o es un echo/sin texto');
+        return;
+      }
       await this.respond(igUserId, senderId, message.text);
     } catch (err) {
       this.logger.error(`Instagram webhook error: ${String(err)}`);

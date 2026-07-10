@@ -10,7 +10,10 @@ async function bootstrap() {
     origin: frontendUrl
       ? [
         frontendUrl,
-        'http://localhost:4200,https://casagarbo.netlify.com,https://mayabar.marcostorresalarcon.com',
+        'http://localhost:4200',
+        'https://casagarbo.netlify.com',
+        'https://gruposolar.netlify.app',
+        'https://mayabar.marcostorresalarcon.com',
       ]
       : true,
     credentials: true,
