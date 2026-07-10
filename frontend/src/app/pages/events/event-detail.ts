@@ -188,50 +188,53 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
             <div class="card p-0 overflow-hidden">
 
               <!-- ── Tabs ── -->
-              <div class="tabs">
-                <button class="tab" [class.active]="activeTab() === 'general'" (click)="activeTab.set('general')">
-                  Información General
-                </button>
-                <button class="tab" [class.active]="activeTab() === 'media'" (click)="activeTab.set('media')">
-                  <lucide-icon [img]="Layers" [size]="14"></lucide-icon>
-                  Medios
-                  @if (mediaFiles().length > 0) {
-                    <span class="tab-badge">{{ mediaFiles().length }}</span>
+              <div class="tabs-wrap">
+                <div class="tabs" #tabsBar>
+                  <button class="tab" [class.active]="activeTab() === 'general'" (click)="selectTab('general', $event)">
+                    <lucide-icon [img]="FileText" [size]="14"></lucide-icon>
+                    General
+                  </button>
+                  <button class="tab" [class.active]="activeTab() === 'media'" (click)="selectTab('media', $event)">
+                    <lucide-icon [img]="Layers" [size]="14"></lucide-icon>
+                    Medios
+                    @if (mediaFiles().length > 0) {
+                      <span class="tab-badge">{{ mediaFiles().length }}</span>
+                    }
+                  </button>
+                  <button class="tab" [class.active]="activeTab() === 'form'" (click)="selectTab('form', $event)">
+                    <lucide-icon [img]="ClipboardList" [size]="14"></lucide-icon>
+                    Formulario
+                    @if (formFields().length > 0) {
+                      <span class="tab-badge">{{ formFields().length }}</span>
+                    }
+                  </button>
+                  <button class="tab tab-ai" [class.active]="activeTab() === 'invitation'" (click)="selectTab('invitation', $event)">
+                    <lucide-icon [img]="LayoutTemplate" [size]="14"></lucide-icon>
+                    Invitación
+                  </button>
+                  @if (!isNew()) {
+                    <button class="tab tab-ai" [class.active]="activeTab() === 'marketing'" (click)="selectTab('marketing', $event)">
+                      <lucide-icon [img]="Zap" [size]="14"></lucide-icon>
+                      Marketing IA
+                    </button>
+                    <button class="tab" [class.active]="activeTab() === 'registrations'" (click)="selectTab('registrations', $event)">
+                      <lucide-icon [img]="Users" [size]="14"></lucide-icon>
+                      Asistentes
+                    </button>
+                    <button class="tab" [class.active]="activeTab() === 'impulsadores'" (click)="selectTab('impulsadores', $event)">
+                      <lucide-icon [img]="Link2" [size]="14"></lucide-icon>
+                      Impulsadores
+                    </button>
+                    <button class="tab" [class.active]="activeTab() === 'checkin'" (click)="selectTab('checkin', $event)">
+                      <lucide-icon [img]="UserCheck" [size]="14"></lucide-icon>
+                      Check-in
+                    </button>
+                    <button class="tab" [class.active]="activeTab() === 'stats'" (click)="selectTab('stats', $event)">
+                      <lucide-icon [img]="PieChart" [size]="14"></lucide-icon>
+                      Estadísticas
+                    </button>
                   }
-                </button>
-                <button class="tab" [class.active]="activeTab() === 'form'" (click)="activeTab.set('form')">
-                  <lucide-icon [img]="ClipboardList" [size]="14"></lucide-icon>
-                  Formulario
-                  @if (formFields().length > 0) {
-                    <span class="tab-badge">{{ formFields().length }}</span>
-                  }
-                </button>
-                <button class="tab tab-ai" [class.active]="activeTab() === 'invitation'" (click)="activeTab.set('invitation')">
-                  <lucide-icon [img]="LayoutTemplate" [size]="14"></lucide-icon>
-                  Invitación
-                </button>
-                @if (!isNew()) {
-                  <button class="tab tab-ai" [class.active]="activeTab() === 'marketing'" (click)="activeTab.set('marketing')">
-                    <lucide-icon [img]="Zap" [size]="14"></lucide-icon>
-                    Marketing IA
-                  </button>
-                  <button class="tab" [class.active]="activeTab() === 'registrations'" (click)="activeTab.set('registrations')">
-                    <lucide-icon [img]="Users" [size]="14"></lucide-icon>
-                    Asistentes
-                  </button>
-                  <button class="tab" [class.active]="activeTab() === 'impulsadores'" (click)="activeTab.set('impulsadores'); loadImpulsadores()">
-                    <lucide-icon [img]="Link2" [size]="14"></lucide-icon>
-                    Impulsadores
-                  </button>
-                  <button class="tab" [class.active]="activeTab() === 'checkin'" (click)="activeTab.set('checkin')">
-                    <lucide-icon [img]="UserCheck" [size]="14"></lucide-icon>
-                    Check-in
-                  </button>
-                  <button class="tab" [class.active]="activeTab() === 'stats'" (click)="activeTab.set('stats')">
-                    <lucide-icon [img]="PieChart" [size]="14"></lucide-icon>
-                    Estadísticas
-                  </button>
-                }
+                </div>
               </div>
 
               <!-- ══════════════════════════════════════════════════════════ -->
@@ -783,7 +786,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
               <!-- ══════════════════════════════════════════════════════════ -->
               @if (activeTab() === 'impulsadores' && !isNew()) {
                 <div class="p-6 animate-fade-in">
-                  <div class="mb-5 flex justify-between items-center">
+                  <div class="imp-header">
                     <div>
                       <h3 class="section-h3">Links por impulsador</h3>
                       <p class="text-muted-sm">Activa un impulsador para este evento y comparte su link único. Los registros hechos con ese link se atribuyen automáticamente a su nombre.</p>
@@ -864,13 +867,13 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
               <!-- ══════════════════════════════════════════════════════════ -->
               @if (activeTab() === 'checkin' && !isNew()) {
                 <div class="p-6 animate-fade-in">
-                  <div class="flex justify-between items-center mb-6 gap-4">
+                  <div class="checkin-toolbar">
                     <div class="search-box">
                       <lucide-icon [img]="Search" [size]="18"></lucide-icon>
                       <input type="text" placeholder="Buscar por nombre, email o ticket..."
                         [value]="regSearch()" (input)="regSearch.set($any($event.target).value)" />
                     </div>
-                    <button class="btn btn-primary" (click)="openScanner()">
+                    <button class="btn btn-primary checkin-scan-btn" (click)="openScanner()">
                       <lucide-icon [img]="ScanLine" [size]="16" [strokeWidth]="2.5"></lucide-icon>
                       Escanear QR
                     </button>
@@ -1044,7 +1047,12 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .main-column { flex: 1; }
 
     /* ── Tabs ── */
-    .tabs { display: flex; border-bottom: 1px solid var(--color-border); background: #fafafa; padding: 0 16px; overflow-x: auto; }
+    .tabs-wrap { position: relative; }
+    .tabs-wrap::before, .tabs-wrap::after { content: ''; position: absolute; top: 0; bottom: 1px; width: 28px; pointer-events: none; z-index: 3; opacity: 0; transition: opacity 0.2s; }
+    .tabs-wrap::before { left: 0; background: linear-gradient(to right, #fafafa, transparent); }
+    .tabs-wrap::after { right: 0; background: linear-gradient(to left, #fafafa, transparent); }
+    .tabs { display: flex; border-bottom: 1px solid var(--color-border); background: #fafafa; padding: 0 16px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+    .tabs::-webkit-scrollbar { display: none; }
     .tab { padding: 16px 20px; font-size: 14px; font-weight: 600; color: var(--color-text-muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; margin-bottom: -1px; white-space: nowrap; flex-shrink: 0; }
     .tab:hover { color: var(--color-text-main); }
     .tab.active { color: var(--color-brand); border-bottom-color: var(--color-brand); background: #fff; }
@@ -1230,6 +1238,8 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
     /* ── Impulsadores ── */
+    .imp-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px; }
+    .imp-header .btn { flex-shrink:0; }
     .impulsador-section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
     .impulsador-list { display:flex; flex-direction:column; gap:10px; }
     .impulsador-row { display:flex; align-items:center; gap:16px; padding:14px 18px; background:#fff; border:1px solid var(--color-border); border-radius:14px; transition:all 0.2s; }
@@ -1239,6 +1249,7 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
     .impulsador-name { color:var(--color-text-main); }
 
     /* ── Check-in ── */
+    .checkin-toolbar { display:flex; align-items:center; gap:16px; margin-bottom:24px; }
     .search-box { flex:1; position:relative; display:flex; align-items:center; }
     .search-box lucide-icon { position:absolute; left:16px; color:var(--color-text-muted); pointer-events:none; }
     .search-box input { width:100%; padding:12px 16px 12px 48px; border-radius:12px; border:1px solid var(--color-border); background:var(--color-bg-app); font-size:15px; outline:none; transition:all 0.2s; }
@@ -1301,13 +1312,17 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
       .header-actions { width: 100%; }
       .header-actions .btn { width: 100%; justify-content: center; }
 
+      .tabs-wrap::before, .tabs-wrap::after { opacity: 1; }
       .tabs { padding: 0 8px; }
-      .tab { padding: 12px 14px; font-size: 13px; }
+      .tab { padding: 13px 12px; font-size: 13px; gap: 5px; }
 
       .p-6 { padding: 16px; }
       .p-8 { padding: 20px; }
 
       .field-row { flex-direction: column; gap: 16px; }
+
+      .form-actions { flex-direction: column-reverse; gap: 10px; }
+      .form-actions .btn { width: 100%; justify-content: center; margin: 0; }
 
       .media-header { flex-direction: column; align-items: stretch; }
       .media-header .btn { width: 100%; justify-content: center; }
@@ -1349,16 +1364,23 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
       .regs-table tr.custom-fields-row td::before { content: none; }
       .regs-table .custom-fields-answers { justify-content: flex-start; }
 
+      .imp-header { flex-direction: column; align-items: stretch; }
+      .imp-header .btn { width: 100%; justify-content: center; }
+      .impulsador-section-header { flex-wrap: wrap; gap: 10px; }
+      .impulsador-section-header .btn { width: 100%; justify-content: center; }
       .impulsador-row { flex-wrap: wrap; }
       .impulsador-toggle { flex: 1 1 100%; }
+      .impulsador-row > .btn { flex: 1; justify-content: center; }
 
       .checkin-card { flex-wrap: wrap; gap: 12px; }
       .checkin-action { width: 100%; }
       .checkin-action .btn { width: 100%; justify-content: center; }
       .checkin-meta { flex-wrap: wrap; }
 
-      .search-box { width: 100%; }
-      .stats-mini { width: 100%; text-align: left; }
+      .checkin-toolbar { flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+      .search-box { flex: 1 1 100%; }
+      .checkin-scan-btn { flex: 1; justify-content: center; }
+      .stats-mini { flex-shrink: 0; text-align: right; }
 
       .stats-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
 
@@ -1393,6 +1415,7 @@ export class EventDetailComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private auth = inject(AuthService);
+  private host = inject(ElementRef<HTMLElement>);
 
   readonly Zap = Zap; readonly Trash2 = Trash2; readonly Users = Users;
   readonly Wand2 = Wand2; readonly Calendar = Calendar; readonly ExternalLink = ExternalLink;
@@ -1535,6 +1558,7 @@ export class EventDetailComponent implements OnInit {
         this.isNew.set(true);
         this.localId.set(this.route.snapshot.queryParamMap.get('localId'));
         this.loading.set(false);
+        this.scrollActiveTabIntoView();
         if (!this.localId()) {
           this.toast.error('Local no especificado para el evento');
           this.router.navigate(['/events']);
@@ -1546,6 +1570,22 @@ export class EventDetailComponent implements OnInit {
     });
     const tab = this.route.snapshot.queryParamMap.get('tab') as ActiveTab | null;
     if (tab) this.activeTab.set(tab);
+    if (tab === 'impulsadores') this.loadImpulsadores();
+  }
+
+  selectTab(tab: ActiveTab, evt?: Event) {
+    this.activeTab.set(tab);
+    if (tab === 'impulsadores') this.loadImpulsadores();
+    (evt?.currentTarget as HTMLElement | undefined)
+      ?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+
+  /** En móvil la barra de tabs scrollea: asegura que el tab activo (p.ej. deep-link ?tab=) quede visible. */
+  private scrollActiveTabIntoView() {
+    setTimeout(() => {
+      this.host.nativeElement.querySelector('.tab.active')
+        ?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    });
   }
 
   loadEvent(id: string) {
@@ -1564,6 +1604,7 @@ export class EventDetailComponent implements OnInit {
           price: ev.price, capacity: ev.capacity, status: ev.status,
         });
         this.loading.set(false);
+        this.scrollActiveTabIntoView();
         this.loadRegistrations(id);
       },
       error: () => {
