@@ -336,16 +336,19 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
       .empty-state { padding:60px 24px; }
     }
 
+    @media (max-width: 640px) {
+      .events-grid { grid-template-columns: 1fr; }
+      .event-card-img { height:180px; }
+    }
+
     @media (max-width: 480px) {
       .page { padding: 16px; }
       .page-header { flex-direction:column; align-items:stretch; }
       .header-actions { flex-direction:column; align-items:stretch; }
       .local-select { width:100%; }
       .header-actions .btn { width:100%; justify-content:center; }
-      .events-grid { grid-template-columns: 1fr; }
-      .event-card-img { height:180px; }
       .event-footer { flex-direction:column; align-items:stretch; gap:12px; }
-      .event-actions { justify-content:flex-end; }
+      .event-actions { justify-content:flex-end; gap:8px; }
       .qr-modal { width:calc(100% - 32px); padding:22px 20px; }
       .qr-modal-header { flex-wrap:wrap; }
       .qr-url-row { flex-direction:column; }
