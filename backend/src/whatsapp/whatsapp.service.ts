@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
 
 export interface WaConfig {
   provider: string;
@@ -26,6 +27,8 @@ export type WaMediaType = 'image' | 'video' | 'audio' | 'document';
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
+
+  constructor(private readonly graph: MetaGraphClient) {}
 
   async sendMessage(
     to: string,
@@ -90,7 +93,6 @@ export class WhatsAppService {
       this.logger.warn(`Skipping template — invalid phone: ${to}`);
       return;
     }
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
     const components: object[] = [];
     if (vars.length > 0) {
       components.push({
@@ -98,25 +100,15 @@ export class WhatsAppService {
         parameters: vars.map((v) => ({ type: 'text', text: v })),
       });
     }
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.waAccessToken}`,
+    await this.postCloudApiMessage(config, 'CloudAPI template', {
+      to: phone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: language },
+        components,
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: language },
-          components,
-        },
-      }),
     });
-    if (!res.ok)
-      throw new Error(`CloudAPI template ${res.status}: ${await res.text()}`);
   }
 
   async getStatus(config: WaConfig): Promise<WaStatus> {
@@ -221,32 +213,19 @@ export class WhatsAppService {
     if (!config.webhookUrl)
       return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
     try {
-      const res = await fetch(
-        `https://graph.facebook.com/v21.0/${config.waBusinessAccountId}/subscribed_apps`,
+      await this.graph.post(
+        `/${config.waBusinessAccountId}/subscribed_apps`,
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${config.waAccessToken}`,
-          },
-          body: JSON.stringify({
+          accessToken: config.waAccessToken,
+          json: {
             override_callback_uri: config.webhookUrl,
             verify_token: verifyToken ?? '',
-          }),
+          },
         },
       );
-      const data = (await res.json()) as {
-        success?: boolean;
-        error?: { message?: string };
-      };
-      if (!res.ok || data.error)
-        return {
-          success: false,
-          message: data.error?.message ?? `Error ${res.status}`,
-        };
       return { success: true, message: 'Webhook suscripto correctamente' };
     } catch (err) {
-      return { success: false, message: String(err) };
+      return { success: false, message: this.errorMessage(err) };
     }
   }
 
@@ -477,21 +456,11 @@ export class WhatsAppService {
     body: string,
     config: WaConfig,
   ): Promise<void> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.waAccessToken}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body },
-      }),
+    await this.postCloudApiMessage(config, 'CloudAPI', {
+      to,
+      type: 'text',
+      text: { body },
     });
-    if (!res.ok) throw new Error(`CloudAPI ${res.status}: ${await res.text()}`);
   }
 
   private async sendCloudApiMedia(
@@ -501,26 +470,15 @@ export class WhatsAppService {
     mediaType: 'image' | 'video',
     config: WaConfig,
   ): Promise<void> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
     const payload =
       mediaType === 'image'
         ? { image: { link: mediaUrl, caption } }
         : { video: { link: mediaUrl, caption } };
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.waAccessToken}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: mediaType,
-        ...payload,
-      }),
+    await this.postCloudApiMessage(config, 'CloudAPI media', {
+      to,
+      type: mediaType,
+      ...payload,
     });
-    if (!res.ok)
-      throw new Error(`CloudAPI media ${res.status}: ${await res.text()}`);
   }
 
   private async sendCloudApiAudio(
@@ -528,22 +486,11 @@ export class WhatsAppService {
     audioUrl: string,
     config: WaConfig,
   ): Promise<void> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.waAccessToken}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'audio',
-        audio: { link: audioUrl },
-      }),
+    await this.postCloudApiMessage(config, 'CloudAPI audio', {
+      to,
+      type: 'audio',
+      audio: { link: audioUrl },
     });
-    if (!res.ok)
-      throw new Error(`CloudAPI audio ${res.status}: ${await res.text()}`);
   }
 
   private async sendCloudApiDocument(
@@ -552,23 +499,30 @@ export class WhatsAppService {
     docUrl: string,
     config: WaConfig,
   ): Promise<void> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
     const filename = docUrl.split('/').pop() ?? 'documento';
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.waAccessToken}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'document',
-        document: { link: docUrl, caption, filename },
-      }),
+    await this.postCloudApiMessage(config, 'CloudAPI document', {
+      to,
+      type: 'document',
+      document: { link: docUrl, caption, filename },
     });
-    if (!res.ok)
-      throw new Error(`CloudAPI document ${res.status}: ${await res.text()}`);
+  }
+
+  /** POST a /{phoneNumberId}/messages de la Cloud API con el prefijo de error histórico de cada tipo de envío. */
+  private async postCloudApiMessage(
+    config: WaConfig,
+    errorLabel: string,
+    payload: object,
+  ): Promise<void> {
+    try {
+      await this.graph.post(`/${config.waPhoneNumberId}/messages`, {
+        accessToken: config.waAccessToken,
+        json: { messaging_product: 'whatsapp', ...payload },
+      });
+    } catch (err) {
+      if (err instanceof MetaApiError)
+        throw new Error(`${errorLabel} ${err.status}: ${err.message}`);
+      throw err;
+    }
   }
 
   private async wahaStatus(config: WaConfig): Promise<WaStatus> {
@@ -614,16 +568,13 @@ export class WhatsAppService {
       };
     }
     try {
-      const res = await fetch(
-        `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}?fields=display_phone_number,verified_name`,
-        { headers: { Authorization: `Bearer ${config.waAccessToken}` } },
-      );
-      const data = (await res.json()) as {
+      const data = await this.graph.get<{
         display_phone_number?: string;
         verified_name?: string;
-        error?: { message?: string };
-      };
-      if (data.error) throw new Error(data.error.message);
+      }>(`/${config.waPhoneNumberId}`, {
+        accessToken: config.waAccessToken,
+        params: { fields: 'display_phone_number,verified_name' },
+      });
       return {
         provider: 'cloudapi',
         configured: true,
@@ -636,9 +587,13 @@ export class WhatsAppService {
         provider: 'cloudapi',
         configured: true,
         connected: false,
-        error: String(err),
+        error: this.errorMessage(err),
       };
     }
+  }
+
+  private errorMessage(err: unknown): string {
+    return err instanceof MetaApiError ? err.message : String(err);
   }
 
   formatPhone(phone: string): string {

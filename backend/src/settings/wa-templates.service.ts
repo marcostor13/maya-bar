@@ -8,6 +8,7 @@ import { Model, Types } from 'mongoose';
 import { WaTemplate } from './wa-template.schema';
 import { TenantConfig } from './tenant-config.schema';
 import { CreateWaTemplateDto } from './dto/wa-template.dto';
+import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
 
 interface MetaComponent {
   type: string;
@@ -30,6 +31,7 @@ export class WaTemplatesService {
   constructor(
     @InjectModel(WaTemplate.name) private templateModel: Model<WaTemplate>,
     @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
+    private readonly graph: MetaGraphClient,
   ) {}
 
   async findAll(tenantId: string): Promise<WaTemplate[]> {
@@ -48,15 +50,12 @@ export class WaTemplatesService {
         'Configura el Access Token y el WABA ID en Cloud API primero',
       );
     }
-    const res = await fetch(
-      `https://graph.facebook.com/v19.0/${wabaId}/message_templates?limit=100`,
-      { headers: { Authorization: `Bearer ${token}` } },
+    const data = await this.metaRequest<{ data?: MetaTemplate[] }>(() =>
+      this.graph.get(`/${wabaId}/message_templates`, {
+        accessToken: token,
+        params: { limit: '100' },
+      }),
     );
-    if (!res.ok)
-      throw new BadRequestException(
-        `Meta API ${res.status}: ${await res.text()}`,
-      );
-    const data = (await res.json()) as { data?: MetaTemplate[] };
     const tid = new Types.ObjectId(tenantId);
     const results: WaTemplate[] = [];
     for (const t of data.data ?? []) {
@@ -103,27 +102,17 @@ export class WaTemplatesService {
     components.push({ type: 'BODY', text: dto.body });
     if (dto.footer) components.push({ type: 'FOOTER', text: dto.footer });
 
-    const res = await fetch(
-      `https://graph.facebook.com/v19.0/${config.waBusinessAccountId}/message_templates`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.waAccessToken}`,
-        },
-        body: JSON.stringify({
+    const created = await this.metaRequest<{ id: string }>(() =>
+      this.graph.post(`/${config.waBusinessAccountId}/message_templates`, {
+        accessToken: config.waAccessToken,
+        json: {
           name: dto.name,
           category: dto.category,
           language: dto.language,
           components,
-        }),
-      },
+        },
+      }),
     );
-    if (!res.ok)
-      throw new BadRequestException(
-        `Meta API ${res.status}: ${await res.text()}`,
-      );
-    const created = (await res.json()) as { id: string };
     const tid = new Types.ObjectId(tenantId);
     return this.templateModel.create({
       tenantId: tid,
@@ -145,15 +134,25 @@ export class WaTemplatesService {
       throw new NotFoundException();
     const config = await this.getConfig(tenantId);
     if (config?.waAccessToken && template.metaId) {
-      await fetch(
-        `https://graph.facebook.com/v19.0/${config.waBusinessAccountId}/message_templates?name=${template.name}`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${config.waAccessToken}` },
-        },
-      ).catch(() => {});
+      await this.graph
+        .delete(`/${config.waBusinessAccountId}/message_templates`, {
+          accessToken: config.waAccessToken,
+          params: { name: template.name },
+        })
+        .catch(() => {});
     }
     await this.templateModel.findByIdAndDelete(templateId).exec();
+  }
+
+  /** Traduce errores de Meta a BadRequestException conservando status y mensaje. */
+  private async metaRequest<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (err) {
+      if (err instanceof MetaApiError)
+        throw new BadRequestException(`Meta API ${err.status}: ${err.message}`);
+      throw err;
+    }
   }
 
   private async getConfig(tenantId: string): Promise<TenantConfig | null> {
