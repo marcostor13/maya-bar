@@ -748,11 +748,23 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private waMessageListener = (event: MessageEvent) => {
     if (!event.origin.endsWith('facebook.com')) return;
     try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
-        this.waSignupData = { wabaId: data.data.waba_id, phoneNumberId: data.data.phone_number_id };
+      // El SDK a veces manda event.data ya parseado (objeto) y a veces como string JSON.
+      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      if (data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      if (data.event === 'FINISH' || data.event === 'FINISH_ONLY_WABA') {
+        const wabaId = data.data?.waba_id ?? data.data?.business_id;
+        const phoneNumberId = data.data?.phone_number_id;
+        if (wabaId && phoneNumberId) {
+          this.waSignupData = { wabaId, phoneNumberId };
+        } else {
+          console.warn('WA_EMBEDDED_SIGNUP FINISH sin waba_id/phone_number_id:', data);
+        }
+      } else {
+        console.warn('WA_EMBEDDED_SIGNUP evento no manejado:', data);
       }
-    } catch { /* mensajes no relacionados al Embedded Signup */ }
+    } catch (err) {
+      console.warn('No se pudo parsear mensaje de Embedded Signup:', event.data, err);
+    }
   };
 
   // Instagram accounts
@@ -1040,9 +1052,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** El postMessage con waba_id/phone_number_id puede llegar unos ms después del callback de FB.login. */
+  /** El postMessage con waba_id/phone_number_id puede llegar varios segundos después del callback de FB.login. */
   private finishWaConnect(code: string, attempt = 0) {
-    if (!this.waSignupData && attempt < 20) {
+    if (!this.waSignupData && attempt < 100) {
       setTimeout(() => this.finishWaConnect(code, attempt + 1), 100);
       return;
     }
