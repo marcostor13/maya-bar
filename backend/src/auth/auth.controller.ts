@@ -52,18 +52,10 @@ export class AuthController {
 
   @Post('reset-password')
   async resetPassword(@Body() body: ResetPasswordDto) {
-    try {
-      return await this.authService.resetPassword(
-        body.email,
-        body.code,
-        body.newPassword,
-      );
-    } catch (err) {
-      throw new UnauthorizedException(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo restablecer la contraseña',
-      );
-    }
+    return this.authService.resetPassword(
+      body.email,
+      body.code,
+      body.newPassword,
+    );
   }
 }

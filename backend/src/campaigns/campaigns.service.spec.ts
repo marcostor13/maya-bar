@@ -778,4 +778,42 @@ describe('CampaignsService', () => {
       expect(mockAi.chat.mock.calls[0][0]).toContain('amigable y cercano');
     });
   });
+
+  // ─── recuperación de campañas huérfanas + cuota en vuelo ───────────────────
+
+  describe('onModuleInit (campañas huérfanas)', () => {
+    it("marca como 'failed' toda campaña en 'sending' al arrancar", async () => {
+      campaignModel.updateMany = jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ modifiedCount: 2 }),
+      });
+
+      await service.onModuleInit();
+
+      expect(campaignModel.updateMany).toHaveBeenCalledWith(
+        { status: 'sending' },
+        { $set: expect.objectContaining({ status: 'failed' }) },
+      );
+    });
+  });
+
+  describe('cuota diaria (countWaSentToday)', () => {
+    it("cuenta lo enviado hoy y reserva lo que está en 'sending'", async () => {
+      campaignModel.find.mockReturnValue({
+        exec: jest
+          .fn()
+          .mockResolvedValue([{ recipientCount: 10 }, { recipientCount: 5 }]),
+      });
+
+      const total = await (service as any).countWaSentToday(
+        '64b000000000000000000000',
+      );
+
+      expect(total).toBe(15);
+      const filter = campaignModel.find.mock.calls[0][0];
+      expect(filter.$or).toEqual([
+        expect.objectContaining({ status: 'sent' }),
+        { status: 'sending' },
+      ]);
+    });
+  });
 });

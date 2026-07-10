@@ -545,4 +545,18 @@ describe('ListsService', () => {
       expect(result).toEqual({ count: 1 });
     });
   });
+
+  describe('reglas combinadas sobre el mismo campo', () => {
+    it('gte + lte componen un rango en vez de sobrescribirse', async () => {
+      customerModel.countDocuments.mockResolvedValue(2);
+
+      await service.previewRules(tenantId, [
+        { field: 'totalReservations', operator: 'gte', value: 2 },
+        { field: 'totalReservations', operator: 'lte', value: 5 },
+      ] as any);
+
+      const filter = customerModel.countDocuments.mock.calls[0][0];
+      expect(filter.totalReservations).toEqual({ $gte: 2, $lte: 5 });
+    });
+  });
 });

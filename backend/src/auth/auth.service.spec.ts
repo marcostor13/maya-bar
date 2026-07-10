@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
@@ -331,14 +331,14 @@ describe('AuthService', () => {
       expect(usersService.resetPassword).not.toHaveBeenCalled();
     });
 
-    it('rejects when the user does not exist', async () => {
+    it('rejects when the user does not exist with the SAME message (anti-enumeración)', async () => {
       usersService.findOneByEmail.mockResolvedValue(null);
 
-      // NOTA: la implementación lanza Error genérico (no HttpException), por lo
-      // que Nest respondería 500. Se testea el comportamiento actual.
       await expect(
         service.resetPassword('nadie@test.com', '123456', 'Nueva123!'),
-      ).rejects.toThrow('Usuario no encontrado');
+      ).rejects.toThrow(
+        new BadRequestException('El código es inválido o ha expirado'),
+      );
     });
   });
 });
