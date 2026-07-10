@@ -1,5 +1,11 @@
 # Plan de Optimización — Buenas Prácticas, SOLID y Tests Unitarios
 
+> **Estado (2026-07-10):** Fases 1, 2, 3 y 6 completas. Fase 4 completa salvo
+> `invitation-designer.ts` (3086 líneas) y la migración a API services de las páginas
+> restantes (orders, reservations, menu, customers, lists, users, ai-agents). Fase 5:
+> cubiertos csv/roles/API services y los tabs con más lógica; faltan specs de los demás
+> componentes. Suites: backend 349 tests (Jest), frontend 238 tests (Vitest), CI activo.
+
 Basado en un diagnóstico del código al 2026-07-10. Cada fase es independiente y entregable por separado
 (una rama/PR por fase). El orden refleja riesgo/beneficio: primero seguridad y validación, luego
 refactors SOLID que habilitan los tests, y al final cobertura sostenida con CI.
