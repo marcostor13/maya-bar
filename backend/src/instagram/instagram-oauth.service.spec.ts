@@ -48,7 +48,9 @@ describe('InstagramOAuthService', () => {
       const tampered = Buffer.from(
         JSON.stringify({ tenantId: 'otro', exp: Date.now() + 60000 }),
       ).toString('base64url');
-      expect(service.verifyState(`${tampered}.${state.split('.')[1]}`)).toBeNull();
+      expect(
+        service.verifyState(`${tampered}.${state.split('.')[1]}`),
+      ).toBeNull();
       expect(service.verifyState(`${payload}.firmafalsa`)).toBeNull();
       expect(service.verifyState('basura')).toBeNull();
     });
@@ -115,7 +117,10 @@ describe('InstagramOAuthService', () => {
 
   describe('fetchProfile', () => {
     it('devuelve el user_id real (de /me) como string', async () => {
-      graph.get.mockResolvedValue({ user_id: 17841400000000000, username: 'bar' });
+      graph.get.mockResolvedValue({
+        user_id: 17841400000000000,
+        username: 'bar',
+      });
       const res = await service.fetchProfile('tok');
       expect(res).toEqual({ userId: '17841400000000000', username: 'bar' });
       expect(graph.get).toHaveBeenCalledWith(

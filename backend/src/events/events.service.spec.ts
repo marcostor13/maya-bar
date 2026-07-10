@@ -122,7 +122,7 @@ describe('EventsService', () => {
         title: '¡Noche de Tapas & Vinos!',
         localId: localOid.toString(),
         date: '2026-08-01',
-      } as any);
+      });
 
       expect(captured.slug).toMatch(/^noche-de-tapas-vinos-[a-z0-9]{6}$/);
       expect(captured.tenantId.toString()).toBe(tenantOid.toString());
@@ -141,7 +141,7 @@ describe('EventsService', () => {
         title: 'Evento',
         localId: localOid.toString(),
         date: '2026-08-01',
-      } as any);
+      });
 
       expect(captured.capacity).toBe(0);
       expect(captured.price).toBe(0);

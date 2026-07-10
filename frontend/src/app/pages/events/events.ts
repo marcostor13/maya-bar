@@ -8,11 +8,12 @@ import {
   signal,
   computed,
 } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
-import { AuthService } from '../../auth/auth.service';
+import { injectRoles } from '../../shared/roles';
+import { EventsApiService } from '../../core/api/events-api.service';
+import { AppEvent, EventStatus, Local, EVENT_STATUS_META } from '../../shared/models/event.model';
 import {
   LucideAngularModule,
   Zap,
@@ -36,46 +37,6 @@ import {
   QrCode,
   Download,
 } from 'lucide-angular';
-
-import { environment } from '../../../environments/environment';
-const API = environment.apiUrl;
-
-type EventStatus = 'draft' | 'published' | 'cancelled';
-type AiTool = 'copy' | 'social' | 'hashtags' | 'email';
-
-interface AppEvent {
-  _id: string;
-  localId: string;
-  title: string;
-  description?: string;
-  date: string;
-  startTime?: string;
-  endTime?: string;
-  capacity: number;
-  price: number;
-  imageUrl?: string;
-  status: EventStatus;
-  slug?: string;
-}
-
-interface Registration {
-  _id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  partySize: number;
-  ticketCode: string;
-  status: string;
-  createdAt: string;
-}
-
-interface Local { _id: string; name: string; }
-
-const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
-  draft:     { label: 'Borrador',  cls: 'badge-neutral' },
-  published: { label: 'Publicado', cls: 'badge-success' },
-  cancelled: { label: 'Cancelado', cls: 'badge-danger'  },
-};
 
 @Component({
   selector: 'app-events',
@@ -359,11 +320,10 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
 export class EventsComponent implements OnInit {
   @ViewChild('fileInput') fileInputRef!: ElementRef<HTMLInputElement>;
 
-  private http = inject(HttpClient);
+  private api = inject(EventsApiService);
   private router = inject(Router);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
-  private auth = inject(AuthService);
 
   readonly Zap = Zap; readonly Plus = Plus; readonly Pencil = Pencil;
   readonly Trash2 = Trash2; readonly Users = Users; readonly Wand2 = Wand2;
@@ -393,16 +353,16 @@ export class EventsComponent implements OnInit {
 
 
 
-  private role = computed(() => this.auth.currentUser()?.role ?? '');
-  canManage     = computed(() => ['TENANT_ADMIN', 'MANAGER'].includes(this.role()));
-  isImpulsador  = computed(() => this.role() === 'IMPULSADOR');
-  canCreate     = computed(() => ['TENANT_ADMIN', 'MANAGER', 'IMPULSADOR'].includes(this.role()));
-  private referralCode = computed(() => this.auth.currentUser()?.referralCode ?? null);
+  private roles = injectRoles();
+  canManage     = this.roles.canManage;
+  isImpulsador  = this.roles.isImpulsador;
+  canCreate     = this.roles.canCreate;
+  private referralCode = this.roles.referralCode;
 
 
 
   ngOnInit() {
-    this.http.get<Local[]>(`${API}/locals`).subscribe({
+    this.api.getLocals().subscribe({
       next: (ls) => this.locals.set(ls),
     });
   }
@@ -416,7 +376,7 @@ export class EventsComponent implements OnInit {
 
   loadEvents() {
     this.loading.set(true);
-    this.http.get<AppEvent[]>(`${API}/events`, { params: { localId: this.selectedLocalId() } }).subscribe({
+    this.api.getEvents(this.selectedLocalId()).subscribe({
       next: (evs) => { this.events.set(evs); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
@@ -442,7 +402,7 @@ export class EventsComponent implements OnInit {
       danger: true,
     });
     if (!ok) return;
-    this.http.delete(`${API}/events/${ev._id}`).subscribe({
+    this.api.deleteEvent(ev._id).subscribe({
       next: () => { this.toast.success('Evento eliminado'); this.loadEvents(); },
       error: (err) => this.toast.error(err.error?.message || 'Error al eliminar'),
     });
@@ -483,7 +443,7 @@ export class EventsComponent implements OnInit {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   statusMeta(status: string) {
-    return STATUS_META[status as EventStatus] ?? STATUS_META.draft;
+    return EVENT_STATUS_META[status as EventStatus] ?? EVENT_STATUS_META.draft;
   }
 
   formatDate(dateStr: string): string {

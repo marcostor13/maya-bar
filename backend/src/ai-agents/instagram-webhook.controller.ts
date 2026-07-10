@@ -110,12 +110,12 @@ export class InstagramWebhookController {
     }
     if (!account.active) {
       this.logger.warn(
-        `[IG] Cuenta ${account._id} (${account.label}) está inactiva — no se responde.`,
+        `[IG] Cuenta ${String(account._id)} (${account.label}) está inactiva — no se responde.`,
       );
       return;
     }
     this.logger.log(
-      `[IG] Cuenta encontrada: ${account._id} (${account.label})`,
+      `[IG] Cuenta encontrada: ${String(account._id)} (${account.label})`,
     );
 
     const agent = await this.agents.findPublishedByInstagramAccount(
@@ -123,11 +123,13 @@ export class InstagramWebhookController {
     );
     if (!agent) {
       this.logger.error(
-        `[IG] Sin agente PUBLICADO vinculado a la cuenta de Instagram ${account._id} — revisa Agentes IA → Canales → Instagram, y que "Publicado" esté activo.`,
+        `[IG] Sin agente PUBLICADO vinculado a la cuenta de Instagram ${String(account._id)} — revisa Agentes IA → Canales → Instagram, y que "Publicado" esté activo.`,
       );
       return;
     }
-    this.logger.log(`[IG] Agente encontrado: ${agent._id} (${agent.name})`);
+    this.logger.log(
+      `[IG] Agente encontrado: ${String(agent._id)} (${agent.name})`,
+    );
 
     // Prefijo para evitar colisión con historiales de contacto de otros canales.
     const contact = `ig:${senderId}`;

@@ -72,7 +72,11 @@ describe('MetaGraphClient', () => {
 
   it('lanza MetaApiError con error.message de Graph', async () => {
     fetchSpy.mockResolvedValue(
-      mockResponse({ error: { message: 'Unsupported get request' } }, false, 400),
+      mockResponse(
+        { error: { message: 'Unsupported get request' } },
+        false,
+        400,
+      ),
     );
     await expect(client.get('/bad')).rejects.toThrow(MetaApiError);
     await expect(client.get('/bad')).rejects.toThrow('Unsupported get request');
@@ -97,7 +101,7 @@ describe('MetaGraphClient', () => {
       ok: false,
       status: 500,
       json: () => Promise.reject(new Error('not json')),
-    } as unknown as Response);
+    });
     await expect(client.get('/x')).rejects.toThrow(
       'Meta Graph API respondió 500',
     );

@@ -7,14 +7,25 @@ import {
   signal,
   computed,
 } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
-import { AuthService } from '../../auth/auth.service';
+import { injectRoles } from '../../shared/roles';
+import { downloadCsv } from '../../shared/csv';
+import { EventsApiService } from '../../core/api/events-api.service';
+import {
+  AiTool,
+  AppEvent,
+  FormField,
+  FormFieldType,
+  Impulsador,
+  ImpulsadorStat,
+  MediaFile,
+  Registration,
+} from '../../shared/models/event.model';
 import {
   LucideAngularModule,
   Zap,
@@ -58,78 +69,7 @@ import {
 } from 'lucide-angular';
 import { InvitationDesignerComponent, type DesignSpec } from './invitation-designer';
 
-import { environment } from '../../../environments/environment';
-const API = environment.apiUrl;
-
-type EventStatus = 'draft' | 'published' | 'cancelled';
-type AiTool = 'copy' | 'social' | 'hashtags' | 'email';
-type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone' | 'date';
 type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 'checkin' | 'stats' | 'invitation' | 'impulsadores';
-
-interface MediaFile {
-  url: string;
-  key: string;
-  name: string;
-  mimeType: string;
-  size: number;
-}
-
-interface FormField {
-  id: string;
-  label: string;
-  type: FormFieldType;
-  required: boolean;
-  options: string[];
-}
-
-interface AppEvent {
-  _id: string;
-  localId: string;
-  title: string;
-  description?: string;
-  date: string;
-  startTime?: string;
-  endTime?: string;
-  capacity: number;
-  price: number;
-  imageUrl?: string;
-  status: EventStatus;
-  slug?: string;
-  mediaFiles?: MediaFile[];
-  formFields?: FormField[];
-  invitationDesign?: DesignSpec;
-}
-
-interface Registration {
-  _id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  partySize: number;
-  ticketCode: string;
-  status: string;
-  checkedIn: boolean;
-  checkedInAt?: string;
-  createdAt: string;
-  customFields?: Record<string, string>;
-  impulsadorName?: string | null;
-}
-
-interface Impulsador {
-  _id: string;
-  name: string;
-  email: string;
-  referralCode?: string;
-  assigned: boolean;
-  type: 'user' | 'external';
-}
-
-interface ImpulsadorStat {
-  name: string;
-  registrations: number;
-  attendees: number;
-  checkedIn: number;
-}
 
 const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
   text:     'Texto',
@@ -140,12 +80,6 @@ const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
   email:    'Email',
   phone:    'Teléfono',
   date:     'Fecha',
-};
-
-const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
-  draft:     { label: 'Borrador',  cls: 'badge-neutral' },
-  published: { label: 'Publicado', cls: 'badge-success' },
-  cancelled: { label: 'Cancelado', cls: 'badge-danger'  },
 };
 
 @Component({
@@ -1408,13 +1342,12 @@ const STATUS_META: Record<EventStatus, { label: string; cls: string }> = {
 export class EventDetailComponent implements OnInit {
   @ViewChild('fileInput') fileInputRef!: ElementRef<HTMLInputElement>;
 
-  private http = inject(HttpClient);
+  private api = inject(EventsApiService);
   private fb = inject(FormBuilder);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
-  private auth = inject(AuthService);
   private host = inject(ElementRef<HTMLElement>);
 
   readonly Zap = Zap; readonly Trash2 = Trash2; readonly Users = Users;
@@ -1493,8 +1426,8 @@ export class EventDetailComponent implements OnInit {
   lastScanResult = signal<{ name: string; impulsadorName: string | null; alreadyCheckedIn: boolean } | null>(null);
   private html5Qrcode: import('html5-qrcode').Html5Qrcode | null = null;
 
-  private role = computed(() => this.auth.currentUser()?.role ?? '');
-  canManage = computed(() => ['TENANT_ADMIN', 'MANAGER'].includes(this.role()));
+  private roles = injectRoles();
+  canManage = this.roles.canManage;
 
   aiResultLabel = computed(() => {
     const map: Record<AiTool, string> = {
@@ -1590,7 +1523,7 @@ export class EventDetailComponent implements OnInit {
 
   loadEvent(id: string) {
     this.loading.set(true);
-    this.http.get<AppEvent>(`${API}/events/${id}`).subscribe({
+    this.api.getEvent(id).subscribe({
       next: (ev) => {
         this.event.set(ev);
         this.previewUrl.set(ev.imageUrl ?? '');
@@ -1618,14 +1551,12 @@ export class EventDetailComponent implements OnInit {
     const eventId = id ?? this.eventId();
     if (!eventId) return;
     this.regsLoading.set(true);
-    const params: Record<string, string> = {
+    this.api.getRegistrations(eventId, {
       sortBy: this.regSortBy(),
       sortOrder: this.regSortOrder(),
-    };
-    if (this.regStatusFilter() !== 'all') params['status'] = this.regStatusFilter();
-    if (this.regSearch().trim()) params['search'] = this.regSearch().trim();
-
-    this.http.get<Registration[]>(`${API}/events/${eventId}/registrations`, { params }).subscribe({
+      status: this.regStatusFilter() !== 'all' ? this.regStatusFilter() : undefined,
+      search: this.regSearch().trim() || undefined,
+    }).subscribe({
       next: (r) => { this.registrations.set(r); this.regsLoading.set(false); },
       error: () => this.regsLoading.set(false),
     });
@@ -1678,18 +1609,7 @@ export class EventDetailComponent implements OnInit {
       ...fields.map(f => r.customFields?.[f.id] ?? ''),
     ]);
 
-    const BOM = '﻿';
-    const csv = BOM + [headers, ...rows]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\r\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `asistentes_${this.event()?.title ?? 'evento'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(headers, rows, `asistentes_${this.event()?.title ?? 'evento'}_${new Date().toISOString().slice(0, 10)}.csv`);
     this.toast.success('Archivo descargado');
   }
 
@@ -1706,18 +1626,7 @@ export class EventDetailComponent implements OnInit {
       slug && i.referralCode ? `${this.publicUrl(slug)}?ref=${i.referralCode}` : '',
     ]);
 
-    const BOM = '﻿';
-    const csv = BOM + [headers, ...rows]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\r\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `impulsadores_${this.event()?.title ?? 'evento'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(headers, rows, `impulsadores_${this.event()?.title ?? 'evento'}_${new Date().toISOString().slice(0, 10)}.csv`);
     this.toast.success('Archivo descargado');
   }
 
@@ -1727,9 +1636,7 @@ export class EventDetailComponent implements OnInit {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
     this.uploading.set(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    this.http.post<{ url: string }>(`${API}/upload?folder=events`, fd).subscribe({
+    this.api.upload(file).subscribe({
       next: (res) => { this.previewUrl.set(res.url); this.uploading.set(false); (e.target as HTMLInputElement).value = ''; },
       error: (err) => { this.toast.error(err.error?.message || 'Error al subir imagen'); this.uploading.set(false); },
     });
@@ -1744,12 +1651,8 @@ export class EventDetailComponent implements OnInit {
     if (!files.length) return;
     this.uploadingMedia.set(true);
     for (const file of files) {
-      const fd = new FormData();
-      fd.append('file', file);
       try {
-        const res = await firstValueFrom(
-          this.http.post<{ url: string; key: string; contentType: string; size: number }>(`${API}/upload?folder=events`, fd)
-        );
+        const res = await firstValueFrom(this.api.upload(file));
         this.mediaFiles.update(prev => [...prev, {
           url: res.url,
           key: res.key,
@@ -1792,8 +1695,8 @@ export class EventDetailComponent implements OnInit {
       : { ...val, imageUrl: this.previewUrl() || undefined, mediaFiles: this.mediaFiles(), formFields: this.formFields() };
 
     const req = this.isNew()
-      ? this.http.post<AppEvent>(`${API}/events`, body)
-      : this.http.patch<AppEvent>(`${API}/events/${this.eventId()}`, body);
+      ? this.api.createEvent(body)
+      : this.api.updateEvent(this.eventId()!, body);
 
     req.subscribe({
       next: (savedEv) => {
@@ -1896,10 +1799,6 @@ export class EventDetailComponent implements OnInit {
 
   // ── AI marketing ──────────────────────────────────────────────────────────
 
-  private readonly AI_ENDPOINTS: Record<AiTool, string> = {
-    copy: 'generate-copy', social: 'generate-social', hashtags: 'generate-hashtags', email: 'generate-email',
-  };
-
   runAI(tool: AiTool) {
     const id = this.eventId();
     if (!id) return;
@@ -1907,9 +1806,7 @@ export class EventDetailComponent implements OnInit {
     this.aiTool.set(tool);
     this.aiResult.set('');
 
-    this.http.post<Record<string, unknown>>(
-      `${API}/events/${id}/${this.AI_ENDPOINTS[tool]}`, {}
-    ).subscribe({
+    this.api.runAI(id, tool).subscribe({
       next: (res) => {
         if (tool === 'copy') {
           const r = res as { title: string; description: string };
@@ -1950,7 +1847,7 @@ export class EventDetailComponent implements OnInit {
     const id = this.eventId();
     if (!id) return;
     this.checkingInId.set(reg._id);
-    this.http.patch<Registration>(`${API}/events/${id}/registrations/${reg._id}/check-in`, {}).subscribe({
+    this.api.checkIn(id, reg._id).subscribe({
       next: (updated) => {
         this.registrations.update(prev => prev.map(r => r._id === updated._id ? updated : r));
         this.toast.success(`Check-in de ${reg.name} completado`);
@@ -1969,7 +1866,7 @@ export class EventDetailComponent implements OnInit {
     const id = this.eventId();
     if (!id) return;
     this.impulsadoresLoading.set(true);
-    this.http.get<Impulsador[]>(`${API}/events/${id}/impulsadores`).subscribe({
+    this.api.getImpulsadores(id).subscribe({
       next: (list) => { this.impulsadores.set(list); this.impulsadoresLoading.set(false); },
       error: () => { this.impulsadoresLoading.set(false); this.toast.error('No se pudo cargar impulsadores'); },
     });
@@ -1982,7 +1879,7 @@ export class EventDetailComponent implements OnInit {
     const nextAssigned = !imp.assigned;
     const sharedWith = current.filter(i => (i._id === imp._id ? nextAssigned : i.assigned)).map(i => i._id);
 
-    this.http.patch<{ sharedWith: string[] }>(`${API}/events/${id}/share`, { sharedWith }).subscribe({
+    this.api.shareEvent(id, sharedWith).subscribe({
       next: () => {
         this.impulsadores.update(list => list.map(i => i._id === imp._id ? { ...i, assigned: nextAssigned } : i));
         this.toast.success(nextAssigned ? `${imp.name} activado para este evento` : `${imp.name} desactivado`);
@@ -2019,7 +1916,7 @@ export class EventDetailComponent implements OnInit {
       phone: this.externalForm.phone.trim() || undefined,
       email: this.externalForm.email.trim() || undefined,
     };
-    this.http.post<{ _id: string; name: string; email?: string; code: string }>(`${API}/impulsadores/external`, body).subscribe({
+    this.api.createExternalImpulsador(body).subscribe({
       next: (created) => {
         this.impulsadores.update(list => [...list, {
           _id: created._id, name: created.name, email: created.email ?? '',
@@ -2044,7 +1941,7 @@ export class EventDetailComponent implements OnInit {
       danger: true,
     });
     if (!ok) return;
-    this.http.delete(`${API}/impulsadores/external/${imp._id}`).subscribe({
+    this.api.deleteExternalImpulsador(imp._id).subscribe({
       next: () => {
         this.impulsadores.update(list => list.filter(i => i._id !== imp._id));
         this.toast.success('Impulsador eliminado');
@@ -2093,9 +1990,7 @@ export class EventDetailComponent implements OnInit {
     if (!id) { this.scanLocked = false; return; }
 
     try {
-      const res = await firstValueFrom(this.http.patch<Registration & { impulsadorName: string | null; alreadyCheckedIn: boolean }>(
-        `${API}/events/${id}/registrations/check-in/by-code`, { code },
-      ));
+      const res = await firstValueFrom(this.api.checkInByCode(id, code));
       this.registrations.update(prev => prev.map(r => r._id === res._id ? res : r));
       this.lastScanResult.set({ name: res.name, impulsadorName: res.impulsadorName, alreadyCheckedIn: res.alreadyCheckedIn });
       this.toast.success(res.alreadyCheckedIn ? `${res.name} ya tenía check-in` : `Check-in de ${res.name} completado`);

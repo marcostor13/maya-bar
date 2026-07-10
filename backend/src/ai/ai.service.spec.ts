@@ -189,9 +189,9 @@ describe('AiService', () => {
   describe('parseJson', () => {
     it('extracts a JSON object embedded in text', async () => {
       const service = await makeService();
-      expect(
-        service.parseJson<{ a: number }>('bla {"a": 1} bla'),
-      ).toEqual({ a: 1 });
+      expect(service.parseJson<{ a: number }>('bla {"a": 1} bla')).toEqual({
+        a: 1,
+      });
     });
 
     it('extracts a JSON array', async () => {

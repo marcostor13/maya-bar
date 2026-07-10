@@ -150,7 +150,9 @@ export class RegistrationsService {
     ];
     if (codes.length === 0) {
       return regs.map((r) =>
-        Object.assign(r.toObject(), { impulsadorName: null }),
+        Object.assign(r.toObject<EventRegistration>(), {
+          impulsadorName: null,
+        }),
       );
     }
     const [users, externals] = await Promise.all([
@@ -171,7 +173,7 @@ export class RegistrationsService {
       if (u.referralCode) nameMap.set(u.referralCode, u.name || u.email);
     for (const e of externals) nameMap.set(e.code, e.name);
     return regs.map((r) =>
-      Object.assign(r.toObject(), {
+      Object.assign(r.toObject<EventRegistration>(), {
         impulsadorName: r.impulsadorCode
           ? (nameMap.get(r.impulsadorCode) ?? null)
           : null,

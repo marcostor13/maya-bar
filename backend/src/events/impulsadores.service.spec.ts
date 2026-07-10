@@ -168,11 +168,18 @@ describe('ImpulsadoresService', () => {
             email: 'a@t.c',
             referralCode: 'R1',
           },
-          { _id: otherId, name: 'Impu Libre', email: 'b@t.c', referralCode: 'R2' },
+          {
+            _id: otherId,
+            name: 'Impu Libre',
+            email: 'b@t.c',
+            referralCode: 'R2',
+          },
         ]),
       );
       extModel.find.mockReturnValue(
-        buildQuery([{ _id: new Types.ObjectId(), name: 'Externo', code: 'X1' }]),
+        buildQuery([
+          { _id: new Types.ObjectId(), name: 'Externo', code: 'X1' },
+        ]),
       );
 
       const result = await service.findImpulsadores(
@@ -214,7 +221,7 @@ describe('ImpulsadoresService', () => {
       await service.createExternalImpulsador(
         tenantOid.toString(),
         new Types.ObjectId().toString(),
-        { name: '  Externo  ' } as any,
+        { name: '  Externo  ' },
       );
 
       expect(captured.name).toBe('Externo');

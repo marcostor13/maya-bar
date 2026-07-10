@@ -113,9 +113,7 @@ describe('WaTemplatesService', () => {
     it('traduce el error de Meta a BadRequest con status y mensaje', async () => {
       configModel.findOne.mockReturnValue(query(cloudConfig));
       graph.get.mockRejectedValue(new MetaApiError('token expired', 401));
-      await expect(service.sync(tenantId)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.sync(tenantId)).rejects.toThrow(BadRequestException);
       await expect(service.sync(tenantId)).rejects.toThrow(
         'Meta API 401: token expired',
       );
@@ -164,7 +162,9 @@ describe('WaTemplatesService', () => {
 
     it('traduce el error de Meta a BadRequest', async () => {
       configModel.findOne.mockReturnValue(query(cloudConfig));
-      graph.post.mockRejectedValue(new MetaApiError('name already exists', 400));
+      graph.post.mockRejectedValue(
+        new MetaApiError('name already exists', 400),
+      );
       await expect(service.create(tenantId, dto as never)).rejects.toThrow(
         'Meta API 400: name already exists',
       );

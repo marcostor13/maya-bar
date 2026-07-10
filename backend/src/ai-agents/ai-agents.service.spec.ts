@@ -283,9 +283,9 @@ describe('AiAgentsService', () => {
       mockAi.chatMessages.mockRejectedValue(
         new BadRequestException('openai API error: boom'),
       );
-      await expect(
-        service.generateAnswer(makeAgent(), 'hola'),
-      ).rejects.toThrow('openai API error: boom');
+      await expect(service.generateAnswer(makeAgent(), 'hola')).rejects.toThrow(
+        'openai API error: boom',
+      );
     });
   });
 
@@ -301,9 +301,7 @@ describe('AiAgentsService', () => {
         service.testChat(agentOid.toString(), tenantOid.toString(), [
           { role: 'assistant', content: 'hola' },
         ]),
-      ).rejects.toThrow(
-        new BadRequestException('No hay mensaje del usuario'),
-      );
+      ).rejects.toThrow(new BadRequestException('No hay mensaje del usuario'));
     });
 
     it('answers using the last user message and prior history', async () => {

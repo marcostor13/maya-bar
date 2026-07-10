@@ -58,8 +58,12 @@ export class AuthController {
         body.code,
         body.newPassword,
       );
-    } catch (err: any) {
-      throw new UnauthorizedException(err.message);
+    } catch (err) {
+      throw new UnauthorizedException(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo restablecer la contraseña',
+      );
     }
   }
 }
