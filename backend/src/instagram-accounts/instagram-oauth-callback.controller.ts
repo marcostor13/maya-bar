@@ -30,7 +30,7 @@ export class InstagramOAuthCallbackController {
   ) {
     const frontend = (this.config.get<string>('FRONTEND_URL') || '').replace(/\/$/, '');
     const redirect = (params: Record<string, string>) =>
-      res.redirect(`${frontend}/ai-agents?${new URLSearchParams(params).toString()}`);
+      res.redirect(`${frontend}/settings?${new URLSearchParams(params).toString()}`);
 
     if (errorDescription) return redirect({ ig_oauth: 'error', reason: errorDescription });
     if (!code || !state) return redirect({ ig_oauth: 'error', reason: 'Faltan parámetros de Meta' });

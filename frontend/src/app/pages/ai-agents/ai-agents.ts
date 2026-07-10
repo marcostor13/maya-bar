@@ -1,13 +1,13 @@
-import { Component, inject, signal, OnInit, OnDestroy, HostListener, ViewChild, ElementRef } from '@angular/core';
+import { Component, inject, signal, OnInit, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Link, Instagram,
+  Paperclip, Copy, Instagram, Settings,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 
@@ -18,27 +18,13 @@ interface WaAccount {
   label: string;
   provider: 'waha' | 'cloudapi';
   phoneNumber?: string;
-  wahaApiUrl?: string;
-  wahaApiKey?: string;
-  wahaSession?: string;
-  waPhoneNumberId?: string;
-  waAccessToken?: string;
-  waBusinessAccountId?: string;
-  waVerifyToken?: string;
-  tokenExpiresAt?: string;
   active: boolean;
 }
-
-declare const FB: any;
 
 interface IgAccount {
   _id: string;
   label: string;
   username?: string;
-  igBusinessAccountId?: string;
-  pageId?: string;
-  pageAccessToken?: string;
-  tokenExpiresAt?: string;
   active: boolean;
 }
 
@@ -89,41 +75,18 @@ function blankAgent(): Agent {
   };
 }
 
-function blankAccount(): WaAccount {
-  return {
-    _id: '', label: '', provider: 'waha', phoneNumber: '', wahaApiUrl: '', wahaApiKey: '',
-    wahaSession: 'default', waPhoneNumberId: '', waAccessToken: '', waBusinessAccountId: '',
-    waVerifyToken: '', active: true,
-  };
-}
-
-function blankIgAccount(): IgAccount {
-  return {
-    _id: '', label: '', username: '', igBusinessAccountId: '', pageId: '',
-    pageAccessToken: '', active: true,
-  };
-}
-
 @Component({
   selector: 'app-ai-agents',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, DatePipe],
+  imports: [FormsModule, LucideAngularModule, RouterLink],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
         <div>
           <h1>Agentes IA</h1>
-          <p class="page-sub">Crea asistentes que responden por WhatsApp con tu conocimiento (RAG)</p>
+          <p class="page-sub">Crea asistentes que responden por WhatsApp e Instagram con tu conocimiento (RAG)</p>
         </div>
         <div class="header-actions">
-          <button class="btn btn-secondary" (click)="openAccounts()">
-            <lucide-icon [img]="Smartphone" [size]="16" [strokeWidth]="2.5"></lucide-icon>
-            Cuentas WhatsApp
-          </button>
-          <button class="btn btn-secondary" (click)="openIgAccounts()">
-            <lucide-icon [img]="Instagram" [size]="16" [strokeWidth]="2.5"></lucide-icon>
-            Cuentas Instagram
-          </button>
           <button class="btn btn-primary" (click)="openNew()">
             <lucide-icon [img]="Plus" [size]="16" [strokeWidth]="2.5"></lucide-icon>
             Nuevo agente
@@ -259,6 +222,10 @@ function blankIgAccount(): IgAccount {
 
             <!-- CANALES -->
             @if (section() === 'channels') {
+              <p class="field-hint" style="margin-bottom:16px">
+                Las cuentas de WhatsApp e Instagram se conectan desde <strong>Configuración</strong> y quedan disponibles para todos los agentes (y para campañas). Acá solo elegís por cuáles responde este agente.
+              </p>
+
               <p class="channel-group-title">
                 <lucide-icon [img]="Smartphone" [size]="14"></lucide-icon> WhatsApp
               </p>
@@ -266,7 +233,9 @@ function blankIgAccount(): IgAccount {
                 <div class="inline-empty">
                   <lucide-icon [img]="Smartphone" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
                   <p>No hay cuentas de WhatsApp configuradas.</p>
-                  <button class="btn btn-sm btn-secondary" (click)="openAccounts()">Configurar cuentas</button>
+                  <a class="btn btn-sm btn-secondary" routerLink="/settings">
+                    <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Ir a Configuración
+                  </a>
                 </div>
               } @else {
                 <p class="field-hint" style="margin-bottom:12px">Selecciona por qué números responderá este agente.</p>
@@ -282,9 +251,9 @@ function blankIgAccount(): IgAccount {
                     @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }
                   </label>
                 }
-                <button class="btn btn-sm btn-ghost" style="margin-top:8px" (click)="openAccounts()">
-                  <lucide-icon [img]="Plus" [size]="14"></lucide-icon> Gestionar cuentas
-                </button>
+                <a class="btn btn-sm btn-ghost" style="margin-top:8px" routerLink="/settings">
+                  <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Gestionar cuentas en Configuración
+                </a>
               }
 
               <p class="channel-group-title" style="margin-top:24px">
@@ -294,7 +263,9 @@ function blankIgAccount(): IgAccount {
                 <div class="inline-empty">
                   <lucide-icon [img]="Instagram" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
                   <p>No hay cuentas de Instagram configuradas.</p>
-                  <button class="btn btn-sm btn-secondary" (click)="openIgAccounts()">Configurar cuentas</button>
+                  <a class="btn btn-sm btn-secondary" routerLink="/settings">
+                    <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Ir a Configuración
+                  </a>
                 </div>
               } @else {
                 <p class="field-hint" style="margin-bottom:12px">Selecciona por qué cuentas de Instagram responderá este agente.</p>
@@ -308,9 +279,9 @@ function blankIgAccount(): IgAccount {
                     @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }
                   </label>
                 }
-                <button class="btn btn-sm btn-ghost" style="margin-top:8px" (click)="openIgAccounts()">
-                  <lucide-icon [img]="Plus" [size]="14"></lucide-icon> Gestionar cuentas
-                </button>
+                <a class="btn btn-sm btn-ghost" style="margin-top:8px" routerLink="/settings">
+                  <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Gestionar cuentas en Configuración
+                </a>
               }
             }
 
@@ -511,243 +482,6 @@ function blankIgAccount(): IgAccount {
         </aside>
       </div>
     }
-
-    <!-- ───────── Accounts Drawer ───────── -->
-    @if (accountsOpen()) {
-      <div class="overlay" (click)="closeAccounts()" role="dialog" aria-modal="true">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div class="drawer-title-group">
-              <h2><lucide-icon [img]="Smartphone" [size]="20" [strokeWidth]="2.5"></lucide-icon> Cuentas de WhatsApp</h2>
-              <p class="subtitle">Conecta varios números — Cloud API con un click, o WAHA (QR) manualmente.</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="closeAccounts()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-            </button>
-          </div>
-
-          <div class="drawer-scroll">
-            @if (!accForm()) {
-              <button class="btn btn-primary" style="width:100%;margin-bottom:16px" [disabled]="connectingWa()" (click)="connectWhatsApp()">
-                <lucide-icon [img]="Smartphone" [size]="16"></lucide-icon>
-                {{ connectingWa() ? 'Conectando…' : 'Conectar con WhatsApp' }}
-              </button>
-              @for (acc of accounts(); track acc._id) {
-                <div class="acc-card">
-                  <div class="acc-card-head">
-                    <div>
-                      <span class="account-label">{{ acc.label }}</span>
-                      <span class="account-sub">{{ acc.provider === 'waha' ? 'WAHA' : 'Cloud API' }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</span>
-                    </div>
-                    <div class="acc-card-actions">
-                      @if (acc.tokenExpiresAt) {
-                        <button class="btn btn-sm btn-ghost btn-icon" (click)="renewWaToken(acc)" title="Renovar token">
-                          <lucide-icon [img]="RefreshCw" [size]="14" style="color:var(--color-brand)"></lucide-icon>
-                        </button>
-                      }
-                      @if (acc.provider === 'cloudapi') {
-                        <button class="btn btn-sm btn-ghost btn-icon" (click)="subscribeWaWebhook(acc)" title="Suscribir webhook">
-                          <lucide-icon [img]="Link" [size]="14"></lucide-icon>
-                        </button>
-                      }
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="checkStatus(acc)" title="Estado">
-                        <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
-                      </button>
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="editAccount(acc)" title="Editar">
-                        <lucide-icon [img]="Pencil" [size]="14"></lucide-icon>
-                      </button>
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="deleteAccount(acc)" title="Eliminar">
-                        <lucide-icon [img]="Trash2" [size]="14" style="color:var(--color-error)"></lucide-icon>
-                      </button>
-                    </div>
-                  </div>
-                  @if (statusMap()[acc._id]) {
-                    <div class="acc-status" [class.ok]="statusMap()[acc._id].connected">
-                      {{ statusMap()[acc._id].connected ? 'Conectado' : 'Desconectado' }}
-                      {{ statusMap()[acc._id].state ? '· ' + statusMap()[acc._id].state : '' }}
-                      {{ statusMap()[acc._id].error || '' }}
-                    </div>
-                  }
-                  @if (acc.tokenExpiresAt) {
-                    <div class="webhook-hint">
-                      <span>Token vence:</span> {{ acc.tokenExpiresAt | date:'d MMM y' }}
-                    </div>
-                  }
-                  <div class="webhook-hint">
-                    <span>Webhook entrante:</span>
-                    <code>{{ webhookUrl(acc) }}</code>
-                  </div>
-                </div>
-              }
-              <button class="btn btn-ghost" style="width:100%;margin-top:8px" (click)="newAccount()">
-                <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir manualmente (WAHA / avanzado)
-              </button>
-            } @else {
-              <!-- Form de cuenta -->
-              <div class="field">
-                <label class="field-label">Nombre de la cuenta *</label>
-                <input class="input" [(ngModel)]="accForm()!.label" placeholder="Ej: Línea Reservas" />
-              </div>
-              <div class="field">
-                <label class="field-label">Proveedor *</label>
-                <select class="select" [(ngModel)]="accForm()!.provider">
-                  <option value="waha">WAHA</option>
-                  <option value="cloudapi">WhatsApp Cloud API</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label">Número (informativo)</label>
-                <input class="input" [(ngModel)]="accForm()!.phoneNumber" placeholder="+51 999 999 999" />
-              </div>
-
-              @if (accForm()!.provider === 'waha') {
-                <div class="field">
-                  <label class="field-label">URL de WAHA *</label>
-                  <input class="input" [(ngModel)]="accForm()!.wahaApiUrl" placeholder="https://waha.midominio.com" />
-                </div>
-                <div class="field">
-                  <label class="field-label">API Key</label>
-                  <input class="input" [(ngModel)]="accForm()!.wahaApiKey" placeholder="X-Api-Key" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Sesión</label>
-                  <input class="input" [(ngModel)]="accForm()!.wahaSession" placeholder="default" />
-                </div>
-              } @else {
-                <div class="field">
-                  <label class="field-label">Phone Number ID *</label>
-                  <input class="input" [(ngModel)]="accForm()!.waPhoneNumberId" placeholder="1234567890" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Access Token *</label>
-                  <input class="input" [(ngModel)]="accForm()!.waAccessToken" placeholder="EAAG…" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Business Account ID</label>
-                  <input class="input" [(ngModel)]="accForm()!.waBusinessAccountId" placeholder="(opcional)" />
-                </div>
-                <div class="field">
-                  <label class="field-label">Verify Token (webhook)</label>
-                  <input class="input" [(ngModel)]="accForm()!.waVerifyToken" placeholder="token-secreto-para-meta" />
-                </div>
-              }
-
-              <div class="drawer-actions">
-                <button class="btn btn-secondary" (click)="accForm.set(null)">Cancelar</button>
-                <button class="btn btn-primary" [disabled]="savingAcc()" (click)="saveAccount()">
-                  {{ savingAcc() ? 'Guardando…' : 'Guardar cuenta' }}
-                </button>
-              </div>
-            }
-          </div>
-        </aside>
-      </div>
-    }
-
-    <!-- ───────── Instagram Accounts Drawer ───────── -->
-    @if (igAccountsOpen()) {
-      <div class="overlay" (click)="closeIgAccounts()" role="dialog" aria-modal="true">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div class="drawer-title-group">
-              <h2><lucide-icon [img]="Instagram" [size]="20" [strokeWidth]="2.5"></lucide-icon> Cuentas de Instagram</h2>
-              <p class="subtitle">Conecta varias cuentas de Instagram (DM) vía Meta Graph API.</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="closeIgAccounts()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-            </button>
-          </div>
-
-          <div class="drawer-scroll">
-            @if (!igAccForm()) {
-              <button class="btn btn-primary" style="width:100%;margin-bottom:12px" [disabled]="connectingIg()" (click)="connectInstagram()">
-                <lucide-icon [img]="Instagram" [size]="16"></lucide-icon>
-                {{ connectingIg() ? 'Redirigiendo…' : 'Conectar con Instagram' }}
-              </button>
-              <div class="webhook-hint" style="margin-bottom:16px">
-                <span>Webhook de la app (se configura una sola vez en Meta, aplica a todas las cuentas):</span>
-                <code>{{ igWebhookUrl() }}</code>
-              </div>
-              @for (acc of igAccounts(); track acc._id) {
-                <div class="acc-card">
-                  <div class="acc-card-head">
-                    <div>
-                      <span class="account-label">{{ acc.label }}</span>
-                      <span class="account-sub">{{ acc.username ? '@' + acc.username : 'Instagram Messaging' }}</span>
-                    </div>
-                    <div class="acc-card-actions">
-                      @if (acc.tokenExpiresAt) {
-                        <button class="btn btn-sm btn-ghost btn-icon" (click)="renewIgToken(acc)" title="Renovar token">
-                          <lucide-icon [img]="RefreshCw" [size]="14" style="color:var(--color-brand)"></lucide-icon>
-                        </button>
-                      }
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="subscribeIgWebhook(acc)" title="Suscribir webhook">
-                        <lucide-icon [img]="Link" [size]="14"></lucide-icon>
-                      </button>
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="checkIgStatus(acc)" title="Estado">
-                        <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
-                      </button>
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="editIgAccount(acc)" title="Editar">
-                        <lucide-icon [img]="Pencil" [size]="14"></lucide-icon>
-                      </button>
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="deleteIgAccount(acc)" title="Eliminar">
-                        <lucide-icon [img]="Trash2" [size]="14" style="color:var(--color-error)"></lucide-icon>
-                      </button>
-                    </div>
-                  </div>
-                  @if (igStatusMap()[acc._id]) {
-                    <div class="acc-status" [class.ok]="igStatusMap()[acc._id].connected">
-                      {{ igStatusMap()[acc._id].connected ? 'Conectado' : 'Desconectado' }}
-                      {{ igStatusMap()[acc._id].username ? '· @' + igStatusMap()[acc._id].username : '' }}
-                      {{ igStatusMap()[acc._id].error || '' }}
-                    </div>
-                  }
-                  @if (acc.tokenExpiresAt) {
-                    <div class="webhook-hint">
-                      <span>Token vence:</span> {{ acc.tokenExpiresAt | date:'d MMM y' }}
-                    </div>
-                  }
-                </div>
-              }
-              <button class="btn btn-ghost" style="width:100%;margin-top:8px" (click)="newIgAccount()">
-                <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir manualmente (avanzado)
-              </button>
-            } @else {
-              <!-- Form de cuenta -->
-              <div class="field">
-                <label class="field-label">Nombre de la cuenta *</label>
-                <input class="input" [(ngModel)]="igAccForm()!.label" placeholder="Ej: Instagram Principal" />
-              </div>
-              <div class="field">
-                <label class="field-label">Usuario (informativo)</label>
-                <input class="input" [(ngModel)]="igAccForm()!.username" placeholder="mi_restaurante" />
-              </div>
-              <div class="field">
-                <label class="field-label">Instagram User ID *</label>
-                <input class="input" [(ngModel)]="igAccForm()!.igBusinessAccountId" placeholder="1789…" />
-                <span class="field-hint">ID de la cuenta profesional de Instagram (Instagram Login).</span>
-              </div>
-              <div class="field">
-                <label class="field-label">Access Token de Instagram *</label>
-                <input class="input" [(ngModel)]="igAccForm()!.pageAccessToken" placeholder="IGAAG…" />
-                <span class="field-hint">Token de larga duración con permisos instagram_business_basic e instagram_business_manage_messages. Después de guardar, usa el botón de enlace para suscribir el webhook.</span>
-              </div>
-              <div class="field">
-                <label class="field-label">Facebook Page ID (opcional)</label>
-                <input class="input" [(ngModel)]="igAccForm()!.pageId" placeholder="Solo si usas el flujo clásico ligado a una Página" />
-              </div>
-
-              <div class="drawer-actions">
-                <button class="btn btn-secondary" (click)="igAccForm.set(null)">Cancelar</button>
-                <button class="btn btn-primary" [disabled]="savingIgAcc()" (click)="saveIgAccount()">
-                  {{ savingIgAcc() ? 'Guardando…' : 'Guardar cuenta' }}
-                </button>
-              </div>
-            }
-          </div>
-        </aside>
-      </div>
-    }
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
@@ -850,19 +584,9 @@ function blankIgAccount(): IgAccount {
     .bubble.typing { opacity: .6; font-style: italic; }
     .chat-input { display: flex; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--color-border); flex-shrink: 0; align-items: flex-end; }
     .chat-input .input { flex: 1; resize: none; max-height: 120px; }
-
-    /* Accounts cards */
-    .acc-card { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px; }
-    .acc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-    .acc-card-head > div { display: flex; flex-direction: column; }
-    .acc-card-actions { display: flex; gap: 4px; }
-    .acc-status { margin-top: 10px; font-size: 12px; font-weight: 600; color: var(--color-error); }
-    .acc-status.ok { color: #16A34A; }
-    .webhook-hint { margin-top: 10px; font-size: 11px; color: var(--color-text-muted); }
-    .webhook-hint code { display: block; margin-top: 4px; background: var(--color-bg-app); padding: 6px 8px; border-radius: 8px; word-break: break-all; }
   `],
 })
-export class AiAgentsComponent implements OnInit, OnDestroy {
+export class AiAgentsComponent implements OnInit {
   private http = inject(HttpClient);
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
@@ -878,7 +602,7 @@ export class AiAgentsComponent implements OnInit, OnDestroy {
   readonly Sparkles = Sparkles; readonly BookOpen = BookOpen; readonly Phone = Phone;
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
-  readonly Link = Link; readonly Instagram = Instagram;
+  readonly Instagram = Instagram; readonly Settings = Settings;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
     { key: 'general', label: 'General', icon: Bot },
@@ -913,38 +637,8 @@ export class AiAgentsComponent implements OnInit, OnDestroy {
   chatInput = '';
   sending = signal(false);
 
-  // accounts manager
-  accountsOpen = signal(false);
-  accForm = signal<WaAccount | null>(null);
-  savingAcc = signal(false);
-  connectingWa = signal(false);
-  statusMap = signal<Record<string, { connected: boolean; state?: string; error?: string }>>({});
-
-  private fbSdkPromise: Promise<void> | null = null;
-  private waSignupData: { wabaId: string; phoneNumberId: string } | null = null;
-  private waMessageListener = (event: MessageEvent) => {
-    if (!event.origin.endsWith('facebook.com')) return;
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
-        this.waSignupData = { wabaId: data.data.waba_id, phoneNumberId: data.data.phone_number_id };
-      }
-    } catch { /* mensajes no relacionados al Embedded Signup */ }
-  };
-
-  // instagram accounts manager
-  igAccountsOpen = signal(false);
-  igAccForm = signal<IgAccount | null>(null);
-  savingIgAcc = signal(false);
-  connectingIg = signal(false);
-  igStatusMap = signal<Record<string, { connected: boolean; username?: string; error?: string }>>({});
-
   @HostListener('document:keydown.escape')
   onEsc() {
-    if (this.accForm()) { this.accForm.set(null); return; }
-    if (this.accountsOpen()) { this.closeAccounts(); return; }
-    if (this.igAccForm()) { this.igAccForm.set(null); return; }
-    if (this.igAccountsOpen()) { this.closeIgAccounts(); return; }
     if (this.playgroundAgent()) { this.closePlayground(); return; }
     if (this.drawerOpen()) this.closeDrawer();
   }
@@ -953,30 +647,6 @@ export class AiAgentsComponent implements OnInit, OnDestroy {
     this.load();
     this.loadAccounts();
     this.loadIgAccounts();
-    this.handleIgOAuthReturn();
-    window.addEventListener('message', this.waMessageListener);
-  }
-
-  ngOnDestroy() {
-    window.removeEventListener('message', this.waMessageListener);
-  }
-
-  /** Procesa el redirect de vuelta desde el callback OAuth de Instagram (ver instagram-oauth-callback.controller.ts). */
-  private handleIgOAuthReturn() {
-    const params = new URLSearchParams(window.location.search);
-    const result = params.get('ig_oauth');
-    if (!result) return;
-    if (result === 'success') {
-      this.toast.success('Cuenta de Instagram conectada');
-      this.loadIgAccounts();
-      this.igAccountsOpen.set(true);
-    } else {
-      this.toast.error(params.get('reason') || 'No se pudo conectar la cuenta de Instagram');
-    }
-    params.delete('ig_oauth');
-    params.delete('reason');
-    const query = params.toString();
-    history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : ''));
   }
 
   load() {
@@ -987,6 +657,7 @@ export class AiAgentsComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Cuentas conectadas en Configuración — acá solo se seleccionan (lectura). */
   loadAccounts() {
     this.http.get<WaAccount[]>(`${API}/whatsapp-accounts`).subscribe({
       next: a => this.accounts.set(a),
@@ -1241,215 +912,5 @@ export class AiAgentsComponent implements OnInit, OnDestroy {
     });
   }
 
-  // ---- Accounts ----
-  openAccounts() { this.accForm.set(null); this.accountsOpen.set(true); this.loadAccounts(); }
-  closeAccounts() { this.accountsOpen.set(false); this.accForm.set(null); }
-  newAccount() { this.accForm.set(blankAccount()); }
-  editAccount(a: WaAccount) { this.accForm.set({ ...a }); }
-
   kchars(n: number): number { return Math.round(n / 1000); }
-
-  webhookUrl(a: WaAccount): string {
-    const kind = a.provider === 'waha' ? 'waha' : 'cloud';
-    return `${API}/wa/webhook/${kind}/${a._id}`;
-  }
-
-  saveAccount() {
-    const acc = this.accForm();
-    if (!acc) return;
-    if (!acc.label.trim()) { this.toast.error('El nombre es obligatorio'); return; }
-    this.savingAcc.set(true);
-    const { _id, ...body } = acc;
-    const req = _id
-      ? this.http.patch<WaAccount>(`${API}/whatsapp-accounts/${_id}`, body)
-      : this.http.post<WaAccount>(`${API}/whatsapp-accounts`, body);
-    req.subscribe({
-      next: () => {
-        this.toast.success('Cuenta guardada');
-        this.savingAcc.set(false);
-        this.accForm.set(null);
-        this.loadAccounts();
-      },
-      error: (err) => { this.toast.error(err?.error?.message || 'Error al guardar'); this.savingAcc.set(false); },
-    });
-  }
-
-  async deleteAccount(a: WaAccount) {
-    const ok = await this.confirmSvc.confirm({
-      title: 'Eliminar cuenta', message: `¿Eliminar la cuenta "${a.label}"?`,
-      confirmText: 'Eliminar', danger: true,
-    });
-    if (!ok) return;
-    this.http.delete(`${API}/whatsapp-accounts/${a._id}`).subscribe({
-      next: () => { this.toast.success('Cuenta eliminada'); this.loadAccounts(); },
-      error: (err) => this.toast.error(err?.error?.message || 'Error al eliminar'),
-    });
-  }
-
-  checkStatus(a: WaAccount) {
-    this.http.get<{ connected: boolean; state?: string; error?: string }>(`${API}/whatsapp-accounts/${a._id}/status`).subscribe({
-      next: (s) => this.statusMap.update(m => ({ ...m, [a._id]: s })),
-      error: (err) => this.statusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err?.error?.message || 'Error' } })),
-    });
-  }
-
-  subscribeWaWebhook(a: WaAccount) {
-    this.http.post<{ success: boolean; message: string }>(`${API}/whatsapp-accounts/${a._id}/webhook`, {}).subscribe({
-      next: (r) => r.success ? this.toast.success(r.message) : this.toast.error(r.message),
-      error: (err) => this.toast.error(err?.error?.message || 'No se pudo suscribir el webhook'),
-    });
-  }
-
-  renewWaToken(a: WaAccount) {
-    this.http.post<{ success: boolean; tokenExpiresAt: string }>(`${API}/whatsapp-accounts/${a._id}/oauth/refresh`, {}).subscribe({
-      next: () => { this.toast.success('Token renovado'); this.loadAccounts(); },
-      error: (err) => this.toast.error(err?.error?.message || 'No se pudo renovar el token'),
-    });
-  }
-
-  /** Carga el SDK de JavaScript de Facebook una sola vez (memoizado). */
-  private loadFacebookSdk(appId: string): Promise<void> {
-    if (this.fbSdkPromise) return this.fbSdkPromise;
-    this.fbSdkPromise = new Promise((resolve) => {
-      const w = window as any;
-      if (w.FB) { w.FB.init({ appId, xfbml: true, version: 'v21.0' }); resolve(); return; }
-      w.fbAsyncInit = () => { w.FB.init({ appId, xfbml: true, version: 'v21.0' }); resolve(); };
-      const script = document.createElement('script');
-      script.src = 'https://connect.facebook.net/en_US/sdk.js';
-      script.async = true;
-      script.defer = true;
-      document.body.appendChild(script);
-    });
-    return this.fbSdkPromise;
-  }
-
-  connectWhatsApp() {
-    this.connectingWa.set(true);
-    this.waSignupData = null;
-    this.http.get<{ appId?: string; configId?: string }>(`${API}/whatsapp-accounts/oauth/config`).subscribe({
-      next: async (cfg) => {
-        if (!cfg.appId || !cfg.configId) {
-          this.toast.error('La conexión con WhatsApp no está configurada en el servidor');
-          this.connectingWa.set(false);
-          return;
-        }
-        await this.loadFacebookSdk(cfg.appId);
-        FB.login((response: any) => {
-          if (response?.authResponse?.code) {
-            this.finishWaConnect(response.authResponse.code);
-          } else {
-            this.connectingWa.set(false);
-          }
-        }, {
-          config_id: cfg.configId,
-          response_type: 'code',
-          override_default_response_type: true,
-        });
-      },
-      error: (err) => {
-        this.toast.error(err?.error?.message || 'No se pudo iniciar la conexión con WhatsApp');
-        this.connectingWa.set(false);
-      },
-    });
-  }
-
-  /** El postMessage con waba_id/phone_number_id puede llegar unos ms después del callback de FB.login. */
-  private finishWaConnect(code: string, attempt = 0) {
-    if (!this.waSignupData && attempt < 20) {
-      setTimeout(() => this.finishWaConnect(code, attempt + 1), 100);
-      return;
-    }
-    if (!this.waSignupData) {
-      this.toast.error('No se recibió la información de la cuenta de WhatsApp. Intenta de nuevo.');
-      this.connectingWa.set(false);
-      return;
-    }
-    this.http.post<WaAccount>(`${API}/whatsapp-accounts/oauth/connect`, {
-      code, wabaId: this.waSignupData.wabaId, phoneNumberId: this.waSignupData.phoneNumberId,
-    }).subscribe({
-      next: () => {
-        this.toast.success('Cuenta de WhatsApp conectada');
-        this.connectingWa.set(false);
-        this.loadAccounts();
-      },
-      error: (err) => {
-        this.toast.error(err?.error?.message || 'No se pudo conectar la cuenta de WhatsApp');
-        this.connectingWa.set(false);
-      },
-    });
-  }
-
-  // ---- Instagram Accounts ----
-  connectInstagram() {
-    this.connectingIg.set(true);
-    this.http.get<{ url: string }>(`${API}/instagram-accounts/oauth/start`).subscribe({
-      next: (r) => { window.location.href = r.url; },
-      error: (err) => {
-        this.toast.error(err?.error?.message || 'No se pudo iniciar la conexión con Instagram');
-        this.connectingIg.set(false);
-      },
-    });
-  }
-
-  renewIgToken(a: IgAccount) {
-    this.http.post<{ success: boolean; tokenExpiresAt: string }>(`${API}/instagram-accounts/${a._id}/oauth/refresh`, {}).subscribe({
-      next: () => { this.toast.success('Token renovado'); this.loadIgAccounts(); },
-      error: (err) => this.toast.error(err?.error?.message || 'No se pudo renovar el token'),
-    });
-  }
-
-  openIgAccounts() { this.igAccForm.set(null); this.igAccountsOpen.set(true); this.loadIgAccounts(); }
-  closeIgAccounts() { this.igAccountsOpen.set(false); this.igAccForm.set(null); }
-  newIgAccount() { this.igAccForm.set(blankIgAccount()); }
-  editIgAccount(a: IgAccount) { this.igAccForm.set({ ...a }); }
-
-  igWebhookUrl(): string {
-    return `${API}/ig/webhook`;
-  }
-
-  subscribeIgWebhook(a: IgAccount) {
-    this.http.post<{ success: boolean; message: string }>(`${API}/instagram-accounts/${a._id}/subscribe`, {}).subscribe({
-      next: (r) => r.success ? this.toast.success(r.message) : this.toast.error(r.message),
-      error: (err) => this.toast.error(err?.error?.message || 'No se pudo suscribir el webhook'),
-    });
-  }
-
-  saveIgAccount() {
-    const acc = this.igAccForm();
-    if (!acc) return;
-    if (!acc.label.trim()) { this.toast.error('El nombre es obligatorio'); return; }
-    this.savingIgAcc.set(true);
-    const { _id, ...body } = acc;
-    const req = _id
-      ? this.http.patch<IgAccount>(`${API}/instagram-accounts/${_id}`, body)
-      : this.http.post<IgAccount>(`${API}/instagram-accounts`, body);
-    req.subscribe({
-      next: () => {
-        this.toast.success('Cuenta guardada');
-        this.savingIgAcc.set(false);
-        this.igAccForm.set(null);
-        this.loadIgAccounts();
-      },
-      error: (err) => { this.toast.error(err?.error?.message || 'Error al guardar'); this.savingIgAcc.set(false); },
-    });
-  }
-
-  async deleteIgAccount(a: IgAccount) {
-    const ok = await this.confirmSvc.confirm({
-      title: 'Eliminar cuenta', message: `¿Eliminar la cuenta de Instagram "${a.label}"?`,
-      confirmText: 'Eliminar', danger: true,
-    });
-    if (!ok) return;
-    this.http.delete(`${API}/instagram-accounts/${a._id}`).subscribe({
-      next: () => { this.toast.success('Cuenta eliminada'); this.loadIgAccounts(); },
-      error: (err) => this.toast.error(err?.error?.message || 'Error al eliminar'),
-    });
-  }
-
-  checkIgStatus(a: IgAccount) {
-    this.http.get<{ connected: boolean; username?: string; error?: string }>(`${API}/instagram-accounts/${a._id}/status`).subscribe({
-      next: (s) => this.igStatusMap.update(m => ({ ...m, [a._id]: s })),
-      error: (err) => this.igStatusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err?.error?.message || 'Error' } })),
-    });
-  }
 }
