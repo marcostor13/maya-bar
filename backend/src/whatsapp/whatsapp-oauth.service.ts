@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
 
 export interface WaOAuthPublicConfig {
   appId?: string;
@@ -11,13 +12,15 @@ export interface WaLongLivedToken {
   expiresIn: number; // segundos
 }
 
-const GRAPH_URL = 'https://graph.facebook.com/v21.0';
 // PIN interno de verificación en dos pasos del número (Cloud API) — no lo ve el usuario final.
 const REGISTER_PIN = '112233';
 
 @Injectable()
 export class WhatsAppOAuthService {
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private graph: MetaGraphClient,
+  ) {}
 
   private appId(): string {
     const id = this.config.get<string>('FACEBOOK_APP_ID');
@@ -47,21 +50,20 @@ export class WhatsAppOAuthService {
 
   /** Canjea el `code` que devuelve el SDK de Facebook (Embedded Signup) por un token corto. */
   async exchangeCodeForToken(code: string): Promise<{ accessToken: string }> {
-    const params = new URLSearchParams({
-      client_id: this.appId(),
-      client_secret: this.appSecret(),
-      code,
-    });
-    const res = await fetch(
-      `${GRAPH_URL}/oauth/access_token?${params.toString()}`,
+    const data = await this.request<{ access_token?: string }>(
+      'No se pudo canjear el código de autorización',
+      () =>
+        this.graph.get('/oauth/access_token', {
+          params: {
+            client_id: this.appId(),
+            client_secret: this.appSecret(),
+            code,
+          },
+        }),
     );
-    const data = (await res.json()) as {
-      access_token?: string;
-      error?: { message?: string };
-    };
-    if (!res.ok || !data.access_token)
+    if (!data.access_token)
       throw new BadRequestException(
-        data.error?.message ?? 'No se pudo canjear el código de autorización',
+        'No se pudo canjear el código de autorización',
       );
     return { accessToken: data.access_token };
   }
@@ -70,23 +72,22 @@ export class WhatsAppOAuthService {
   async exchangeForLongLivedToken(
     shortLivedToken: string,
   ): Promise<WaLongLivedToken> {
-    const params = new URLSearchParams({
-      grant_type: 'fb_exchange_token',
-      client_id: this.appId(),
-      client_secret: this.appSecret(),
-      fb_exchange_token: shortLivedToken,
-    });
-    const res = await fetch(
-      `${GRAPH_URL}/oauth/access_token?${params.toString()}`,
-    );
-    const data = (await res.json()) as {
+    const data = await this.request<{
       access_token?: string;
       expires_in?: number;
-      error?: { message?: string };
-    };
-    if (!res.ok || !data.access_token)
+    }>('No se pudo generar el token de larga duración', () =>
+      this.graph.get('/oauth/access_token', {
+        params: {
+          grant_type: 'fb_exchange_token',
+          client_id: this.appId(),
+          client_secret: this.appSecret(),
+          fb_exchange_token: shortLivedToken,
+        },
+      }),
+    );
+    if (!data.access_token)
       throw new BadRequestException(
-        data.error?.message ?? 'No se pudo generar el token de larga duración',
+        'No se pudo generar el token de larga duración',
       );
     return {
       accessToken: data.access_token,
@@ -100,26 +101,16 @@ export class WhatsAppOAuthService {
     accessToken: string,
   ): Promise<{ success: boolean; message?: string }> {
     try {
-      const res = await fetch(`${GRAPH_URL}/${phoneNumberId}/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          pin: REGISTER_PIN,
-        }),
+      await this.graph.post(`/${phoneNumberId}/register`, {
+        accessToken,
+        json: { messaging_product: 'whatsapp', pin: REGISTER_PIN },
       });
-      const data = (await res.json()) as {
-        success?: boolean;
-        error?: { message?: string };
-      };
-      if (!res.ok && !data.success)
-        return { success: false, message: data.error?.message };
       return { success: true };
     } catch (err) {
-      return { success: false, message: String(err) };
+      return {
+        success: false,
+        message: err instanceof MetaApiError ? err.message : String(err),
+      };
     }
   }
 
@@ -128,22 +119,33 @@ export class WhatsAppOAuthService {
     accessToken: string,
   ): Promise<{ displayPhoneNumber?: string; verifiedName?: string }> {
     try {
-      const res = await fetch(
-        `${GRAPH_URL}/${phoneNumberId}?fields=display_phone_number,verified_name`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      );
-      const data = (await res.json()) as {
+      const data = await this.graph.get<{
         display_phone_number?: string;
         verified_name?: string;
-      };
+      }>(`/${phoneNumberId}`, {
+        accessToken,
+        params: { fields: 'display_phone_number,verified_name' },
+      });
       return {
         displayPhoneNumber: data.display_phone_number,
         verifiedName: data.verified_name,
       };
     } catch {
       return {};
+    }
+  }
+
+  /** Traduce errores de Meta a BadRequestException con mensaje legible para el frontend. */
+  private async request<T>(
+    fallbackMessage: string,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await call();
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof MetaApiError ? err.message : fallbackMessage,
+      );
     }
   }
 }

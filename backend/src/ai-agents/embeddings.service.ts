@@ -1,15 +1,22 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EMBEDDINGS_PROVIDER } from '../ai/providers/ai-provider.interface';
+import type { EmbeddingsProvider } from '../ai/providers/ai-provider.interface';
 
-export const EMBEDDING_MODEL = 'text-embedding-3-small';
-export const EMBEDDING_DIMS = 1536;
+export {
+  EMBEDDING_MODEL,
+  EMBEDDING_DIMS,
+} from '../ai/providers/http-embeddings.provider';
 
 @Injectable()
 export class EmbeddingsService {
   private readonly logger = new Logger(EmbeddingsService.name);
   private openaiKey: string;
 
-  constructor(private config: ConfigService) {
+  constructor(
+    private config: ConfigService,
+    @Inject(EMBEDDINGS_PROVIDER) private provider: EmbeddingsProvider,
+  ) {
     this.openaiKey = config.get<string>('OPENAI_API_KEY') ?? '';
   }
 
@@ -26,20 +33,7 @@ export class EmbeddingsService {
     const texts = (Array.isArray(input) ? input : [input]).map((t) =>
       t.replace(/\n/g, ' ').slice(0, 8000),
     );
-    const res = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.openaiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new BadRequestException(`OpenAI embeddings error: ${err}`);
-    }
-    const data = (await res.json()) as { data: { embedding: number[] }[] };
-    return data.data.map((d) => d.embedding);
+    return this.provider.embed(texts);
   }
 
   async embedOne(text: string): Promise<number[]> {
