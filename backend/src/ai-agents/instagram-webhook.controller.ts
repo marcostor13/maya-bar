@@ -46,9 +46,10 @@ export class InstagramWebhookController {
   }
 
   private async handleInbound(body: unknown) {
-    this.logger.log(`Inbound payload: ${JSON.stringify(body)}`);
+    this.logger.log(`[IG] Inbound payload: ${JSON.stringify(body)}`);
     try {
       const b = body as {
+        object?: string;
         entry?: {
           id?: string;
           messaging?: {
@@ -57,42 +58,78 @@ export class InstagramWebhookController {
           }[];
         }[];
       };
+      if (b.object && b.object !== 'instagram') {
+        this.logger.warn(`[IG] Payload ignorado: object="${b.object}" (esperaba "instagram")`);
+        return;
+      }
       const entry = b.entry?.[0];
       const igUserId = entry?.id;
       const event = entry?.messaging?.[0];
       const senderId = event?.sender?.id;
       const message = event?.message;
+      this.logger.log(`[IG] Extraído: igUserId=${igUserId} senderId=${senderId} text="${message?.text}" is_echo=${message?.is_echo}`);
       if (!igUserId || !senderId || !message || message.is_echo || !message.text) {
-        this.logger.warn('Payload ignorado: faltan igUserId/senderId/message, o es un echo/sin texto');
+        this.logger.warn('[IG] Payload ignorado: faltan igUserId/senderId/message, o es un echo/sin texto');
         return;
       }
       await this.respond(igUserId, senderId, message.text);
     } catch (err) {
-      this.logger.error(`Instagram webhook error: ${String(err)}`);
+      this.logger.error(`[IG] Error procesando webhook: ${String(err)}`);
     }
   }
 
   /** Núcleo común: ubica la cuenta y el agente publicado, genera la respuesta y la envía. */
   private async respond(igUserId: string, senderId: string, text: string) {
     const account = await this.accounts.findByIgUserId(igUserId);
-    if (!account || !account.active) return;
-    const agent = await this.agents.findPublishedByInstagramAccount(String(account._id));
-    if (!agent) {
-      this.logger.warn(`Sin agente publicado para la cuenta de Instagram ${account._id}`);
+    if (!account) {
+      this.logger.error(`[IG] No se encontró ninguna cuenta conectada con igBusinessAccountId="${igUserId}" — revisa que coincida con el Instagram User ID guardado al conectar la cuenta.`);
       return;
     }
+    if (!account.active) {
+      this.logger.warn(`[IG] Cuenta ${account._id} (${account.label}) está inactiva — no se responde.`);
+      return;
+    }
+    this.logger.log(`[IG] Cuenta encontrada: ${account._id} (${account.label})`);
+
+    const agent = await this.agents.findPublishedByInstagramAccount(String(account._id));
+    if (!agent) {
+      this.logger.error(`[IG] Sin agente PUBLICADO vinculado a la cuenta de Instagram ${account._id} — revisa Agentes IA → Canales → Instagram, y que "Publicado" esté activo.`);
+      return;
+    }
+    this.logger.log(`[IG] Agente encontrado: ${agent._id} (${agent.name})`);
+
     // Prefijo para evitar colisión con historiales de contacto de otros canales.
     const contact = `ig:${senderId}`;
-    const { text: replyText, filesToSend } = await this.agents.replyForContact(agent, String(account._id), contact, text);
+    let replyText = '';
+    let filesToSend: { url: string; contentType?: string; name: string }[] = [];
+    try {
+      const result = await this.agents.replyForContact(agent, String(account._id), contact, text);
+      replyText = result.text;
+      filesToSend = result.filesToSend;
+      this.logger.log(`[IG] Respuesta generada por IA: "${replyText}" (${filesToSend.length} archivo(s))`);
+    } catch (err) {
+      this.logger.error(`[IG] Error generando la respuesta con IA (revisa las API keys del proveedor en Configuración): ${String(err)}`);
+      return;
+    }
+
     const config = this.accounts.toConfig(account);
 
     if (replyText) {
-      await this.ig.sendMessage(senderId, replyText, config);
+      try {
+        await this.ig.sendMessage(senderId, replyText, config);
+        this.logger.log(`[IG] Mensaje enviado correctamente a ${senderId}`);
+      } catch (err) {
+        this.logger.error(`[IG] Error enviando el mensaje vía Graph API: ${String(err)}`);
+      }
     }
 
     for (const file of filesToSend) {
       const mediaType = AiAgentsService.resolveMediaType(file.contentType);
-      await this.ig.sendMessage(senderId, file.name, config, file.url, mediaType);
+      try {
+        await this.ig.sendMessage(senderId, file.name, config, file.url, mediaType);
+      } catch (err) {
+        this.logger.error(`[IG] Error enviando archivo adjunto: ${String(err)}`);
+      }
     }
   }
 }
