@@ -2,7 +2,12 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export interface SegmentRule {
-  field: 'tags' | 'source' | 'totalReservations' | 'totalEvents' | 'daysSinceLastVisit';
+  field:
+    | 'tags'
+    | 'source'
+    | 'totalReservations'
+    | 'totalEvents'
+    | 'daysSinceLastVisit';
   operator: 'has_any' | 'has_all' | 'equals' | 'not_equals' | 'gte' | 'lte';
   value: string | number | string[];
 }
@@ -21,7 +26,10 @@ export class ContactList extends Document {
   @Prop({ enum: ['static', 'dynamic'], default: 'static' })
   type: 'static' | 'dynamic';
 
-  @Prop({ type: [{ field: String, operator: String, value: Object }], default: [] })
+  @Prop({
+    type: [{ field: String, operator: String, value: Object }],
+    default: [],
+  })
   rules: SegmentRule[];
 
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Customer' }], default: [] })

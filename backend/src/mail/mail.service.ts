@@ -48,12 +48,20 @@ export class MailService {
     if (apiKey) {
       this.resend = new Resend(apiKey);
     } else {
-      this.logger.warn('RESEND_API_KEY is not defined. Emails will be mocked and logged to the console.');
+      this.logger.warn(
+        'RESEND_API_KEY is not defined. Emails will be mocked and logged to the console.',
+      );
     }
 
     // Intentar cargar el logo para adjuntarlo como CID
     try {
-      const logoPath = path.join(process.cwd(), '..', 'frontend', 'public', 'logo.png');
+      const logoPath = path.join(
+        process.cwd(),
+        '..',
+        'frontend',
+        'public',
+        'logo.png',
+      );
       if (fs.existsSync(logoPath)) {
         this.logoBase64 = fs.readFileSync(logoPath).toString('base64');
       }
@@ -110,8 +118,16 @@ export class MailService {
           to: email,
           subject,
           html,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          attachments: this.logoBase64 ? [{ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' } as any] : []
+
+          attachments: this.logoBase64
+            ? [
+                {
+                  filename: 'logo.png',
+                  content: Buffer.from(this.logoBase64, 'base64'),
+                  cid: 'logo',
+                } as any,
+              ]
+            : [],
         });
         this.logger.log(`Password reset email sent to ${email}`);
       } catch (error) {
@@ -135,7 +151,7 @@ export class MailService {
     const confirmationUrl = `http://localhost:4200/book/confirm/${data.token}`;
     const friendlyDate = this.formatDate(data.date);
     const subject = `Tu reserva en ${data.localName} - MAYA`;
-    
+
     const html = `
       <div style="font-family: 'Inter', 'Poppins', Arial, sans-serif; background-color: #f3f4f6; padding: 48px 20px;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
@@ -195,16 +211,29 @@ export class MailService {
           to: data.email,
           subject,
           html,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          attachments: this.logoBase64 ? [{ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' } as any] : []
+
+          attachments: this.logoBase64
+            ? [
+                {
+                  filename: 'logo.png',
+                  content: Buffer.from(this.logoBase64, 'base64'),
+                  cid: 'logo',
+                } as any,
+              ]
+            : [],
         });
         this.logger.log(`Reservation email sent to ${data.email}`);
       } catch (error) {
-        this.logger.error(`Failed to send reservation email to ${data.email}`, error);
+        this.logger.error(
+          `Failed to send reservation email to ${data.email}`,
+          error,
+        );
       }
     } else {
       this.logger.log(`[MOCK EMAIL] To: ${data.email} | Subject: ${subject}`);
-      this.logger.log(`[MOCK EMAIL] Content: Reservation details for ${data.guestName} at ${data.localName}`);
+      this.logger.log(
+        `[MOCK EMAIL] Content: Reservation details for ${data.guestName} at ${data.localName}`,
+      );
     }
   }
 
@@ -222,7 +251,9 @@ export class MailService {
     const d = { ...DEFAULT_EMAIL_DESIGN, ...(data.design ?? {}) };
 
     const interpolate = (tpl: string) =>
-      tpl.replace(/\{name\}/g, data.name).replace(/\{eventTitle\}/g, data.eventTitle);
+      tpl
+        .replace(/\{name\}/g, data.name)
+        .replace(/\{eventTitle\}/g, data.eventTitle);
 
     const subject = d.subject?.trim()
       ? interpolate(d.subject)
@@ -241,7 +272,10 @@ export class MailService {
     let qrBuffer: Buffer | null = null;
     if (d.showTicket) {
       try {
-        qrBuffer = await QRCode.toBuffer(data.ticketCode, { width: 240, margin: 1 });
+        qrBuffer = await QRCode.toBuffer(data.ticketCode, {
+          width: 240,
+          margin: 1,
+        });
       } catch (error) {
         this.logger.error('No se pudo generar el QR de la invitación', error);
       }
@@ -310,13 +344,20 @@ export class MailService {
 
     if (this.resend) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const attachments: any[] = [];
         if (!usesCustomHeader && this.logoBase64) {
-          attachments.push({ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' });
+          attachments.push({
+            filename: 'logo.png',
+            content: Buffer.from(this.logoBase64, 'base64'),
+            cid: 'logo',
+          });
         }
         if (qrBuffer) {
-          attachments.push({ filename: 'ticket-qr.png', content: qrBuffer, cid: 'ticketqr' });
+          attachments.push({
+            filename: 'ticket-qr.png',
+            content: qrBuffer,
+            cid: 'ticketqr',
+          });
         }
         await this.resend.emails.send({
           from: 'MAYA <no_reply@mayasend.marcostorresalarcon.com>',
@@ -335,7 +376,14 @@ export class MailService {
     }
   }
 
-  async sendCampaign(params: { to: string; name: string; subject: string; body: string; mediaUrl?: string; mediaType?: 'image' | 'video' }) {
+  async sendCampaign(params: {
+    to: string;
+    name: string;
+    subject: string;
+    body: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video';
+  }) {
     const mediaHtml = params.mediaUrl
       ? params.mediaType === 'video'
         ? `<div style="text-align:center;margin-bottom:24px;"><video src="${params.mediaUrl}" controls style="max-width:100%;border-radius:16px;"></video></div>`
@@ -362,11 +410,21 @@ export class MailService {
         to: params.to,
         subject: params.subject,
         html,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        attachments: this.logoBase64 ? [{ filename: 'logo.png', content: Buffer.from(this.logoBase64, 'base64'), cid: 'logo' } as any] : [],
+
+        attachments: this.logoBase64
+          ? [
+              {
+                filename: 'logo.png',
+                content: Buffer.from(this.logoBase64, 'base64'),
+                cid: 'logo',
+              } as any,
+            ]
+          : [],
       });
     } else {
-      this.logger.log(`[MOCK CAMPAIGN] To: ${params.to} | Subject: ${params.subject}`);
+      this.logger.log(
+        `[MOCK CAMPAIGN] To: ${params.to} | Subject: ${params.subject}`,
+      );
     }
   }
 }

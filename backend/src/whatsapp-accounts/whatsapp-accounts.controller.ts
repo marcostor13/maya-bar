@@ -1,10 +1,22 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Request, BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
 import { WhatsAppAccountsService } from './whatsapp-accounts.service';
-import { CreateWhatsAppAccountDto, UpdateWhatsAppAccountDto } from './dto/whatsapp-account.dto';
+import {
+  CreateWhatsAppAccountDto,
+  UpdateWhatsAppAccountDto,
+} from './dto/whatsapp-account.dto';
 
 @Controller('whatsapp-accounts')
 @UseGuards(JwtAuthGuard)
@@ -25,9 +37,13 @@ export class WhatsAppAccountsController {
   }
 
   @Post('oauth/connect')
-  oauthConnect(@Body() dto: { code: string; wabaId: string; phoneNumberId: string }, @Request() req: AuthReq) {
+  oauthConnect(
+    @Body() dto: { code: string; wabaId: string; phoneNumberId: string },
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    if (!dto.code || !dto.wabaId || !dto.phoneNumberId) throw new BadRequestException('Faltan datos del Embedded Signup');
+    if (!dto.code || !dto.wabaId || !dto.phoneNumberId)
+      throw new BadRequestException('Faltan datos del Embedded Signup');
     return this.service.connectViaOAuth(req.user.tenantId, dto);
   }
 
@@ -40,7 +56,8 @@ export class WhatsAppAccountsController {
   @Post()
   create(@Body() dto: CreateWhatsAppAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
-    if (!dto.label || !dto.provider) throw new BadRequestException('Faltan label o provider');
+    if (!dto.label || !dto.provider)
+      throw new BadRequestException('Faltan label o provider');
     return this.service.create(req.user.tenantId, dto);
   }
 
@@ -57,9 +74,14 @@ export class WhatsAppAccountsController {
   }
 
   @Post(':id/test')
-  test(@Param('id') id: string, @Body() dto: { phone: string }, @Request() req: AuthReq) {
+  test(
+    @Param('id') id: string,
+    @Body() dto: { phone: string },
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    if (!dto.phone) throw new BadRequestException('Falta el número de teléfono');
+    if (!dto.phone)
+      throw new BadRequestException('Falta el número de teléfono');
     return this.service.test(id, req.user.tenantId, dto.phone);
   }
 
@@ -76,7 +98,11 @@ export class WhatsAppAccountsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateWhatsAppAccountDto, @Request() req: AuthReq) {
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateWhatsAppAccountDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
     return this.service.update(id, req.user.tenantId, dto);
   }

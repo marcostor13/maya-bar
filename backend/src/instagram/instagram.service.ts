@@ -24,7 +24,13 @@ export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
 
   /** Envía un DM de Instagram. `to` es el Instagram-Scoped ID (IGSID) del contacto. */
-  async sendMessage(to: string, body: string, config: IgConfig, mediaUrl?: string, mediaType?: IgMediaType): Promise<void> {
+  async sendMessage(
+    to: string,
+    body: string,
+    config: IgConfig,
+    mediaUrl?: string,
+    mediaType?: IgMediaType,
+  ): Promise<void> {
     if (!to) {
       this.logger.warn('Skipping IG message — missing recipient IGSID');
       return;
@@ -39,15 +45,26 @@ export class InstagramService {
       return;
     }
 
-    await this.post(config, { recipient: { id: to }, messaging_type: 'RESPONSE', message: { text: body } });
+    await this.post(config, {
+      recipient: { id: to },
+      messaging_type: 'RESPONSE',
+      message: { text: body },
+    });
   }
 
-  private async sendAttachment(to: string, mediaUrl: string, mediaType: IgMediaType, config: IgConfig): Promise<void> {
+  private async sendAttachment(
+    to: string,
+    mediaUrl: string,
+    mediaType: IgMediaType,
+    config: IgConfig,
+  ): Promise<void> {
     const type = mediaType === 'document' ? 'file' : mediaType;
     await this.post(config, {
       recipient: { id: to },
       messaging_type: 'RESPONSE',
-      message: { attachment: { type, payload: { url: mediaUrl, is_reusable: true } } },
+      message: {
+        attachment: { type, payload: { url: mediaUrl, is_reusable: true } },
+      },
     });
   }
 
@@ -55,20 +72,40 @@ export class InstagramService {
     const url = `${GRAPH_URL}/${config.igBusinessAccountId}/messages`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.pageAccessToken}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.pageAccessToken}`,
+      },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error(`Instagram ${res.status}: ${await res.text()}`);
+    if (!res.ok)
+      throw new Error(`Instagram ${res.status}: ${await res.text()}`);
   }
 
   /** Suscribe la cuenta al webhook de la app (obligatorio: Meta no envía eventos hasta que se llama esto). */
-  async subscribeWebhook(config: IgConfig): Promise<{ success: boolean; message: string }> {
-    if (!config.pageAccessToken) return { success: false, message: 'Falta el access token' };
-    const params = new URLSearchParams({ subscribed_fields: 'messages', access_token: config.pageAccessToken });
+  async subscribeWebhook(
+    config: IgConfig,
+  ): Promise<{ success: boolean; message: string }> {
+    if (!config.pageAccessToken)
+      return { success: false, message: 'Falta el access token' };
+    const params = new URLSearchParams({
+      subscribed_fields: 'messages',
+      access_token: config.pageAccessToken,
+    });
     try {
-      const res = await fetch(`${GRAPH_URL}/me/subscribed_apps?${params.toString()}`, { method: 'POST' });
-      const data = await res.json() as { success?: boolean; error?: { message?: string } };
-      if (!res.ok || data.error) return { success: false, message: data.error?.message ?? `Error ${res.status}` };
+      const res = await fetch(
+        `${GRAPH_URL}/me/subscribed_apps?${params.toString()}`,
+        { method: 'POST' },
+      );
+      const data = (await res.json()) as {
+        success?: boolean;
+        error?: { message?: string };
+      };
+      if (!res.ok || data.error)
+        return {
+          success: false,
+          message: data.error?.message ?? `Error ${res.status}`,
+        };
       return { success: true, message: 'Webhook suscripto correctamente' };
     } catch (err) {
       return { success: false, message: String(err) };
@@ -77,14 +114,21 @@ export class InstagramService {
 
   async getStatus(config: IgConfig): Promise<IgStatus> {
     if (!config.igBusinessAccountId || !config.pageAccessToken) {
-      return { configured: false, connected: false, error: 'Faltan Instagram User ID o Access Token' };
+      return {
+        configured: false,
+        connected: false,
+        error: 'Faltan Instagram User ID o Access Token',
+      };
     }
     try {
       const res = await fetch(
         `${GRAPH_URL}/${config.igBusinessAccountId}?fields=username`,
         { headers: { Authorization: `Bearer ${config.pageAccessToken}` } },
       );
-      const data = await res.json() as { username?: string; error?: { message?: string } };
+      const data = (await res.json()) as {
+        username?: string;
+        error?: { message?: string };
+      };
       if (data.error) throw new Error(data.error.message);
       return { configured: true, connected: true, username: data.username };
     } catch (err) {

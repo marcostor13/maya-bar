@@ -102,7 +102,13 @@ describe('ReservationsService', () => {
           useValue: reservationModel,
         },
         { provide: getModelToken(Local.name), useValue: localModel },
-        { provide: MailService, useValue: { sendReservationEmail: jest.fn(), sendPasswordResetEmail: jest.fn() } },
+        {
+          provide: MailService,
+          useValue: {
+            sendReservationEmail: jest.fn(),
+            sendPasswordResetEmail: jest.fn(),
+          },
+        },
       ],
     }).compile();
 

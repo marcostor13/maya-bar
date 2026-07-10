@@ -4,9 +4,19 @@ import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'crypto';
 import { WhatsAppAccount } from './whatsapp-account.schema';
-import { CreateWhatsAppAccountDto, UpdateWhatsAppAccountDto } from './dto/whatsapp-account.dto';
-import { WhatsAppService, WaConfig, WaStatus } from '../whatsapp/whatsapp.service';
-import { WhatsAppOAuthService, WaOAuthPublicConfig } from '../whatsapp/whatsapp-oauth.service';
+import {
+  CreateWhatsAppAccountDto,
+  UpdateWhatsAppAccountDto,
+} from './dto/whatsapp-account.dto';
+import {
+  WhatsAppService,
+  WaConfig,
+  WaStatus,
+} from '../whatsapp/whatsapp.service';
+import {
+  WhatsAppOAuthService,
+  WaOAuthPublicConfig,
+} from '../whatsapp/whatsapp-oauth.service';
 
 @Injectable()
 export class WhatsAppAccountsService {
@@ -34,7 +44,10 @@ export class WhatsAppAccountsService {
 
   async findOne(id: string, tenantId: string): Promise<WhatsAppAccount> {
     const doc = await this.model
-      .findOne({ _id: new Types.ObjectId(id), tenantId: new Types.ObjectId(tenantId) })
+      .findOne({
+        _id: new Types.ObjectId(id),
+        tenantId: new Types.ObjectId(tenantId),
+      })
       .exec();
     if (!doc) throw new NotFoundException('Cuenta de WhatsApp no encontrada');
     return doc;
@@ -59,8 +72,13 @@ export class WhatsAppAccountsService {
   async getDefault(tenantId: string): Promise<WhatsAppAccount | null> {
     const tid = new Types.ObjectId(tenantId);
     return (
-      (await this.model.findOne({ tenantId: tid, isDefault: true, active: true }).exec()) ??
-      (await this.model.findOne({ tenantId: tid, active: true }).sort({ createdAt: 1 }).exec())
+      (await this.model
+        .findOne({ tenantId: tid, isDefault: true, active: true })
+        .exec()) ??
+      (await this.model
+        .findOne({ tenantId: tid, active: true })
+        .sort({ createdAt: 1 })
+        .exec())
     );
   }
 
@@ -68,7 +86,9 @@ export class WhatsAppAccountsService {
   async setDefault(id: string, tenantId: string): Promise<WhatsAppAccount> {
     const tid = new Types.ObjectId(tenantId);
     const account = await this.findOne(id, tenantId);
-    await this.model.updateMany({ tenantId: tid }, { $set: { isDefault: false } }).exec();
+    await this.model
+      .updateMany({ tenantId: tid }, { $set: { isDefault: false } })
+      .exec();
     account.isDefault = true;
     await account.save();
     return account;
@@ -88,13 +108,22 @@ export class WhatsAppAccountsService {
 
   async remove(id: string, tenantId: string) {
     const tid = new Types.ObjectId(tenantId);
-    const account = await this.model.findOne({ _id: new Types.ObjectId(id), tenantId: tid }).exec();
-    if (!account) throw new NotFoundException('Cuenta de WhatsApp no encontrada');
+    const account = await this.model
+      .findOne({ _id: new Types.ObjectId(id), tenantId: tid })
+      .exec();
+    if (!account)
+      throw new NotFoundException('Cuenta de WhatsApp no encontrada');
     await this.model.deleteOne({ _id: account._id }).exec();
     // si era la predeterminada, promueve otra
     if (account.isDefault) {
-      const next = await this.model.findOne({ tenantId: tid }).sort({ createdAt: 1 }).exec();
-      if (next) { next.isDefault = true; await next.save(); }
+      const next = await this.model
+        .findOne({ tenantId: tid })
+        .sort({ createdAt: 1 })
+        .exec();
+      if (next) {
+        next.isDefault = true;
+        await next.save();
+      }
     }
     return { deleted: true };
   }
@@ -128,7 +157,8 @@ export class WhatsAppAccountsService {
     const account = await this.findOne(id, tenantId);
     const config = this.toConfig(account);
     config.webhookUrl = this.webhookUrlFor(account);
-    if (account.provider === 'cloudapi') return this.wa.registerCloudApiWebhook(config, account.waVerifyToken);
+    if (account.provider === 'cloudapi')
+      return this.wa.registerCloudApiWebhook(config, account.waVerifyToken);
     return this.wa.ensureWahaWebhook(config);
   }
 
@@ -137,38 +167,48 @@ export class WhatsAppAccountsService {
   }
 
   /** Crea o actualiza la cuenta Cloud API conectada vía Embedded Signup (self-service, sin pegar tokens a mano). */
-  async connectViaOAuth(tenantId: string, data: { code: string; wabaId: string; phoneNumberId: string }) {
+  async connectViaOAuth(
+    tenantId: string,
+    data: { code: string; wabaId: string; phoneNumberId: string },
+  ) {
     const short = await this.oauth.exchangeCodeForToken(data.code);
     const long = await this.oauth.exchangeForLongLivedToken(short.accessToken);
     await this.oauth.registerPhoneNumber(data.phoneNumberId, long.accessToken);
-    const info = await this.oauth.fetchPhoneNumberInfo(data.phoneNumberId, long.accessToken);
+    const info = await this.oauth.fetchPhoneNumberInfo(
+      data.phoneNumberId,
+      long.accessToken,
+    );
 
     const tid = new Types.ObjectId(tenantId);
     const tokenExpiresAt = new Date(Date.now() + long.expiresIn * 1000);
-    const label = info.verifiedName || info.displayPhoneNumber || 'WhatsApp conectado';
+    const label =
+      info.verifiedName || info.displayPhoneNumber || 'WhatsApp conectado';
 
-    const existing = await this.model.findOne({ tenantId: tid, waPhoneNumberId: data.phoneNumberId }).exec();
+    const existing = await this.model
+      .findOne({ tenantId: tid, waPhoneNumberId: data.phoneNumberId })
+      .exec();
     const account = existing
       ? Object.assign(existing, {
-        waAccessToken: long.accessToken,
-        waBusinessAccountId: data.wabaId,
-        phoneNumber: info.displayPhoneNumber ?? existing.phoneNumber,
-        tokenExpiresAt,
-        active: true,
-      })
+          waAccessToken: long.accessToken,
+          waBusinessAccountId: data.wabaId,
+          phoneNumber: info.displayPhoneNumber ?? existing.phoneNumber,
+          tokenExpiresAt,
+          active: true,
+        })
       : new this.model({
-        tenantId: tid,
-        label,
-        provider: 'cloudapi',
-        phoneNumber: info.displayPhoneNumber,
-        waPhoneNumberId: data.phoneNumberId,
-        waAccessToken: long.accessToken,
-        waBusinessAccountId: data.wabaId,
-        waVerifyToken: randomBytes(12).toString('hex'),
-        tokenExpiresAt,
-        active: true,
-        isDefault: (await this.model.countDocuments({ tenantId: tid }).exec()) === 0,
-      });
+          tenantId: tid,
+          label,
+          provider: 'cloudapi',
+          phoneNumber: info.displayPhoneNumber,
+          waPhoneNumberId: data.phoneNumberId,
+          waAccessToken: long.accessToken,
+          waBusinessAccountId: data.wabaId,
+          waVerifyToken: randomBytes(12).toString('hex'),
+          tokenExpiresAt,
+          active: true,
+          isDefault:
+            (await this.model.countDocuments({ tenantId: tid }).exec()) === 0,
+        });
     await account.save();
 
     const config = this.toConfig(account);
@@ -181,8 +221,10 @@ export class WhatsAppAccountsService {
   /** Renueva el token de larga duración de una cuenta Cloud API conectada vía OAuth. */
   async refreshOAuthToken(id: string, tenantId: string) {
     const account = await this.findOne(id, tenantId);
-    if (!account.waAccessToken) throw new NotFoundException('La cuenta no tiene un token para renovar');
-    const { accessToken, expiresIn } = await this.oauth.exchangeForLongLivedToken(account.waAccessToken);
+    if (!account.waAccessToken)
+      throw new NotFoundException('La cuenta no tiene un token para renovar');
+    const { accessToken, expiresIn } =
+      await this.oauth.exchangeForLongLivedToken(account.waAccessToken);
     account.waAccessToken = accessToken;
     account.tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
     await account.save();
@@ -193,9 +235,14 @@ export class WhatsAppAccountsService {
     const account = await this.findOne(id, tenantId);
     const config = this.toConfig(account);
     const formatted = this.wa.formatPhone(phone);
-    if (!formatted) return { success: false, error: 'Número inválido (< 8 dígitos)' };
+    if (!formatted)
+      return { success: false, error: 'Número inválido (< 8 dígitos)' };
     try {
-      await this.wa.sendMessage(formatted, '✅ Mensaje de prueba desde MAYA Platform', config);
+      await this.wa.sendMessage(
+        formatted,
+        '✅ Mensaje de prueba desde MAYA Platform',
+        config,
+      );
       return { success: true, formattedPhone: formatted };
     } catch (err) {
       return { success: false, formattedPhone: formatted, error: String(err) };

@@ -32,5 +32,6 @@ export class AgentConversation extends Document {
   messages: ConvMessage[];
 }
 
-export const AgentConversationSchema = SchemaFactory.createForClass(AgentConversation);
+export const AgentConversationSchema =
+  SchemaFactory.createForClass(AgentConversation);
 AgentConversationSchema.index({ agentId: 1, contact: 1 });

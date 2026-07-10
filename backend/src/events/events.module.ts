@@ -8,7 +8,10 @@ import {
   EventRegistrationSchema,
 } from './event-registration.schema';
 import { EventTemplate, EventTemplateSchema } from './event-template.schema';
-import { ExternalImpulsador, ExternalImpulsadorSchema } from './external-impulsador.schema';
+import {
+  ExternalImpulsador,
+  ExternalImpulsadorSchema,
+} from './external-impulsador.schema';
 import { User, UserSchema } from '../users/user.schema';
 import { AiModule } from '../ai/ai.module';
 import { MailModule } from '../mail/mail.module';

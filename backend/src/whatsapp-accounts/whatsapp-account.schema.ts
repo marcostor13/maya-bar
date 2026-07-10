@@ -36,4 +36,5 @@ export class WhatsAppAccount extends Document {
   isDefault: boolean; // cuenta usada por campañas y demás envíos salientes
 }
 
-export const WhatsAppAccountSchema = SchemaFactory.createForClass(WhatsAppAccount);
+export const WhatsAppAccountSchema =
+  SchemaFactory.createForClass(WhatsAppAccount);

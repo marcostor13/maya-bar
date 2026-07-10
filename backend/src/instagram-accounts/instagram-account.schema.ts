@@ -28,4 +28,5 @@ export class InstagramAccount extends Document {
   isDefault: boolean; // cuenta usada por defecto para envíos salientes
 }
 
-export const InstagramAccountSchema = SchemaFactory.createForClass(InstagramAccount);
+export const InstagramAccountSchema =
+  SchemaFactory.createForClass(InstagramAccount);
