@@ -41,10 +41,10 @@ export class InstagramOAuthCallbackController {
     try {
       const short = await this.oauth.exchangeCodeForToken(code);
       const long = await this.oauth.exchangeForLongLivedToken(short.accessToken);
-      const username = await this.oauth.fetchUsername(short.userId, long.accessToken);
+      const profile = await this.oauth.fetchProfile(long.accessToken);
       const account = await this.accounts.upsertFromOAuth(decoded.tenantId, {
-        userId: short.userId,
-        username,
+        userId: profile.userId || short.userId,
+        username: profile.username,
         accessToken: long.accessToken,
         expiresIn: long.expiresIn,
       });
