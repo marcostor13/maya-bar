@@ -28,19 +28,35 @@ export class InstagramOAuthCallbackController {
     @Query('error_description') errorDescription: string,
     @Res() res: Response,
   ) {
-    const frontend = (this.config.get<string>('FRONTEND_URL') || '').replace(/\/$/, '');
+    const frontend = (this.config.get<string>('FRONTEND_URL') || '').replace(
+      /\/$/,
+      '',
+    );
     const redirect = (params: Record<string, string>) =>
-      res.redirect(`${frontend}/settings?${new URLSearchParams(params).toString()}`);
+      res.redirect(
+        `${frontend}/settings?${new URLSearchParams(params).toString()}`,
+      );
 
-    if (errorDescription) return redirect({ ig_oauth: 'error', reason: errorDescription });
-    if (!code || !state) return redirect({ ig_oauth: 'error', reason: 'Faltan parámetros de Meta' });
+    if (errorDescription)
+      return redirect({ ig_oauth: 'error', reason: errorDescription });
+    if (!code || !state)
+      return redirect({
+        ig_oauth: 'error',
+        reason: 'Faltan parámetros de Meta',
+      });
 
     const decoded = this.oauth.verifyState(state);
-    if (!decoded) return redirect({ ig_oauth: 'error', reason: 'Estado inválido o expirado, intenta de nuevo' });
+    if (!decoded)
+      return redirect({
+        ig_oauth: 'error',
+        reason: 'Estado inválido o expirado, intenta de nuevo',
+      });
 
     try {
       const short = await this.oauth.exchangeCodeForToken(code);
-      const long = await this.oauth.exchangeForLongLivedToken(short.accessToken);
+      const long = await this.oauth.exchangeForLongLivedToken(
+        short.accessToken,
+      );
       const profile = await this.oauth.fetchProfile(long.accessToken);
       const account = await this.accounts.upsertFromOAuth(decoded.tenantId, {
         userId: profile.userId || short.userId,
@@ -48,12 +64,20 @@ export class InstagramOAuthCallbackController {
         accessToken: long.accessToken,
         expiresIn: long.expiresIn,
       });
-      const sub = await this.ig.subscribeWebhook(this.accounts.toConfig(account));
-      if (!sub.success) this.logger.warn(`No se pudo suscribir webhook para cuenta IG ${short.userId}: ${sub.message}`);
+      const sub = await this.ig.subscribeWebhook(
+        this.accounts.toConfig(account),
+      );
+      if (!sub.success)
+        this.logger.warn(
+          `No se pudo suscribir webhook para cuenta IG ${short.userId}: ${sub.message}`,
+        );
       return redirect({ ig_oauth: 'success' });
     } catch (err) {
       this.logger.error(`Instagram OAuth callback error: ${String(err)}`);
-      return redirect({ ig_oauth: 'error', reason: 'No se pudo completar la conexión con Instagram' });
+      return redirect({
+        ig_oauth: 'error',
+        reason: 'No se pudo completar la conexión con Instagram',
+      });
     }
   }
 }
