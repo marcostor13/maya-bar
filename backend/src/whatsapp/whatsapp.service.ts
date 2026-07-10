@@ -213,16 +213,13 @@ export class WhatsAppService {
     if (!config.webhookUrl)
       return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
     try {
-      await this.graph.post(
-        `/${config.waBusinessAccountId}/subscribed_apps`,
-        {
-          accessToken: config.waAccessToken,
-          json: {
-            override_callback_uri: config.webhookUrl,
-            verify_token: verifyToken ?? '',
-          },
+      await this.graph.post(`/${config.waBusinessAccountId}/subscribed_apps`, {
+        accessToken: config.waAccessToken,
+        json: {
+          override_callback_uri: config.webhookUrl,
+          verify_token: verifyToken ?? '',
         },
-      );
+      });
       return { success: true, message: 'Webhook suscripto correctamente' };
     } catch (err) {
       return { success: false, message: this.errorMessage(err) };

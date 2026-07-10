@@ -21,7 +21,7 @@ function lastFetchCall(spy: jest.SpyInstance): {
   return {
     url: String(url),
     init: init as RequestInit,
-    body: JSON.parse(String((init as RequestInit).body)) as Record<
+    body: JSON.parse((init as RequestInit).body as string) as Record<
       string,
       unknown
     >,

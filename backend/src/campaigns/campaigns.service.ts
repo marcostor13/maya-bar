@@ -188,7 +188,9 @@ export class CampaignsService {
         campaign.errorMessage = `${failed} email(s) no se pudieron enviar`;
     } else if (campaign.waProvider === 'cloudapi') {
       // Cloud API: parallel, no daily limit
-      const withPhone = customers.filter((c) => c.phone);
+      const withPhone = customers.filter(
+        (c): c is Customer & { phone: string } => !!c.phone,
+      );
       campaign.recipientCount = withPhone.length;
 
       let results: PromiseSettledResult<void>[];
@@ -222,8 +224,8 @@ export class CampaignsService {
       }
 
       const failed = results.filter((r) => r.status === 'rejected').length;
-      const firstError = (
-        results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+      const firstError: unknown = results.find(
+        (r) => r.status === 'rejected',
       )?.reason;
       campaign.status = 'sent';
       campaign.sentAt = new Date();
@@ -231,7 +233,7 @@ export class CampaignsService {
       const errors: string[] = [];
       if (failed > 0)
         errors.push(
-          `${failed} mensaje(s) fallaron${firstError ? ': ' + String(firstError) : ''}`,
+          `${failed} mensaje(s) fallaron${firstError ? ': ' + stringifyError(firstError) : ''}`,
         );
       if (customers.length - withPhone.length > 0)
         errors.push(
@@ -240,7 +242,9 @@ export class CampaignsService {
       if (errors.length > 0) campaign.errorMessage = errors.join(' · ');
     } else {
       // WAHA: sequential + daily limit — processed async to avoid HTTP timeout
-      const withPhone = customers.filter((c) => c.phone);
+      const withPhone = customers.filter(
+        (c): c is Customer & { phone: string } => !!c.phone,
+      );
       const dailyLimit = await this.settings.getWaDailyLimit(tenantId);
       const sentToday = await this.countWaSentToday(tenantId);
       const remaining = Math.max(0, dailyLimit - sentToday);
@@ -279,7 +283,7 @@ export class CampaignsService {
   private async resolveCustomers(
     campaign: Campaign,
     tenantId: string,
-  ): Promise<any[]> {
+  ): Promise<Customer[]> {
     const tid = new Types.ObjectId(tenantId);
     if (campaign.targeting === 'lists' && campaign.listIds?.length > 0) {
       return this.lists.resolveCustomers(
@@ -288,12 +292,15 @@ export class CampaignsService {
       );
     }
     if (campaign.targeting === 'all') {
-      return this.customerModel.find({ tenantId: tid }).lean().exec();
+      return this.customerModel
+        .find({ tenantId: tid })
+        .lean<Customer[]>()
+        .exec();
     }
     const filter: Record<string, unknown> = { tenantId: tid };
     if (campaign.recipientTags.length > 0)
       filter['tags'] = { $in: campaign.recipientTags };
-    return this.customerModel.find(filter).lean().exec();
+    return this.customerModel.find(filter).lean<Customer[]>().exec();
   }
 
   async generateEmail(dto: {
@@ -331,7 +338,7 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
   private async runWahaQueue(
     campaignId: string,
 
-    toSend: any[],
+    toSend: (Customer & { phone: string })[],
     tenantId: string,
     body: string,
     mediaUrl: string | undefined,
@@ -368,8 +375,8 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
     if (!campaign) return;
 
     const failed = results.filter((r) => r.status === 'rejected').length;
-    const firstError = (
-      results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+    const firstError: unknown = results.find(
+      (r) => r.status === 'rejected',
     )?.reason;
     campaign.status = 'sent';
     campaign.sentAt = new Date();
@@ -377,7 +384,7 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
     const errors: string[] = [];
     if (failed > 0)
       errors.push(
-        `${failed} mensaje(s) fallaron${firstError ? ': ' + String(firstError) : ''}`,
+        `${failed} mensaje(s) fallaron${firstError ? ': ' + stringifyError(firstError) : ''}`,
       );
     if (noPhone > 0) errors.push(`${noPhone} sin teléfono (omitidos)`);
     if (skippedByLimit > 0)
@@ -400,4 +407,11 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
       .exec();
     return campaigns.reduce((sum, c) => sum + (c.recipientCount ?? 0), 0);
   }
+}
+
+/** Convierte el reason de una promesa rechazada a texto legible. */
+function stringifyError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return JSON.stringify(err);
 }

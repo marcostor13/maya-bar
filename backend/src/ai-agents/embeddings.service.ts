@@ -1,4 +1,9 @@
-import { Injectable, Inject, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EMBEDDINGS_PROVIDER } from '../ai/providers/ai-provider.interface';
 import type { EmbeddingsProvider } from '../ai/providers/ai-provider.interface';
