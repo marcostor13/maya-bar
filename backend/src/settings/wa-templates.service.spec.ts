@@ -4,12 +4,17 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { WaTemplatesService } from './wa-templates.service';
 import { WaTemplate } from './wa-template.schema';
-import { TenantConfig } from './tenant-config.schema';
 import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
+import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 
 const tenantId = new Types.ObjectId().toString();
+const accountId = new Types.ObjectId();
 
-const cloudConfig = {
+const cloudAccount = {
+  _id: accountId,
+  label: 'Cuenta 1',
+  provider: 'cloudapi',
+  active: true,
   waAccessToken: 'tok',
   waBusinessAccountId: 'waba1',
 };
@@ -32,8 +37,9 @@ describe('WaTemplatesService', () => {
     create: jest.Mock;
     findById: jest.Mock;
     findByIdAndDelete: jest.Mock;
+    deleteMany: jest.Mock;
   };
-  let configModel: { findOne: jest.Mock };
+  let accounts: { findAll: jest.Mock; findOne: jest.Mock };
 
   beforeEach(async () => {
     graph = { get: jest.fn(), post: jest.fn(), delete: jest.fn() };
@@ -43,30 +49,31 @@ describe('WaTemplatesService', () => {
       create: jest.fn(),
       findById: jest.fn(),
       findByIdAndDelete: jest.fn(),
+      deleteMany: jest.fn(),
     };
-    configModel = { findOne: jest.fn() };
+    accounts = { findAll: jest.fn(), findOne: jest.fn() };
     const moduleRef = await Test.createTestingModule({
       providers: [
         WaTemplatesService,
         { provide: getModelToken(WaTemplate.name), useValue: templateModel },
-        { provide: getModelToken(TenantConfig.name), useValue: configModel },
         { provide: MetaGraphClient, useValue: graph },
+        { provide: WhatsAppAccountsService, useValue: accounts },
       ],
     }).compile();
     service = moduleRef.get(WaTemplatesService);
   });
 
   describe('sync', () => {
-    it('exige token y WABA ID configurados', async () => {
-      configModel.findOne.mockReturnValue(query(null));
+    it('exige al menos una cuenta Cloud API vinculada', async () => {
+      accounts.findAll.mockResolvedValue([]);
       await expect(service.sync(tenantId)).rejects.toThrow(
-        'Configura el Access Token y el WABA ID en Cloud API primero',
+        'Vincula al menos una cuenta de WhatsApp Cloud API primero',
       );
       expect(graph.get).not.toHaveBeenCalled();
     });
 
-    it('trae las plantillas de Meta y hace upsert local', async () => {
-      configModel.findOne.mockReturnValue(query(cloudConfig));
+    it('trae las plantillas de Meta de cada cuenta y hace upsert local', async () => {
+      accounts.findAll.mockResolvedValue([cloudAccount]);
       graph.get.mockResolvedValue({
         data: [
           {
@@ -83,12 +90,14 @@ describe('WaTemplatesService', () => {
           },
         ],
       });
-      const saved = { name: 'bienvenida' };
-      templateModel.findOneAndUpdate.mockReturnValue(query(saved));
+      templateModel.findOneAndUpdate.mockReturnValue(query({ name: 'bienvenida' }));
+      templateModel.deleteMany.mockReturnValue(query({}));
+      const list = [{ name: 'bienvenida', accountLabel: 'Cuenta 1' }];
+      templateModel.find.mockReturnValue(query(list));
 
       const res = await service.sync(tenantId);
 
-      expect(res).toEqual([saved]);
+      expect(res).toEqual(list);
       expect(graph.get).toHaveBeenCalledWith(
         '/waba1/message_templates',
         expect.objectContaining({
@@ -97,7 +106,7 @@ describe('WaTemplatesService', () => {
         }),
       );
       expect(templateModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { tenantId: expect.anything(), metaId: 'm1' },
+        { tenantId: expect.anything(), accountId, metaId: 'm1' },
         expect.objectContaining({
           name: 'bienvenida',
           body: 'Cuerpo {{1}}',
@@ -105,13 +114,20 @@ describe('WaTemplatesService', () => {
           headerText: 'Hola',
           footer: 'Pie',
           status: 'APPROVED',
+          accountId,
+          accountLabel: 'Cuenta 1',
+          wabaId: 'waba1',
         }),
         { upsert: true, new: true },
       );
+      expect(templateModel.deleteMany).toHaveBeenCalledWith({
+        tenantId: expect.anything(),
+        accountId: { $nin: [accountId] },
+      });
     });
 
     it('traduce el error de Meta a BadRequest con status y mensaje', async () => {
-      configModel.findOne.mockReturnValue(query(cloudConfig));
+      accounts.findAll.mockResolvedValue([cloudAccount]);
       graph.get.mockRejectedValue(new MetaApiError('token expired', 401));
       await expect(service.sync(tenantId)).rejects.toThrow(BadRequestException);
       await expect(service.sync(tenantId)).rejects.toThrow(
@@ -130,15 +146,22 @@ describe('WaTemplatesService', () => {
       footer: 'Pie',
     };
 
-    it('crea la plantilla en Meta y la persiste como PENDING', async () => {
-      configModel.findOne.mockReturnValue(query(cloudConfig));
+    it('exige al menos una cuenta Cloud API vinculada', async () => {
+      accounts.findAll.mockResolvedValue([]);
+      await expect(service.create(tenantId, dto as never)).rejects.toThrow(
+        'Vincula al menos una cuenta de WhatsApp Cloud API primero',
+      );
+    });
+
+    it('crea la plantilla en cada cuenta y la persiste como PENDING', async () => {
+      accounts.findAll.mockResolvedValue([cloudAccount]);
       graph.post.mockResolvedValue({ id: 'meta9' });
       const doc = { metaId: 'meta9' };
       templateModel.create.mockResolvedValue(doc);
 
       const res = await service.create(tenantId, dto as never);
 
-      expect(res).toBe(doc);
+      expect(res).toEqual([doc]);
       expect(graph.post).toHaveBeenCalledWith(
         '/waba1/message_templates',
         expect.objectContaining({
@@ -156,17 +179,23 @@ describe('WaTemplatesService', () => {
         }),
       );
       expect(templateModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ metaId: 'meta9', status: 'PENDING' }),
+        expect.objectContaining({
+          metaId: 'meta9',
+          status: 'PENDING',
+          accountId,
+          accountLabel: 'Cuenta 1',
+          wabaId: 'waba1',
+        }),
       );
     });
 
-    it('traduce el error de Meta a BadRequest', async () => {
-      configModel.findOne.mockReturnValue(query(cloudConfig));
+    it('lanza BadRequest si falla en todas las cuentas', async () => {
+      accounts.findAll.mockResolvedValue([cloudAccount]);
       graph.post.mockRejectedValue(
         new MetaApiError('name already exists', 400),
       );
       await expect(service.create(tenantId, dto as never)).rejects.toThrow(
-        'Meta API 400: name already exists',
+        BadRequestException,
       );
       expect(templateModel.create).not.toHaveBeenCalled();
     });
@@ -176,18 +205,20 @@ describe('WaTemplatesService', () => {
     const template = {
       _id: 'tpl1',
       tenantId: { toString: () => tenantId },
+      accountId,
       metaId: 'm1',
       name: 'bienvenida',
     };
 
-    it('borra en Meta (por nombre) y localmente', async () => {
+    it('borra en Meta (por nombre, usando la cuenta) y localmente', async () => {
       templateModel.findById.mockReturnValue(query(template));
-      configModel.findOne.mockReturnValue(query(cloudConfig));
+      accounts.findOne.mockResolvedValue(cloudAccount);
       graph.delete.mockResolvedValue({ success: true });
       templateModel.findByIdAndDelete.mockReturnValue(query(null));
 
       await service.remove(tenantId, 'tpl1');
 
+      expect(accounts.findOne).toHaveBeenCalledWith(accountId.toString(), tenantId);
       expect(graph.delete).toHaveBeenCalledWith(
         '/waba1/message_templates',
         expect.objectContaining({
@@ -200,7 +231,7 @@ describe('WaTemplatesService', () => {
 
     it('borra localmente aunque Meta falle', async () => {
       templateModel.findById.mockReturnValue(query(template));
-      configModel.findOne.mockReturnValue(query(cloudConfig));
+      accounts.findOne.mockResolvedValue(cloudAccount);
       graph.delete.mockRejectedValue(new MetaApiError('not found', 404));
       templateModel.findByIdAndDelete.mockReturnValue(query(null));
 

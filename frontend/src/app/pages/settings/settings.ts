@@ -24,7 +24,9 @@ import { InstagramSettingsComponent } from './instagram-settings';
       </div>
 
       <!-- WhatsApp Accounts Card -->
-      <app-whatsapp-settings (defaultProviderChange)="onWaProviderChange($event)" />
+      <app-whatsapp-settings
+        (defaultProviderChange)="onWaProviderChange($event)"
+        (cloudAccountsChange)="onCloudAccountsChange($event)" />
 
       <!-- Instagram Accounts Card -->
       <app-instagram-settings />
@@ -92,8 +94,8 @@ import { InstagramSettingsComponent } from './instagram-settings';
         </div>
       </div>
 
-      <!-- Templates Card (default account is Cloud API) -->
-      @if (defaultProvider() === 'cloudapi') {
+      <!-- Templates Card (hay al menos una cuenta Cloud API vinculada) -->
+      @if (cloudAccounts() > 0) {
         <div class="section-card">
           <div class="section-header">
             <div class="section-icon" style="background: #F5F3FF;">
@@ -101,7 +103,7 @@ import { InstagramSettingsComponent } from './instagram-settings';
             </div>
             <div>
               <h2 class="section-title">Plantillas WhatsApp</h2>
-              <p class="section-desc">Gestiona las plantillas aprobadas por Meta para campañas Cloud API</p>
+              <p class="section-desc">Plantillas aprobadas por Meta, aplicadas a todas las cuentas Cloud API vinculadas</p>
             </div>
             <div class="section-actions">
               <button class="btn btn-secondary btn-sm" (click)="syncTemplates()" [disabled]="syncingTemplates()">
@@ -133,6 +135,9 @@ import { InstagramSettingsComponent } from './instagram-settings';
                     <div class="tpl-body">{{ t.body.substring(0, 80) }}{{ t.body.length > 80 ? '…' : '' }}</div>
                   </div>
                   <div class="tpl-badges">
+                    @if (t.accountLabel) {
+                      <span class="tpl-badge tpl-account">{{ t.accountLabel }}</span>
+                    }
                     <span class="tpl-badge tpl-status-{{ t.status.toLowerCase() }}">{{ t.status }}</span>
                     <span class="tpl-badge tpl-lang">{{ t.language }}</span>
                     <span class="tpl-badge tpl-cat">{{ t.category }}</span>
@@ -248,6 +253,7 @@ import { InstagramSettingsComponent } from './instagram-settings';
     .tpl-status-approved { background: #F0FDF4; color: #15803D; border-color: #BBF7D0; }
     .tpl-status-pending  { background: #FEFCE8; color: #854D0E; border-color: #FEF08A; }
     .tpl-status-rejected { background: #FEF2F2; color: #DC2626; border-color: #FECACA; }
+    .tpl-account { background: #F5F3FF; color: #6D28D9; border-color: #DDD6FE; }
     .tpl-del-btn { color: var(--color-text-muted) !important; flex-shrink: 0; }
     .tpl-del-btn:hover { color: var(--color-error) !important; background: #FEF2F2 !important; }
 
@@ -307,6 +313,9 @@ export class SettingsComponent implements OnInit {
   /** Provider de la cuenta WhatsApp predeterminada, reportado por la sección de WhatsApp. */
   defaultProvider = signal('');
 
+  /** Número de cuentas Cloud API activas vinculadas, reportado por la sección de WhatsApp. */
+  cloudAccounts = signal(0);
+
   // AI keys
   aiKeys: TenantSettings = { openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', claudeApiKey: '' };
   showAiKey = signal<Record<string, boolean>>({});
@@ -333,7 +342,11 @@ export class SettingsComponent implements OnInit {
 
   onWaProviderChange(provider: string) {
     this.defaultProvider.set(provider);
-    if (provider === 'cloudapi') this.loadTemplates();
+  }
+
+  onCloudAccountsChange(count: number) {
+    this.cloudAccounts.set(count);
+    if (count > 0) this.loadTemplates();
   }
 
   // ---- Config (AI keys) ----
@@ -400,7 +413,7 @@ export class SettingsComponent implements OnInit {
       footer: this.tplForm.footer?.trim() || undefined,
     };
     this.api.createTemplate(dto).subscribe({
-      next: (t) => { this.templates.update(list => [...list, t]); this.savingTemplate.set(false); this.closeTemplateModal(); this.toast.success('Plantilla creada. Pendiente de aprobación por Meta.'); },
+      next: (created) => { this.templates.update(list => [...list, ...created]); this.savingTemplate.set(false); this.closeTemplateModal(); this.toast.success(`Plantilla creada en ${created.length} cuenta(s). Pendiente de aprobación por Meta.`); },
       error: (err: { error?: { message?: string } }) => { this.tplError.set(err.error?.message || 'Error al crear plantilla'); this.savingTemplate.set(false); },
     });
   }

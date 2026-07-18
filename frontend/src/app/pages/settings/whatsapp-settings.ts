@@ -337,6 +337,9 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   /** Emite el provider de la cuenta predeterminada ('' si no hay) tras cada carga de cuentas. */
   defaultProviderChange = output<string>();
 
+  /** Emite cuántas cuentas Cloud API activas hay vinculadas tras cada carga de cuentas. */
+  cloudAccountsChange = output<number>();
+
   // Accounts
   accounts = signal<WaAccount[]>([]);
   accountsLoading = signal(false);
@@ -430,6 +433,9 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
         this.accounts.set(a);
         this.accountsLoading.set(false);
         this.defaultProviderChange.emit(this.defaultProvider());
+        this.cloudAccountsChange.emit(
+          a.filter((x) => x.provider === 'cloudapi' && x.active).length,
+        );
       },
       error: () => this.accountsLoading.set(false),
     });

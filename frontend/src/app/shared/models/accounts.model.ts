@@ -105,6 +105,9 @@ export interface WaTemplate {
   body: string;
   headerText?: string;
   footer?: string;
+  accountId?: string;
+  accountLabel?: string;
+  wabaId?: string;
 }
 
 export interface WaTemplatePayload {

@@ -6,9 +6,10 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WaTemplate } from './wa-template.schema';
-import { TenantConfig } from './tenant-config.schema';
 import { CreateWaTemplateDto } from './dto/wa-template.dto';
 import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
+import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
+import { WhatsAppAccount } from '../whatsapp-accounts/whatsapp-account.schema';
 
 interface MetaComponent {
   type: string;
@@ -30,70 +31,90 @@ interface MetaTemplate {
 export class WaTemplatesService {
   constructor(
     @InjectModel(WaTemplate.name) private templateModel: Model<WaTemplate>,
-    @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
     private readonly graph: MetaGraphClient,
+    private readonly accounts: WhatsAppAccountsService,
   ) {}
 
   async findAll(tenantId: string): Promise<WaTemplate[]> {
     return this.templateModel
       .find({ tenantId: new Types.ObjectId(tenantId) })
-      .sort({ name: 1 })
+      .sort({ accountLabel: 1, name: 1 })
       .exec();
   }
 
-  async sync(tenantId: string): Promise<WaTemplate[]> {
-    const config = await this.getConfig(tenantId);
-    const token = config?.waAccessToken?.trim();
-    const wabaId = config?.waBusinessAccountId?.trim();
-    if (!token || !wabaId) {
-      throw new BadRequestException(
-        'Configura el Access Token y el WABA ID en Cloud API primero',
-      );
-    }
-    const data = await this.metaRequest<{ data?: MetaTemplate[] }>(() =>
-      this.graph.get(`/${wabaId}/message_templates`, {
-        accessToken: token,
-        params: { limit: '100' },
-      }),
+  /** Cuentas Cloud API vinculadas y activas con credenciales completas. */
+  private async cloudAccounts(tenantId: string): Promise<WhatsAppAccount[]> {
+    const all = await this.accounts.findAll(tenantId);
+    return all.filter(
+      (a) =>
+        a.provider === 'cloudapi' &&
+        a.active &&
+        !!a.waAccessToken?.trim() &&
+        !!a.waBusinessAccountId?.trim(),
     );
-    const tid = new Types.ObjectId(tenantId);
-    const results: WaTemplate[] = [];
-    for (const t of data.data ?? []) {
-      const body = t.components?.find((c) => c.type === 'BODY')?.text ?? '';
-      const header = t.components?.find((c) => c.type === 'HEADER');
-      const footer = t.components?.find((c) => c.type === 'FOOTER')?.text;
-      const doc = await this.templateModel
-        .findOneAndUpdate(
-          { tenantId: tid, metaId: t.id },
-          {
-            tenantId: tid,
-            metaId: t.id,
-            name: t.name,
-            category: t.category,
-            language: t.language,
-            status: t.status,
-            body,
-            headerType: header?.format,
-            headerText: header?.text,
-            footer,
-            rawComponents: t.components,
-          },
-          { upsert: true, new: true },
-        )
-        .exec();
-      results.push(doc);
-    }
-    return results;
   }
 
+  /** Sincroniza las plantillas de Meta de TODAS las cuentas Cloud API vinculadas. */
+  async sync(tenantId: string): Promise<WaTemplate[]> {
+    const accounts = await this.cloudAccounts(tenantId);
+    if (accounts.length === 0) {
+      throw new BadRequestException(
+        'Vincula al menos una cuenta de WhatsApp Cloud API primero',
+      );
+    }
+    const tid = new Types.ObjectId(tenantId);
+    for (const account of accounts) {
+      const data = await this.metaRequest<{ data?: MetaTemplate[] }>(() =>
+        this.graph.get(`/${account.waBusinessAccountId}/message_templates`, {
+          accessToken: account.waAccessToken as string,
+          params: { limit: '100' },
+        }),
+      );
+      for (const t of data.data ?? []) {
+        const body = t.components?.find((c) => c.type === 'BODY')?.text ?? '';
+        const header = t.components?.find((c) => c.type === 'HEADER');
+        const footer = t.components?.find((c) => c.type === 'FOOTER')?.text;
+        await this.templateModel
+          .findOneAndUpdate(
+            { tenantId: tid, accountId: account._id, metaId: t.id },
+            {
+              tenantId: tid,
+              accountId: account._id,
+              accountLabel: account.label,
+              wabaId: account.waBusinessAccountId,
+              metaId: t.id,
+              name: t.name,
+              category: t.category,
+              language: t.language,
+              status: t.status,
+              body,
+              headerType: header?.format,
+              headerText: header?.text,
+              footer,
+              rawComponents: t.components,
+            },
+            { upsert: true, new: true },
+          )
+          .exec();
+      }
+    }
+    // Elimina plantillas huérfanas (cuentas desvinculadas o registros heredados sin accountId).
+    const accountIds = accounts.map((a) => a._id);
+    await this.templateModel
+      .deleteMany({ tenantId: tid, accountId: { $nin: accountIds } })
+      .exec();
+    return this.findAll(tenantId);
+  }
+
+  /** Crea la plantilla en Meta para TODAS las cuentas Cloud API vinculadas. */
   async create(
     tenantId: string,
     dto: CreateWaTemplateDto,
-  ): Promise<WaTemplate> {
-    const config = await this.getConfig(tenantId);
-    if (!config?.waAccessToken || !config?.waBusinessAccountId) {
+  ): Promise<WaTemplate[]> {
+    const accounts = await this.cloudAccounts(tenantId);
+    if (accounts.length === 0) {
       throw new BadRequestException(
-        'Configura el Access Token y el WABA ID en Cloud API primero',
+        'Vincula al menos una cuenta de WhatsApp Cloud API primero',
       );
     }
     const components: MetaComponent[] = [];
@@ -102,41 +123,68 @@ export class WaTemplatesService {
     components.push({ type: 'BODY', text: dto.body });
     if (dto.footer) components.push({ type: 'FOOTER', text: dto.footer });
 
-    const created = await this.metaRequest<{ id: string }>(() =>
-      this.graph.post(`/${config.waBusinessAccountId}/message_templates`, {
-        accessToken: config.waAccessToken,
-        json: {
+    const tid = new Types.ObjectId(tenantId);
+    const created: WaTemplate[] = [];
+    const errors: string[] = [];
+    for (const account of accounts) {
+      try {
+        const res = await this.metaRequest<{ id: string }>(() =>
+          this.graph.post(`/${account.waBusinessAccountId}/message_templates`, {
+            accessToken: account.waAccessToken as string,
+            json: {
+              name: dto.name,
+              category: dto.category,
+              language: dto.language,
+              components,
+            },
+          }),
+        );
+        const doc = await this.templateModel.create({
+          tenantId: tid,
+          accountId: account._id,
+          accountLabel: account.label,
+          wabaId: account.waBusinessAccountId,
+          metaId: res.id,
           name: dto.name,
           category: dto.category,
           language: dto.language,
-          components,
-        },
-      }),
-    );
-    const tid = new Types.ObjectId(tenantId);
-    return this.templateModel.create({
-      tenantId: tid,
-      metaId: created.id,
-      name: dto.name,
-      category: dto.category,
-      language: dto.language,
-      status: 'PENDING',
-      body: dto.body,
-      headerText: dto.headerText,
-      footer: dto.footer,
-      rawComponents: components,
-    });
+          status: 'PENDING',
+          body: dto.body,
+          headerText: dto.headerText,
+          footer: dto.footer,
+          rawComponents: components,
+        });
+        created.push(doc);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`${account.label}: ${msg}`);
+      }
+    }
+    if (created.length === 0) {
+      throw new BadRequestException(
+        errors.join('; ') || 'No se pudo crear la plantilla',
+      );
+    }
+    return created;
   }
 
   async remove(tenantId: string, templateId: string): Promise<void> {
     const template = await this.templateModel.findById(templateId).exec();
     if (!template || template.tenantId.toString() !== tenantId)
       throw new NotFoundException();
-    const config = await this.getConfig(tenantId);
-    if (config?.waAccessToken && template.metaId) {
+    const account = template.accountId
+      ? await this.accounts
+          .findOne(template.accountId.toString(), tenantId)
+          .catch(() => null)
+      : null;
+    if (
+      account?.waAccessToken &&
+      account.waBusinessAccountId &&
+      template.metaId
+    ) {
       await this.graph
-        .delete(`/${config.waBusinessAccountId}/message_templates`, {
-          accessToken: config.waAccessToken,
+        .delete(`/${account.waBusinessAccountId}/message_templates`, {
+          accessToken: account.waAccessToken,
           params: { name: template.name },
         })
         .catch(() => {});
@@ -153,11 +201,5 @@ export class WaTemplatesService {
         throw new BadRequestException(`Meta API ${err.status}: ${err.message}`);
       throw err;
     }
-  }
-
-  private async getConfig(tenantId: string): Promise<TenantConfig | null> {
-    return this.configModel
-      .findOne({ tenantId: new Types.ObjectId(tenantId) })
-      .exec();
   }
 }

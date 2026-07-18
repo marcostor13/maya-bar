@@ -550,15 +550,22 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     this.closed.emit();
   }
 
+  /** Las plantillas se replican en cada cuenta Cloud API vinculada; para campañas basta una por nombre. */
+  private dedupeByName(list: WaTemplate[]): WaTemplate[] {
+    const seen = new Set<string>();
+    return list.filter(t => (seen.has(t.name) ? false : (seen.add(t.name), true)));
+  }
+
   loadTemplates() {
     if (this.templatesLoading()) return;
     this.templatesLoading.set(true);
     this.api.getTemplates().subscribe({
       next: (data) => {
-        this.templates.set(data);
+        const unique = this.dedupeByName(data);
+        this.templates.set(unique);
         this.templatesLoading.set(false);
         if (this.form.templateName && !this.selectedTemplate()) {
-          this.selectedTemplate.set(data.find(t => t.name === this.form.templateName) ?? null);
+          this.selectedTemplate.set(unique.find(t => t.name === this.form.templateName) ?? null);
         }
       },
       error: () => this.templatesLoading.set(false),
@@ -568,7 +575,7 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   syncTemplates() {
     this.templatesLoading.set(true);
     this.api.syncTemplates().subscribe({
-      next: (data) => { this.templates.set(data); this.templatesLoading.set(false); this.toast.success(`${data.length} plantilla(s) sincronizadas`); },
+      next: (data) => { const unique = this.dedupeByName(data); this.templates.set(unique); this.templatesLoading.set(false); this.toast.success(`${unique.length} plantilla(s) sincronizadas`); },
       error: (err: { error?: { message?: string } }) => { this.templatesLoading.set(false); this.toast.error(err.error?.message || 'Error al sincronizar'); },
     });
   }

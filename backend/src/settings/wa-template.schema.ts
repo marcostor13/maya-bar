@@ -9,6 +9,16 @@ export class WaTemplate extends Document {
   @Prop({ type: Types.ObjectId, required: true, index: true })
   tenantId: Types.ObjectId;
 
+  // Cuenta de WhatsApp Cloud API vinculada a la que pertenece esta plantilla.
+  @Prop({ type: Types.ObjectId, ref: 'WhatsAppAccount', index: true })
+  accountId?: Types.ObjectId;
+
+  @Prop()
+  accountLabel?: string; // etiqueta legible de la cuenta (para mostrar en UI)
+
+  @Prop()
+  wabaId?: string; // WhatsApp Business Account ID de la cuenta
+
   @Prop({ required: true })
   metaId: string;
 

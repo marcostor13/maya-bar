@@ -141,8 +141,8 @@ export class AccountsApiService {
     return this.http.post<WaTemplate[]>(`${this.base}/settings/templates/sync`, {});
   }
 
-  createTemplate(dto: WaTemplatePayload): Observable<WaTemplate> {
-    return this.http.post<WaTemplate>(`${this.base}/settings/templates`, dto);
+  createTemplate(dto: WaTemplatePayload): Observable<WaTemplate[]> {
+    return this.http.post<WaTemplate[]>(`${this.base}/settings/templates`, dto);
   }
 
   deleteTemplate(id: string): Observable<void> {
