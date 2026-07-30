@@ -63,17 +63,24 @@ export class RagService implements OnModuleInit {
   // ---- Ingesta ----
 
   extractText(buffer: Buffer, contentType?: string): Promise<string> {
-    if (contentType === 'application/pdf') return this.extractPdf(buffer);
+    if (isPdf(buffer, contentType)) return this.extractPdf(buffer);
     return Promise.resolve(buffer.toString('utf-8'));
   }
 
   private async extractPdf(buffer: Buffer): Promise<string> {
-    // import dinámico para evitar el self-test de pdf-parse al cargar el módulo
-    const mod = (await import('pdf-parse')) as unknown as {
-      default: (b: Buffer) => Promise<{ text: string }>;
-    };
-    const data = await mod.default(buffer);
-    return data.text;
+    // import dinámico: pdf-parse v2 es ESM y no tiene default export;
+    // expone la clase PDFParse (llamar a mod.default daba "is not a function").
+    const { PDFParse } = await import('pdf-parse');
+    // Copiamos a un Uint8Array propio: pdf.js toma posesión del buffer y lo deja detached.
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    try {
+      // pageJoiner:'' desactiva el marcador "-- N of M --" que v2 añade por
+      // defecto en cada página y que contaminaría los chunks y sus embeddings.
+      const { text } = await parser.getText({ pageJoiner: '' });
+      return text ?? '';
+    } finally {
+      await parser.destroy();
+    }
   }
 
   chunk(text: string): string[] {
@@ -98,8 +105,11 @@ export class RagService implements OnModuleInit {
       }
       const piece = clean.slice(i, end).trim();
       if (piece) chunks.push(piece);
-      i = end - CHUNK_OVERLAP;
-      if (i <= 0) i = end;
+      // Fin del texto: sin este corte, i = end - CHUNK_OVERLAP volvía a quedar
+      // por debajo de la longitud y el bucle no terminaba nunca (>150 chars).
+      if (end >= clean.length) break;
+      const next = end - CHUNK_OVERLAP;
+      i = next > i ? next : end; // garantiza avance
     }
     return chunks;
   }
@@ -213,6 +223,16 @@ export class RagService implements OnModuleInit {
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
   }
+}
+
+/**
+ * Detecta PDFs por content-type o por magic bytes: el content-type que llega
+ * del upload puede ser genérico (application/octet-stream) y en ese caso
+ * leer el binario como utf-8 producía basura en lugar de fallar.
+ */
+function isPdf(buffer: Buffer, contentType?: string): boolean {
+  if (contentType === 'application/pdf') return true;
+  return buffer.subarray(0, 5).toString('latin1') === '%PDF-';
 }
 
 function cosine(a: number[], b: number[]): number {
