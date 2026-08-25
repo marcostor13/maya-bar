@@ -8,7 +8,7 @@ import {
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { AccountsApiService } from '../../core/api/accounts-api.service';
-import { IgAccount, IgStatus, blankIgAccount } from '../../shared/models/accounts.model';
+import { IgAccount, IgStatus, WebhookConfig, blankIgAccount } from '../../shared/models/accounts.model';
 
 @Component({
   selector: 'app-instagram-settings',
@@ -33,12 +33,28 @@ import { IgAccount, IgStatus, blankIgAccount } from '../../shared/models/account
           {{ connectingIg() ? 'Redirigiendo…' : 'Conectar con Instagram' }}
         </button>
 
-        <div class="webhook-hint" style="margin-bottom:16px">
-          <span>Webhook de la app (se configura una sola vez en Meta, aplica a todas las cuentas):</span>
-          <code>{{ igWebhookUrl() }}</code>
-          <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(igWebhookUrl(), 'URL del webhook copiada')" title="Copiar URL del webhook">
-            <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
-          </button>
+        <div class="webhook-box">
+          <div class="webhook-box-title">
+            <lucide-icon [img]="Link" [size]="14"></lucide-icon>
+            Webhook de la app (Meta → App Dashboard → Instagram → Webhooks)
+          </div>
+          <div class="webhook-hint">
+            <span>URL de devolución de llamada:</span>
+            <code>{{ igWebhookUrl() }}</code>
+            <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(igWebhookUrl(), 'URL del webhook copiada')" title="Copiar URL del webhook">
+              <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
+            </button>
+          </div>
+          <div class="webhook-hint">
+            <span>Token de verificación:</span>
+            <code>{{ igWebhookConfig().verifyToken || '(falta INSTAGRAM_VERIFY_TOKEN en el servidor)' }}</code>
+            @if (igWebhookConfig().verifyToken) {
+              <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(igWebhookConfig().verifyToken!, 'Verify token copiado')" title="Copiar verify token">
+                <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
+              </button>
+            }
+          </div>
+          <span class="field-hint">Se configura una sola vez en Meta y aplica a todas las cuentas conectadas.</span>
         </div>
 
         @if (igAccountsLoading()) {
@@ -181,6 +197,11 @@ import { IgAccount, IgStatus, blankIgAccount } from '../../shared/models/account
     .acc-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 12px; font-weight: 600; color: var(--color-error); }
     .acc-status.ok { color: #16A34A; }
 
+    .webhook-box { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 20px; background: var(--color-bg-app); }
+    .webhook-box-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--color-text-main); }
+    .webhook-box .webhook-hint { margin-top: 10px; }
+    .webhook-box code { background: var(--color-white); }
+
     .webhook-hint { margin-top: 14px; font-size: 11px; color: var(--color-text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .webhook-hint code { background: var(--color-bg-app); padding: 3px 8px; border-radius: 6px; font-size: 11px; word-break: break-all; }
 
@@ -231,9 +252,11 @@ export class InstagramSettingsComponent implements OnInit {
   connectingIg = signal(false);
   showIgToken = signal(false);
   igStatusMap = signal<Record<string, IgStatus>>({});
+  igWebhookConfig = signal<WebhookConfig>({});
 
   ngOnInit() {
     this.loadIgAccounts();
+    this.loadIgWebhookConfig();
     this.handleIgOAuthReturn();
   }
 
@@ -271,7 +294,14 @@ export class InstagramSettingsComponent implements OnInit {
   editIgAccount(a: IgAccount) { this.igAccForm.set({ ...a }); this.showIgToken.set(false); }
 
   igWebhookUrl(): string {
-    return this.api.igWebhookUrl();
+    return this.igWebhookConfig().url || this.api.igWebhookUrl();
+  }
+
+  loadIgWebhookConfig() {
+    this.api.getIgWebhookConfig().subscribe({
+      next: (c) => this.igWebhookConfig.set(c),
+      error: () => this.igWebhookConfig.set({}),
+    });
   }
 
   copy(text: string, message: string) {

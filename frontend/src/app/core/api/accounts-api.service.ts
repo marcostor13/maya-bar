@@ -17,6 +17,7 @@ import {
   WaTemplate,
   WaTemplatePayload,
   WaTestResult,
+  WebhookConfig,
   WebhookResult,
 } from '../../shared/models/accounts.model';
 
@@ -92,6 +93,11 @@ export class AccountsApiService {
     return `${this.base}/wa/webhook/${kind}/${acc._id}`;
   }
 
+  /** URL + verify token del webhook Cloud API a nivel de app, tal como los resuelve el servidor. */
+  getWaWebhookConfig(): Observable<WebhookConfig> {
+    return this.http.get<WebhookConfig>(`${this.base}/whatsapp-accounts/webhook-url`);
+  }
+
   // ── Cuentas Instagram ────────────────────────────────────────────────────
 
   getIgAccounts(): Observable<IgAccount[]> {
@@ -129,6 +135,11 @@ export class AccountsApiService {
   /** URL del webhook de Instagram de la app (única para todas las cuentas). */
   igWebhookUrl(): string {
     return `${this.base}/ig/webhook`;
+  }
+
+  /** URL + verify token del webhook de Instagram, tal como los resuelve el servidor. */
+  getIgWebhookConfig(): Observable<WebhookConfig> {
+    return this.http.get<WebhookConfig>(`${this.base}/instagram-accounts/webhook-url`);
   }
 
   // ── Plantillas WhatsApp (Cloud API) ──────────────────────────────────────

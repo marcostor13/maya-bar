@@ -53,6 +53,16 @@ export class WhatsAppAccountsController {
     return this.service.refreshOAuthToken(id, req.user.tenantId);
   }
 
+  /** URL + verify token del webhook Cloud API a nivel de app (para pegar en Meta). */
+  @Get('webhook-url')
+  async webhookUrl(@Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return {
+      url: this.service.globalCloudWebhookUrl(),
+      verifyToken: await this.service.globalVerifyToken(req.user.tenantId),
+    };
+  }
+
   @Post()
   create(@Body() dto: CreateWhatsAppAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

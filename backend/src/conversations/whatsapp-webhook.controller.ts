@@ -19,7 +19,12 @@ import { MessageType, MessageStatus } from './message.schema';
  *
  * Configura en cada proveedor la URL:
  *   WAHA:      POST {API}/wa/webhook/waha/:accountId
- *   Cloud API: GET/POST {API}/wa/webhook/cloud/:accountId  (verify token = waVerifyToken)
+ *   Cloud API: GET/POST {API}/wa/webhook/cloud            (nivel de app, verify token = WHATSAPP_VERIFY_TOKEN)
+ *              GET/POST {API}/wa/webhook/cloud/:accountId (por cuenta, override_callback_uri, verify token = waVerifyToken)
+ *
+ * La URL a nivel de app es la que se pega en Meta (App Dashboard → WhatsApp →
+ * Configuración) y funciona aunque todavía no exista ninguna cuenta conectada:
+ * la cuenta se resuelve con el `phone_number_id` que trae el payload.
  */
 @Controller('wa/webhook')
 export class WhatsAppWebhookController {
@@ -29,6 +34,26 @@ export class WhatsAppWebhookController {
     private accounts: WhatsAppAccountsService,
     private conversations: ConversationsService,
   ) {}
+
+  // --- Meta Cloud API (nivel de app): verificación del webhook ---
+  @Get('cloud')
+  async verifyCloudApp(
+    @Query('hub.mode') mode: string,
+    @Query('hub.verify_token') token: string,
+    @Query('hub.challenge') challenge: string,
+  ) {
+    if (mode === 'subscribe' && (await this.accounts.verifyTokenMatches(token)))
+      return challenge;
+    return 'forbidden';
+  }
+
+  // --- Meta Cloud API (nivel de app): mensajes entrantes ---
+  @Post('cloud')
+  @HttpCode(200)
+  cloudAppInbound(@Body() body: unknown) {
+    void this.handleCloud(undefined, body);
+    return { received: true };
+  }
 
   // --- Meta Cloud API: verificación del webhook ---
   @Get('cloud/:accountId')
@@ -70,7 +95,7 @@ export class WhatsAppWebhookController {
   // Meta Cloud API
   // ------------------------------------------------------------------
 
-  private async handleCloud(accountId: string, body: unknown) {
+  private async handleCloud(accountId: string | undefined, body: unknown) {
     try {
       const value = (body as CloudBody).entry?.[0]?.changes?.[0]?.value;
       if (!value) return;
@@ -88,10 +113,16 @@ export class WhatsAppWebhookController {
       const raw = value.messages?.[0];
       if (!raw) return;
 
-      const account = await this.accounts.findById(accountId);
+      // Con la URL a nivel de app no viene accountId: se resuelve por el número que recibió el mensaje.
+      const phoneNumberId = value.metadata?.phone_number_id;
+      const account = accountId
+        ? await this.accounts.findById(accountId)
+        : phoneNumberId
+          ? await this.accounts.findByPhoneNumberId(phoneNumberId)
+          : null;
       if (!account || !account.active) {
         this.logger.warn(
-          `[WA] Cuenta ${accountId} inexistente o inactiva — mensaje descartado.`,
+          `[WA] Cuenta ${accountId ?? `phone_number_id=${phoneNumberId ?? '?'}`} inexistente o inactiva — mensaje descartado.`,
         );
         return;
       }
@@ -389,6 +420,7 @@ interface CloudBody {
   entry?: {
     changes?: {
       value?: {
+        metadata?: { phone_number_id?: string; display_phone_number?: string };
         contacts?: { profile?: { name?: string }; wa_id?: string }[];
         messages?: CloudMessage[];
         statuses?: { id?: string; status?: string }[];

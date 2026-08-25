@@ -56,7 +56,10 @@ export class InstagramAccountsController {
 
   @Get('webhook-url')
   webhookUrl() {
-    return { url: this.service.globalWebhookUrl() };
+    return {
+      url: this.service.globalWebhookUrl(),
+      verifyToken: this.service.globalVerifyToken(),
+    };
   }
 
   @Get(':id/status')

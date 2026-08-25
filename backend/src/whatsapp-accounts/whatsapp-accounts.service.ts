@@ -35,6 +35,48 @@ export class WhatsAppAccountsService {
     return `${base.replace(/\/$/, '')}/wa/webhook/${kind}/${String(account._id)}`;
   }
 
+  /**
+   * URL única del webhook de Cloud API a nivel de app — es la que se pega en
+   * Meta (App Dashboard → WhatsApp → Configuración) y funciona aunque todavía
+   * no exista ninguna cuenta conectada. Meta resuelve la cuenta por phone_number_id.
+   */
+  globalCloudWebhookUrl(): string | undefined {
+    const base = this.config.get<string>('PUBLIC_API_URL');
+    if (!base) return undefined;
+    return `${base.replace(/\/$/, '')}/wa/webhook/cloud`;
+  }
+
+  /**
+   * Verify token del webhook a nivel de app. Se toma del token que el tenant
+   * guarda en su cuenta Cloud API (campo "Verify Token" del formulario) y, si
+   * todavía no hay ninguna cuenta creada, del WHATSAPP_VERIFY_TOKEN del servidor.
+   */
+  async globalVerifyToken(tenantId: string): Promise<string | undefined> {
+    const account = await this.model
+      .findOne({
+        tenantId: new Types.ObjectId(tenantId),
+        provider: 'cloudapi',
+        waVerifyToken: { $nin: [null, ''] },
+      })
+      .sort({ isDefault: -1, createdAt: -1 })
+      .exec();
+    return (
+      account?.waVerifyToken ||
+      this.config.get<string>('WHATSAPP_VERIFY_TOKEN') ||
+      undefined
+    );
+  }
+
+  /** ¿Algún tenant tiene guardado este verify token? Valida el webhook a nivel de app. */
+  async verifyTokenMatches(token: string): Promise<boolean> {
+    if (!token) return false;
+    if (token === this.config.get<string>('WHATSAPP_VERIFY_TOKEN')) return true;
+    const match = await this.model
+      .exists({ provider: 'cloudapi', waVerifyToken: token })
+      .exec();
+    return !!match;
+  }
+
   findAll(tenantId: string) {
     return this.model
       .find({ tenantId: new Types.ObjectId(tenantId) })
@@ -56,6 +98,13 @@ export class WhatsAppAccountsService {
   /** Solo por id (uso interno, p.ej. webhooks). */
   findById(id: string) {
     return this.model.findById(new Types.ObjectId(id)).exec();
+  }
+
+  /** Ubica la cuenta Cloud API por el phone_number_id que trae el payload de Meta (webhook a nivel de app). */
+  findByPhoneNumberId(phoneNumberId: string) {
+    return this.model
+      .findOne({ provider: 'cloudapi', waPhoneNumberId: phoneNumberId })
+      .exec();
   }
 
   async create(tenantId: string, dto: CreateWhatsAppAccountDto) {

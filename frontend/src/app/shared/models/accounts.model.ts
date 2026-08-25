@@ -87,6 +87,12 @@ export interface WebhookResult {
   message: string;
 }
 
+/** URL pública del webhook + verify token, resueltos por el backend (PUBLIC_API_URL). */
+export interface WebhookConfig {
+  url?: string;
+  verifyToken?: string;
+}
+
 export interface TokenRefreshResult {
   success: boolean;
   tokenExpiresAt: string;

@@ -30,6 +30,11 @@ export class InstagramAccountsService {
     return `${base.replace(/\/$/, '')}/ig/webhook`;
   }
 
+  /** Verify token que Meta debe enviar al validar el webhook de Instagram. */
+  globalVerifyToken(): string | undefined {
+    return this.config.get<string>('INSTAGRAM_VERIFY_TOKEN');
+  }
+
   findAll(tenantId: string) {
     return this.model
       .find({ tenantId: new Types.ObjectId(tenantId) })
