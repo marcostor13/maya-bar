@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, CheckCircle2, RefreshCw, Save, WifiOff,
-  Eye, EyeOff, Plus, Trash2, Pencil, Instagram, Link,
+  Eye, EyeOff, Plus, Trash2, Pencil, Instagram, Link, Copy,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -33,6 +33,14 @@ import { IgAccount, IgStatus, blankIgAccount } from '../../shared/models/account
           {{ connectingIg() ? 'Redirigiendo…' : 'Conectar con Instagram' }}
         </button>
 
+        <div class="webhook-hint" style="margin-bottom:16px">
+          <span>Webhook de la app (se configura una sola vez en Meta, aplica a todas las cuentas):</span>
+          <code>{{ igWebhookUrl() }}</code>
+          <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(igWebhookUrl(), 'URL del webhook copiada')" title="Copiar URL del webhook">
+            <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
+          </button>
+        </div>
+
         @if (igAccountsLoading()) {
           <div class="loading-row">
             <lucide-icon [img]="RefreshCw" [size]="20" class="spin"></lucide-icon> Cargando cuentas…
@@ -43,10 +51,6 @@ import { IgAccount, IgStatus, blankIgAccount } from '../../shared/models/account
             <p>Aún no hay cuentas de Instagram.</p>
           </div>
         } @else {
-          <div class="webhook-hint" style="margin-bottom:16px">
-            <span>Webhook de la app (se configura una sola vez en Meta, aplica a todas las cuentas):</span>
-            <code>{{ igWebhookUrl() }}</code>
-          </div>
           <div class="acc-list">
             @for (acc of igAccounts(); track acc._id) {
               <div class="acc-card">
@@ -218,6 +222,7 @@ export class InstagramSettingsComponent implements OnInit {
   readonly Pencil = Pencil;
   readonly Instagram = Instagram;
   readonly Link = Link;
+  readonly Copy = Copy;
 
   igAccounts = signal<IgAccount[]>([]);
   igAccountsLoading = signal(false);
@@ -267,6 +272,13 @@ export class InstagramSettingsComponent implements OnInit {
 
   igWebhookUrl(): string {
     return this.api.igWebhookUrl();
+  }
+
+  copy(text: string, message: string) {
+    navigator.clipboard.writeText(text).then(
+      () => this.toast.success(message),
+      () => this.toast.error('No se pudo copiar al portapapeles'),
+    );
   }
 
   saveIgAccount() {

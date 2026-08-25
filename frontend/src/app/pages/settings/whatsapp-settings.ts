@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, MessageSquare, CheckCircle2, RefreshCw, Save, WifiOff,
-  QrCode, Eye, EyeOff, Plus, Trash2, Smartphone, Pencil, Star, Webhook, Link,
+  QrCode, Eye, EyeOff, Plus, Trash2, Smartphone, Pencil, Star, Webhook, Link, Copy,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -162,7 +162,20 @@ declare const FB: any;
                 <div class="webhook-hint">
                   <span>Webhook entrante:</span>
                   <code>{{ webhookUrl(acc) }}</code>
+                  <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(webhookUrl(acc), 'URL del webhook copiada')" title="Copiar URL del webhook">
+                    <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
+                  </button>
                 </div>
+
+                @if (acc.provider === 'cloudapi' && acc.waVerifyToken) {
+                  <div class="webhook-hint">
+                    <span>Verify token:</span>
+                    <code>{{ acc.waVerifyToken }}</code>
+                    <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(acc.waVerifyToken!, 'Verify token copiado')" title="Copiar verify token">
+                      <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
+                    </button>
+                  </div>
+                }
               </div>
             }
           </div>
@@ -333,6 +346,7 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   readonly Star = Star;
   readonly Webhook = Webhook;
   readonly Link = Link;
+  readonly Copy = Copy;
 
   /** Emite el provider de la cuenta predeterminada ('' si no hay) tras cada carga de cuentas. */
   defaultProviderChange = output<string>();
@@ -440,6 +454,13 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
 
   webhookUrl(a: WaAccount): string {
     return this.api.waWebhookUrl(a);
+  }
+
+  copy(text: string, message: string) {
+    navigator.clipboard.writeText(text).then(
+      () => this.toast.success(message),
+      () => this.toast.error('No se pudo copiar al portapapeles'),
+    );
   }
 
   saveAccount() {
