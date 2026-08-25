@@ -218,7 +218,7 @@ const OCCASION_OPTIONS = [
     }
 
     .booking-card {
-      width: 100%; max-width: 480px; background: var(--color-white);
+      width: 100%; max-width: 480px; min-width: 0; background: var(--color-white);
       border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden;
     }
 
@@ -282,7 +282,8 @@ const OCCASION_OPTIONS = [
     .muted { color: var(--color-text-muted); font-size: 13px; }
     .res-detail { background: var(--color-white); border-radius: var(--radius-md);
       padding: 14px 18px; text-align: left; margin: 12px 0;
-      display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+      display: flex; flex-direction: column; gap: 6px; font-size: 14px;
+      overflow-wrap: break-word; word-break: break-word; }
 
     @media (max-width: 768px) {
       .booking-shell { padding: 0; align-items: stretch; }

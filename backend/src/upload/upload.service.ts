@@ -4,19 +4,53 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { randomUUID } from 'crypto';
 
 const ALLOWED_IMAGE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm'];
+const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp'];
+const ALLOWED_AUDIO = [
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/mp3',
+  'audio/aac',
+  'audio/amr',
+  'audio/ogg',
+  'audio/opus',
+  'audio/webm',
+  'audio/wav',
+  'audio/x-wav',
+];
 const ALLOWED_DOC = [
   'application/pdf',
   'text/plain',
   'text/markdown',
   'text/csv',
   'application/json',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/zip',
+  'application/x-zip-compressed',
 ];
-const ALL_ALLOWED = [...ALLOWED_IMAGE, ...ALLOWED_VIDEO, ...ALLOWED_DOC];
+const ALL_ALLOWED = [...ALLOWED_IMAGE, ...ALLOWED_VIDEO, ...ALLOWED_AUDIO, ...ALLOWED_DOC];
 
 const MAX_SIZE_IMAGE = 10 * 1024 * 1024; // 10 MB
 const MAX_SIZE_VIDEO = 200 * 1024 * 1024; // 200 MB
+const MAX_SIZE_AUDIO = 30 * 1024 * 1024; // 30 MB
 const MAX_SIZE_DOC = 20 * 1024 * 1024; // 20 MB
+
+/** Tope para media entrante de WhatsApp/Instagram (no pasa por la allowlist). */
+const MAX_SIZE_INBOUND = 100 * 1024 * 1024; // 100 MB
+
+const EXT_BY_MIME: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+  'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/3gpp': '3gp',
+  'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/amr': 'amr',
+  'audio/ogg': 'ogg', 'audio/opus': 'opus', 'audio/webm': 'weba', 'audio/wav': 'wav',
+  'application/pdf': 'pdf', 'text/plain': 'txt', 'text/csv': 'csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+};
 
 export interface UploadResult {
   url: string;
@@ -57,7 +91,9 @@ export class UploadService {
       ? MAX_SIZE_IMAGE
       : ALLOWED_VIDEO.includes(file.mimetype)
         ? MAX_SIZE_VIDEO
-        : MAX_SIZE_DOC;
+        : ALLOWED_AUDIO.includes(file.mimetype)
+          ? MAX_SIZE_AUDIO
+          : MAX_SIZE_DOC;
 
     if (file.size > maxSize) {
       throw new BadRequestException(
@@ -65,21 +101,44 @@ export class UploadService {
       );
     }
 
-    const ext = file.originalname.split('.').pop()?.toLowerCase() ?? 'bin';
+    return this.uploadBuffer(file.buffer, file.mimetype, folder, file.originalname);
+  }
+
+  /**
+   * Sube un buffer arbitrario (sin allowlist de tipos) — usado para re-hospedar la
+   * media entrante de WhatsApp/Instagram, cuyas URLs originales expiran o exigen token.
+   */
+  async uploadBuffer(
+    buffer: Buffer,
+    contentType: string,
+    folder = 'uploads',
+    originalName?: string,
+  ): Promise<UploadResult> {
+    if (buffer.length > MAX_SIZE_INBOUND) {
+      throw new BadRequestException(
+        `Archivo demasiado grande (máx ${MAX_SIZE_INBOUND / 1024 / 1024} MB)`,
+      );
+    }
+
+    const mime = contentType || 'application/octet-stream';
+    const nameExt = originalName?.includes('.')
+      ? originalName.split('.').pop()?.toLowerCase()
+      : undefined;
+    const ext = nameExt ?? EXT_BY_MIME[mime.split(';')[0]] ?? 'bin';
     const key = `${folder}/${randomUUID()}.${ext}`;
 
     await this.s3.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
+        Body: buffer,
+        ContentType: mime,
         CacheControl: 'max-age=31536000',
       }),
     );
 
     const url = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
-    return { url, key, contentType: file.mimetype, size: file.size };
+    return { url, key, contentType: mime, size: buffer.length };
   }
 
   async delete(key: string): Promise<void> {

@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AiAgent } from './ai-agent.schema';
 import { KnowledgeDoc } from './knowledge-doc.schema';
-import { AgentConversation } from './agent-conversation.schema';
 import { AgentFile } from './agent-file.schema';
 import { CreateAiAgentDto, UpdateAiAgentDto, AddDocDto, AgentFileDto } from './dto/ai-agent.dto';
 import { RagService } from './rag.service';
@@ -20,11 +19,6 @@ export interface AgentFileSend {
   name: string;
 }
 
-export interface AgentReply {
-  text: string;
-  filesToSend: AgentFileSend[];
-}
-
 @Injectable()
 export class AiAgentsService {
   private readonly logger = new Logger(AiAgentsService.name);
@@ -32,7 +26,6 @@ export class AiAgentsService {
   constructor(
     @InjectModel(AiAgent.name) private agentModel: Model<AiAgent>,
     @InjectModel(KnowledgeDoc.name) private docModel: Model<KnowledgeDoc>,
-    @InjectModel(AgentConversation.name) private convModel: Model<AgentConversation>,
     @InjectModel(AgentFile.name) private fileModel: Model<AgentFile>,
     @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
     private rag: RagService,
@@ -102,7 +95,6 @@ export class AiAgentsService {
     await this.findOne(id, tenantId);
     await this.rag.deleteByAgent(id);
     await this.docModel.deleteMany({ agentId: new Types.ObjectId(id) }).exec();
-    await this.convModel.deleteMany({ agentId: new Types.ObjectId(id) }).exec();
     await this.fileModel.deleteMany({ agentId: new Types.ObjectId(id) }).exec();
     await this.agentModel.deleteOne({ _id: new Types.ObjectId(id) }).exec();
     return { deleted: true };
@@ -291,34 +283,6 @@ export class AiAgentsService {
       displayReply += '\n\n' + filesToSend.map((f) => `📎 [Se enviaría archivo: ${f.name}]`).join('\n');
     }
     return { reply: displayReply, sources };
-  }
-
-  async replyForContact(
-    agent: AiAgent,
-    accountId: string | undefined,
-    contact: string,
-    userMessage: string,
-  ): Promise<AgentReply> {
-    let conv = await this.convModel
-      .findOne({ agentId: agent._id, contact })
-      .exec();
-    if (!conv) {
-      conv = await this.convModel.create({
-        tenantId: agent.tenantId,
-        agentId: agent._id,
-        accountId: accountId ? new Types.ObjectId(accountId) : undefined,
-        contact,
-        messages: [],
-      });
-    }
-    const history = conv.messages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-    const { reply, filesToSend } = await this.generateAnswer(agent, userMessage, history);
-
-    conv.messages.push({ role: 'user', content: userMessage, at: new Date() });
-    conv.messages.push({ role: 'assistant', content: reply, at: new Date() });
-    if (conv.messages.length > 40) conv.messages = conv.messages.slice(-40);
-    await conv.save();
-    return { text: reply, filesToSend };
   }
 
   async findPublishedByAccount(accountId: string): Promise<AiAgent | null> {

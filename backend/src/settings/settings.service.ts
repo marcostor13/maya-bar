@@ -46,7 +46,7 @@ export class SettingsService {
   async sendWhatsApp(to: string, body: string, tenantId: string, mediaUrl?: string, mediaType?: WaMediaType, forceProvider?: string): Promise<void> {
     const config = await this.resolveConfig(tenantId);
     if (forceProvider) config.provider = forceProvider;
-    return this.wa.sendMessage(to, body, config, mediaUrl, mediaType);
+    await this.wa.sendMessage(to, body, config, mediaUrl, mediaType);
   }
 
   async sendWhatsAppTemplate(to: string, templateName: string, templateLang: string, vars: string[], tenantId: string): Promise<void> {

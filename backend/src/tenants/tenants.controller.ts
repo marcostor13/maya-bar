@@ -52,6 +52,7 @@ export class TenantsController {
       name: body.ownerName ?? body.name,
       role: 'TENANT_ADMIN',
       tenantId: tenant._id,
+      mustChangePassword: true,
     });
 
     return {

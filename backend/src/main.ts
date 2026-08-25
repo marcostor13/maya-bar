@@ -1,3 +1,6 @@
+import * as dns from 'dns';
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
@@ -11,6 +14,7 @@ async function bootstrap() {
       ? [
         frontendUrl,
         'http://localhost:4200',
+        'http://localhost:52005',
         'https://casagarbo.netlify.com',
         'https://gruposolar.netlify.app',
         'https://mayabar.marcostorresalarcon.com',

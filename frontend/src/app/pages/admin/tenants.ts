@@ -3,7 +3,8 @@ import { HttpClient } from '@angular/common/http';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ToastService } from '../../shared/toast';
-import { LucideAngularModule, Building2, Pencil, Trash2 } from 'lucide-angular';
+import { ConfirmService } from '../../shared/confirm';
+import { LucideAngularModule, Building2, Pencil, Trash2, X, CircleCheckBig } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -28,7 +29,7 @@ const API = environment.apiUrl;
           <div class="modal card animate-fade-in" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
             <div class="modal-header">
               <h3>{{ editing() ? 'Editar empresa' : 'Nueva empresa' }}</h3>
-              <button class="close-btn" (click)="closeForm()" aria-label="Cerrar formulario">✕</button>
+              <button class="close-btn" (click)="closeForm()" aria-label="Cerrar formulario"><lucide-icon [img]="X" [size]="18"></lucide-icon></button>
             </div>
             <form [formGroup]="form" (ngSubmit)="save()">
               <div class="form-group">
@@ -86,9 +87,9 @@ const API = environment.apiUrl;
       <!-- Credentials modal (post-creation) -->
       @if (newCredentials()) {
         <div class="overlay">
-          <div class="modal card animate-fade-in">
+          <div class="modal card animate-fade-in" role="dialog" aria-modal="true">
             <div class="modal-header">
-              <h3>✓ Empresa creada</h3>
+              <h3 class="modal-title-icon"><lucide-icon [img]="CircleCheckBig" [size]="20"></lucide-icon> Empresa creada</h3>
             </div>
             <p class="cred-intro">Comparte estas credenciales con el administrador de la empresa. <strong>Solo se muestran una vez.</strong></p>
             <div class="cred-box">
@@ -157,7 +158,7 @@ const API = environment.apiUrl;
                   <td>
                     <div class="row-actions">
                       <button class="btn-icon" aria-label="Editar" (click)="openForm(t)"><lucide-icon [img]="Pencil" [size]="16"></lucide-icon></button>
-                      <button class="btn-icon btn-icon-danger" aria-label="Desactivar" (click)="toggleActive(t)"><lucide-icon [img]="Trash2" [size]="16"></lucide-icon></button>
+                      <button class="btn-icon" [class.btn-icon-danger]="t.isActive" [attr.aria-label]="t.isActive ? 'Desactivar' : 'Activar'" (click)="toggleActive(t)"><lucide-icon [img]="Trash2" [size]="16"></lucide-icon></button>
                     </div>
                   </td>
                 </tr>
@@ -182,6 +183,7 @@ const API = environment.apiUrl;
     .modal { width: calc(100% - 48px); max-width: 480px; padding: 28px 32px; }
     .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
     .modal-header h3 { margin: 0; font-size: 18px; }
+    .modal-title-icon { display: flex; align-items: center; gap: 8px; color: var(--color-success); }
     .close-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: var(--color-text-muted); padding: 4px 8px; border-radius: 4px; }
     .close-btn:hover { background: var(--color-bg-light); }
 
@@ -277,15 +279,18 @@ export class AdminTenantsComponent implements OnInit {
   private http = inject(HttpClient);
   private fb = inject(FormBuilder);
   private toast = inject(ToastService);
+  private confirm = inject(ConfirmService);
 
   tenants = signal<any[]>([]);
   loading = signal(true);
   showForm = signal(false);
-  
+
   // Icons
   readonly Building2 = Building2;
   readonly Pencil = Pencil;
   readonly Trash2 = Trash2;
+  readonly X = X;
+  readonly CircleCheckBig = CircleCheckBig;
 
   editing = signal<any>(null);
   saving = signal(false);
@@ -372,8 +377,17 @@ export class AdminTenantsComponent implements OnInit {
     });
   }
 
-  toggleActive(tenant: any) {
+  async toggleActive(tenant: any) {
     const next = !tenant.isActive;
+    if (!next) {
+      const ok = await this.confirm.confirm({
+        title: '¿Desactivar esta empresa?',
+        message: 'El tenant y sus usuarios perderán acceso a la plataforma. Podrás reactivarla más adelante.',
+        confirmText: 'Desactivar',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     this.http.patch(`${API}/tenants/${tenant._id}`, { isActive: next }).subscribe({
       next: () => {
         this.toast.success(next ? 'Empresa activada' : 'Empresa desactivada');

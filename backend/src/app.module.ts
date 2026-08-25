@@ -23,6 +23,7 @@ import { ImpulsadorModule } from './impulsador/impulsador.module';
 import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramAccountsModule } from './instagram-accounts/instagram-accounts.module';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
+import { ConversationsModule } from './conversations/conversations.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { AiAgentsModule } from './ai-agents/ai-agents.module';
     WhatsAppAccountsModule,
     InstagramAccountsModule,
     AiAgentsModule,
+    ConversationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

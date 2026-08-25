@@ -16,6 +16,7 @@
   --color-text-muted: #6B7280;
   --color-border: #E5E7EB;
   --color-bg-app: #FAFAFA;
+  --color-bg-light: #F8FAFC;
   --color-white: #FFFFFF;
   
   --color-success: #10B981;
@@ -211,7 +212,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .animate-fade-in {
-  animation: fadeInUp var(--transition-smooth) forwards;
+  animation: fadeInUp var(--transition-smooth);
 }
 
 /* ==========================================================================

@@ -31,6 +31,7 @@ import { ImpulsadorPanelComponent } from './pages/impulsador-panel/impulsador-pa
 import { VisitsComponent } from './pages/visits/visits';
 import { MisAsistentesComponent } from './pages/mis-asistentes/mis-asistentes';
 import { AiAgentsComponent } from './pages/ai-agents/ai-agents';
+import { InboxComponent } from './pages/inbox/inbox';
 
 const homeRedirectGuard = () => {
   const auth = inject(AuthService);
@@ -116,6 +117,11 @@ export const routes: Routes = [
       {
         path: 'ai-agents',
         component: AiAgentsComponent,
+        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+      },
+      {
+        path: 'inbox',
+        component: InboxComponent,
         canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
       },
       {
