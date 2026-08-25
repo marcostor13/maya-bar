@@ -2,7 +2,15 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export type EventStatus = 'draft' | 'published' | 'cancelled';
-export type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone' | 'date';
+export type FormFieldType =
+  | 'text'
+  | 'textarea'
+  | 'select'
+  | 'checkbox'
+  | 'number'
+  | 'email'
+  | 'phone'
+  | 'date';
 
 export interface EventMediaFile {
   url: string;
@@ -68,25 +76,29 @@ export class Event extends Document {
   sharedWithAll: boolean;
 
   @Prop({
-    type: [{
-      url: { type: String, required: true },
-      key: { type: String, required: true },
-      name: { type: String, required: true },
-      mimeType: { type: String, required: true },
-      size: { type: Number, required: true },
-    }],
+    type: [
+      {
+        url: { type: String, required: true },
+        key: { type: String, required: true },
+        name: { type: String, required: true },
+        mimeType: { type: String, required: true },
+        size: { type: Number, required: true },
+      },
+    ],
     default: [],
   })
   mediaFiles: EventMediaFile[];
 
   @Prop({
-    type: [{
-      id: { type: String, required: true },
-      label: { type: String, required: true },
-      type: { type: String, required: true },
-      required: { type: Boolean, default: false },
-      options: [String],
-    }],
+    type: [
+      {
+        id: { type: String, required: true },
+        label: { type: String, required: true },
+        type: { type: String, required: true },
+        required: { type: Boolean, default: false },
+        options: [String],
+      },
+    ],
     default: [],
   })
   formFields: EventFormField[];

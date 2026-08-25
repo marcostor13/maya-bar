@@ -8,7 +8,11 @@ export class Conversation extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Tenant', required: true, index: true })
   tenantId: Types.ObjectId;
 
-  @Prop({ required: true, enum: ['whatsapp', 'instagram'], default: 'whatsapp' })
+  @Prop({
+    required: true,
+    enum: ['whatsapp', 'instagram'],
+    default: 'whatsapp',
+  })
   channel: ConversationChannel;
 
   /** Cuenta (WhatsAppAccount o InstagramAccount) por la que entra/sale el chat. */
@@ -61,4 +65,7 @@ export class Conversation extends Document {
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);
 ConversationSchema.index({ tenantId: 1, lastMessageAt: -1 });
-ConversationSchema.index({ channel: 1, accountId: 1, contact: 1 }, { unique: true });
+ConversationSchema.index(
+  { channel: 1, accountId: 1, contact: 1 },
+  { unique: true },
+);

@@ -13,7 +13,12 @@ export type MessageType =
   | 'contact'
   | 'unsupported';
 
-export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+export type MessageStatus =
+  | 'pending'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'failed';
 
 /** Quién originó el mensaje: el cliente, el agente IA, un operador humano o el sistema. */
 export type MessageAuthor = 'customer' | 'agent' | 'human' | 'system';
@@ -23,7 +28,12 @@ export class Message extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Tenant', required: true, index: true })
   tenantId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Conversation', required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'Conversation',
+    required: true,
+    index: true,
+  })
   conversationId: Types.ObjectId;
 
   @Prop({ required: true, enum: ['in', 'out'] })
@@ -34,7 +44,18 @@ export class Message extends Document {
 
   @Prop({
     required: true,
-    enum: ['text', 'image', 'video', 'audio', 'voice', 'document', 'sticker', 'location', 'contact', 'unsupported'],
+    enum: [
+      'text',
+      'image',
+      'video',
+      'audio',
+      'voice',
+      'document',
+      'sticker',
+      'location',
+      'contact',
+      'unsupported',
+    ],
     default: 'text',
   })
   type: MessageType;
@@ -60,7 +81,10 @@ export class Message extends Document {
   @Prop({ index: true })
   externalId?: string;
 
-  @Prop({ enum: ['pending', 'sent', 'delivered', 'read', 'failed'], default: 'sent' })
+  @Prop({
+    enum: ['pending', 'sent', 'delivered', 'read', 'failed'],
+    default: 'sent',
+  })
   status: MessageStatus;
 
   @Prop()

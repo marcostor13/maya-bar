@@ -21,7 +21,10 @@ export class WaTemplate extends Document {
   @Prop({ required: true })
   language: string;
 
-  @Prop({ enum: ['APPROVED', 'PENDING', 'REJECTED', 'PAUSED'], default: 'PENDING' })
+  @Prop({
+    enum: ['APPROVED', 'PENDING', 'REJECTED', 'PAUSED'],
+    default: 'PENDING',
+  })
   status: TemplateStatus;
 
   @Prop()

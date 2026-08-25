@@ -29,7 +29,11 @@ import { UploadModule } from '../upload/upload.module';
     AiAgentsModule,
     UploadModule,
   ],
-  controllers: [ConversationsController, WhatsAppWebhookController, InstagramWebhookController],
+  controllers: [
+    ConversationsController,
+    WhatsAppWebhookController,
+    InstagramWebhookController,
+  ],
   providers: [ConversationsService, ConversationsGateway],
   exports: [ConversationsService],
 })

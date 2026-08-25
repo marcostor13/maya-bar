@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Param, Query, Body, Logger, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  Body,
+  Logger,
+  HttpCode,
+} from '@nestjs/common';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { ConversationsService, InboundMessage } from './conversations.service';
 import { MessageType, MessageStatus } from './message.schema';
@@ -30,7 +39,12 @@ export class WhatsAppWebhookController {
     @Query('hub.challenge') challenge: string,
   ) {
     const account = await this.accounts.findById(accountId);
-    if (mode === 'subscribe' && account && token && token === account.waVerifyToken) {
+    if (
+      mode === 'subscribe' &&
+      account &&
+      token &&
+      token === account.waVerifyToken
+    ) {
       return challenge;
     }
     return 'forbidden';
@@ -64,7 +78,10 @@ export class WhatsAppWebhookController {
       // Acks de entrega/lectura de los mensajes que enviamos.
       for (const st of value.statuses ?? []) {
         if (st.id && st.status) {
-          await this.conversations.handleAck(st.id, this.cloudStatus(st.status));
+          await this.conversations.handleAck(
+            st.id,
+            this.cloudStatus(st.status),
+          );
         }
       }
 
@@ -73,18 +90,28 @@ export class WhatsAppWebhookController {
 
       const account = await this.accounts.findById(accountId);
       if (!account || !account.active) {
-        this.logger.warn(`[WA] Cuenta ${accountId} inexistente o inactiva — mensaje descartado.`);
+        this.logger.warn(
+          `[WA] Cuenta ${accountId} inexistente o inactiva — mensaje descartado.`,
+        );
         return;
       }
 
-      const inbound = this.parseCloudMessage(raw, value.contacts?.[0]?.profile?.name);
+      const inbound = this.parseCloudMessage(
+        raw,
+        value.contacts?.[0]?.profile?.name,
+      );
       await this.conversations.handleWhatsAppInbound(account, inbound);
     } catch (err) {
-      this.logger.error(`[WA] Error en el webhook de Cloud API: ${String(err)}`);
+      this.logger.error(
+        `[WA] Error en el webhook de Cloud API: ${String(err)}`,
+      );
     }
   }
 
-  private parseCloudMessage(msg: CloudMessage, profileName?: string): InboundMessage {
+  private parseCloudMessage(
+    msg: CloudMessage,
+    profileName?: string,
+  ): InboundMessage {
     const base: InboundMessage = {
       contact: msg.from ?? '',
       chatId: msg.from,
@@ -102,8 +129,8 @@ export class WhatsAppWebhookController {
       case 'video':
       case 'document':
       case 'sticker': {
-        const media = msg[msg.type] as CloudMedia | undefined;
-        const type: MessageType = msg.type === 'document' ? 'document' : (msg.type as MessageType);
+        const media = msg[msg.type];
+        const type: MessageType = msg.type;
         return {
           ...base,
           type,
@@ -141,8 +168,13 @@ export class WhatsAppWebhookController {
           type: 'contact',
           text: (msg.contacts ?? [])
             .map((c) => {
-              const phones = (c.phones ?? []).map((p) => p.phone).filter(Boolean).join(', ');
-              return [c.name?.formatted_name, phones].filter(Boolean).join(' — ');
+              const phones = (c.phones ?? [])
+                .map((p) => p.phone)
+                .filter(Boolean)
+                .join(', ');
+              return [c.name?.formatted_name, phones]
+                .filter(Boolean)
+                .join(' — ');
             })
             .join('\n'),
         };
@@ -189,7 +221,11 @@ export class WhatsAppWebhookController {
 
       if (event === 'message.ack') {
         const id = this.wahaId(p.id);
-        if (id) await this.conversations.handleAck(id, this.wahaStatus(p.ack, p.ackName));
+        if (id)
+          await this.conversations.handleAck(
+            id,
+            this.wahaStatus(p.ack, p.ackName),
+          );
         return;
       }
 
@@ -201,7 +237,9 @@ export class WhatsAppWebhookController {
 
       const account = await this.accounts.findById(accountId);
       if (!account || !account.active) {
-        this.logger.warn(`[WA] Cuenta ${accountId} inexistente o inactiva — mensaje descartado.`);
+        this.logger.warn(
+          `[WA] Cuenta ${accountId} inexistente o inactiva — mensaje descartado.`,
+        );
         return;
       }
 
@@ -218,7 +256,10 @@ export class WhatsAppWebhookController {
   private parseWahaMessage(p: WahaPayload): InboundMessage {
     // En los ecos (fromMe) el interlocutor es el destinatario, no el remitente.
     const chatId = (p.fromMe ? p.to : p.from) ?? p.from ?? '';
-    const contact = chatId.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@g.us', '');
+    const contact = chatId
+      .replace('@c.us', '')
+      .replace('@s.whatsapp.net', '')
+      .replace('@g.us', '');
     const mime = p.media?.mimetype ?? p._data?.mimetype;
 
     const base: InboundMessage = {
@@ -245,8 +286,16 @@ export class WhatsAppWebhookController {
       };
     }
 
-    if (rawType === 'vcard' || rawType === 'multi_vcard' || (p.vCards?.length ?? 0) > 0) {
-      return { ...base, type: 'contact', text: (p.vCards ?? []).join('\n') || (p.body ?? '') };
+    if (
+      rawType === 'vcard' ||
+      rawType === 'multi_vcard' ||
+      (p.vCards?.length ?? 0) > 0
+    ) {
+      return {
+        ...base,
+        type: 'contact',
+        text: (p.vCards ?? []).join('\n') || (p.body ?? ''),
+      };
     }
 
     if (p.hasMedia && p.media?.url) {
@@ -274,7 +323,8 @@ export class WhatsAppWebhookController {
     if (rawType === 'video') return 'video';
     if (rawType === 'audio') return 'audio';
     if (rawType === 'document') return 'document';
-    if (mime?.startsWith('image/')) return mime === 'image/webp' ? 'sticker' : 'image';
+    if (mime?.startsWith('image/'))
+      return mime === 'image/webp' ? 'sticker' : 'image';
     if (mime?.startsWith('video/')) return 'video';
     if (mime?.startsWith('audio/')) return 'audio';
     return 'document';
@@ -289,7 +339,8 @@ export class WhatsAppWebhookController {
   /** ack: -1 error · 1 servidor · 2 entregado · 3 leído · 4 reproducido. */
   private wahaStatus(ack?: number, ackName?: string): MessageStatus {
     if (ack === -1 || ackName === 'ERROR') return 'failed';
-    if ((ack ?? 0) >= 3 || ackName === 'READ' || ackName === 'PLAYED') return 'read';
+    if ((ack ?? 0) >= 3 || ackName === 'READ' || ackName === 'PLAYED')
+      return 'read';
     if (ack === 2 || ackName === 'DEVICE') return 'delivered';
     return 'sent';
   }
@@ -316,10 +367,21 @@ interface CloudMessage {
   audio?: CloudMedia;
   document?: CloudMedia;
   sticker?: CloudMedia;
-  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
-  contacts?: { name?: { formatted_name?: string }; phones?: { phone?: string }[] }[];
+  location?: {
+    latitude?: number;
+    longitude?: number;
+    name?: string;
+    address?: string;
+  };
+  contacts?: {
+    name?: { formatted_name?: string };
+    phones?: { phone?: string }[];
+  }[];
   button?: { text?: string; payload?: string };
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  interactive?: {
+    button_reply?: { title?: string };
+    list_reply?: { title?: string };
+  };
   reaction?: { emoji?: string; message_id?: string };
 }
 

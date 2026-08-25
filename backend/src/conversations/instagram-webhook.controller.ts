@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Query, Body, Logger, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  Body,
+  Logger,
+  HttpCode,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InstagramAccountsService } from '../instagram-accounts/instagram-accounts.service';
 import { ConversationsService, InboundMessage } from './conversations.service';
@@ -33,7 +41,8 @@ export class InstagramWebhookController {
     @Query('hub.challenge') challenge: string,
   ) {
     const expected = this.config.get<string>('INSTAGRAM_VERIFY_TOKEN');
-    if (mode === 'subscribe' && expected && token === expected) return challenge;
+    if (mode === 'subscribe' && expected && token === expected)
+      return challenge;
     return 'forbidden';
   }
 
@@ -48,7 +57,9 @@ export class InstagramWebhookController {
     try {
       const b = body as IgBody;
       if (b.object && b.object !== 'instagram') {
-        this.logger.warn(`[IG] Payload ignorado: object="${b.object}" (esperaba "instagram")`);
+        this.logger.warn(
+          `[IG] Payload ignorado: object="${b.object}" (esperaba "instagram")`,
+        );
         return;
       }
       const entry = b.entry?.[0];
@@ -56,19 +67,33 @@ export class InstagramWebhookController {
       const event = entry?.messaging?.[0];
       const senderId = event?.sender?.id;
       const message = event?.message;
-      if (!igUserId || !senderId || !message || message.is_echo || message.is_deleted) return;
+      if (
+        !igUserId ||
+        !senderId ||
+        !message ||
+        message.is_echo ||
+        message.is_deleted
+      )
+        return;
 
       const account = await this.accounts.findByIgUserId(igUserId);
       if (!account) {
-        this.logger.error(`[IG] No hay cuenta conectada con igBusinessAccountId="${igUserId}".`);
+        this.logger.error(
+          `[IG] No hay cuenta conectada con igBusinessAccountId="${igUserId}".`,
+        );
         return;
       }
       if (!account.active) {
-        this.logger.warn(`[IG] Cuenta ${String(account._id)} (${account.label}) inactiva — no se responde.`);
+        this.logger.warn(
+          `[IG] Cuenta ${String(account._id)} (${account.label}) inactiva — no se responde.`,
+        );
         return;
       }
 
-      await this.conversations.handleInstagramInbound(account, this.parse(senderId, event));
+      await this.conversations.handleInstagramInbound(
+        account,
+        this.parse(senderId, event),
+      );
     } catch (err) {
       this.logger.error(`[IG] Error procesando el webhook: ${String(err)}`);
     }

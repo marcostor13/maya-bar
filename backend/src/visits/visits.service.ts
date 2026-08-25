@@ -13,7 +13,11 @@ export class VisitsService {
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
   ) {}
 
-  async create(tenantId: string, impulsadorId: string, dto: CreateVisitDto): Promise<Visit> {
+  async create(
+    tenantId: string,
+    impulsadorId: string,
+    dto: CreateVisitDto,
+  ): Promise<Visit> {
     const visit = new this.visitModel({
       ...dto,
       tenantId: new Types.ObjectId(tenantId),
@@ -22,21 +26,42 @@ export class VisitsService {
     return visit.save();
   }
 
-  async findAll(tenantId: string, userId: string, role: string): Promise<Visit[]> {
-    const filter: Record<string, unknown> = { tenantId: new Types.ObjectId(tenantId) };
-    if (isOwnerScoped(role)) filter['impulsadorId'] = new Types.ObjectId(userId);
-    return this.visitModel.find(filter).sort({ createdAt: -1 }).limit(200).exec();
+  async findAll(
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<Visit[]> {
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+    };
+    if (isOwnerScoped(role))
+      filter['impulsadorId'] = new Types.ObjectId(userId);
+    return this.visitModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .exec();
   }
 
-  async delete(id: string, tenantId: string, userId: string, role: string): Promise<void> {
+  async delete(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<void> {
     const visit = await this.visitModel.findById(id).exec();
     if (!visit) return;
     if (visit.tenantId.toString() !== tenantId) throw new ForbiddenException();
-    if (isOwnerScoped(role) && visit.impulsadorId.toString() !== userId) throw new ForbiddenException();
+    if (isOwnerScoped(role) && visit.impulsadorId.toString() !== userId)
+      throw new ForbiddenException();
     await this.visitModel.findByIdAndDelete(id).exec();
   }
 
-  async getStats(tenantId: string, userId: string, role: string): Promise<{
+  async getStats(
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<{
     today: number;
     week: number;
     month: number;
@@ -47,7 +72,11 @@ export class VisitsService {
     const uid = new Types.ObjectId(userId);
     const now = new Date();
 
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - now.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
@@ -60,9 +89,18 @@ export class VisitsService {
     if (isOwnerScoped(role)) customerFilter['createdBy'] = uid;
 
     const [today, week, month, contacts] = await Promise.all([
-      this.visitModel.countDocuments({ ...visitFilter, createdAt: { $gte: startOfDay } }),
-      this.visitModel.countDocuments({ ...visitFilter, createdAt: { $gte: startOfWeek } }),
-      this.visitModel.countDocuments({ ...visitFilter, createdAt: { $gte: startOfMonth } }),
+      this.visitModel.countDocuments({
+        ...visitFilter,
+        createdAt: { $gte: startOfDay },
+      }),
+      this.visitModel.countDocuments({
+        ...visitFilter,
+        createdAt: { $gte: startOfWeek },
+      }),
+      this.visitModel.countDocuments({
+        ...visitFilter,
+        createdAt: { $gte: startOfMonth },
+      }),
       this.customerModel.countDocuments(customerFilter),
     ]);
 

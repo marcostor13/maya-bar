@@ -1,16 +1,31 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Request, BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
 import { InstagramAccountsService } from './instagram-accounts.service';
 import { InstagramOAuthService } from '../instagram/instagram-oauth.service';
-import { CreateInstagramAccountDto, UpdateInstagramAccountDto } from './dto/instagram-account.dto';
+import {
+  CreateInstagramAccountDto,
+  UpdateInstagramAccountDto,
+} from './dto/instagram-account.dto';
 
 @Controller('instagram-accounts')
 @UseGuards(JwtAuthGuard)
 export class InstagramAccountsController {
-  constructor(private service: InstagramAccountsService, private oauth: InstagramOAuthService) {}
+  constructor(
+    private service: InstagramAccountsService,
+    private oauth: InstagramOAuthService,
+  ) {}
 
   @Get()
   findAll(@Request() req: AuthReq) {
@@ -57,9 +72,14 @@ export class InstagramAccountsController {
   }
 
   @Post(':id/test')
-  test(@Param('id') id: string, @Body() dto: { recipientId: string }, @Request() req: AuthReq) {
+  test(
+    @Param('id') id: string,
+    @Body() dto: { recipientId: string },
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    if (!dto.recipientId) throw new BadRequestException('Falta el IGSID del destinatario');
+    if (!dto.recipientId)
+      throw new BadRequestException('Falta el IGSID del destinatario');
     return this.service.test(id, req.user.tenantId, dto.recipientId);
   }
 
@@ -70,7 +90,11 @@ export class InstagramAccountsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateInstagramAccountDto, @Request() req: AuthReq) {
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateInstagramAccountDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
     return this.service.update(id, req.user.tenantId, dto);
   }

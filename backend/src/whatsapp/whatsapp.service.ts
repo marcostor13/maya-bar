@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
 
 export interface WaConfig {
   provider: string;
@@ -31,12 +32,25 @@ export type WaMediaType = 'image' | 'video' | 'audio' | 'document';
  */
 const WAHA_WEBHOOK_EVENTS = ['message', 'message.any', 'message.ack'];
 
+/** Respuesta de /{phoneNumberId}/messages de la Cloud API. */
+interface CloudSendResult {
+  messages?: { id?: string }[];
+}
+
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
 
+  constructor(private readonly graph: MetaGraphClient) {}
+
   /** Envía un mensaje y devuelve el id del proveedor (para rastrear los acks), si lo hay. */
-  async sendMessage(to: string, body: string, config: WaConfig, mediaUrl?: string, mediaType?: WaMediaType): Promise<string | undefined> {
+  async sendMessage(
+    to: string,
+    body: string,
+    config: WaConfig,
+    mediaUrl?: string,
+    mediaType?: WaMediaType,
+  ): Promise<string | undefined> {
     const phone = this.formatPhone(to);
     if (!phone) {
       this.logger.warn(`Skipping WA message — invalid phone: ${to}`);
@@ -45,16 +59,30 @@ export class WhatsAppService {
 
     if (mediaUrl && mediaType) {
       if (mediaType === 'audio') {
-        if (config.provider === 'waha') return this.sendWahaAudio(phone, mediaUrl, config);
-        if (config.provider === 'cloudapi') return this.sendCloudApiAudio(phone, mediaUrl, config);
+        if (config.provider === 'waha')
+          return this.sendWahaAudio(phone, mediaUrl, config);
+        if (config.provider === 'cloudapi')
+          return this.sendCloudApiAudio(phone, mediaUrl, config);
       } else if (mediaType === 'document') {
-        if (config.provider === 'waha') return this.sendWahaDocument(phone, body, mediaUrl, config);
-        if (config.provider === 'cloudapi') return this.sendCloudApiDocument(phone, body, mediaUrl, config);
+        if (config.provider === 'waha')
+          return this.sendWahaDocument(phone, body, mediaUrl, config);
+        if (config.provider === 'cloudapi')
+          return this.sendCloudApiDocument(phone, body, mediaUrl, config);
       } else {
-        if (config.provider === 'waha') return this.sendWahaMedia(phone, body, mediaUrl, mediaType as 'image' | 'video', config);
-        if (config.provider === 'cloudapi') return this.sendCloudApiMedia(phone, body, mediaUrl, mediaType as 'image' | 'video', config);
+        if (config.provider === 'waha')
+          return this.sendWahaMedia(phone, body, mediaUrl, mediaType, config);
+        if (config.provider === 'cloudapi')
+          return this.sendCloudApiMedia(
+            phone,
+            body,
+            mediaUrl,
+            mediaType,
+            config,
+          );
       }
-      this.logger.log(`[MOCK WA MEDIA] To: ${phone} | ${mediaType}: ${mediaUrl}`);
+      this.logger.log(
+        `[MOCK WA MEDIA] To: ${phone} | ${mediaType}: ${mediaUrl}`,
+      );
       return undefined;
     }
 
@@ -68,32 +96,34 @@ export class WhatsAppService {
     return undefined;
   }
 
-  /** Extrae el id de mensaje de una respuesta de WAHA (`id` puede ser objeto o string). */
-  private wahaMessageId(data: unknown): string | undefined {
-    const d = data as { id?: string | { _serialized?: string } } | null;
-    if (!d?.id) return undefined;
-    return typeof d.id === 'string' ? d.id : d.id._serialized;
-  }
-
-  async sendCloudApiTemplate(to: string, templateName: string, language: string, vars: string[], config: WaConfig): Promise<void> {
+  async sendCloudApiTemplate(
+    to: string,
+    templateName: string,
+    language: string,
+    vars: string[],
+    config: WaConfig,
+  ): Promise<void> {
     const phone = this.formatPhone(to);
-    if (!phone) { this.logger.warn(`Skipping template — invalid phone: ${to}`); return; }
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
+    if (!phone) {
+      this.logger.warn(`Skipping template — invalid phone: ${to}`);
+      return;
+    }
     const components: object[] = [];
     if (vars.length > 0) {
-      components.push({ type: 'body', parameters: vars.map(v => ({ type: 'text', text: v })) });
+      components.push({
+        type: 'body',
+        parameters: vars.map((v) => ({ type: 'text', text: v })),
+      });
     }
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'template',
-        template: { name: templateName, language: { code: language }, components },
-      }),
+    await this.postCloudApiMessage(config, 'CloudAPI template', {
+      to: phone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: language },
+        components,
+      },
     });
-    if (!res.ok) throw new Error(`CloudAPI template ${res.status}: ${await res.text()}`);
   }
 
   /**
@@ -106,23 +136,28 @@ export class WhatsAppService {
     config: WaConfig,
   ): Promise<{ buffer: Buffer; mimeType: string } | null> {
     try {
-      const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
-        headers: { Authorization: `Bearer ${config.waAccessToken}` },
-      });
-      if (!metaRes.ok) throw new Error(`meta ${metaRes.status}: ${await metaRes.text()}`);
-      const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+      const meta = await this.graph.get<{ url?: string; mime_type?: string }>(
+        `/${mediaId}`,
+        { accessToken: config.waAccessToken },
+      );
       if (!meta.url) throw new Error('respuesta sin url');
 
+      // El binario no vive en Graph: se baja de la URL firmada, con el mismo token.
       const binRes = await fetch(meta.url, {
         headers: { Authorization: `Bearer ${config.waAccessToken}` },
       });
       if (!binRes.ok) throw new Error(`binario ${binRes.status}`);
       return {
         buffer: Buffer.from(await binRes.arrayBuffer()),
-        mimeType: meta.mime_type ?? binRes.headers.get('content-type') ?? 'application/octet-stream',
+        mimeType:
+          meta.mime_type ??
+          binRes.headers.get('content-type') ??
+          'application/octet-stream',
       };
     } catch (err) {
-      this.logger.error(`No se pudo descargar la media ${mediaId} de Cloud API: ${String(err)}`);
+      this.logger.error(
+        `No se pudo descargar la media ${mediaId} de Cloud API: ${this.errorMessage(err)}`,
+      );
       return null;
     }
   }
@@ -133,48 +168,79 @@ export class WhatsAppService {
     config: WaConfig,
   ): Promise<{ buffer: Buffer; mimeType: string } | null> {
     try {
-      const res = await fetch(mediaUrl, { headers: { 'X-Api-Key': config.wahaApiKey ?? '' } });
+      const res = await fetch(mediaUrl, {
+        headers: { 'X-Api-Key': config.wahaApiKey ?? '' },
+      });
       if (!res.ok) throw new Error(`WAHA media ${res.status}`);
       return {
         buffer: Buffer.from(await res.arrayBuffer()),
         mimeType: res.headers.get('content-type') ?? 'application/octet-stream',
       };
     } catch (err) {
-      this.logger.error(`No se pudo descargar la media de WAHA (${mediaUrl}): ${String(err)}`);
+      this.logger.error(
+        `No se pudo descargar la media de WAHA (${mediaUrl}): ${String(err)}`,
+      );
       return null;
     }
   }
 
   /** Marca el chat como leído (doble check azul) en el proveedor correspondiente. */
-  async markAsRead(config: WaConfig, opts: { chatId?: string; externalId?: string }): Promise<void> {
+  async markAsRead(
+    config: WaConfig,
+    opts: { chatId?: string; externalId?: string },
+  ): Promise<void> {
     try {
       if (config.provider === 'cloudapi' && opts.externalId) {
-        await fetch(`https://graph.facebook.com/v21.0/${config.waPhoneNumberId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
-          body: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: opts.externalId }),
+        await this.graph.post(`/${config.waPhoneNumberId}/messages`, {
+          accessToken: config.waAccessToken,
+          json: {
+            messaging_product: 'whatsapp',
+            status: 'read',
+            message_id: opts.externalId,
+          },
         });
       } else if (config.provider === 'waha' && opts.chatId) {
         await fetch(`${config.wahaApiUrl}/api/sendSeen`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.wahaApiKey ?? '' },
-          body: JSON.stringify({ session: config.wahaSession ?? 'default', chatId: opts.chatId }),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': config.wahaApiKey ?? '',
+          },
+          body: JSON.stringify({
+            session: config.wahaSession ?? 'default',
+            chatId: opts.chatId,
+          }),
         });
       }
     } catch (err) {
-      this.logger.warn(`No se pudo marcar como leído: ${String(err)}`);
+      this.logger.warn(
+        `No se pudo marcar como leído: ${this.errorMessage(err)}`,
+      );
     }
   }
 
   /** Indicador "escribiendo…" (solo WAHA lo expone de forma directa). */
-  async setTyping(config: WaConfig, chatId: string, typing: boolean): Promise<void> {
+  async setTyping(
+    config: WaConfig,
+    chatId: string,
+    typing: boolean,
+  ): Promise<void> {
     if (config.provider !== 'waha' || !chatId) return;
     try {
-      await fetch(`${config.wahaApiUrl}/api/${typing ? 'startTyping' : 'stopTyping'}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.wahaApiKey ?? '' },
-        body: JSON.stringify({ session: config.wahaSession ?? 'default', chatId }),
-      });
+      await fetch(
+        `${config.wahaApiUrl}/api/${typing ? 'startTyping' : 'stopTyping'}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': config.wahaApiKey ?? '',
+          },
+          body: JSON.stringify({
+            session: config.wahaSession ?? 'default',
+            chatId,
+          }),
+        },
+      );
     } catch {
       /* indicador best-effort */
     }
@@ -187,123 +253,251 @@ export class WhatsAppService {
   }
 
   /** Registra (o vuelve a registrar) el webhook entrante en la sesión de WAHA. */
-  async ensureWahaWebhook(config: WaConfig): Promise<{ success: boolean; message: string }> {
-    if (config.provider !== 'waha') return { success: false, message: 'Solo aplica a cuentas WAHA' };
-    if (!config.wahaApiUrl) return { success: false, message: 'Falta la URL de WAHA' };
-    if (!config.webhookUrl) return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
+  async ensureWahaWebhook(
+    config: WaConfig,
+  ): Promise<{ success: boolean; message: string }> {
+    if (config.provider !== 'waha')
+      return { success: false, message: 'Solo aplica a cuentas WAHA' };
+    if (!config.wahaApiUrl)
+      return { success: false, message: 'Falta la URL de WAHA' };
+    if (!config.webhookUrl)
+      return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
     const session = config.wahaSession ?? 'default';
-    const headers = { 'X-Api-Key': config.wahaApiKey ?? '', 'Content-Type': 'application/json', Accept: 'application/json' };
+    const headers = {
+      'X-Api-Key': config.wahaApiKey ?? '',
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
     const hook = { url: config.webhookUrl, events: WAHA_WEBHOOK_EVENTS };
     try {
-      const statusRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, { headers });
+      const statusRes = await fetch(
+        `${config.wahaApiUrl}/api/sessions/${session}`,
+        { headers },
+      );
       if (statusRes.status === 404) {
         const createRes = await fetch(`${config.wahaApiUrl}/api/sessions`, {
-          method: 'POST', headers,
-          body: JSON.stringify({ name: session, start: true, config: { webhooks: [hook] } }),
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            name: session,
+            start: true,
+            config: { webhooks: [hook] },
+          }),
         });
-        if (!createRes.ok) return { success: false, message: `No se pudo crear la sesión: ${await createRes.text()}` };
-        return { success: true, message: 'Sesión creada y webhook registrado. Escanea el QR para conectar.' };
+        if (!createRes.ok)
+          return {
+            success: false,
+            message: `No se pudo crear la sesión: ${await createRes.text()}`,
+          };
+        return {
+          success: true,
+          message:
+            'Sesión creada y webhook registrado. Escanea el QR para conectar.',
+        };
       }
-      if (!statusRes.ok) return { success: false, message: `WAHA ${statusRes.status}: ${await statusRes.text()}` };
-      const data = await statusRes.json() as { config?: { webhooks?: { url?: string }[] } };
-      const webhooks = [...(data.config?.webhooks ?? []).filter(w => w.url !== hook.url), hook];
-      const putRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, {
-        method: 'PUT', headers, body: JSON.stringify({ config: { webhooks } }),
-      });
-      if (!putRes.ok) return { success: false, message: `No se pudo actualizar el webhook: ${await putRes.text()}` };
-      await fetch(`${config.wahaApiUrl}/api/sessions/${session}/restart`, { method: 'POST', headers }).catch(() => undefined);
-      return { success: true, message: 'Webhook registrado correctamente. Ya recibirás los mensajes.' };
+      if (!statusRes.ok)
+        return {
+          success: false,
+          message: `WAHA ${statusRes.status}: ${await statusRes.text()}`,
+        };
+      const data = (await statusRes.json()) as {
+        config?: { webhooks?: { url?: string }[] };
+      };
+      const webhooks = [
+        ...(data.config?.webhooks ?? []).filter((w) => w.url !== hook.url),
+        hook,
+      ];
+      const putRes = await fetch(
+        `${config.wahaApiUrl}/api/sessions/${session}`,
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ config: { webhooks } }),
+        },
+      );
+      if (!putRes.ok)
+        return {
+          success: false,
+          message: `No se pudo actualizar el webhook: ${await putRes.text()}`,
+        };
+      await fetch(`${config.wahaApiUrl}/api/sessions/${session}/restart`, {
+        method: 'POST',
+        headers,
+      }).catch(() => undefined);
+      return {
+        success: true,
+        message: 'Webhook registrado correctamente. Ya recibirás los mensajes.',
+      };
     } catch (err) {
       return { success: false, message: String(err) };
     }
   }
 
   /** Registra el webhook con URL propia por WABA (override_callback_uri) — necesario con múltiples cuentas Cloud API bajo la misma app de Meta. */
-  async registerCloudApiWebhook(config: WaConfig, verifyToken?: string): Promise<{ success: boolean; message: string }> {
-    if (config.provider !== 'cloudapi') return { success: false, message: 'Solo aplica a cuentas Cloud API' };
-    if (!config.waBusinessAccountId) return { success: false, message: 'Falta el WhatsApp Business Account ID' };
-    if (!config.webhookUrl) return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
+  async registerCloudApiWebhook(
+    config: WaConfig,
+    verifyToken?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    if (config.provider !== 'cloudapi')
+      return { success: false, message: 'Solo aplica a cuentas Cloud API' };
+    if (!config.waBusinessAccountId)
+      return {
+        success: false,
+        message: 'Falta el WhatsApp Business Account ID',
+      };
+    if (!config.webhookUrl)
+      return { success: false, message: 'Falta PUBLIC_API_URL en el servidor' };
     try {
-      const res = await fetch(`https://graph.facebook.com/v21.0/${config.waBusinessAccountId}/subscribed_apps`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
-        body: JSON.stringify({ override_callback_uri: config.webhookUrl, verify_token: verifyToken ?? '' }),
+      await this.graph.post(`/${config.waBusinessAccountId}/subscribed_apps`, {
+        accessToken: config.waAccessToken,
+        json: {
+          override_callback_uri: config.webhookUrl,
+          verify_token: verifyToken ?? '',
+        },
       });
-      const data = await res.json() as { success?: boolean; error?: { message?: string } };
-      if (!res.ok || data.error) return { success: false, message: data.error?.message ?? `Error ${res.status}` };
       return { success: true, message: 'Webhook suscripto correctamente' };
     } catch (err) {
-      return { success: false, message: String(err) };
+      return { success: false, message: this.errorMessage(err) };
     }
   }
 
   async getQr(config: WaConfig): Promise<{ qrcode?: string; error?: string }> {
-    if (config.provider !== 'waha') return { error: 'QR solo disponible con WAHA' };
+    if (config.provider !== 'waha')
+      return { error: 'QR solo disponible con WAHA' };
     if (!config.wahaApiUrl) return { error: 'Falta la URL de WAHA' };
     const session = config.wahaSession ?? 'default';
-    const headers = { 'X-Api-Key': config.wahaApiKey ?? '', 'Content-Type': 'application/json', Accept: 'application/json' };
-    const hook = config.webhookUrl ? { url: config.webhookUrl, events: WAHA_WEBHOOK_EVENTS } : null;
+    const headers = {
+      'X-Api-Key': config.wahaApiKey ?? '',
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    const hook = config.webhookUrl
+      ? { url: config.webhookUrl, events: WAHA_WEBHOOK_EVENTS }
+      : null;
     try {
       let status: string | undefined;
-      const statusRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, { headers });
+      const statusRes = await fetch(
+        `${config.wahaApiUrl}/api/sessions/${session}`,
+        { headers },
+      );
       if (!statusRes.ok) {
         if (statusRes.status === 404) {
           const createRes = await fetch(`${config.wahaApiUrl}/api/sessions`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ name: session, start: true, config: hook ? { webhooks: [hook] } : undefined }),
+            body: JSON.stringify({
+              name: session,
+              start: true,
+              config: hook ? { webhooks: [hook] } : undefined,
+            }),
           });
-          if (!createRes.ok) return { error: `No se pudo crear la sesión "${session}": ${await createRes.text()}` };
-          await new Promise(r => setTimeout(r, 2500));
+          if (!createRes.ok)
+            return {
+              error: `No se pudo crear la sesión "${session}": ${await createRes.text()}`,
+            };
+          await new Promise((r) => setTimeout(r, 2500));
         } else {
-          return { error: `WAHA ${statusRes.status}: ${await statusRes.text()}` };
+          return {
+            error: `WAHA ${statusRes.status}: ${await statusRes.text()}`,
+          };
         }
       } else {
-        const data = await statusRes.json() as { status?: string; config?: { webhooks?: { url?: string }[] } };
+        const data = (await statusRes.json()) as {
+          status?: string;
+          config?: { webhooks?: { url?: string }[] };
+        };
         status = data.status;
         // Asegura que el webhook esté registrado (idempotente: solo parchea si falta).
-        if (hook && !(data.config?.webhooks ?? []).some(w => w.url === hook.url)) {
-          const webhooks = [...(data.config?.webhooks ?? []).filter(w => w.url !== hook.url), hook];
+        if (
+          hook &&
+          !(data.config?.webhooks ?? []).some((w) => w.url === hook.url)
+        ) {
+          const webhooks = [
+            ...(data.config?.webhooks ?? []).filter((w) => w.url !== hook.url),
+            hook,
+          ];
           await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, {
-            method: 'PUT', headers, body: JSON.stringify({ config: { webhooks } }),
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({ config: { webhooks } }),
           }).catch(() => undefined);
-          await fetch(`${config.wahaApiUrl}/api/sessions/${session}/restart`, { method: 'POST', headers }).catch(() => undefined);
-          await new Promise(r => setTimeout(r, 1500));
+          await fetch(`${config.wahaApiUrl}/api/sessions/${session}/restart`, {
+            method: 'POST',
+            headers,
+          }).catch(() => undefined);
+          await new Promise((r) => setTimeout(r, 1500));
         }
       }
       if (status === 'WORKING') {
-        return { error: 'La sesión ya está conectada. Webhook configurado — ya recibirás los mensajes.' };
+        return {
+          error:
+            'La sesión ya está conectada. Webhook configurado — ya recibirás los mensajes.',
+        };
       }
       if (status === 'FAILED' || status === 'STOPPED') {
         if (status === 'FAILED') {
-          await fetch(`${config.wahaApiUrl}/api/sessions/${session}/stop`, { method: 'POST', headers });
-          await new Promise(r => setTimeout(r, 1000));
+          await fetch(`${config.wahaApiUrl}/api/sessions/${session}/stop`, {
+            method: 'POST',
+            headers,
+          });
+          await new Promise((r) => setTimeout(r, 1000));
         }
-        const startRes = await fetch(`${config.wahaApiUrl}/api/sessions/${session}/start`, { method: 'POST', headers });
-        if (!startRes.ok) return { error: `No se pudo iniciar la sesión: ${await startRes.text()}` };
+        const startRes = await fetch(
+          `${config.wahaApiUrl}/api/sessions/${session}/start`,
+          { method: 'POST', headers },
+        );
+        if (!startRes.ok)
+          return {
+            error: `No se pudo iniciar la sesión: ${await startRes.text()}`,
+          };
       }
-      await new Promise(r => setTimeout(r, 2500));
-      const qrRes = await fetch(`${config.wahaApiUrl}/api/${session}/auth/qr`, { headers });
-      if (!qrRes.ok) return { error: `WAHA ${qrRes.status}: ${await qrRes.text()}` };
-      const data = await qrRes.json() as { data?: string };
-      return data.data ? { qrcode: data.data } : { error: 'QR no disponible aún. Intenta de nuevo.' };
+      await new Promise((r) => setTimeout(r, 2500));
+      const qrRes = await fetch(`${config.wahaApiUrl}/api/${session}/auth/qr`, {
+        headers,
+      });
+      if (!qrRes.ok)
+        return { error: `WAHA ${qrRes.status}: ${await qrRes.text()}` };
+      const data = (await qrRes.json()) as { data?: string };
+      return data.data
+        ? { qrcode: data.data }
+        : { error: 'QR no disponible aún. Intenta de nuevo.' };
     } catch (err) {
       return { error: String(err) };
     }
   }
 
-  private async sendWaha(to: string, body: string, config: WaConfig): Promise<string | undefined> {
+  /** Extrae el id de mensaje de una respuesta de WAHA (`id` puede ser objeto o string). */
+  private wahaMessageId(data: unknown): string | undefined {
+    const d = data as { id?: string | { _serialized?: string } } | null;
+    if (!d?.id) return undefined;
+    return typeof d.id === 'string' ? d.id : d.id._serialized;
+  }
+
+  private async sendWaha(
+    to: string,
+    body: string,
+    config: WaConfig,
+  ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
     const res = await fetch(`${config.wahaApiUrl}/api/sendText`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.wahaApiKey ?? '' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': config.wahaApiKey ?? '',
+      },
       body: JSON.stringify({ session, chatId: `${to}@c.us`, text: body }),
     });
     if (!res.ok) throw new Error(`WAHA ${res.status}: ${await res.text()}`);
     return this.wahaMessageId(await res.json().catch(() => null));
   }
 
-  private async sendWahaMedia(to: string, caption: string, mediaUrl: string, mediaType: 'image' | 'video', config: WaConfig): Promise<string | undefined> {
+  private async sendWahaMedia(
+    to: string,
+    caption: string,
+    mediaUrl: string,
+    mediaType: 'image' | 'video',
+    config: WaConfig,
+  ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
     const chatId = `${to}@c.us`;
     const isImage = mediaType === 'image';
@@ -312,13 +506,23 @@ export class WhatsAppService {
     const filename = isImage ? 'imagen.jpg' : 'video.mp4';
     const res = await fetch(`${config.wahaApiUrl}/api/${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.wahaApiKey ?? '' },
-      body: JSON.stringify({ session, chatId, caption, file: { mimetype, filename, url: mediaUrl } }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': config.wahaApiKey ?? '',
+      },
+      body: JSON.stringify({
+        session,
+        chatId,
+        caption,
+        file: { mimetype, filename, url: mediaUrl },
+      }),
     });
     if (!res.ok) {
       const text = await res.text();
       if (res.status === 422 && text.includes('Plus')) {
-        this.logger.warn(`WAHA media not supported (free tier), falling back to text+link for ${to}`);
+        this.logger.warn(
+          `WAHA media not supported (free tier), falling back to text+link for ${to}`,
+        );
         return this.sendWaha(to, `${caption}\n${mediaUrl}`, config);
       }
       throw new Error(`WAHA media ${res.status}: ${text}`);
@@ -326,12 +530,19 @@ export class WhatsAppService {
     return this.wahaMessageId(await res.json().catch(() => null));
   }
 
-  private async sendWahaAudio(to: string, audioUrl: string, config: WaConfig): Promise<string | undefined> {
+  private async sendWahaAudio(
+    to: string,
+    audioUrl: string,
+    config: WaConfig,
+  ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
     const chatId = `${to}@c.us`;
     const res = await fetch(`${config.wahaApiUrl}/api/sendVoice`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.wahaApiKey ?? '' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': config.wahaApiKey ?? '',
+      },
       body: JSON.stringify({ session, chatId, file: { url: audioUrl } }),
     });
     if (!res.ok) {
@@ -345,19 +556,34 @@ export class WhatsAppService {
     return this.wahaMessageId(await res.json().catch(() => null));
   }
 
-  private async sendWahaDocument(to: string, caption: string, docUrl: string, config: WaConfig): Promise<string | undefined> {
+  private async sendWahaDocument(
+    to: string,
+    caption: string,
+    docUrl: string,
+    config: WaConfig,
+  ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
     const chatId = `${to}@c.us`;
     const filename = docUrl.split('/').pop() ?? 'documento';
     const res = await fetch(`${config.wahaApiUrl}/api/sendFile`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.wahaApiKey ?? '' },
-      body: JSON.stringify({ session, chatId, caption, file: { url: docUrl, filename } }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': config.wahaApiKey ?? '',
+      },
+      body: JSON.stringify({
+        session,
+        chatId,
+        caption,
+        file: { url: docUrl, filename },
+      }),
     });
     if (!res.ok) {
       const text = await res.text();
       if (res.status === 422 && text.includes('Plus')) {
-        this.logger.warn(`WAHA document requires Plus, sending as link for ${to}`);
+        this.logger.warn(
+          `WAHA document requires Plus, sending as link for ${to}`,
+        );
         return this.sendWaha(to, `📄 ${caption}\n${docUrl}`, config);
       }
       throw new Error(`WAHA document ${res.status}: ${text}`);
@@ -365,97 +591,156 @@ export class WhatsAppService {
     return this.wahaMessageId(await res.json().catch(() => null));
   }
 
-  /** Extrae el wamid de una respuesta de la Cloud API. */
-  private async cloudMessageId(res: Response): Promise<string | undefined> {
-    const data = (await res.json().catch(() => null)) as { messages?: { id?: string }[] } | null;
-    return data?.messages?.[0]?.id;
-  }
-
-  private async sendCloudApi(to: string, body: string, config: WaConfig): Promise<string | undefined> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } }),
+  private async sendCloudApi(
+    to: string,
+    body: string,
+    config: WaConfig,
+  ): Promise<string | undefined> {
+    return this.postCloudApiMessage(config, 'CloudAPI', {
+      to,
+      type: 'text',
+      text: { body },
     });
-    if (!res.ok) throw new Error(`CloudAPI ${res.status}: ${await res.text()}`);
-    return this.cloudMessageId(res);
   }
 
-  private async sendCloudApiMedia(to: string, caption: string, mediaUrl: string, mediaType: 'image' | 'video', config: WaConfig): Promise<string | undefined> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
-    const payload = mediaType === 'image'
-      ? { image: { link: mediaUrl, caption } }
-      : { video: { link: mediaUrl, caption } };
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: mediaType, ...payload }),
+  private async sendCloudApiMedia(
+    to: string,
+    caption: string,
+    mediaUrl: string,
+    mediaType: 'image' | 'video',
+    config: WaConfig,
+  ): Promise<string | undefined> {
+    const payload =
+      mediaType === 'image'
+        ? { image: { link: mediaUrl, caption } }
+        : { video: { link: mediaUrl, caption } };
+    return this.postCloudApiMessage(config, 'CloudAPI media', {
+      to,
+      type: mediaType,
+      ...payload,
     });
-    if (!res.ok) throw new Error(`CloudAPI media ${res.status}: ${await res.text()}`);
-    return this.cloudMessageId(res);
   }
 
-  private async sendCloudApiAudio(to: string, audioUrl: string, config: WaConfig): Promise<string | undefined> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'audio', audio: { link: audioUrl } }),
+  private async sendCloudApiAudio(
+    to: string,
+    audioUrl: string,
+    config: WaConfig,
+  ): Promise<string | undefined> {
+    return this.postCloudApiMessage(config, 'CloudAPI audio', {
+      to,
+      type: 'audio',
+      audio: { link: audioUrl },
     });
-    if (!res.ok) throw new Error(`CloudAPI audio ${res.status}: ${await res.text()}`);
-    return this.cloudMessageId(res);
   }
 
-  private async sendCloudApiDocument(to: string, caption: string, docUrl: string, config: WaConfig): Promise<string | undefined> {
-    const url = `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}/messages`;
+  private async sendCloudApiDocument(
+    to: string,
+    caption: string,
+    docUrl: string,
+    config: WaConfig,
+  ): Promise<string | undefined> {
     const filename = docUrl.split('/').pop() ?? 'documento';
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.waAccessToken}` },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to, type: 'document',
-        document: { link: docUrl, caption, filename },
-      }),
+    return this.postCloudApiMessage(config, 'CloudAPI document', {
+      to,
+      type: 'document',
+      document: { link: docUrl, caption, filename },
     });
-    if (!res.ok) throw new Error(`CloudAPI document ${res.status}: ${await res.text()}`);
-    return this.cloudMessageId(res);
+  }
+
+  /**
+   * POST a /{phoneNumberId}/messages de la Cloud API con el prefijo de error
+   * histórico de cada tipo de envío. Devuelve el wamid para rastrear los acks.
+   */
+  private async postCloudApiMessage(
+    config: WaConfig,
+    errorLabel: string,
+    payload: object,
+  ): Promise<string | undefined> {
+    try {
+      const data = await this.graph.post<CloudSendResult>(
+        `/${config.waPhoneNumberId}/messages`,
+        {
+          accessToken: config.waAccessToken,
+          json: { messaging_product: 'whatsapp', ...payload },
+        },
+      );
+      return data.messages?.[0]?.id;
+    } catch (err) {
+      if (err instanceof MetaApiError)
+        throw new Error(`${errorLabel} ${err.status}: ${err.message}`);
+      throw err;
+    }
   }
 
   private async wahaStatus(config: WaConfig): Promise<WaStatus> {
     if (!config.wahaApiUrl) {
-      return { provider: 'waha', configured: false, connected: false, error: 'URL no configurada' };
+      return {
+        provider: 'waha',
+        configured: false,
+        connected: false,
+        error: 'URL no configurada',
+      };
     }
     const session = config.wahaSession ?? 'default';
     try {
-      const res = await fetch(
-        `${config.wahaApiUrl}/api/sessions/${session}`,
-        { headers: { 'X-Api-Key': config.wahaApiKey ?? '' } },
-      );
-      const data = await res.json() as { name?: string; status?: string };
+      const res = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, {
+        headers: { 'X-Api-Key': config.wahaApiKey ?? '' },
+      });
+      const data = (await res.json()) as { name?: string; status?: string };
       const state = data.status ?? 'UNKNOWN';
-      return { provider: 'waha', configured: true, connected: state === 'WORKING', instance: session, state };
+      return {
+        provider: 'waha',
+        configured: true,
+        connected: state === 'WORKING',
+        instance: session,
+        state,
+      };
     } catch (err) {
-      return { provider: 'waha', configured: true, connected: false, error: String(err) };
+      return {
+        provider: 'waha',
+        configured: true,
+        connected: false,
+        error: String(err),
+      };
     }
   }
 
   private async cloudStatus(config: WaConfig): Promise<WaStatus> {
     if (!config.waPhoneNumberId || !config.waAccessToken) {
-      return { provider: 'cloudapi', configured: false, connected: false, error: 'Phone Number ID o Access Token no configurados' };
+      return {
+        provider: 'cloudapi',
+        configured: false,
+        connected: false,
+        error: 'Phone Number ID o Access Token no configurados',
+      };
     }
     try {
-      const res = await fetch(
-        `https://graph.facebook.com/v19.0/${config.waPhoneNumberId}?fields=display_phone_number,verified_name`,
-        { headers: { Authorization: `Bearer ${config.waAccessToken}` } },
-      );
-      const data = await res.json() as { display_phone_number?: string; verified_name?: string; error?: { message?: string } };
-      if (data.error) throw new Error(data.error.message);
-      return { provider: 'cloudapi', configured: true, connected: true, phoneNumber: data.display_phone_number, state: data.verified_name };
+      const data = await this.graph.get<{
+        display_phone_number?: string;
+        verified_name?: string;
+      }>(`/${config.waPhoneNumberId}`, {
+        accessToken: config.waAccessToken,
+        params: { fields: 'display_phone_number,verified_name' },
+      });
+      return {
+        provider: 'cloudapi',
+        configured: true,
+        connected: true,
+        phoneNumber: data.display_phone_number,
+        state: data.verified_name,
+      };
     } catch (err) {
-      return { provider: 'cloudapi', configured: true, connected: false, error: String(err) };
+      return {
+        provider: 'cloudapi',
+        configured: true,
+        connected: false,
+        error: this.errorMessage(err),
+      };
     }
+  }
+
+  private errorMessage(err: unknown): string {
+    return err instanceof MetaApiError ? err.message : String(err);
   }
 
   formatPhone(phone: string): string {

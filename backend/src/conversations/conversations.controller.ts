@@ -1,10 +1,24 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Request, BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { ConversationsService } from './conversations.service';
-import { SendMessageDto, AutoReplyDto, StatusDto } from './dto/conversation.dto';
+import {
+  SendMessageDto,
+  AutoReplyDto,
+  StatusDto,
+} from './dto/conversation.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -21,7 +35,10 @@ export class ConversationsController {
   ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.listConversations(req.user.tenantId, {
-      channel, status, q, unread: unread === 'true',
+      channel,
+      status,
+      q,
+      unread: unread === 'true',
     });
   }
 
@@ -52,9 +69,14 @@ export class ConversationsController {
   }
 
   @Post(':id/messages')
-  send(@Param('id') id: string, @Body() dto: SendMessageDto, @Request() req: AuthReq) {
+  send(
+    @Param('id') id: string,
+    @Body() dto: SendMessageDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, CRM_ROLES);
-    if (!dto.text?.trim() && !dto.mediaUrl) throw new BadRequestException('El mensaje está vacío');
+    if (!dto.text?.trim() && !dto.mediaUrl)
+      throw new BadRequestException('El mensaje está vacío');
     return this.service.sendManual(id, req.user.tenantId, req.user.userId, dto);
   }
 
@@ -66,16 +88,31 @@ export class ConversationsController {
 
   /** Enciende/apaga la respuesta automática del agente en esta conversación. */
   @Patch(':id/auto-reply')
-  autoReply(@Param('id') id: string, @Body() dto: AutoReplyDto, @Request() req: AuthReq) {
+  autoReply(
+    @Param('id') id: string,
+    @Body() dto: AutoReplyDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, CRM_ROLES);
-    if (typeof dto.enabled !== 'boolean') throw new BadRequestException('Falta el valor de "enabled"');
-    return this.service.setAutoReply(id, req.user.tenantId, dto.enabled, req.user.userId);
+    if (typeof dto.enabled !== 'boolean')
+      throw new BadRequestException('Falta el valor de "enabled"');
+    return this.service.setAutoReply(
+      id,
+      req.user.tenantId,
+      dto.enabled,
+      req.user.userId,
+    );
   }
 
   @Patch(':id/status')
-  status(@Param('id') id: string, @Body() dto: StatusDto, @Request() req: AuthReq) {
+  status(
+    @Param('id') id: string,
+    @Body() dto: StatusDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, CRM_ROLES);
-    if (dto.status !== 'open' && dto.status !== 'closed') throw new BadRequestException('Estado inválido');
+    if (dto.status !== 'open' && dto.status !== 'closed')
+      throw new BadRequestException('Estado inválido');
     return this.service.setStatus(id, req.user.tenantId, dto.status);
   }
 

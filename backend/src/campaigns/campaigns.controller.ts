@@ -11,7 +11,12 @@ import {
   Request,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { assertRole, CRM_ROLES, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
+import {
+  assertRole,
+  CRM_ROLES,
+  MANAGE_ROLES,
+  type AuthReq,
+} from '../auth/permissions';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
 
@@ -40,7 +45,10 @@ export class CampaignsController {
   }
 
   @Post('generate-email')
-  generateEmail(@Body() dto: { topic: string; tone?: string }, @Request() req: AuthReq) {
+  generateEmail(
+    @Body() dto: { topic: string; tone?: string },
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.campaignsService.generateEmail(dto);
   }

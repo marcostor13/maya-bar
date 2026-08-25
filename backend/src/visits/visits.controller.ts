@@ -27,18 +27,31 @@ export class VisitsController {
   @Get()
   findAll(@Request() req: AuthReq) {
     assertRole(req.user.role, VISIT_ROLES);
-    return this.visitsService.findAll(req.user.tenantId, req.user.userId, req.user.role);
+    return this.visitsService.findAll(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @Get('stats')
   getStats(@Request() req: AuthReq) {
     assertRole(req.user.role, VISIT_ROLES);
-    return this.visitsService.getStats(req.user.tenantId, req.user.userId, req.user.role);
+    return this.visitsService.getStats(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @Delete(':id')
   delete(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, VISIT_ROLES);
-    return this.visitsService.delete(id, req.user.tenantId, req.user.userId, req.user.role);
+    return this.visitsService.delete(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 }

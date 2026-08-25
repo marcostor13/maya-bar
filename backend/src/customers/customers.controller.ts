@@ -29,13 +29,24 @@ export class CustomersController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.customersService.findAll(req.user.tenantId, req.user.userId, req.user.role, search, tag);
+    return this.customersService.findAll(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      search,
+      tag,
+    );
   }
 
   @Post()
   create(@Body() dto: CreateCustomerDto, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.customersService.create(req.user.tenantId, req.user.userId, req.user.role, dto);
+    return this.customersService.create(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
   }
 
   @Post('sync')
@@ -45,9 +56,16 @@ export class CustomersController {
   }
 
   @Get('export.csv')
-  async exportCsv(@Request() req: AuthReq, @Res({ passthrough: true }) res: any) {
+  async exportCsv(
+    @Request() req: AuthReq,
+    @Res({ passthrough: true }) res: any,
+  ) {
     assertRole(req.user.role, CRM_ROLES);
-    const csv = await this.customersService.exportCsv(req.user.tenantId, req.user.userId, req.user.role);
+    const csv = await this.customersService.exportCsv(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     res.setHeader('Content-Disposition', 'attachment; filename="clientes.csv"');
     return new StreamableFile(Buffer.from('﻿' + csv, 'utf-8'), {
@@ -62,12 +80,23 @@ export class CustomersController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.customersService.update(id, req.user.tenantId, req.user.userId, req.user.role, dto);
+    return this.customersService.update(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
   }
 
   @Delete(':id')
   delete(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.customersService.delete(id, req.user.tenantId, req.user.userId, req.user.role);
+    return this.customersService.delete(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 }

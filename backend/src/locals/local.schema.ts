@@ -69,7 +69,8 @@ export class Local extends Document {
       maxPartySize: 10,
       advanceBookingDays: 30,
       welcomeTitle: 'Reserva en Maya',
-      welcomeMessage: '¡Te esperamos! Completa tus datos para asegurar tu mesa.',
+      welcomeMessage:
+        '¡Te esperamos! Completa tus datos para asegurar tu mesa.',
       policy: 'Cancelaciones permitidas hasta 24 horas antes.',
     }),
   })

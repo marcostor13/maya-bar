@@ -11,7 +11,9 @@ import { Server, Socket } from 'socket.io';
  * Cada tenant tiene su propia room — el cliente se une pasando `tenantId` en la query.
  */
 @WebSocketGateway({ cors: { origin: '*' }, namespace: '/conversations' })
-export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ConversationsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer() server: Server;
 
   handleConnection(client: Socket) {
@@ -34,6 +36,8 @@ export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisco
   }
 
   emitTyping(tenantId: string, conversationId: string, typing: boolean) {
-    this.server?.to(tenantId).emit('conversation:typing', { conversationId, typing });
+    this.server
+      ?.to(tenantId)
+      .emit('conversation:typing', { conversationId, typing });
   }
 }

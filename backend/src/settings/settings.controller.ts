@@ -1,6 +1,22 @@
-import { Controller, Get, Put, Post, Delete, Body, Param, UseGuards, Request, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Post,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { assertRole, ADMIN_ONLY, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
+import {
+  assertRole,
+  ADMIN_ONLY,
+  MANAGE_ROLES,
+  type AuthReq,
+} from '../auth/permissions';
 import { SettingsService } from './settings.service';
 import { WaTemplatesService } from './wa-templates.service';
 import { SaveSettingsDto } from './dto/settings.dto';
@@ -41,7 +57,8 @@ export class SettingsController {
   @Post('whatsapp/test')
   waTest(@Body() dto: { phone: string }, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
-    if (!dto.phone) throw new BadRequestException('Falta el número de teléfono');
+    if (!dto.phone)
+      throw new BadRequestException('Falta el número de teléfono');
     return this.settings.testWaha(req.user.tenantId, dto.phone);
   }
 

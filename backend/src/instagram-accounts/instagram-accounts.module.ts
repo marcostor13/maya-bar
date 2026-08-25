@@ -3,7 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { InstagramAccountsController } from './instagram-accounts.controller';
 import { InstagramOAuthCallbackController } from './instagram-oauth-callback.controller';
 import { InstagramAccountsService } from './instagram-accounts.service';
-import { InstagramAccount, InstagramAccountSchema } from './instagram-account.schema';
+import {
+  InstagramAccount,
+  InstagramAccountSchema,
+} from './instagram-account.schema';
 import { InstagramModule } from '../instagram/instagram.module';
 
 @Module({

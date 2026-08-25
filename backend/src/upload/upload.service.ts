@@ -1,10 +1,19 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 
 const ALLOWED_IMAGE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp'];
+const ALLOWED_VIDEO = [
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/3gpp',
+];
 const ALLOWED_AUDIO = [
   'audio/mpeg',
   'audio/mp4',
@@ -32,7 +41,12 @@ const ALLOWED_DOC = [
   'application/zip',
   'application/x-zip-compressed',
 ];
-const ALL_ALLOWED = [...ALLOWED_IMAGE, ...ALLOWED_VIDEO, ...ALLOWED_AUDIO, ...ALLOWED_DOC];
+const ALL_ALLOWED = [
+  ...ALLOWED_IMAGE,
+  ...ALLOWED_VIDEO,
+  ...ALLOWED_AUDIO,
+  ...ALLOWED_DOC,
+];
 
 const MAX_SIZE_IMAGE = 10 * 1024 * 1024; // 10 MB
 const MAX_SIZE_VIDEO = 200 * 1024 * 1024; // 200 MB
@@ -43,12 +57,27 @@ const MAX_SIZE_DOC = 20 * 1024 * 1024; // 20 MB
 const MAX_SIZE_INBOUND = 100 * 1024 * 1024; // 100 MB
 
 const EXT_BY_MIME: Record<string, string> = {
-  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-  'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/3gpp': '3gp',
-  'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/amr': 'amr',
-  'audio/ogg': 'ogg', 'audio/opus': 'opus', 'audio/webm': 'weba', 'audio/wav': 'wav',
-  'application/pdf': 'pdf', 'text/plain': 'txt', 'text/csv': 'csv',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/3gpp': '3gp',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/aac': 'aac',
+  'audio/amr': 'amr',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
+  'audio/webm': 'weba',
+  'audio/wav': 'wav',
+  'application/pdf': 'pdf',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    'docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
 };
 
@@ -72,7 +101,8 @@ export class UploadService {
       region: this.region,
       credentials: {
         accessKeyId: configService.get<string>('AWS_ACCESS_KEY_ID') ?? '',
-        secretAccessKey: configService.get<string>('AWS_SECRET_ACCESS_KEY') ?? '',
+        secretAccessKey:
+          configService.get<string>('AWS_SECRET_ACCESS_KEY') ?? '',
       },
     });
   }
@@ -101,7 +131,12 @@ export class UploadService {
       );
     }
 
-    return this.uploadBuffer(file.buffer, file.mimetype, folder, file.originalname);
+    return this.uploadBuffer(
+      file.buffer,
+      file.mimetype,
+      folder,
+      file.originalname,
+    );
   }
 
   /**

@@ -11,8 +11,15 @@ import {
   Request,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { assertRole, EVENT_ROLES, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
+import {
+  assertRole,
+  EVENT_ROLES,
+  MANAGE_ROLES,
+  type AuthReq,
+} from '../auth/permissions';
 import { EventsService } from './events.service';
+import { RegistrationsService } from './registrations.service';
+import { ImpulsadoresService } from './impulsadores.service';
 import {
   CreateEventDto,
   UpdateEventDto,
@@ -27,7 +34,11 @@ import {
 
 @Controller()
 export class EventsController {
-  constructor(private eventsService: EventsService) {}
+  constructor(
+    private eventsService: EventsService,
+    private registrationsService: RegistrationsService,
+    private impulsadoresService: ImpulsadoresService,
+  ) {}
 
   // ─── Public ───────────────────────────────────────────────────────────────
 
@@ -38,7 +49,7 @@ export class EventsController {
 
   @Post('public/events/:id/register')
   registerForEvent(@Param('id') id: string, @Body() dto: RegisterEventDto) {
-    return this.eventsService.registerForEvent(id, dto);
+    return this.registrationsService.registerForEvent(id, dto);
   }
 
   // ─── Staff CRUD ───────────────────────────────────────────────────────────
@@ -47,21 +58,35 @@ export class EventsController {
   @UseGuards(JwtAuthGuard)
   findEvents(@Query('localId') localId: string, @Request() req: AuthReq) {
     assertRole(req.user.role, EVENT_ROLES);
-    return this.eventsService.findEvents(req.user.tenantId, req.user.userId, req.user.role, localId);
+    return this.eventsService.findEvents(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      localId,
+    );
   }
 
   @Get('events/:id')
   @UseGuards(JwtAuthGuard)
   findOneEvent(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, EVENT_ROLES);
-    return this.eventsService.findOneEvent(id, req.user.tenantId, req.user.userId, req.user.role);
+    return this.eventsService.findOneEvent(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @Post('events')
   @UseGuards(JwtAuthGuard)
   createEvent(@Body() dto: CreateEventDto, @Request() req: AuthReq) {
     assertRole(req.user.role, EVENT_ROLES);
-    return this.eventsService.createEvent(req.user.tenantId, req.user.userId, dto);
+    return this.eventsService.createEvent(
+      req.user.tenantId,
+      req.user.userId,
+      dto,
+    );
   }
 
   @Patch('events/:id')
@@ -72,21 +97,42 @@ export class EventsController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, EVENT_ROLES);
-    return this.eventsService.updateEvent(id, req.user.tenantId, req.user.userId, req.user.role, dto);
+    return this.eventsService.updateEvent(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
   }
 
   @Delete('events/:id')
   @UseGuards(JwtAuthGuard)
   deleteEvent(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, EVENT_ROLES);
-    return this.eventsService.deleteEvent(id, req.user.tenantId, req.user.userId, req.user.role);
+    return this.eventsService.deleteEvent(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @Patch('events/:id/share')
   @UseGuards(JwtAuthGuard)
-  shareEvent(@Param('id') id: string, @Body() dto: ShareEventDto, @Request() req: AuthReq) {
+  shareEvent(
+    @Param('id') id: string,
+    @Body() dto: ShareEventDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, EVENT_ROLES);
-    return this.eventsService.shareEvent(id, req.user.tenantId, req.user.userId, req.user.role, dto);
+    return this.eventsService.shareEvent(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
   }
 
   @Get('events/:id/registrations')
@@ -100,7 +146,12 @@ export class EventsController {
     @Query('sortOrder') sortOrder?: string,
   ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.findRegistrations(id, req.user.tenantId, { search, status, sortBy, sortOrder });
+    return this.registrationsService.findRegistrations(id, req.user.tenantId, {
+      search,
+      status,
+      sortBy,
+      sortOrder,
+    });
   }
 
   @Patch('events/:id/registrations/:regId/check-in')
@@ -111,7 +162,7 @@ export class EventsController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.checkIn(id, regId, req.user.tenantId);
+    return this.registrationsService.checkIn(id, regId, req.user.tenantId);
   }
 
   @Patch('events/:id/registrations/check-in/by-code')
@@ -122,28 +173,45 @@ export class EventsController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.checkInByCode(id, req.user.tenantId, dto.code);
+    return this.registrationsService.checkInByCode(
+      id,
+      req.user.tenantId,
+      dto.code,
+    );
   }
 
   @Get('events/:id/impulsadores')
   @UseGuards(JwtAuthGuard)
   findImpulsadores(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.findImpulsadores(id, req.user.tenantId);
+    return this.impulsadoresService.findImpulsadores(id, req.user.tenantId);
   }
 
   @Post('impulsadores/external')
   @UseGuards(JwtAuthGuard)
-  createExternalImpulsador(@Body() dto: CreateExternalImpulsadorDto, @Request() req: AuthReq) {
+  createExternalImpulsador(
+    @Body() dto: CreateExternalImpulsadorDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.createExternalImpulsador(req.user.tenantId, req.user.userId, dto);
+    return this.impulsadoresService.createExternalImpulsador(
+      req.user.tenantId,
+      req.user.userId,
+      dto,
+    );
   }
 
   @Delete('impulsadores/external/:extId')
   @UseGuards(JwtAuthGuard)
-  async deactivateExternalImpulsador(@Param('extId') extId: string, @Request() req: AuthReq) {
+  async deactivateExternalImpulsador(
+    @Param('extId') extId: string,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    await this.eventsService.deactivateExternalImpulsador(extId, req.user.tenantId);
+    await this.impulsadoresService.deactivateExternalImpulsador(
+      extId,
+      req.user.tenantId,
+    );
     return { ok: true };
   }
 
@@ -151,7 +219,10 @@ export class EventsController {
 
   @Post('events/ai-generate')
   @UseGuards(JwtAuthGuard)
-  generateFromPrompt(@Body() dto: GenerateFromPromptDto, @Request() req: AuthReq) {
+  generateFromPrompt(
+    @Body() dto: GenerateFromPromptDto,
+    @Request() req: AuthReq,
+  ) {
     assertRole(req.user.role, MANAGE_ROLES);
     return this.eventsService.generateFromPrompt(dto);
   }

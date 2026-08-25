@@ -14,7 +14,12 @@ export class KnowledgeChunk extends Document {
   @Prop({ type: Types.ObjectId, ref: 'AiAgent', required: true })
   agentId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'KnowledgeDoc', required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'KnowledgeDoc',
+    required: true,
+    index: true,
+  })
   docId: Types.ObjectId;
 
   @Prop({ required: true, index: true })
@@ -33,4 +38,5 @@ export class KnowledgeChunk extends Document {
   index: number;
 }
 
-export const KnowledgeChunkSchema = SchemaFactory.createForClass(KnowledgeChunk);
+export const KnowledgeChunkSchema =
+  SchemaFactory.createForClass(KnowledgeChunk);

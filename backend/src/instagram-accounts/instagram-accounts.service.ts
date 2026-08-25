@@ -3,8 +3,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
 import { InstagramAccount } from './instagram-account.schema';
-import { CreateInstagramAccountDto, UpdateInstagramAccountDto } from './dto/instagram-account.dto';
-import { InstagramService, IgConfig, IgStatus } from '../instagram/instagram.service';
+import {
+  CreateInstagramAccountDto,
+  UpdateInstagramAccountDto,
+} from './dto/instagram-account.dto';
+import {
+  InstagramService,
+  IgConfig,
+  IgStatus,
+} from '../instagram/instagram.service';
 import { InstagramOAuthService } from '../instagram/instagram-oauth.service';
 
 @Injectable()
@@ -32,7 +39,10 @@ export class InstagramAccountsService {
 
   async findOne(id: string, tenantId: string): Promise<InstagramAccount> {
     const doc = await this.model
-      .findOne({ _id: new Types.ObjectId(id), tenantId: new Types.ObjectId(tenantId) })
+      .findOne({
+        _id: new Types.ObjectId(id),
+        tenantId: new Types.ObjectId(tenantId),
+      })
       .exec();
     if (!doc) throw new NotFoundException('Cuenta de Instagram no encontrada');
     return doc;
@@ -61,15 +71,22 @@ export class InstagramAccountsService {
   async getDefault(tenantId: string): Promise<InstagramAccount | null> {
     const tid = new Types.ObjectId(tenantId);
     return (
-      (await this.model.findOne({ tenantId: tid, isDefault: true, active: true }).exec()) ??
-      (await this.model.findOne({ tenantId: tid, active: true }).sort({ createdAt: 1 }).exec())
+      (await this.model
+        .findOne({ tenantId: tid, isDefault: true, active: true })
+        .exec()) ??
+      (await this.model
+        .findOne({ tenantId: tid, active: true })
+        .sort({ createdAt: 1 })
+        .exec())
     );
   }
 
   async setDefault(id: string, tenantId: string): Promise<InstagramAccount> {
     const tid = new Types.ObjectId(tenantId);
     const account = await this.findOne(id, tenantId);
-    await this.model.updateMany({ tenantId: tid }, { $set: { isDefault: false } }).exec();
+    await this.model
+      .updateMany({ tenantId: tid }, { $set: { isDefault: false } })
+      .exec();
     account.isDefault = true;
     await account.save();
     return account;
@@ -89,12 +106,21 @@ export class InstagramAccountsService {
 
   async remove(id: string, tenantId: string) {
     const tid = new Types.ObjectId(tenantId);
-    const account = await this.model.findOne({ _id: new Types.ObjectId(id), tenantId: tid }).exec();
-    if (!account) throw new NotFoundException('Cuenta de Instagram no encontrada');
+    const account = await this.model
+      .findOne({ _id: new Types.ObjectId(id), tenantId: tid })
+      .exec();
+    if (!account)
+      throw new NotFoundException('Cuenta de Instagram no encontrada');
     await this.model.deleteOne({ _id: account._id }).exec();
     if (account.isDefault) {
-      const next = await this.model.findOne({ tenantId: tid }).sort({ createdAt: 1 }).exec();
-      if (next) { next.isDefault = true; await next.save(); }
+      const next = await this.model
+        .findOne({ tenantId: tid })
+        .sort({ createdAt: 1 })
+        .exec();
+      if (next) {
+        next.isDefault = true;
+        await next.save();
+      }
     }
     return { deleted: true };
   }
@@ -119,10 +145,20 @@ export class InstagramAccountsService {
   }
 
   /** Crea o actualiza la cuenta conectada vía OAuth (self-service, sin pegar tokens a mano). */
-  async upsertFromOAuth(tenantId: string, data: { userId: string; username?: string; accessToken: string; expiresIn: number }) {
+  async upsertFromOAuth(
+    tenantId: string,
+    data: {
+      userId: string;
+      username?: string;
+      accessToken: string;
+      expiresIn: number;
+    },
+  ) {
     const tid = new Types.ObjectId(tenantId);
     const tokenExpiresAt = new Date(Date.now() + data.expiresIn * 1000);
-    const existing = await this.model.findOne({ tenantId: tid, igBusinessAccountId: data.userId }).exec();
+    const existing = await this.model
+      .findOne({ tenantId: tid, igBusinessAccountId: data.userId })
+      .exec();
     if (existing) {
       existing.pageAccessToken = data.accessToken;
       existing.tokenExpiresAt = tokenExpiresAt;
@@ -147,8 +183,11 @@ export class InstagramAccountsService {
   /** Renueva el token de larga duración de una cuenta conectada vía OAuth. */
   async refreshOAuthToken(id: string, tenantId: string) {
     const account = await this.findOne(id, tenantId);
-    if (!account.pageAccessToken) throw new NotFoundException('La cuenta no tiene un token para renovar');
-    const { accessToken, expiresIn } = await this.oauth.refreshLongLivedToken(account.pageAccessToken);
+    if (!account.pageAccessToken)
+      throw new NotFoundException('La cuenta no tiene un token para renovar');
+    const { accessToken, expiresIn } = await this.oauth.refreshLongLivedToken(
+      account.pageAccessToken,
+    );
     account.pageAccessToken = accessToken;
     account.tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
     await account.save();
@@ -158,9 +197,14 @@ export class InstagramAccountsService {
   async test(id: string, tenantId: string, recipientId: string) {
     const account = await this.findOne(id, tenantId);
     const config = this.toConfig(account);
-    if (!recipientId?.trim()) return { success: false, error: 'Falta el IGSID del destinatario' };
+    if (!recipientId?.trim())
+      return { success: false, error: 'Falta el IGSID del destinatario' };
     try {
-      await this.ig.sendMessage(recipientId.trim(), '✅ Mensaje de prueba desde MAYA Platform', config);
+      await this.ig.sendMessage(
+        recipientId.trim(),
+        '✅ Mensaje de prueba desde MAYA Platform',
+        config,
+      );
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };

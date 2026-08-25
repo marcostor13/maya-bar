@@ -35,16 +35,21 @@ export class UsersService implements OnModuleInit {
     await this.normalizeEmails();
     const superadmin = await this.userModel.findOne({ role: 'SUPERADMIN' });
     if (!superadmin) {
-      this.logger.log('Creating initial superadmin user...');
-      await this.create({
-        email: 'admin@bar.com',
-        password: 'B4r$uper#2026!',
-        name: 'Super Admin',
-        role: 'SUPERADMIN',
-      });
-      this.logger.log(
-        'Superadmin created — email: admin@bar.com | password: B4r$uper#2026!',
-      );
+      const email = process.env.SEED_ADMIN_EMAIL;
+      const password = process.env.SEED_ADMIN_PASSWORD;
+      if (!email || !password) {
+        this.logger.warn(
+          'No existe un SUPERADMIN y faltan SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD — seed omitido',
+        );
+      } else {
+        await this.create({
+          email,
+          password,
+          name: 'Super Admin',
+          role: 'SUPERADMIN',
+        });
+        this.logger.log(`Superadmin creado — email: ${email}`);
+      }
     }
     await this.normalizeTenantIds();
   }
@@ -100,7 +105,10 @@ export class UsersService implements OnModuleInit {
         );
       }
     } catch (err) {
-      this.logger.error('Error normalizando tenantId de usuarios', err as Error);
+      this.logger.error(
+        'Error normalizando tenantId de usuarios',
+        err as Error,
+      );
     }
   }
 
@@ -193,11 +201,17 @@ export class UsersService implements OnModuleInit {
     return user.save();
   }
 
-  async saveResetCode(userId: string, code: string, expires: Date): Promise<void> {
-    await this.userModel.findByIdAndUpdate(userId, {
-      resetPasswordCode: code,
-      resetPasswordExpires: expires,
-    }).exec();
+  async saveResetCode(
+    userId: string,
+    code: string,
+    expires: Date,
+  ): Promise<void> {
+    await this.userModel
+      .findByIdAndUpdate(userId, {
+        resetPasswordCode: code,
+        resetPasswordExpires: expires,
+      })
+      .exec();
   }
 
   async resetPassword(userId: string, newPassword: string): Promise<User> {

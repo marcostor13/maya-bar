@@ -1,10 +1,19 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
-import { Message, MessageType, MessageStatus, MessageAuthor } from './message.schema';
+import { Message, MessageType, MessageStatus } from './message.schema';
 import { SendMessageDto } from './dto/conversation.dto';
-import { WhatsAppService, WaConfig, WaMediaType } from '../whatsapp/whatsapp.service';
+import {
+  WhatsAppService,
+  WaConfig,
+  WaMediaType,
+} from '../whatsapp/whatsapp.service';
 import { InstagramService, IgConfig } from '../instagram/instagram.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { InstagramAccountsService } from '../instagram-accounts/instagram-accounts.service';
@@ -18,6 +27,12 @@ import { ConversationsGateway } from './conversations.gateway';
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 50;
+
+/** Turno del historial tal como lo espera AiAgentsService.generateAnswer. */
+interface AiHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 /** Media entrante todavía sin descargar. */
 export interface InboundMedia {
@@ -95,40 +110,76 @@ export class ConversationsService {
 
   async listConversations(
     tenantId: string,
-    filters: { channel?: string; status?: string; q?: string; unread?: boolean } = {},
+    filters: {
+      channel?: string;
+      status?: string;
+      q?: string;
+      unread?: boolean;
+    } = {},
   ) {
-    const query: QueryFilter<Conversation> = { tenantId: new Types.ObjectId(tenantId) };
+    const query: QueryFilter<Conversation> = {
+      tenantId: new Types.ObjectId(tenantId),
+    };
     if (filters.channel) query.channel = filters.channel as ConversationChannel;
     if (filters.status) query.status = filters.status;
     if (filters.unread) query.unreadCount = { $gt: 0 };
     if (filters.q) {
-      const rx = new RegExp(filters.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      query.$or = [{ contact: rx }, { contactName: rx }, { lastMessagePreview: rx }];
+      const rx = new RegExp(
+        filters.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        'i',
+      );
+      query.$or = [
+        { contact: rx },
+        { contactName: rx },
+        { lastMessagePreview: rx },
+      ];
     }
-    return this.convModel.find(query).sort({ lastMessageAt: -1 }).limit(200).exec();
+    return this.convModel
+      .find(query)
+      .sort({ lastMessageAt: -1 })
+      .limit(200)
+      .exec();
   }
 
   async getConversation(id: string, tenantId: string): Promise<Conversation> {
     const conv = await this.convModel
-      .findOne({ _id: new Types.ObjectId(id), tenantId: new Types.ObjectId(tenantId) })
+      .findOne({
+        _id: new Types.ObjectId(id),
+        tenantId: new Types.ObjectId(tenantId),
+      })
       .exec();
     if (!conv) throw new NotFoundException('Conversación no encontrada');
     return conv;
   }
 
   /** Página de mensajes en orden cronológico; `before` pagina hacia atrás. */
-  async listMessages(id: string, tenantId: string, opts: { before?: string; limit?: number } = {}) {
+  async listMessages(
+    id: string,
+    tenantId: string,
+    opts: { before?: string; limit?: number } = {},
+  ) {
     await this.getConversation(id, tenantId);
-    const query: QueryFilter<Message> = { conversationId: new Types.ObjectId(id) };
+    const query: QueryFilter<Message> = {
+      conversationId: new Types.ObjectId(id),
+    };
     if (opts.before) query.at = { $lt: new Date(opts.before) };
     const limit = Math.min(opts.limit ?? DEFAULT_PAGE_SIZE, 200);
-    const docs = await this.msgModel.find(query).sort({ at: -1 }).limit(limit).exec();
+    const docs = await this.msgModel
+      .find(query)
+      .sort({ at: -1 })
+      .limit(limit)
+      .exec();
     return docs.reverse();
   }
 
   async unreadTotal(tenantId: string) {
     const rows = await this.convModel.aggregate<{ total: number }>([
-      { $match: { tenantId: new Types.ObjectId(tenantId), unreadCount: { $gt: 0 } } },
+      {
+        $match: {
+          tenantId: new Types.ObjectId(tenantId),
+          unreadCount: { $gt: 0 },
+        },
+      },
       { $group: { _id: null, total: { $sum: '$unreadCount' } } },
     ]);
     return { total: rows[0]?.total ?? 0 };
@@ -145,7 +196,11 @@ export class ConversationsService {
       const account = await this.waAccounts.findById(String(conv.accountId));
       if (account) {
         const last = await this.msgModel
-          .findOne({ conversationId: conv._id, direction: 'in', externalId: { $ne: null } })
+          .findOne({
+            conversationId: conv._id,
+            direction: 'in',
+            externalId: { $ne: null },
+          })
           .sort({ at: -1 })
           .exec();
         await this.wa.markAsRead(this.waAccounts.toConfig(account), {
@@ -159,10 +214,19 @@ export class ConversationsService {
   }
 
   /** Enciende/apaga la respuesta automática del agente para esta conversación. */
-  async setAutoReply(id: string, tenantId: string, enabled: boolean, userId?: string) {
+  async setAutoReply(
+    id: string,
+    tenantId: string,
+    enabled: boolean,
+    userId?: string,
+  ) {
     const conv = await this.getConversation(id, tenantId);
     conv.autoReply = enabled;
-    conv.takenOverBy = enabled ? undefined : userId ? new Types.ObjectId(userId) : undefined;
+    conv.takenOverBy = enabled
+      ? undefined
+      : userId
+        ? new Types.ObjectId(userId)
+        : undefined;
     conv.takenOverAt = enabled ? undefined : new Date();
     await conv.save();
     this.gateway.emitConversation(tenantId, conv);
@@ -188,11 +252,18 @@ export class ConversationsService {
   // Envío manual (operador humano)
   // ------------------------------------------------------------------
 
-  async sendManual(id: string, tenantId: string, userId: string, dto: SendMessageDto) {
+  async sendManual(
+    id: string,
+    tenantId: string,
+    userId: string,
+    dto: SendMessageDto,
+  ) {
     const conv = await this.getConversation(id, tenantId);
     const type: MessageType = dto.type ?? (dto.mediaUrl ? 'document' : 'text');
-    if (type === 'text' && !dto.text?.trim()) throw new BadRequestException('El mensaje está vacío');
-    if (type !== 'text' && !dto.mediaUrl) throw new BadRequestException('Falta la URL del archivo');
+    if (type === 'text' && !dto.text?.trim())
+      throw new BadRequestException('El mensaje está vacío');
+    if (type !== 'text' && !dto.mediaUrl)
+      throw new BadRequestException('Falta la URL del archivo');
 
     // Escribir manualmente pausa al agente: quien contesta es la persona.
     if (conv.autoReply && dto.pauseAgent !== false) {
@@ -229,7 +300,9 @@ export class ConversationsService {
     } catch (err) {
       msg.status = 'failed';
       msg.error = String(err);
-      this.logger.error(`Error enviando mensaje manual ${String(msg._id)}: ${String(err)}`);
+      this.logger.error(
+        `Error enviando mensaje manual ${String(msg._id)}: ${String(err)}`,
+      );
     }
     await msg.save();
     this.gateway.emitMessageUpdated(tenantId, msg);
@@ -237,23 +310,41 @@ export class ConversationsService {
   }
 
   /** Entrega el mensaje por el canal correspondiente y devuelve el id del proveedor. */
-  private async deliver(conv: Conversation, msg: Message): Promise<string | undefined> {
-    const mediaType = msg.mediaUrl ? this.toProviderMediaType(msg.type) : undefined;
+  private async deliver(
+    conv: Conversation,
+    msg: Message,
+  ): Promise<string | undefined> {
+    const mediaType = msg.mediaUrl
+      ? this.toProviderMediaType(msg.type)
+      : undefined;
     // El caption viaja como cuerpo; para documentos se usa el nombre si no hay texto.
     const body = msg.text || (msg.mediaUrl ? (msg.filename ?? '') : '');
 
     if (conv.channel === 'whatsapp') {
       const account = await this.waAccounts.findById(String(conv.accountId));
       if (!account) throw new Error('La cuenta de WhatsApp ya no existe');
-      if (!account.active) throw new Error('La cuenta de WhatsApp está inactiva');
+      if (!account.active)
+        throw new Error('La cuenta de WhatsApp está inactiva');
       const config: WaConfig = this.waAccounts.toConfig(account);
-      return this.wa.sendMessage(conv.contact, body, config, msg.mediaUrl, mediaType);
+      return this.wa.sendMessage(
+        conv.contact,
+        body,
+        config,
+        msg.mediaUrl,
+        mediaType,
+      );
     }
 
     const igAccount = await this.igAccounts.findById(String(conv.accountId));
     if (!igAccount) throw new Error('La cuenta de Instagram ya no existe');
     const igConfig: IgConfig = this.igAccounts.toConfig(igAccount);
-    await this.ig.sendMessage(conv.contact, body, igConfig, msg.mediaUrl, mediaType);
+    await this.ig.sendMessage(
+      conv.contact,
+      body,
+      igConfig,
+      msg.mediaUrl,
+      mediaType,
+    );
     return undefined;
   }
 
@@ -268,7 +359,10 @@ export class ConversationsService {
   // Entrada desde los webhooks
   // ------------------------------------------------------------------
 
-  async handleWhatsAppInbound(account: WhatsAppAccount, inbound: InboundMessage) {
+  async handleWhatsAppInbound(
+    account: WhatsAppAccount,
+    inbound: InboundMessage,
+  ) {
     const config = this.waAccounts.toConfig(account);
     await this.ingest({
       channel: 'whatsapp',
@@ -276,21 +370,27 @@ export class ConversationsService {
       accountId: String(account._id),
       inbound,
       downloadMedia: (media) => this.downloadWhatsAppMedia(media, config),
-      resolveAgent: () => this.agents.findPublishedByAccount(String(account._id)),
+      resolveAgent: () =>
+        this.agents.findPublishedByAccount(String(account._id)),
       typing: inbound.chatId
-        ? (on: boolean) => this.wa.setTyping(config, inbound.chatId as string, on)
+        ? (on: boolean) =>
+            this.wa.setTyping(config, inbound.chatId as string, on)
         : undefined,
     });
   }
 
-  async handleInstagramInbound(account: InstagramAccount, inbound: InboundMessage) {
+  async handleInstagramInbound(
+    account: InstagramAccount,
+    inbound: InboundMessage,
+  ) {
     await this.ingest({
       channel: 'instagram',
       tenantId: String(account.tenantId),
       accountId: String(account._id),
       inbound,
       downloadMedia: (media) => this.downloadPublicMedia(media),
-      resolveAgent: () => this.agents.findPublishedByInstagramAccount(String(account._id)),
+      resolveAgent: () =>
+        this.agents.findPublishedByInstagramAccount(String(account._id)),
     });
   }
 
@@ -301,7 +401,11 @@ export class ConversationsService {
     if (!msg) return;
     const order: MessageStatus[] = ['pending', 'sent', 'delivered', 'read'];
     // Nunca retrocedas el estado (los acks pueden llegar desordenados).
-    if (msg.status !== 'failed' && order.indexOf(status) <= order.indexOf(msg.status)) return;
+    if (
+      msg.status !== 'failed' &&
+      order.indexOf(status) <= order.indexOf(msg.status)
+    )
+      return;
     msg.status = status;
     await msg.save();
     this.gateway.emitMessageUpdated(String(msg.tenantId), msg);
@@ -316,18 +420,31 @@ export class ConversationsService {
     tenantId: string;
     accountId: string;
     inbound: InboundMessage;
-    downloadMedia: (media: InboundMedia) => Promise<{ buffer: Buffer; mimeType: string } | null>;
+    downloadMedia: (
+      media: InboundMedia,
+    ) => Promise<{ buffer: Buffer; mimeType: string } | null>;
     resolveAgent: () => Promise<AiAgent | null>;
     typing?: (on: boolean) => Promise<void>;
   }) {
     const { channel, tenantId, accountId, inbound } = params;
-    const conv = await this.upsertConversation(channel, tenantId, accountId, inbound);
+    const conv = await this.upsertConversation(
+      channel,
+      tenantId,
+      accountId,
+      inbound,
+    );
 
     // Eco de un mensaje que el negocio envió desde su propio móvil: solo se archiva.
     const isEcho = inbound.fromMe === true;
     if (isEcho && (await this.isDuplicateEcho(conv, inbound))) return;
 
-    const media = inbound.media ? await this.storeInboundMedia(inbound.media, params.downloadMedia, channel) : null;
+    const media = inbound.media
+      ? await this.storeInboundMedia(
+          inbound.media,
+          params.downloadMedia,
+          channel,
+        )
+      : null;
 
     const msg = await this.msgModel.create({
       tenantId: conv.tenantId,
@@ -378,12 +495,15 @@ export class ConversationsService {
     const tenantId = String(conv.tenantId);
     const agent = await resolveAgent();
     if (!agent) {
-      this.logger.warn(`Sin agente publicado para la cuenta ${String(conv.accountId)} — el chat queda en manual.`);
+      this.logger.warn(
+        `Sin agente publicado para la cuenta ${String(conv.accountId)} — el chat queda en manual.`,
+      );
       return;
     }
 
     const history = await this.buildAiHistory(conv, inboundMsg);
-    const userMessage = this.toAiContent(inboundMsg) || AI_HINT_BY_TYPE.unsupported;
+    const userMessage =
+      this.toAiContent(inboundMsg) || AI_HINT_BY_TYPE.unsupported;
 
     if (typing) {
       await typing(true);
@@ -391,9 +511,13 @@ export class ConversationsService {
     }
 
     try {
-      const { reply, filesToSend } = await this.agents.generateAnswer(agent, userMessage, history);
+      const { reply, filesToSend } = await this.agents.generateAnswer(
+        agent,
+        userMessage,
+        history,
+      );
 
-      conv.agentId = agent._id as Types.ObjectId;
+      conv.agentId = agent._id;
       await conv.save();
 
       if (reply) {
@@ -409,7 +533,9 @@ export class ConversationsService {
         });
       }
     } catch (err) {
-      this.logger.error(`Error generando la respuesta del agente: ${String(err)}`);
+      this.logger.error(
+        `Error generando la respuesta del agente: ${String(err)}`,
+      );
     } finally {
       if (typing) {
         await typing(false);
@@ -421,13 +547,19 @@ export class ConversationsService {
   /** Persiste y entrega un mensaje originado por el agente IA. */
   private async sendFromAgent(
     conv: Conversation,
-    data: { type: MessageType; text: string; mediaUrl?: string; mimeType?: string; filename?: string },
+    data: {
+      type: MessageType;
+      text: string;
+      mediaUrl?: string;
+      mimeType?: string;
+      filename?: string;
+    },
   ) {
     const msg = await this.msgModel.create({
       tenantId: conv.tenantId,
       conversationId: conv._id,
       direction: 'out',
-      author: 'agent' as MessageAuthor,
+      author: 'agent',
       type: data.type,
       text: data.text,
       mediaUrl: data.mediaUrl,
@@ -444,7 +576,9 @@ export class ConversationsService {
     } catch (err) {
       msg.status = 'failed';
       msg.error = String(err);
-      this.logger.error(`Error enviando la respuesta del agente: ${String(err)}`);
+      this.logger.error(
+        `Error enviando la respuesta del agente: ${String(err)}`,
+      );
     }
     await msg.save();
     await this.touchConversation(conv, msg);
@@ -459,9 +593,14 @@ export class ConversationsService {
    * Los mensajes que enviamos por la API vuelven como eco del proveedor. Se descartan
    * por id; y si el ack llega antes de que hayamos guardado el id, por texto reciente.
    */
-  private async isDuplicateEcho(conv: Conversation, inbound: InboundMessage): Promise<boolean> {
+  private async isDuplicateEcho(
+    conv: Conversation,
+    inbound: InboundMessage,
+  ): Promise<boolean> {
     if (inbound.externalId) {
-      const byId = await this.msgModel.findOne({ externalId: inbound.externalId }).exec();
+      const byId = await this.msgModel
+        .findOne({ externalId: inbound.externalId })
+        .exec();
       if (byId) return true;
     }
     const since = new Date(Date.now() - 30_000);
@@ -482,13 +621,18 @@ export class ConversationsService {
     accountId: string,
     inbound: InboundMessage,
   ): Promise<Conversation> {
-    const filter = { channel, accountId: new Types.ObjectId(accountId), contact: inbound.contact };
+    const filter = {
+      channel,
+      accountId: new Types.ObjectId(accountId),
+      contact: inbound.contact,
+    };
     const existing = await this.convModel.findOne(filter).exec();
     if (existing) {
       if (inbound.contactName && inbound.contactName !== existing.contactName) {
         existing.contactName = inbound.contactName;
       }
-      if (inbound.chatId && inbound.chatId !== existing.chatId) existing.chatId = inbound.chatId;
+      if (inbound.chatId && inbound.chatId !== existing.chatId)
+        existing.chatId = inbound.chatId;
       return existing;
     }
     return this.convModel.create({
@@ -507,16 +651,18 @@ export class ConversationsService {
     conv.lastMessageAt = msg.at;
     conv.lastMessagePreview = this.previewOf(msg);
     conv.lastMessageDirection = msg.direction;
-    if (conv.status === 'closed' && msg.direction === 'in') conv.status = 'open';
+    if (conv.status === 'closed' && msg.direction === 'in')
+      conv.status = 'open';
     await conv.save();
     this.gateway.emitConversation(String(conv.tenantId), conv);
   }
 
   private previewOf(msg: Message): string {
     if (msg.type === 'text') return (msg.text ?? '').slice(0, 140);
-    const label = msg.type === 'document' && msg.filename
-      ? `📄 ${msg.filename}`
-      : PREVIEW_BY_TYPE[msg.type];
+    const label =
+      msg.type === 'document' && msg.filename
+        ? `📄 ${msg.filename}`
+        : PREVIEW_BY_TYPE[msg.type];
     return msg.text ? `${label} · ${msg.text.slice(0, 100)}` : label;
   }
 
@@ -531,18 +677,27 @@ export class ConversationsService {
   }
 
   /** Historial reciente en el formato que espera el agente (excluye el mensaje actual). */
-  private async buildAiHistory(conv: Conversation, current: Message) {
+  private async buildAiHistory(
+    conv: Conversation,
+    current: Message,
+  ): Promise<AiHistoryTurn[]> {
     const docs = await this.msgModel
-      .find({ conversationId: conv._id, _id: { $ne: current._id }, status: { $ne: 'failed' } })
+      .find({
+        conversationId: conv._id,
+        _id: { $ne: current._id },
+        status: { $ne: 'failed' },
+      })
       .sort({ at: -1 })
       .limit(AI_HISTORY_LIMIT)
       .exec();
     return docs
       .reverse()
-      .map((m) => ({
-        role: (m.direction === 'in' ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: this.toAiContent(m),
-      }))
+      .map(
+        (m): AiHistoryTurn => ({
+          role: m.direction === 'in' ? 'user' : 'assistant',
+          content: this.toAiContent(m),
+        }),
+      )
       .filter((m) => m.content.length > 0);
   }
 
@@ -557,7 +712,9 @@ export class ConversationsService {
   /** Descarga la media entrante y la re-hospeda en S3 (las URLs del proveedor caducan). */
   private async storeInboundMedia(
     media: InboundMedia,
-    download: (media: InboundMedia) => Promise<{ buffer: Buffer; mimeType: string } | null>,
+    download: (
+      media: InboundMedia,
+    ) => Promise<{ buffer: Buffer; mimeType: string } | null>,
     channel: ConversationChannel,
   ) {
     try {
@@ -570,14 +727,18 @@ export class ConversationsService {
         media.filename,
       );
     } catch (err) {
-      this.logger.error(`No se pudo re-hospedar la media entrante: ${String(err)}`);
+      this.logger.error(
+        `No se pudo re-hospedar la media entrante: ${String(err)}`,
+      );
       return null;
     }
   }
 
   private downloadWhatsAppMedia(media: InboundMedia, config: WaConfig) {
-    if (media.cloudMediaId) return this.wa.downloadCloudMedia(media.cloudMediaId, config);
-    if (media.downloadUrl) return this.wa.downloadWahaMedia(media.downloadUrl, config);
+    if (media.cloudMediaId)
+      return this.wa.downloadCloudMedia(media.cloudMediaId, config);
+    if (media.downloadUrl)
+      return this.wa.downloadWahaMedia(media.downloadUrl, config);
     return Promise.resolve(null);
   }
 
@@ -591,7 +752,9 @@ export class ConversationsService {
         mimeType: res.headers.get('content-type') ?? 'application/octet-stream',
       };
     } catch (err) {
-      this.logger.error(`No se pudo descargar la media (${media.downloadUrl}): ${String(err)}`);
+      this.logger.error(
+        `No se pudo descargar la media (${media.downloadUrl}): ${String(err)}`,
+      );
       return null;
     }
   }

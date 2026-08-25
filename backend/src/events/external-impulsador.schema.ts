@@ -25,4 +25,5 @@ export class ExternalImpulsador extends Document {
   createdBy?: Types.ObjectId;
 }
 
-export const ExternalImpulsadorSchema = SchemaFactory.createForClass(ExternalImpulsador);
+export const ExternalImpulsadorSchema =
+  SchemaFactory.createForClass(ExternalImpulsador);

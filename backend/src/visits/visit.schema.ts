@@ -18,7 +18,10 @@ export class Visit extends Document {
   @Prop({ required: true })
   reference: string;
 
-  @Prop({ type: { lat: Number, lng: Number, accuracy: Number }, required: true })
+  @Prop({
+    type: { lat: Number, lng: Number, accuracy: Number },
+    required: true,
+  })
   location: GeoLocation;
 
   @Prop()

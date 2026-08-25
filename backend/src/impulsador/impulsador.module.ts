@@ -3,7 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ImpulsadorController } from './impulsador.controller';
 import { ImpulsadorService } from './impulsador.service';
 import { Event, EventSchema } from '../events/event.schema';
-import { EventRegistration, EventRegistrationSchema } from '../events/event-registration.schema';
+import {
+  EventRegistration,
+  EventRegistrationSchema,
+} from '../events/event-registration.schema';
 import { SettingsModule } from '../settings/settings.module';
 import { MailModule } from '../mail/mail.module';
 
