@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { WaTemplate } from '../whatsapp-templates/wa-template.schema';
+import { type TemplateHeader } from '../whatsapp/whatsapp.service';
 import { Campaign } from './campaign.schema';
 import { Customer } from '../customers/customer.schema';
 import { MailService } from '../mail/mail.service';
@@ -48,6 +50,8 @@ export class CampaignsService implements OnModuleInit {
 
   constructor(
     @InjectModel(Campaign.name) private campaignModel: Model<Campaign>,
+    @InjectModel(WaTemplate.name)
+    private templateModel: Model<WaTemplate>,
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
     private mail: MailService,
     private settings: SettingsService,
@@ -229,16 +233,19 @@ export class CampaignsService implements OnModuleInit {
 
       let results: PromiseSettledResult<void>[];
       if (campaign.templateName) {
+        // Una sola consulta por campaña: la cabecera es igual para todos.
+        const header = await this.resolveTemplateHeader(campaign, tenantId);
         results = await Promise.allSettled(
           withPhone.map((c) =>
             this.settings.sendWhatsAppTemplate(
               c.phone,
               campaign.templateName!,
               campaign.templateLanguage ?? 'es',
-              (campaign.templateVars ?? []).map((v) =>
-                v.replace(/\{nombre\}/gi, c.name),
-              ),
+              (campaign.templateVars ?? []).map((v) => fillTokens(v, c)),
               tenantId,
+              header?.text
+                ? { ...header, text: fillTokens(header.text, c) }
+                : header,
             ),
           ),
         );
@@ -445,6 +452,36 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
       .exec();
     return campaigns.reduce((sum, c) => sum + (c.recipientCount ?? 0), 0);
   }
+
+  /**
+   * Cabecera que hay que reproducir en cada envío. Si la plantilla lleva una
+   * imagen de cabecera, Meta la exige en todos los mensajes; se usa la que haya
+   * subido la campaña y, en su defecto, la de ejemplo guardada al sincronizar.
+   */
+  private async resolveTemplateHeader(
+    campaign: Campaign,
+    tenantId: string,
+  ): Promise<TemplateHeader | undefined> {
+    const template = await this.templateModel
+      .findOne({
+        tenantId: new Types.ObjectId(tenantId),
+        name: campaign.templateName,
+      })
+      .exec();
+    if (!template?.headerType) return undefined;
+
+    const format = template.headerType.toUpperCase();
+    if (format === 'TEXT') {
+      // Solo hace falta parámetro si el texto de la cabecera tiene {{1}}.
+      if (!/\{\{\d+\}\}/.test(template.headerText ?? '')) return undefined;
+      // Se personaliza por destinatario igual que los huecos del cuerpo.
+      return { format, text: '{nombre}' };
+    }
+    return {
+      format,
+      mediaUrl: campaign.mediaUrl || template.headerMediaUrl,
+    };
+  }
 }
 
 /** Convierte el reason de una promesa rechazada a texto legible. */
@@ -452,4 +489,24 @@ function stringifyError(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'string') return err;
   return JSON.stringify(err);
+}
+
+/** Campos del contacto que se pueden insertar en un parámetro de plantilla. */
+const TOKENS: Record<string, (c: Customer) => string> = {
+  nombre: (c) => c.name ?? '',
+  email: (c) => c.email ?? '',
+  telefono: (c) => c.phone ?? '',
+};
+
+/**
+ * Reemplaza los tokens `{nombre}`, `{email}` y `{telefono}` por los datos del
+ * contacto. Meta rechaza los parámetros con saltos de línea, tabuladores o más
+ * de cuatro espacios seguidos, así que el valor se aplana antes de enviarlo.
+ */
+export function fillTokens(value: string, customer: Customer): string {
+  const filled = value.replace(
+    /\{(nombre|email|telefono)\}/gi,
+    (_, key: string) => TOKENS[key.toLowerCase()](customer),
+  );
+  return filled.replace(/\s+/g, ' ').trim();
 }

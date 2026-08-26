@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -197,44 +198,13 @@ export class FormsService {
       );
 
     const tid = form.tenantId;
-    const dedupe: Record<string, unknown> = email
-      ? { tenantId: tid, email }
-      : { tenantId: tid, phone };
-    dedupe['createdBy'] = form.createdBy ?? { $exists: false };
-
-    const existing = await this.customerModel.findOne(dedupe).exec();
-
-    let customer: Customer;
-    let created = false;
-    if (existing) {
-      if (mapped['name']) existing.name = mapped['name'].trim();
-      if (email) existing.email = email;
-      if (phone) existing.phone = phone;
-      if (mapped['notes']) existing.notes = mapped['notes'];
-      existing.tags = Array.from(new Set([...existing.tags, ...form.tags]));
-      existing.customFields = { ...existing.customFields, ...customFields };
-      if (!existing.formId) {
-        existing.formId = form._id as Types.ObjectId;
-        existing.sourceLabel = existing.sourceLabel || form.name;
-      }
-      customer = await existing.save();
-    } else {
-      customer = await new this.customerModel({
-        tenantId: tid,
-        name: mapped['name']?.trim() || email || phone,
-        ...(email ? { email } : {}),
-        ...(phone ? { phone } : {}),
-        ...(mapped['notes'] ? { notes: mapped['notes'] } : {}),
-        tags: [...form.tags],
-        customFields,
-        source: 'form',
-        formId: form._id,
-        sourceLabel: form.name,
-        sourceUrl: ctx.pageUrl || ctx.referer,
-        ...(form.createdBy ? { createdBy: form.createdBy } : {}),
-      }).save();
-      created = true;
-    }
+    const { customer, created } = await this.resolveCustomer(form, ctx, {
+      email,
+      phone,
+      name: mapped['name']?.trim(),
+      notes: mapped['notes'],
+      customFields,
+    });
 
     if (form.listIds.length > 0) await this.addToLists(form.listIds, customer);
 
@@ -266,6 +236,145 @@ export class FormsService {
       customerId: String(customer._id),
       created,
     };
+  }
+
+  /**
+   * Encuentra el contacto al que pertenece el envío, o lo crea.
+   *
+   * Los índices de `customers` son únicos por (email, tenant, dueño) y por
+   * (teléfono, tenant, dueño). Buscar solo por email dejaba escapar el caso más
+   * común de una landing: alguien que ya está en la base con su teléfono vuelve
+   * a registrarse con otro correo. No se encontraba nada, se intentaba insertar
+   * y Mongo devolvía E11000, que salía al visitante como un 500.
+   */
+  private async resolveCustomer(
+    form: ContactForm,
+    ctx: SubmitContext,
+    data: {
+      email?: string;
+      phone?: string;
+      name?: string;
+      notes?: string;
+      customFields: Record<string, unknown>;
+    },
+  ): Promise<{ customer: Customer; created: boolean }> {
+    const { email, phone } = data;
+    // `createdBy: null` casa con el campo ausente y con el guardado a null;
+    // `$exists: false` solo casaba con el primero.
+    const scope = {
+      tenantId: form.tenantId,
+      createdBy: form.createdBy ?? null,
+    };
+
+    const [byEmail, byPhone] = await Promise.all([
+      email ? this.customerModel.findOne({ ...scope, email }).exec() : null,
+      phone ? this.customerModel.findOne({ ...scope, phone }).exec() : null,
+    ]);
+
+    // El email identifica a una persona mejor que un teléfono, que puede ser
+    // compartido; si apuntan a contactos distintos manda el del email.
+    const existing = byEmail ?? byPhone;
+
+    if (existing) {
+      return {
+        customer: await this.mergeIntoCustomer(existing, form, data, {
+          byEmail,
+          byPhone,
+        }),
+        created: false,
+      };
+    }
+
+    try {
+      const customer = await new this.customerModel({
+        tenantId: form.tenantId,
+        name: data.name || email || phone,
+        ...(email ? { email } : {}),
+        ...(phone ? { phone } : {}),
+        ...(data.notes ? { notes: data.notes } : {}),
+        tags: [...form.tags],
+        customFields: data.customFields,
+        source: 'form',
+        formId: form._id,
+        sourceLabel: form.name,
+        sourceUrl: ctx.pageUrl || ctx.referer,
+        ...(form.createdBy ? { createdBy: form.createdBy } : {}),
+      }).save();
+      return { customer, created: true };
+    } catch (err) {
+      if (!isDuplicateKey(err)) throw err;
+      // Dos envíos simultáneos del mismo visitante: el otro ganó la carrera.
+      // Se recupera el contacto que acaba de crearse y se completa con este.
+      const raced = await this.customerModel
+        .findOne(email ? { ...scope, email } : { ...scope, phone })
+        .exec();
+      if (!raced)
+        throw new ConflictException(
+          'Ya tenemos estos datos registrados. Si necesitas actualizarlos, ponte en contacto con nosotros.',
+        );
+      return {
+        customer: await this.mergeIntoCustomer(raced, form, data, {
+          byEmail: null,
+          byPhone: null,
+        }),
+        created: false,
+      };
+    }
+  }
+
+  /**
+   * Completa un contacto existente con lo que trae el envío. Nunca pisa un dato
+   * ya guardado ni el de otro contacto: un email o teléfono distinto se archiva
+   * como campo adicional en vez de romper el índice único.
+   */
+  private async mergeIntoCustomer(
+    existing: Customer,
+    form: ContactForm,
+    data: {
+      email?: string;
+      phone?: string;
+      name?: string;
+      notes?: string;
+      customFields: Record<string, unknown>;
+    },
+    owners: { byEmail: Customer | null; byPhone: Customer | null },
+  ): Promise<Customer> {
+    const id = String(existing._id);
+    const extra: Record<string, unknown> = { ...data.customFields };
+
+    if (data.name) existing.name = data.name;
+    if (data.notes) existing.notes = data.notes;
+
+    if (data.email && existing.email !== data.email) {
+      const libre =
+        !owners.byEmail || String(owners.byEmail._id) === id;
+      if (!existing.email && libre) existing.email = data.email;
+      else extra['Email alternativo'] = data.email;
+    }
+
+    if (data.phone && existing.phone !== data.phone) {
+      const libre =
+        !owners.byPhone || String(owners.byPhone._id) === id;
+      if (!existing.phone && libre) existing.phone = data.phone;
+      else extra['Teléfono alternativo'] = data.phone;
+    }
+
+    existing.tags = Array.from(new Set([...existing.tags, ...form.tags]));
+    existing.customFields = { ...existing.customFields, ...extra };
+    // El origen no se pisa: interesa por dónde entró la primera vez.
+    if (!existing.formId) {
+      existing.formId = form._id as Types.ObjectId;
+      existing.sourceLabel = existing.sourceLabel || form.name;
+    }
+
+    try {
+      return await existing.save();
+    } catch (err) {
+      if (!isDuplicateKey(err)) throw err;
+      throw new ConflictException(
+        'Esos datos ya pertenecen a otro registro. Revisa el correo y el teléfono, o ponte en contacto con nosotros.',
+      );
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -358,4 +467,9 @@ export class FormsService {
       mapTo: (f.mapTo ?? '') as FormField['mapTo'],
     }));
   }
+}
+
+/** E11000: Mongo rechazó la escritura por chocar con un índice único. */
+function isDuplicateKey(err: unknown): boolean {
+  return (err as { code?: number } | null)?.code === 11000;
 }

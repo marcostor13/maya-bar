@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule, Mail, MessageSquare, CheckCircle2, X, Users, Zap, Edit2,
-  DollarSign, RefreshCw, Info, Wand2, Eye,
+  DollarSign, RefreshCw, Info, Wand2, Eye, Check,
 } from 'lucide-angular';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ToastService } from '../../shared/toast';
@@ -15,6 +15,18 @@ import {
 import { CampaignMediaComponent } from './campaign-media';
 
 /** Drawer de creación/edición de campaña (email / WhatsApp WAHA / Cloud API). */
+/**
+ * De dónde sale el valor de cada hueco de la plantilla. El token es lo que se
+ * guarda en `templateVars`; el backend lo sustituye por el dato de cada
+ * destinatario al enviar. Cadena vacía = texto fijo escrito a mano.
+ */
+const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
+  { token: '{nombre}',   label: 'Nombre del cliente', sample: 'María García' },
+  { token: '{email}',    label: 'Email del cliente',  sample: 'maria@email.com' },
+  { token: '{telefono}', label: 'Teléfono del cliente', sample: '+51 999 888 777' },
+  { token: '',           label: 'Texto fijo…',        sample: '' },
+];
+
 @Component({
   selector: 'app-campaign-editor',
   standalone: true,
@@ -152,13 +164,49 @@ import { CampaignMediaComponent } from './campaign-media';
           @if (templateVarCount() > 0) {
             <div class="field">
               <label class="label">Variables de la plantilla</label>
-              <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:8px">
-                Usa <code style="background:var(--color-bg-app);padding:1px 5px;border-radius:4px">&#123;nombre&#125;</code> para personalizar con el nombre del cliente.
+              <div class="var-help">
+                Elige qué dato del contacto se inserta en cada hueco. Se reemplaza
+                por el valor de cada destinatario al enviar.
               </div>
               @for (i of varIndexes(); track i) {
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <div class="var-row">
                   <span class="var-tag">{{ '{{' + (i+1) + '}}' }}</span>
-                  <input class="input" [(ngModel)]="form.templateVars[i]" [placeholder]="'Valor para ' + '{{' + (i+1) + '}}'" />
+                  <select class="select" [ngModel]="varSourceOf(i)" [ngModelOptions]="{standalone:true}"
+                    (ngModelChange)="setVarSource(i, $event)">
+                    @for (src of varSources; track src.token) {
+                      <option [value]="src.token">{{ src.label }}</option>
+                    }
+                  </select>
+                  @if (varSourceOf(i) === '') {
+                    <input class="input" [(ngModel)]="form.templateVars[i]"
+                      [ngModelOptions]="{standalone:true}"
+                      [placeholder]="'Texto para ' + '{{' + (i+1) + '}}'" />
+                  } @else {
+                    <span class="var-preview">Ej.: {{ varPreview(i) }}</span>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Cabecera multimedia exigida por la plantilla -->
+          @if (headerMediaFormat(); as fmt) {
+            <div class="field">
+              <label class="label">{{ headerLabel() }} de la cabecera *</label>
+              <div class="var-help">
+                Esta plantilla se aprobó con una cabecera de tipo {{ fmt }}. WhatsApp
+                exige enviarla en cada mensaje.
+              </div>
+              @if (headerMediaResolved()) {
+                <div class="header-media-ok">
+                  <lucide-icon [img]="Check" [size]="14"></lucide-icon>
+                  Se usará {{ form.mediaUrl ? 'el archivo que subas arriba' : 'la imagen de ejemplo de la plantilla' }}.
+                </div>
+              } @else {
+                <div class="info-note">
+                  <lucide-icon [img]="Info" [size]="13"></lucide-icon>
+                  Falta el archivo de cabecera: súbelo en "Imagen o video" o el envío
+                  será rechazado por WhatsApp.
                 </div>
               }
             </div>
@@ -334,6 +382,14 @@ import { CampaignMediaComponent } from './campaign-media';
     .tpl-status-rejected { background: #FEF2F2; color: #DC2626; }
 
     /* Var tag */
+    .var-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+    .var-row .select { flex:1; min-width:190px; }
+    .var-row .input { flex:1; min-width:190px; }
+    .var-help { font-size:12px; color:var(--color-text-muted); margin-bottom:8px; line-height:1.5; }
+    .var-preview { font-size:12px; color:var(--color-text-muted); font-style:italic; }
+    .header-media-ok { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+      color:var(--color-success); background:#ECFDF5; border-radius:var(--radius-sm); padding:8px 12px; }
+
     .var-tag {
       font-size: 12px; font-weight: 700; font-family: monospace;
       padding: 6px 10px; background: var(--color-bg-app); border: 1px solid var(--color-border);
@@ -441,6 +497,7 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   readonly Mail = Mail; readonly MessageSquare = MessageSquare; readonly CheckCircle2 = CheckCircle2;
   readonly X = X; readonly Users = Users; readonly Zap = Zap; readonly Edit2 = Edit2;
   readonly DollarSign = DollarSign; readonly RefreshCw = RefreshCw; readonly Info = Info;
+  readonly Check = Check;
   readonly Wand2 = Wand2; readonly Eye = Eye;
   readonly PRESET_TAGS = PRESET_TAGS;
 
@@ -502,6 +559,42 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   });
 
   varIndexes = computed(() => Array.from({ length: this.templateVarCount() }, (_, i) => i));
+
+  readonly varSources = VAR_SOURCES;
+
+  /** Token elegido para el hueco, o '' si es texto fijo. */
+  varSourceOf(i: number): string {
+    const value = this.form.templateVars[i] ?? '';
+    return VAR_SOURCES.some(s => s.token && s.token === value) ? value : '';
+  }
+
+  setVarSource(i: number, token: string) {
+    // Al pasar a texto fijo se limpia el token para no enviarlo tal cual.
+    this.form.templateVars[i] = token || '';
+  }
+
+  varPreview(i: number): string {
+    const token = this.varSourceOf(i);
+    return VAR_SOURCES.find(s => s.token === token)?.sample ?? '';
+  }
+
+  /** Formato de la cabecera cuando exige adjuntar un archivo en cada envío. */
+  headerMediaFormat = computed(() => {
+    const type = this.selectedTemplate()?.headerType?.toUpperCase();
+    return type && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(type) ? type : null;
+  });
+
+  headerLabel = computed(() => {
+    const fmt = this.headerMediaFormat();
+    if (fmt === 'VIDEO') return 'Video';
+    if (fmt === 'DOCUMENT') return 'Documento';
+    return 'Imagen';
+  });
+
+  /** Hay archivo si lo sube la campaña o si la plantilla guardó el de ejemplo. */
+  headerMediaResolved = computed(
+    () => !!(this.form.mediaUrl || this.selectedTemplate()?.headerMediaUrl),
+  );
 
   cloudApiPriceEstimate = computed(() => {
     const t = this.selectedTemplate();

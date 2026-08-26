@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { CampaignsService } from './campaigns.service';
+import { WaTemplate } from '../whatsapp-templates/wa-template.schema';
 import { Campaign } from './campaign.schema';
 import { Customer } from '../customers/customer.schema';
 import { MailService } from '../mail/mail.service';
@@ -116,10 +117,15 @@ describe('CampaignsService', () => {
     mockSettings.sendWhatsAppTemplate.mockResolvedValue(undefined);
     mockLists.resolveCustomers.mockResolvedValue([]);
 
+    const templateModel = {
+      findOne: jest.fn().mockReturnValue({ exec: () => Promise.resolve(null) }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
         { provide: getModelToken(Campaign.name), useValue: campaignModel },
+        { provide: getModelToken(WaTemplate.name), useValue: templateModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
         { provide: MailService, useValue: mockMail },
         { provide: SettingsService, useValue: mockSettings },
@@ -539,6 +545,8 @@ describe('CampaignsService', () => {
         'es',
         ['Ana', '20%'],
         tenantId,
+        // Plantilla sin cabecera variable: no se manda componente de header.
+        undefined,
       );
       expect(mockSettings.sendWhatsApp).not.toHaveBeenCalled();
     });

@@ -102,6 +102,7 @@ export class WhatsAppService {
     language: string,
     vars: string[],
     config: WaConfig,
+    header?: TemplateHeader,
   ): Promise<void> {
     const phone = this.formatPhone(to);
     if (!phone) {
@@ -109,6 +110,18 @@ export class WhatsAppService {
       return;
     }
     const components: object[] = [];
+
+    /*
+     * Meta exige que los componentes del envío calquen los de la plantilla
+     * aprobada. Si la plantilla tiene cabecera con contenido variable (una
+     * imagen, un vídeo, un documento o un texto con {{1}}) y el envío no manda
+     * ese parámetro, responde 400 (#132012) "Parameter format does not match
+     * format in the created template". Mandar solo el body no bastaba.
+     */
+    const headerParam = buildHeaderParameter(header);
+    if (headerParam)
+      components.push({ type: 'header', parameters: [headerParam] });
+
     if (vars.length > 0) {
       components.push({
         type: 'body',
@@ -747,4 +760,35 @@ export class WhatsAppService {
     const digits = phone.replace(/\D/g, '');
     return digits.length >= 8 ? digits : '';
   }
+}
+
+/** Cabecera de la plantilla, tal como hay que reproducirla en cada envío. */
+export interface TemplateHeader {
+  format?: string;
+  /** Para cabeceras IMAGE / VIDEO / DOCUMENT. */
+  mediaUrl?: string;
+  /** Valor del {{1}} cuando la cabecera es TEXT con variable. */
+  text?: string;
+}
+
+/**
+ * Traduce la cabecera al parámetro que espera Graph. Devuelve null cuando la
+ * cabecera no lleva contenido variable (TEXT fijo o plantilla sin cabecera):
+ * en ese caso Meta NO admite un componente `header` en el envío.
+ */
+function buildHeaderParameter(
+  header?: TemplateHeader,
+): Record<string, unknown> | null {
+  const format = header?.format?.toUpperCase();
+  if (!format) return null;
+
+  if (format === 'TEXT')
+    return header?.text ? { type: 'text', text: header.text } : null;
+
+  if (!header?.mediaUrl) return null;
+  if (format === 'IMAGE') return { type: 'image', image: { link: header.mediaUrl } };
+  if (format === 'VIDEO') return { type: 'video', video: { link: header.mediaUrl } };
+  if (format === 'DOCUMENT')
+    return { type: 'document', document: { link: header.mediaUrl } };
+  return null;
 }

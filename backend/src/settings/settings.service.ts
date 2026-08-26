@@ -7,8 +7,7 @@ import {
   WhatsAppService,
   WaConfig,
   WaStatus,
-  WaMediaType,
-} from '../whatsapp/whatsapp.service';
+  WaMediaType, type TemplateHeader } from '../whatsapp/whatsapp.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 
 @Injectable()
@@ -73,6 +72,7 @@ export class SettingsService {
     templateLang: string,
     vars: string[],
     tenantId: string,
+    header?: TemplateHeader,
   ): Promise<void> {
     const config = await this.resolveConfig(tenantId);
     return this.wa.sendCloudApiTemplate(
@@ -81,6 +81,7 @@ export class SettingsService {
       templateLang,
       vars,
       config,
+      header,
     );
   }
 

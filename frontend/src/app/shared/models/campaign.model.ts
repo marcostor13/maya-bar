@@ -51,7 +51,11 @@ export interface WaTemplate {
   language: string;
   status: 'APPROVED' | 'PENDING' | 'REJECTED' | 'PAUSED';
   body: string;
+  /** TEXT | IMAGE | VIDEO | DOCUMENT. Las multimedia exigen adjunto en cada envío. */
+  headerType?: string;
   headerText?: string;
+  /** Archivo de ejemplo guardado al sincronizar; sirve de cabecera por defecto. */
+  headerMediaUrl?: string;
   footer?: string;
 }
 

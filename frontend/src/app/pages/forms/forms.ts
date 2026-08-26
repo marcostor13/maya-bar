@@ -992,11 +992,19 @@ export class FormsComponent implements OnInit {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: data, pageUrl: location.href })
     })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (res.redirectUrl) { location.href = res.redirectUrl; return; }
+      .then(function (r) {
+        return r.json().then(function (res) { return { ok: r.ok, res: res }; });
+      })
+      .then(function (out) {
+        // Sin comprobar r.ok, un 400 se mostraba como si fuera un envío correcto.
+        if (!out.ok) {
+          var msg = out.res && out.res.message;
+          alert(Array.isArray(msg) ? msg.join('\n') : (msg || 'No se pudo enviar. Revisa los datos.'));
+          return;
+        }
+        if (out.res.redirectUrl) { location.href = out.res.redirectUrl; return; }
         form.reset();
-        alert(res.message || '¡Gracias!');
+        alert(out.res.message || '¡Gracias!');
       })
       .catch(function () { alert('No se pudo enviar. Inténtalo de nuevo.'); });
   });
