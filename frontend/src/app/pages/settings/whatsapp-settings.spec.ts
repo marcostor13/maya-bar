@@ -18,6 +18,7 @@ const mockApi = {
   setDefaultWaAccount: vi.fn(),
   getWaStatus: vi.fn(),
   waWebhookUrl: vi.fn((a: Pick<WaAccount, '_id' | 'provider'>) => `http://api/wa/webhook/${a.provider === 'waha' ? 'waha' : 'cloud'}/${a._id}`),
+  getWaWebhookConfig: vi.fn(),
 };
 const mockToast = { success: vi.fn(), error: vi.fn() };
 const mockConfirm = { confirm: vi.fn().mockResolvedValue(true) };
@@ -32,6 +33,7 @@ describe('WhatsappSettingsComponent', () => {
     mockApi.getWaAccounts.mockReturnValue(of(accounts));
     mockApi.setDefaultWaAccount.mockReturnValue(of({}));
     mockApi.getWaStatus.mockReturnValue(of({ connected: true }));
+    mockApi.getWaWebhookConfig.mockReturnValue(of({ url: 'https://api.test/wa/webhook/cloud', verifyToken: 'vtok' }));
 
     await TestBed.configureTestingModule({
       imports: [WhatsappSettingsComponent],

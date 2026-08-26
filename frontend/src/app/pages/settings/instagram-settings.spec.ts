@@ -16,6 +16,7 @@ const mockApi = {
   getIgStatus: vi.fn(),
   subscribeIgWebhook: vi.fn(),
   igWebhookUrl: vi.fn(() => 'http://api/ig/webhook'),
+  getIgWebhookConfig: vi.fn(),
 };
 const mockToast = { success: vi.fn(), error: vi.fn() };
 const mockConfirm = { confirm: vi.fn().mockResolvedValue(true) };
@@ -30,6 +31,7 @@ describe('InstagramSettingsComponent', () => {
     mockApi.deleteIgAccount.mockReturnValue(of(null));
     mockApi.getIgStatus.mockReturnValue(of({ connected: true, username: 'mi_bar' }));
     mockApi.subscribeIgWebhook.mockReturnValue(of({ success: true, message: 'Webhook suscrito' }));
+    mockApi.getIgWebhookConfig.mockReturnValue(of({ url: 'https://api.test/ig/webhook', verifyToken: 'igtok' }));
 
     await TestBed.configureTestingModule({
       imports: [InstagramSettingsComponent],
