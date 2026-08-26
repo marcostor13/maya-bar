@@ -11,7 +11,19 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { assertRole, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
+import {
+  assertRole,
+  CRM_ROLES,
+  MANAGE_ROLES,
+  type AuthReq,
+} from '../auth/permissions';
+
+/**
+ * Consultar y refrescar el espejo de plantillas hace falta para armar una
+ * campaña, y las campañas son de CRM_ROLES. Crear, editar y borrar plantillas
+ * sigue reservado a MANAGE_ROLES.
+ */
+const TEMPLATE_ROLES = CRM_ROLES;
 import { WhatsAppTemplatesService } from './whatsapp-templates.service';
 import {
   CreateWaTemplateDto,
@@ -25,7 +37,7 @@ export class WhatsAppTemplatesController {
 
   @Get()
   findAll(@Request() req: AuthReq, @Query('accountId') accountId?: string) {
-    assertRole(req.user.role, MANAGE_ROLES);
+    assertRole(req.user.role, TEMPLATE_ROLES);
     return this.service.findAll(req.user.tenantId, accountId);
   }
 
@@ -36,9 +48,10 @@ export class WhatsAppTemplatesController {
     return this.service.listAccounts(req.user.tenantId);
   }
 
+  /** Sin `accountId` sincroniza la cuenta predeterminada del tenant. */
   @Post('sync')
-  sync(@Request() req: AuthReq, @Query('accountId') accountId: string) {
-    assertRole(req.user.role, MANAGE_ROLES);
+  sync(@Request() req: AuthReq, @Query('accountId') accountId?: string) {
+    assertRole(req.user.role, TEMPLATE_ROLES);
     return this.service.sync(req.user.tenantId, accountId);
   }
 

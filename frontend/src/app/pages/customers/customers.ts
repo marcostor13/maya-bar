@@ -32,6 +32,12 @@ import {
   UserPlus,
   CheckSquare,
   ChevronDown,
+  Eye,
+  ExternalLink,
+  StickyNote,
+  Database,
+  Filter,
+  Columns3,
 } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
@@ -48,6 +54,8 @@ interface Customer {
   /** Nombre legible del origen: el formulario o la importación que lo trajo. */
   sourceLabel?: string;
   sourceUrl?: string;
+  /** Campos del origen que no encajan en el modelo, conservados tal cual. */
+  customFields?: Record<string, unknown>;
   totalReservations: number;
   totalEvents: number;
   lastVisit?: string;
@@ -77,6 +85,34 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
 
 /** Orden de los chips del filtro por origen. */
 const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongodb', 'api', 'whatsapp', 'instagram'];
+
+/** Una columna de la tabla: fija del modelo o descubierta en `customFields`. */
+interface ColumnDef {
+  key: string;
+  label: string;
+  /** true si viene de `customFields`, con clave prefijada `cf:`. */
+  custom: boolean;
+}
+
+/** Prefijo que distingue una columna de `customFields` de una del modelo. */
+const CUSTOM_PREFIX = 'cf:';
+
+const BASE_COLUMNS: ColumnDef[] = [
+  { key: 'email',      label: 'Email',         custom: false },
+  { key: 'phone',      label: 'Teléfono',      custom: false },
+  { key: 'tags',       label: 'Tags',          custom: false },
+  { key: 'source',     label: 'Origen',        custom: false },
+  { key: 'lastVisit',  label: 'Última visita', custom: false },
+  { key: 'history',    label: 'Historial',     custom: false },
+  { key: 'createdAt',  label: 'Alta',          custom: false },
+  { key: 'notes',      label: 'Notas',         custom: false },
+];
+
+/** Lo que se ve al entrar por primera vez. */
+const DEFAULT_COLUMNS = ['phone', 'tags', 'source', 'lastVisit', 'history'];
+
+/** Clave de localStorage donde se recuerda la elección de columnas. */
+const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
 
 @Component({
   selector: 'app-customers',
@@ -164,6 +200,75 @@ const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongo
             </button>
           }
         </div>
+
+        <div class="table-tools">
+          <button class="btn btn-secondary btn-sm" [class.active-tool]="filtersOpen()"
+            (click)="filtersOpen.set(!filtersOpen())" title="Filtrar por columna">
+            <lucide-icon [img]="Filter" [size]="14"></lucide-icon>
+            Filtros
+            @if (activeColumnFilters() > 0) {
+              <span class="tool-count">{{ activeColumnFilters() }}</span>
+            }
+          </button>
+
+          <div class="columns-picker">
+            <button class="btn btn-secondary btn-sm" [class.active-tool]="columnsOpen()"
+              (click)="columnsOpen.set(!columnsOpen())" title="Elegir columnas">
+              <lucide-icon [img]="Columns3" [size]="14"></lucide-icon>
+              Columnas
+              <span class="tool-count">{{ visibleColumns().length }}</span>
+            </button>
+
+            @if (columnsOpen()) {
+              <div class="columns-backdrop" (click)="columnsOpen.set(false)"></div>
+              <div class="columns-panel animate-fade-in">
+                <div class="columns-head">
+                  <span class="columns-title">Columnas visibles</span>
+                  <button class="btn btn-ghost btn-sm" (click)="resetColumns()">Restablecer</button>
+                </div>
+
+                <div class="columns-group">
+                  <span class="columns-group-title">Datos del contacto</span>
+                  @for (col of baseColumns; track col.key) {
+                    <label class="column-item">
+                      <input type="checkbox" [checked]="isColumnVisible(col.key)"
+                        (change)="toggleColumn(col.key)" />
+                      <span>{{ col.label }}</span>
+                    </label>
+                  }
+                </div>
+
+                @if (customColumns().length) {
+                  <div class="columns-group">
+                    <span class="columns-group-title">
+                      Campos adicionales
+                      <span class="columns-group-count">{{ customColumns().length }}</span>
+                    </span>
+                    @for (col of customColumns(); track col.key) {
+                      <label class="column-item">
+                        <input type="checkbox" [checked]="isColumnVisible(col.key)"
+                          (change)="toggleColumn(col.key)" />
+                        <span class="column-custom-name">{{ col.label }}</span>
+                      </label>
+                    }
+                  </div>
+                } @else {
+                  <p class="columns-empty">
+                    Aún no hay campos adicionales. Aparecen aquí los que traigan tus
+                    importaciones y formularios.
+                  </p>
+                }
+              </div>
+            }
+          </div>
+
+          @if (activeColumnFilters() > 0) {
+            <button class="btn btn-ghost btn-sm" (click)="clearColumnFilters()">
+              <lucide-icon [img]="X" [size]="14"></lucide-icon>
+              Limpiar filtros
+            </button>
+          }
+        </div>
       </div>
 
       <!-- ── Bulk action bar ── -->
@@ -217,13 +322,29 @@ const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongo
                     (change)="toggleAll()" />
                 </th>
                 <th>Contacto</th>
-                <th>Teléfono</th>
-                <th>Tags</th>
-                <th>Origen</th>
-                <th>Última visita</th>
-                <th>Historial</th>
+                @for (col of visibleColumns(); track col.key) {
+                  <th>{{ col.label }}</th>
+                }
                 <th></th>
               </tr>
+              @if (filtersOpen()) {
+                <tr class="filter-row">
+                  <th class="th-check"></th>
+                  <th>
+                    <input class="input input-sm" placeholder="Filtrar…"
+                      [value]="columnFilters()['contact'] || ''"
+                      (input)="setColumnFilter('contact', $any($event.target).value)" />
+                  </th>
+                  @for (col of visibleColumns(); track col.key) {
+                    <th>
+                      <input class="input input-sm" placeholder="Filtrar…"
+                        [value]="columnFilters()[col.key] || ''"
+                        (input)="setColumnFilter(col.key, $any($event.target).value)" />
+                    </th>
+                  }
+                  <th></th>
+                </tr>
+              }
             </thead>
             <tbody>
               @for (c of filteredCustomers(); track c._id) {
@@ -234,52 +355,70 @@ const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongo
                       (change)="toggleSelect(c._id)" />
                   </td>
                   <td class="contact-td">
-                    <div class="contact-cell">
+                    <button type="button" class="contact-cell" (click)="openView(c)"
+                      [title]="'Ver ficha de ' + c.name">
                       <div class="contact-avatar">{{ initials(c.name) }}</div>
                       <div class="contact-info">
                         <span class="contact-name">{{ c.name }}</span>
                         <span class="contact-email">{{ c.email || c.phone || '—' }}</span>
                       </div>
-                    </div>
+                    </button>
                   </td>
-                  <td class="text-muted" data-label="Teléfono">{{ c.phone || '—' }}</td>
-                  <td data-label="Tags">
-                    <div class="tags-cell">
-                      @for (tag of c.tags.slice(0, 3); track tag) {
-                        <span class="badge badge-neutral tag-badge">{{ tag }}</span>
+
+                  @for (col of visibleColumns(); track col.key) {
+                    <td [attr.data-label]="col.label">
+                      @switch (col.key) {
+                        @case ('tags') {
+                          <div class="tags-cell">
+                            @for (tag of c.tags.slice(0, 3); track tag) {
+                              <span class="badge badge-neutral tag-badge">{{ tag }}</span>
+                            }
+                            @if (c.tags.length > 3) {
+                              <span class="badge badge-neutral">+{{ c.tags.length - 3 }}</span>
+                            }
+                            @if (!c.tags.length) { <span class="text-muted">—</span> }
+                          </div>
+                        }
+                        @case ('source') {
+                          <div class="source-cell">
+                            <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
+                            @if (c.sourceLabel) {
+                              <span class="source-detail" [title]="c.sourceUrl || c.sourceLabel">{{ c.sourceLabel }}</span>
+                            }
+                          </div>
+                        }
+                        @case ('history') {
+                          <div class="history-cell">
+                            @if (c.totalReservations > 0) {
+                              <span class="history-pill" title="Reservas">
+                                <lucide-icon [img]="Calendar" [size]="11"></lucide-icon>
+                                {{ c.totalReservations }}
+                              </span>
+                            }
+                            @if (c.totalEvents > 0) {
+                              <span class="history-pill" title="Eventos">
+                                <lucide-icon [img]="Tag" [size]="11"></lucide-icon>
+                                {{ c.totalEvents }}
+                              </span>
+                            }
+                            @if (!c.totalReservations && !c.totalEvents) { <span class="text-muted">—</span> }
+                          </div>
+                        }
+                        @default {
+                          <span [class.text-muted]="!cellValue(c, col.key)"
+                            [class.cell-custom]="col.custom" [title]="cellValue(c, col.key)">
+                            {{ cellValue(c, col.key) || '—' }}
+                          </span>
+                        }
                       }
-                      @if (c.tags.length > 3) {
-                        <span class="badge badge-neutral">+{{ c.tags.length - 3 }}</span>
-                      }
-                    </div>
-                  </td>
-                  <td data-label="Origen">
-                    <div class="source-cell">
-                      <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
-                      @if (c.sourceLabel) {
-                        <span class="source-detail" [title]="c.sourceUrl || c.sourceLabel">{{ c.sourceLabel }}</span>
-                      }
-                    </div>
-                  </td>
-                  <td class="text-muted" data-label="Última visita">{{ formatDate(c.lastVisit) }}</td>
-                  <td data-label="Historial">
-                    <div class="history-cell">
-                      @if (c.totalReservations > 0) {
-                        <span class="history-pill" title="Reservas">
-                          <lucide-icon [img]="Calendar" [size]="11"></lucide-icon>
-                          {{ c.totalReservations }}
-                        </span>
-                      }
-                      @if (c.totalEvents > 0) {
-                        <span class="history-pill" title="Eventos">
-                          <lucide-icon [img]="Tag" [size]="11"></lucide-icon>
-                          {{ c.totalEvents }}
-                        </span>
-                      }
-                    </div>
-                  </td>
+                    </td>
+                  }
+
                   <td class="td-actions">
                     <div class="row-actions">
+                      <button class="btn btn-ghost btn-sm btn-icon" (click)="openView(c)" title="Ver ficha">
+                        <lucide-icon [img]="Eye" [size]="15" [strokeWidth]="2.5"></lucide-icon>
+                      </button>
                       <button class="btn btn-ghost btn-sm btn-icon" (click)="openDrawer(c)" title="Editar">
                         <lucide-icon [img]="Pencil" [size]="15" [strokeWidth]="2.5"></lucide-icon>
                       </button>
@@ -296,6 +435,172 @@ const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongo
         <div class="table-footer">{{ filteredCustomers().length }} contacto(s)</div>
       }
     </div>
+
+    <!-- ── Ficha del contacto ── -->
+    @if (viewing(); as c) {
+      <div class="overlay" (click)="viewing.set(null)" role="dialog" aria-modal="true" aria-label="Ficha del contacto">
+        <aside class="drawer" (click)="$event.stopPropagation()">
+
+          <div class="view-header">
+            <div class="view-identity">
+              <div class="view-avatar">{{ initials(c.name) }}</div>
+              <div class="view-title-group">
+                <h2>{{ c.name }}</h2>
+                <div class="view-badges">
+                  <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
+                  @if (c.sourceLabel) {
+                    <span class="badge badge-neutral">{{ c.sourceLabel }}</span>
+                  }
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-icon" (click)="viewing.set(null)" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+            </button>
+          </div>
+
+          <div class="drawer-scroll">
+
+            <!-- Datos de contacto -->
+            <div class="view-section">
+              <span class="view-section-title">Contacto</span>
+              <dl class="detail-list">
+                <div class="detail-row">
+                  <dt><lucide-icon [img]="Mail" [size]="14"></lucide-icon> Email</dt>
+                  <dd>
+                    @if (c.email) {
+                      <a [href]="'mailto:' + c.email">{{ c.email }}</a>
+                    } @else { <span class="muted">—</span> }
+                  </dd>
+                </div>
+                <div class="detail-row">
+                  <dt><lucide-icon [img]="Phone" [size]="14"></lucide-icon> Teléfono</dt>
+                  <dd>
+                    @if (c.phone) {
+                      <a [href]="'tel:' + c.phone">{{ c.phone }}</a>
+                    } @else { <span class="muted">—</span> }
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <!-- Etiquetas -->
+            <div class="view-section">
+              <span class="view-section-title">Etiquetas</span>
+              @if (c.tags.length) {
+                <div class="view-tags">
+                  @for (tag of c.tags; track tag) {
+                    <span class="badge badge-info">{{ tag }}</span>
+                  }
+                </div>
+              } @else {
+                <p class="muted small">Sin etiquetas.</p>
+              }
+            </div>
+
+            <!-- Procedencia -->
+            <div class="view-section">
+              <span class="view-section-title">Procedencia</span>
+              <dl class="detail-list">
+                <div class="detail-row">
+                  <dt>Canal</dt>
+                  <dd>{{ sourceMeta(c.source).label }}</dd>
+                </div>
+                @if (c.sourceLabel) {
+                  <div class="detail-row">
+                    <dt>Origen</dt>
+                    <dd>{{ c.sourceLabel }}</dd>
+                  </div>
+                }
+                @if (c.sourceUrl) {
+                  <div class="detail-row">
+                    <dt>Página</dt>
+                    <dd>
+                      <a [href]="c.sourceUrl" target="_blank" rel="noopener" class="link-ext">
+                        {{ c.sourceUrl }}
+                        <lucide-icon [img]="ExternalLink" [size]="12"></lucide-icon>
+                      </a>
+                    </dd>
+                  </div>
+                }
+                <div class="detail-row">
+                  <dt>Alta</dt>
+                  <dd>{{ formatDate(c.createdAt) }}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <!-- Actividad -->
+            <div class="view-section">
+              <span class="view-section-title">Actividad</span>
+              <div class="view-stats">
+                <div class="view-stat">
+                  <span class="view-stat-value">{{ c.totalReservations }}</span>
+                  <span class="view-stat-label">Reservas</span>
+                </div>
+                <div class="view-stat">
+                  <span class="view-stat-value">{{ c.totalEvents }}</span>
+                  <span class="view-stat-label">Eventos</span>
+                </div>
+                <div class="view-stat">
+                  <span class="view-stat-value">{{ formatDate(c.lastVisit) }}</span>
+                  <span class="view-stat-label">Última visita</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Notas -->
+            @if (c.notes) {
+              <div class="view-section">
+                <span class="view-section-title">
+                  <lucide-icon [img]="StickyNote" [size]="13"></lucide-icon> Notas
+                </span>
+                <p class="view-notes">{{ c.notes }}</p>
+              </div>
+            }
+
+            <!-- Campos adicionales importados -->
+            <div class="view-section">
+              <span class="view-section-title">
+                <lucide-icon [img]="Database" [size]="13"></lucide-icon>
+                Campos adicionales
+                @if (customEntries(c).length) {
+                  <span class="view-section-count">{{ customEntries(c).length }}</span>
+                }
+              </span>
+              @if (customEntries(c).length) {
+                <dl class="detail-list custom-list">
+                  @for (entry of customEntries(c); track entry.key) {
+                    <div class="detail-row">
+                      <dt class="custom-key" [title]="entry.key">{{ entry.key }}</dt>
+                      <dd class="custom-value">{{ entry.value }}</dd>
+                    </div>
+                  }
+                </dl>
+              } @else {
+                <p class="muted small">
+                  Este contacto no trae campos extra. Aparecen aquí los que elijas al importar
+                  un archivo o los que recojan tus formularios.
+                </p>
+              }
+            </div>
+          </div>
+
+          <div class="view-footer">
+            <button class="btn btn-ghost danger" (click)="deleteFromView(c)">
+              <lucide-icon [img]="Trash2" [size]="15"></lucide-icon>
+              Eliminar
+            </button>
+            <span class="view-footer-spacer"></span>
+            <button class="btn btn-secondary" (click)="viewing.set(null)">Cerrar</button>
+            <button class="btn btn-primary" (click)="editFromView(c)">
+              <lucide-icon [img]="Pencil" [size]="15"></lucide-icon>
+              Editar
+            </button>
+          </div>
+        </aside>
+      </div>
+    }
 
     <!-- ── Edit Drawer ── -->
     @if (drawerOpen()) {
@@ -477,7 +782,6 @@ const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongo
     .th-check, .td-check { width: 44px; padding: 13px 8px 13px 20px !important; }
     .row-checkbox { width: 16px; height: 16px; accent-color: var(--color-brand); cursor: pointer; }
 
-    .contact-cell { display:flex; align-items:center; gap:12px; }
     .contact-avatar { width:38px; height:38px; min-width:38px; border-radius:50%; background:var(--color-brand-light); color:var(--color-brand); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; }
     .contact-info { display:flex; flex-direction:column; gap:2px; }
     .contact-name { font-weight:600; color:var(--color-text-main); }
@@ -501,6 +805,95 @@ const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongo
     .empty-state h3 { margin:0; font-size:18px; font-weight:700; }
     .empty-state p { margin:0; color:var(--color-text-muted); max-width:360px; line-height:1.5; }
     .empty-icon { color:var(--color-brand); opacity:.3; }
+
+    /* ── Herramientas de tabla: columnas y filtros ── */
+    .table-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .active-tool { border-color:var(--color-brand); color:var(--color-brand); }
+    .tool-count { background:var(--color-brand); color:#fff; border-radius:var(--radius-pill);
+      padding:1px 7px; font-size:11px; font-weight:700; }
+    .active-tool .tool-count { background:var(--color-brand); }
+
+    .columns-picker { position:relative; }
+    .columns-backdrop { position:fixed; inset:0; z-index:40; }
+    .columns-panel { position:absolute; right:0; top:calc(100% + 8px); z-index:41; width:290px;
+      max-height:420px; overflow-y:auto; background:#fff; border:1px solid var(--color-border);
+      border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); padding:8px; }
+    .columns-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+      padding:8px 10px 10px; border-bottom:1px solid var(--color-border); margin-bottom:6px; }
+    .columns-title { font-size:13px; font-weight:700; }
+    .columns-group { padding:6px 0; }
+    .columns-group + .columns-group { border-top:1px solid var(--color-border); margin-top:4px; }
+    .columns-group-title { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700;
+      text-transform:uppercase; letter-spacing:.05em; color:var(--color-text-muted); padding:6px 10px; }
+    .columns-group-count { background:var(--color-bg-app); border:1px solid var(--color-border);
+      border-radius:var(--radius-pill); padding:0 6px; letter-spacing:0; }
+    .column-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px;
+      cursor:pointer; font-size:13px; font-weight:500; transition:background var(--transition-fast); }
+    .column-item:hover { background:var(--color-bg-app); }
+    .column-item input { width:15px; height:15px; accent-color:var(--color-brand); cursor:pointer; flex-shrink:0; }
+    .column-custom-name { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .columns-empty { margin:0; padding:10px; font-size:12px; color:var(--color-text-muted); line-height:1.5; }
+
+    .filter-row th { padding:8px 10px !important; background:#fff !important;
+      border-bottom:1px solid var(--color-border); text-transform:none; }
+    .filter-row .input-sm { padding:6px 12px; font-size:12px; width:100%; min-width:90px; }
+    .cell-custom { display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; vertical-align:middle; }
+
+    /* ── Ficha del contacto ── */
+    .contact-cell { display:flex; align-items:center; gap:12px; width:100%; padding:0; border:none;
+      background:none; text-align:left; cursor:pointer; border-radius:12px; transition:opacity var(--transition-fast); }
+    .contact-cell:hover .contact-name { color:var(--color-brand); }
+    .contact-cell:focus-visible { outline:2px solid var(--color-brand); outline-offset:3px; }
+
+    .view-header { padding:32px 32px 20px; display:flex; align-items:flex-start; justify-content:space-between;
+      gap:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
+    .view-identity { display:flex; align-items:center; gap:16px; min-width:0; }
+    .view-avatar { width:56px; height:56px; min-width:56px; border-radius:50%; background:var(--color-brand-light);
+      color:var(--color-brand); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; }
+    .view-title-group { min-width:0; }
+    .view-title-group h2 { margin:0 0 6px; font-size:22px; font-weight:800; letter-spacing:-.5px; word-break:break-word; }
+    .view-badges { display:flex; flex-wrap:wrap; gap:6px; }
+
+    .view-section { margin-bottom:28px; }
+    .view-section-title { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700;
+      text-transform:uppercase; letter-spacing:.05em; color:var(--color-text-muted); margin-bottom:12px; }
+    .view-section-count { background:var(--color-brand-light); color:var(--color-brand); border-radius:var(--radius-pill);
+      padding:1px 8px; font-size:11px; letter-spacing:0; }
+
+    .detail-list { margin:0; display:flex; flex-direction:column; gap:2px; }
+    .detail-row { display:grid; grid-template-columns:150px 1fr; gap:16px; align-items:baseline;
+      padding:9px 12px; border-radius:10px; }
+    .detail-row:nth-child(odd) { background:var(--color-bg-app); }
+    .detail-row dt { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600;
+      color:var(--color-text-muted); min-width:0; }
+    .detail-row dd { margin:0; font-size:14px; color:var(--color-text-main); word-break:break-word; }
+    .detail-row a { color:var(--color-brand); text-decoration:none; font-weight:600; }
+    .detail-row a:hover { text-decoration:underline; }
+    .link-ext { display:inline-flex; align-items:center; gap:4px; }
+    .muted { color:var(--color-text-muted); }
+    .small { font-size:13px; margin:0; line-height:1.5; }
+
+    .custom-list .custom-key { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+    .custom-value { white-space:pre-wrap; }
+
+    .view-tags { display:flex; flex-wrap:wrap; gap:6px; }
+
+    .view-stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
+    .view-stat { border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:14px 16px;
+      display:flex; flex-direction:column; gap:2px; }
+    .view-stat-value { font-size:18px; font-weight:800; font-family:var(--font-heading); letter-spacing:-.5px; }
+    .view-stat-label { font-size:12px; color:var(--color-text-muted); font-weight:500; }
+
+    .view-notes { margin:0; font-size:14px; line-height:1.6; color:var(--color-text-main);
+      background:var(--color-bg-app); border:1px solid var(--color-border); border-radius:var(--radius-sm);
+      padding:14px 16px; white-space:pre-wrap; }
+
+    .view-footer { display:flex; align-items:center; gap:10px; padding:20px 32px;
+      border-top:1px solid var(--color-border); flex-shrink:0; }
+    .view-footer-spacer { flex:1; }
 
     /* ── Edit Drawer ── */
     .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex; align-items:stretch; justify-content:flex-end; z-index:100; }
@@ -589,6 +982,7 @@ const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongo
       .table-wrap table, .table-wrap thead, .table-wrap tbody,
       .table-wrap tr, .table-wrap th, .table-wrap td { display:block; }
       .table-wrap thead { display:none; }
+      .filter-row { display:none; }
       .table-wrap tbody tr { border:1px solid var(--color-border); border-radius:12px; margin:12px; padding:12px 14px; }
       .table-wrap tr:hover td { background:none; }
       .table-wrap tr.row-selected { background:var(--color-brand-light); border-radius:12px; }
@@ -624,6 +1018,9 @@ export class CustomersComponent implements OnInit {
   readonly ContactRound = ContactRound; readonly List = List;
   readonly UserPlus = UserPlus; readonly CheckSquare = CheckSquare;
   readonly ChevronDown = ChevronDown;
+  readonly Eye = Eye; readonly ExternalLink = ExternalLink;
+  readonly StickyNote = StickyNote; readonly Database = Database;
+  readonly Filter = Filter; readonly Columns3 = Columns3;
 
   readonly presetTags = PRESET_TAGS;
 
@@ -634,6 +1031,11 @@ export class CustomersComponent implements OnInit {
   searchQuery     = signal('');
   selectedTag     = signal('');
   selectedSource  = signal('');
+  filtersOpen     = signal(false);
+  columnsOpen     = signal(false);
+  columnFilters   = signal<Record<string, string>>({});
+  visibleKeys     = signal<string[]>(this.loadColumns());
+  viewing         = signal<Customer | null>(null);
   drawerOpen      = signal(false);
   editingCustomer = signal<Customer | null>(null);
   saving          = signal(false);
@@ -657,6 +1059,21 @@ export class CustomersComponent implements OnInit {
     if (tag) list = list.filter(c => c.tags.includes(tag));
     const src = this.selectedSource();
     if (src) list = list.filter(c => c.source === src);
+
+    // Filtros por columna: coincidencia parcial, sin distinguir mayúsculas.
+    const filters = Object.entries(this.columnFilters())
+      .map(([key, value]) => [key, value.trim().toLowerCase()] as const)
+      .filter(([, value]) => value);
+    if (filters.length) {
+      list = list.filter(c =>
+        filters.every(([key, value]) =>
+          (key === 'contact'
+            ? `${c.name} ${c.email ?? ''} ${c.phone ?? ''}`
+            : this.cellValue(c, key)
+          ).toLowerCase().includes(value),
+        ),
+      );
+    }
     return list;
   });
 
@@ -665,6 +1082,33 @@ export class CustomersComponent implements OnInit {
     const present = new Set(this.customers().map(c => c.source));
     return SOURCE_ORDER.filter(s => present.has(s));
   });
+
+  readonly baseColumns = BASE_COLUMNS;
+
+  /** Campos adicionales presentes en los contactos cargados. */
+  customColumns = computed<ColumnDef[]>(() => {
+    const keys = new Set<string>();
+    for (const c of this.customers()) {
+      for (const key of Object.keys(c.customFields ?? {})) keys.add(key);
+    }
+    return [...keys].sort().map(key => ({
+      key: CUSTOM_PREFIX + key,
+      label: key,
+      custom: true,
+    }));
+  });
+
+  /** Todas las columnas ofrecibles, en el orden en que se pintan. */
+  allColumns = computed<ColumnDef[]>(() => [...BASE_COLUMNS, ...this.customColumns()]);
+
+  visibleColumns = computed<ColumnDef[]>(() => {
+    const keys = this.visibleKeys();
+    return this.allColumns().filter(col => keys.includes(col.key));
+  });
+
+  activeColumnFilters = computed(
+    () => Object.values(this.columnFilters()).filter(v => v.trim()).length,
+  );
 
   activeTags = computed(() => {
     const tags = new Set<string>();
@@ -804,18 +1248,20 @@ export class CustomersComponent implements OnInit {
     });
   }
 
-  async deleteCustomer(c: Customer) {
+  /** Devuelve true si el usuario confirmó, para que la ficha pueda cerrarse. */
+  async deleteCustomer(c: Customer): Promise<boolean> {
     const ok = await this.confirm.confirm({
       title: 'Eliminar contacto',
       message: `¿Eliminar a "${c.name}"? Esta acción no se puede deshacer.`,
       confirmText: 'Eliminar',
       danger: true,
     });
-    if (!ok) return;
+    if (!ok) return false;
     this.http.delete(`${API}/customers/${c._id}`).subscribe({
       next: () => { this.toast.success('Contacto eliminado'); this.loadCustomers(); },
       error: err => this.toast.error((err.error as { message?: string })?.message || 'Error'),
     });
+    return true;
   }
 
   /** El importador avisa si hubo cambios para no recargar de balde. */
@@ -864,6 +1310,107 @@ export class CustomersComponent implements OnInit {
     return SOURCE_META[source] ?? SOURCE_META['manual'];
   }
 
+  openView(c: Customer) {
+    this.viewing.set(c);
+  }
+
+  editFromView(c: Customer) {
+    this.viewing.set(null);
+    this.openDrawer(c);
+  }
+
+  async deleteFromView(c: Customer) {
+    const removed = await this.deleteCustomer(c);
+    if (removed) this.viewing.set(null);
+  }
+
+  // ── Columnas y filtros por columna ──
+
+  isColumnVisible(key: string): boolean {
+    return this.visibleKeys().includes(key);
+  }
+
+  toggleColumn(key: string) {
+    this.visibleKeys.update(keys =>
+      keys.includes(key) ? keys.filter(k => k !== key) : [...keys, key],
+    );
+    // Una columna oculta no debe seguir filtrando sin que se vea.
+    if (!this.isColumnVisible(key)) this.setColumnFilter(key, '');
+    this.saveColumns();
+  }
+
+  resetColumns() {
+    this.visibleKeys.set([...DEFAULT_COLUMNS]);
+    this.columnFilters.set({});
+    this.saveColumns();
+  }
+
+  setColumnFilter(key: string, value: string) {
+    this.columnFilters.update(f => ({ ...f, [key]: value }));
+  }
+
+  clearColumnFilters() {
+    this.columnFilters.set({});
+  }
+
+  /** Texto de una celda, que es a la vez lo que se pinta y lo que se filtra. */
+  cellValue(c: Customer, key: string): string {
+    if (key.startsWith(CUSTOM_PREFIX)) {
+      return this.displayValue(c.customFields?.[key.slice(CUSTOM_PREFIX.length)]);
+    }
+    switch (key) {
+      case 'email':     return c.email ?? '';
+      case 'phone':     return c.phone ?? '';
+      case 'tags':      return c.tags.join(', ');
+      case 'source':    return `${this.sourceMeta(c.source).label} ${c.sourceLabel ?? ''}`.trim();
+      case 'lastVisit': return c.lastVisit ? this.formatDate(c.lastVisit) : '';
+      case 'createdAt': return this.formatDate(c.createdAt);
+      case 'notes':     return c.notes ?? '';
+      case 'history':
+        return `${c.totalReservations} reservas ${c.totalEvents} eventos`;
+      default:          return '';
+    }
+  }
+
+  /** La elección de columnas es una comodidad local, no un dato del servidor. */
+  private loadColumns(): string[] {
+    try {
+      const raw = localStorage.getItem(COLUMNS_STORAGE_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed) && parsed.every(k => typeof k === 'string')) {
+        return parsed as string[];
+      }
+    } catch {
+      // Navegador sin almacenamiento o valor corrupto: se usan las de siempre.
+    }
+    return [...DEFAULT_COLUMNS];
+  }
+
+  private saveColumns() {
+    try {
+      localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(this.visibleKeys()));
+    } catch {
+      // Sin persistencia el resto sigue funcionando igual.
+    }
+  }
+
+  /** Pares clave/valor de `customFields`, ya listos para pintar. */
+  customEntries(c: Customer): { key: string; value: string }[] {
+    return Object.entries(c.customFields ?? {})
+      .map(([key, value]) => ({ key, value: this.displayValue(value) }))
+      .filter(entry => entry.value !== '');
+  }
+
+  /** Un campo importado puede traer cualquier cosa: array, objeto o primitiva. */
+  private displayValue(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return value.map(v => this.displayValue(v)).filter(Boolean).join(', ');
+    if (typeof value === 'object') {
+      try { return JSON.stringify(value); } catch { return ''; }
+    }
+    return String(value).trim();
+  }
+
   formatDate(date?: string) {
     if (!date) return '—';
     return new Date(date).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -875,7 +1422,9 @@ export class CustomersComponent implements OnInit {
 
   @HostListener('document:keydown.escape')
   onEsc() {
+    if (this.columnsOpen()) { this.columnsOpen.set(false); return; }
     if (this.listPickerOpen()) { this.listPickerOpen.set(false); return; }
-    if (this.drawerOpen()) this.closeDrawer();
+    if (this.drawerOpen()) { this.closeDrawer(); return; }
+    if (this.viewing()) this.viewing.set(null);
   }
 }

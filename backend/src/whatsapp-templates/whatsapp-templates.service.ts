@@ -94,8 +94,11 @@ export class WhatsAppTemplatesService {
   }
 
   /** Trae de Meta las plantillas del WABA de la cuenta y refresca el espejo local. */
-  async sync(tenantId: string, accountId: string): Promise<WaTemplate[]> {
-    const { token, wabaId } = await this.resolveAccount(tenantId, accountId);
+  async sync(tenantId: string, accountId?: string): Promise<WaTemplate[]> {
+    const { account, token, wabaId } = await this.resolveAccount(
+      tenantId,
+      accountId,
+    );
     const data = await this.metaRequest<{ data?: MetaTemplate[] }>(() =>
       this.graph.get(`/${wabaId}/message_templates`, {
         accessToken: token,
@@ -108,7 +111,7 @@ export class WhatsAppTemplatesService {
     );
 
     const tid = new Types.ObjectId(tenantId);
-    const aid = new Types.ObjectId(accountId);
+    const aid = account._id as Types.ObjectId;
     const seen: string[] = [];
     const results: WaTemplate[] = [];
 
@@ -526,13 +529,32 @@ export class WhatsAppTemplatesService {
   }
 
   /** Valida que la cuenta sea del tenant y tenga credenciales de Cloud API. */
+  /** Cuenta Cloud API por defecto del tenant, o un error explicando qué falta. */
+  private async defaultCloudApiAccount(tenantId: string) {
+    const account = await this.accounts.getDefault(tenantId);
+    if (!account)
+      throw new BadRequestException(
+        'No hay ninguna cuenta de WhatsApp configurada. Añádela en Configuración → WhatsApp.',
+      );
+    if (account.provider !== 'cloudapi')
+      throw new BadRequestException(
+        `La cuenta predeterminada "${account.label}" no es de Cloud API: las plantillas solo existen en Cloud API.`,
+      );
+    return account;
+  }
+
+  /**
+   * Sin `accountId` se usa la cuenta predeterminada del tenant, que es la misma
+   * desde la que salen las campañas. El editor de campañas no elige cuenta, así
+   * que sus plantillas tienen que ser justo las de esa cuenta.
+   */
   private async resolveAccount(
     tenantId: string,
-    accountId: string,
+    accountId?: string,
   ): Promise<TemplateAccount> {
-    if (!accountId)
-      throw new BadRequestException('Elige una cuenta de WhatsApp');
-    const account = await this.accounts.findOne(accountId, tenantId);
+    const account = accountId
+      ? await this.accounts.findOne(accountId, tenantId)
+      : await this.defaultCloudApiAccount(tenantId);
     if (account.provider !== 'cloudapi')
       throw new BadRequestException(
         'Las plantillas solo existen en cuentas de WhatsApp Cloud API',

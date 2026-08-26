@@ -13,6 +13,7 @@ import { Reservation } from '../reservations/reservation.schema';
 import { EventRegistration } from '../events/event-registration.schema';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { isOwnerScoped } from '../auth/permissions';
+import { formatPhone } from '../shared/phone';
 
 @Injectable()
 export class CustomersService implements OnModuleInit {
@@ -82,6 +83,7 @@ export class CustomersService implements OnModuleInit {
       const customer = new this.customerModel({
         ...dto,
         email: dto.email?.toLowerCase().trim(),
+        phone: formatPhone(dto.phone),
         tenantId: new Types.ObjectId(tenantId),
         tags: dto.tags ?? [],
         source: 'manual',
@@ -116,6 +118,8 @@ export class CustomersService implements OnModuleInit {
     Object.assign(customer, {
       ...dto,
       ...(dto.email ? { email: dto.email.toLowerCase().trim() } : {}),
+      // `phone: ''` es un borrado explícito; no mandarlo deja el que hubiera.
+      ...(dto.phone !== undefined ? { phone: formatPhone(dto.phone) } : {}),
     });
     return customer.save();
   }
@@ -151,7 +155,7 @@ export class CustomersService implements OnModuleInit {
     for (const er of eventRegs) {
       contacts.set(er.email.toLowerCase(), {
         name: er.name,
-        phone: er.phone,
+        phone: formatPhone(er.phone),
         source: 'event',
       });
     }
@@ -159,7 +163,7 @@ export class CustomersService implements OnModuleInit {
       const lastVisit = r.date ? new Date(r.date) : undefined;
       contacts.set(r.guestEmail.toLowerCase(), {
         name: r.guestName,
-        phone: r.guestPhone,
+        phone: formatPhone(r.guestPhone),
         source: 'reservation',
         lastVisit,
       });

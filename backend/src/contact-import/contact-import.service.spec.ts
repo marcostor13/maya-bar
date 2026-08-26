@@ -149,7 +149,7 @@ describe('ContactImportService', () => {
       );
       const set = opsOf()[0].updateOne.update.$set!;
       expect(set.email).toBe('marcos@bar.com');
-      expect(set.phone).toBe('+51999888777');
+      expect(set.phone).toBe('+51 999 888 777');
     });
 
     it('descarta teléfonos y emails inválidos', async () => {
@@ -199,7 +199,7 @@ describe('ContactImportService', () => {
       const [first, second] = opsOf();
       expect(first.updateOne.filter.email).toBe('m@bar.com');
       expect(first.updateOne.filter.phone).toBeUndefined();
-      expect(second.updateOne.filter.phone).toBe('51988777666');
+      expect(second.updateOne.filter.phone).toBe('+51 988 777 666');
     });
 
     it('parte las etiquetas y añade las de la importación', async () => {

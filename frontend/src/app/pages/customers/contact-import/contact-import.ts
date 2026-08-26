@@ -343,9 +343,20 @@ const FIELDS: { key: TargetField; label: string; hint: string }[] = [
     .section-sep { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); border-top: 1px solid var(--color-border); padding-top: 16px; }
 
     .extras-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .extras-head .field-hint { flex: 1; min-width: 200px; }
     .extras-actions { display: flex; gap: 4px; flex-shrink: 0; }
-    .extras-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; }
-    .extra-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background var(--transition-fast); }
+    /*
+     * flex-shrink: 0 es obligatorio. La lista scrollea, así que su min-height
+     * resuelve a 0 y el .drawer-body (columna flex) la aplastaba hasta dejarla
+     * invisible en cuanto el paso de mapeo crecía.
+     */
+    .extras-list {
+      flex-shrink: 0; display: grid; gap: 4px;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      max-height: 300px; overflow-y: auto;
+      border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px;
+    }
+    .extra-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background var(--transition-fast); min-width: 0; }
     .extra-row:hover { background: var(--color-bg-app); }
     .extra-row.picked { background: var(--color-brand-light); }
     .extra-row input { margin-top: 3px; flex-shrink: 0; accent-color: var(--color-brand); }

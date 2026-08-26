@@ -13,6 +13,7 @@ import { Customer } from '../customers/customer.schema';
 import { ContactList } from '../lists/contact-list.schema';
 import { CreateFormDto, UpdateFormDto } from './dto/form.dto';
 import { isOwnerScoped } from '../auth/permissions';
+import { formatPhone } from '../shared/phone';
 
 /** Metadatos de la petición pública que sirven para trazar el origen. */
 export interface SubmitContext {
@@ -189,7 +190,7 @@ export class FormsService {
     const { mapped, customFields } = this.splitAnswers(form, answers);
 
     const email = mapped['email']?.toLowerCase().trim() || undefined;
-    const phone = mapped['phone']?.trim() || undefined;
+    const phone = formatPhone(mapped['phone']);
     if (!email && !phone)
       throw new BadRequestException(
         'El formulario debe capturar al menos un email o un teléfono',

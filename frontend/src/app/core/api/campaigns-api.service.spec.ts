@@ -119,16 +119,16 @@ describe('CampaignsApiService', () => {
     req.flush([]);
   });
 
-  it('getTemplates hace GET /settings/templates', () => {
+  it('getTemplates hace GET /whatsapp-templates', () => {
     service.getTemplates().subscribe();
-    const req = httpMock.expectOne(`${BASE}/settings/templates`);
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates`);
     expect(req.request.method).toBe('GET');
     req.flush([]);
   });
 
-  it('syncTemplates hace POST /settings/templates/sync con body vacío', () => {
+  it('syncTemplates hace POST /whatsapp-templates/sync con body vacío', () => {
     service.syncTemplates().subscribe();
-    const req = httpMock.expectOne(`${BASE}/settings/templates/sync`);
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates/sync`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
     req.flush([]);

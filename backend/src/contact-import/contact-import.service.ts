@@ -23,6 +23,7 @@ import {
   parseXlsx,
 } from './table-parser';
 import { isOwnerScoped } from '../auth/permissions';
+import { formatPhone } from '../shared/phone';
 
 /** Cuántos documentos se leen para deducir los campos de una colección. */
 const SAMPLE_SIZE = 50;
@@ -650,14 +651,9 @@ export class ContactImportService {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) ? text : undefined;
   }
 
-  /** Deja solo dígitos, conservando el prefijo internacional. */
+  /** Formato único de la plataforma: `+51 999 999 999`. */
   private normalizePhone(value: unknown): string | undefined {
-    const raw = this.toText(value);
-    if (!raw) return undefined;
-    const plus = raw.trim().startsWith('+');
-    const digits = raw.replace(/\D/g, '');
-    if (digits.length < 7 || digits.length > 15) return undefined;
-    return plus ? `+${digits}` : digits;
+    return formatPhone(this.toText(value));
   }
 
   private splitTags(value: unknown): string[] {

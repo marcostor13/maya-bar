@@ -69,12 +69,16 @@ export class CampaignsApiService {
 
   // ── Plantillas WhatsApp Cloud API ────────────────────────────────────────
 
+  /**
+   * Sin `accountId`: el backend resuelve la cuenta predeterminada del tenant,
+   * que es desde la que la campaña va a enviar de todas formas.
+   */
   getTemplates(): Observable<WaTemplate[]> {
-    return this.http.get<WaTemplate[]>(`${this.base}/settings/templates`);
+    return this.http.get<WaTemplate[]>(`${this.base}/whatsapp-templates`);
   }
 
   syncTemplates(): Observable<WaTemplate[]> {
-    return this.http.post<WaTemplate[]>(`${this.base}/settings/templates/sync`, {});
+    return this.http.post<WaTemplate[]>(`${this.base}/whatsapp-templates/sync`, {});
   }
 
   // ── Upload de archivos ───────────────────────────────────────────────────
