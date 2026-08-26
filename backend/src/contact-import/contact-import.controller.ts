@@ -24,8 +24,12 @@ import {
   ImportOptionsDto,
 } from './dto/contact-import.dto';
 
-/** 20 MB: una hoja de contactos nunca se acerca a eso. */
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
+/**
+ * 60 MB: una hoja de contactos no se acerca, pero el volcado JSON de una
+ * colección entera de Compass sí, porque repite los nombres de campo en cada
+ * documento. El número de filas procesadas lo sigue acotando MAX_ROWS.
+ */
+const MAX_FILE_SIZE = 60 * 1024 * 1024;
 
 @Controller('customers/import')
 @UseGuards(JwtAuthGuard)

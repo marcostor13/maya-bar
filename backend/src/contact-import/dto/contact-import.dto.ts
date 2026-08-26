@@ -71,10 +71,22 @@ export class ImportOptionsDto {
   @IsBoolean()
   updateExisting?: boolean;
 
-  /** Guarda las columnas sin mapear en `customFields`. */
+  /**
+   * Guarda TODAS las columnas sin mapear en `customFields`. Solo se aplica
+   * cuando no llega `customFields`, que es la selección explícita.
+   */
   @IsOptional()
   @IsBoolean()
   keepUnmapped?: boolean;
+
+  /**
+   * Columnas del origen que se guardan en `customFields`, elegidas una a una.
+   * Un array vacío significa "ninguna", que es distinto de no mandar el campo.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  customFields?: string[];
 }
 
 /** Conexión a la base de origen. */

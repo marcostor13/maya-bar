@@ -52,7 +52,7 @@ const FIELDS: { key: TargetField; label: string; hint: string }[] = [
           @if (step() === 'source') {
             <div class="tabs">
               <button class="tab" [class.active]="mode() === 'file'" (click)="mode.set('file')">
-                <lucide-icon [img]="FileSpreadsheet" [size]="16"></lucide-icon> Excel o CSV
+                <lucide-icon [img]="FileSpreadsheet" [size]="16"></lucide-icon> Archivo
               </button>
               <button class="tab" [class.active]="mode() === 'mongo'" (click)="mode.set('mongo')">
                 <lucide-icon [img]="Database" [size]="16"></lucide-icon> MongoDB
@@ -60,11 +60,15 @@ const FIELDS: { key: TargetField; label: string; hint: string }[] = [
             </div>
 
             @if (mode() === 'file') {
-              <input type="file" #picker hidden accept=".xlsx,.xlsm,.csv" (change)="onFile($event)" />
+              <input type="file" #picker hidden accept=".xlsx,.xlsm,.csv,.json,.ndjson,.jsonl"
+                (change)="onFile($event)" />
               <button class="drop-zone" (click)="picker.click()" [disabled]="loading()">
                 <lucide-icon [img]="loading() ? RefreshCw : Upload" [size]="26" [class.spin]="loading()"></lucide-icon>
-                <span>{{ file() ? file()!.name : 'Elige un archivo .xlsx o .csv' }}</span>
-                <small>La primera fila debe tener los nombres de las columnas</small>
+                <span>{{ file() ? file()!.name : 'Elige un archivo .xlsx, .csv o .json' }}</span>
+                <small>
+                  En Excel y CSV, la primera fila son los nombres de columna.
+                  En JSON, el volcado de una colección de MongoDB Compass.
+                </small>
               </button>
             } @else {
               @if (sources().length) {
@@ -174,10 +178,34 @@ const FIELDS: { key: TargetField; label: string; hint: string }[] = [
               <span>Actualizar los contactos que ya existen. Si lo desmarcas, solo se crean los nuevos.</span>
             </label>
 
-            <label class="check-row">
-              <input type="checkbox" [(ngModel)]="keepUnmapped" />
-              <span>Guardar las columnas sin mapear como campos adicionales del contacto</span>
-            </label>
+            <div class="section-sep">Campos adicionales</div>
+
+            @if (extraColumns().length === 0) {
+              <p class="field-hint">Todas las columnas del origen están asignadas a un campo del contacto.</p>
+            } @else {
+              <div class="extras-head">
+                <span class="field-hint">
+                  Elige qué otras columnas guardar en el contacto.
+                  {{ customFields().length }} de {{ extraColumns().length }} seleccionada(s).
+                </span>
+                <div class="extras-actions">
+                  <button type="button" class="btn btn-sm btn-ghost" (click)="selectAllExtras()">Todas</button>
+                  <button type="button" class="btn btn-sm btn-ghost" (click)="clearExtras()">Ninguna</button>
+                </div>
+              </div>
+              <div class="extras-list">
+                @for (col of extraColumns(); track col) {
+                  <label class="extra-row" [class.picked]="customFields().includes(col)">
+                    <input type="checkbox" [checked]="customFields().includes(col)"
+                      (change)="toggleExtra(col)" />
+                    <span class="extra-info">
+                      <span class="extra-name">{{ col }}</span>
+                      @if (sampleOf(col)) { <span class="extra-sample">{{ sampleOf(col) }}</span> }
+                    </span>
+                  </label>
+                }
+              </div>
+            }
 
             @if (mode() === 'mongo') {
               <div class="field">
@@ -314,6 +342,17 @@ const FIELDS: { key: TargetField; label: string; hint: string }[] = [
 
     .section-sep { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); border-top: 1px solid var(--color-border); padding-top: 16px; }
 
+    .extras-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .extras-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .extras-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; }
+    .extra-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background var(--transition-fast); }
+    .extra-row:hover { background: var(--color-bg-app); }
+    .extra-row.picked { background: var(--color-brand-light); }
+    .extra-row input { margin-top: 3px; flex-shrink: 0; accent-color: var(--color-brand); }
+    .extra-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .extra-name { font-size: 13px; font-weight: 600; color: var(--color-text-main); word-break: break-all; }
+    .extra-sample { font-size: 11px; color: var(--color-text-muted); word-break: break-all; }
+
     .check-row { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--color-text-main); cursor: pointer; }
     .check-row input { margin-top: 2px; flex-shrink: 0; }
 
@@ -383,11 +422,19 @@ export class ContactImportComponent implements OnInit {
   dedupeBy: DedupeKey = 'both';
   tagsText = '';
   updateExisting = true;
-  keepUnmapped = true;
   saveAs = '';
+
+  /** Columnas del origen elegidas para guardarse como campos adicionales. */
+  customFields = signal<string[]>([]);
 
   /** true si algo llegó a importarse: la lista de fuera debe recargarse. */
   private touched = false;
+
+  /** Columnas que no están asignadas a ningún campo del contacto. */
+  extraColumns = computed(() => {
+    const taken = new Set(Object.values(this.mapping()).filter(Boolean));
+    return (this.analysis()?.columns ?? []).filter(col => !taken.has(col));
+  });
 
   canAnalyze = computed(() =>
     this.mode() === 'file'
@@ -443,6 +490,7 @@ export class ContactImportComponent implements OnInit {
     const done = (a: AnalyzeResult) => {
       this.analysis.set(a);
       this.mapping.set({ ...a.suggested } as ImportMapping);
+      this.customFields.set([]);
       this.loading.set(false);
       this.step.set('mapping');
     };
@@ -465,11 +513,23 @@ export class ContactImportComponent implements OnInit {
 
   setMapping(field: TargetField, column: string) {
     this.mapping.update(m => ({ ...m, [field]: column || undefined }));
+    // La columna recién asignada ya no es un campo adicional.
+    if (column) this.customFields.update(cols => cols.filter(c => c !== column));
   }
 
   sampleOf(column: string): string {
     return (this.analysis()?.samples[column] ?? []).slice(0, 2).join(' · ');
   }
+
+  toggleExtra(column: string) {
+    this.customFields.update(cols =>
+      cols.includes(column) ? cols.filter(c => c !== column) : [...cols, column],
+    );
+  }
+
+  selectAllExtras() { this.customFields.set([...this.extraColumns()]); }
+
+  clearExtras() { this.customFields.set([]); }
 
   // ── Paso 2 → 3 ──
 
@@ -487,7 +547,7 @@ export class ContactImportComponent implements OnInit {
       dedupeBy: this.dedupeBy,
       tags: this.tagsText.split(',').map(t => t.trim()).filter(Boolean),
       updateExisting: this.updateExisting,
-      keepUnmapped: this.keepUnmapped,
+      customFields: this.customFields(),
     };
     const done = (r: ImportResult) => {
       this.result.set(r);

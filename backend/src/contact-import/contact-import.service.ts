@@ -15,7 +15,13 @@ import {
   TARGET_FIELDS,
   TargetField,
 } from './dto/contact-import.dto';
-import { MAX_ROWS, ParsedTable, parseCsv, parseXlsx } from './table-parser';
+import {
+  MAX_ROWS,
+  ParsedTable,
+  parseCsv,
+  parseJson,
+  parseXlsx,
+} from './table-parser';
 import { isOwnerScoped } from '../auth/permissions';
 
 /** Cuántos documentos se leen para deducir los campos de una colección. */
@@ -72,6 +78,8 @@ export class ContactImportService {
     const name = (file.originalname ?? '').toLowerCase();
     if (name.endsWith('.xlsx') || name.endsWith('.xlsm'))
       return parseXlsx(file.buffer);
+    if (name.endsWith('.json') || name.endsWith('.ndjson') || name.endsWith('.jsonl'))
+      return parseJson(file.buffer.toString('utf-8'));
     if (name.endsWith('.csv') || name.endsWith('.txt'))
       return parseCsv(file.buffer.toString('utf-8'));
     if (name.endsWith('.xls'))
@@ -79,7 +87,7 @@ export class ContactImportService {
         'El formato .xls antiguo no está soportado: vuelve a guardarlo como .xlsx o CSV',
       );
     throw new BadRequestException(
-      'Formato no soportado. Sube un archivo .xlsx o .csv',
+      'Formato no soportado. Sube un archivo .xlsx, .csv o .json',
     );
   }
 
@@ -456,6 +464,19 @@ export class ContactImportService {
     const extraTags = (options.tags ?? []).map((t) => t.trim()).filter(Boolean);
     const mapped = new Set(Object.values(mapping).filter(Boolean));
 
+    /**
+     * Qué columnas sin mapear acaban en `customFields`. La selección explícita
+     * manda; `keepUnmapped` sigue valiendo para quien no la envía.
+     */
+    const picked = options.customFields;
+    const keepColumn: ((column: string) => boolean) | null = picked
+      ? picked.length
+        ? (column) => picked.includes(column)
+        : null
+      : options.keepUnmapped
+        ? () => true
+        : null;
+
     const result: ImportResult = {
       total: rows.length,
       imported: 0,
@@ -502,10 +523,10 @@ export class ContactImportService {
       if (phone) set.phone = phone;
       if (notes) set.notes = notes;
 
-      if (options.keepUnmapped) {
+      if (keepColumn) {
         const custom: Record<string, unknown> = {};
         for (const [column, value] of Object.entries(row)) {
-          if (mapped.has(column)) continue;
+          if (mapped.has(column) || !keepColumn(column)) continue;
           const text = this.toText(value);
           if (text) custom[column] = text;
         }

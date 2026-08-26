@@ -22,6 +22,8 @@ export interface ImportOptions {
   tags?: string[];
   updateExisting?: boolean;
   keepUnmapped?: boolean;
+  /** Columnas del origen que se guardan como campos adicionales del contacto. */
+  customFields?: string[];
 }
 
 /** Resultado del análisis previo: lo que alimenta la pantalla de mapeo. */
