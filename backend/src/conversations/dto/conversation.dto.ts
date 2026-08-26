@@ -5,7 +5,9 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
-import { MessageType } from '../message.schema';
+// `import type`: MessageType se usa en una firma decorada y el build corre con
+// isolatedModules + emitDecoratorMetadata (TS1272).
+import type { MessageType } from '../message.schema';
 
 /** Tipos que el frontend puede enviar (los entrantes como `contact` o `unsupported` no aplican). */
 const OUTBOUND_TYPES: MessageType[] = [
