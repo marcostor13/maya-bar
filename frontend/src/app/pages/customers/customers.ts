@@ -40,11 +40,14 @@ const API = environment.apiUrl;
 interface Customer {
   _id: string;
   name: string;
-  email: string;
+  email?: string;
   phone?: string;
   tags: string[];
   notes?: string;
-  source: 'reservation' | 'event' | 'manual';
+  source: string;
+  /** Nombre legible del origen: el formulario o la importación que lo trajo. */
+  sourceLabel?: string;
+  sourceUrl?: string;
   totalReservations: number;
   totalEvents: number;
   lastVisit?: string;
@@ -61,10 +64,19 @@ interface ListMini {
 const PRESET_TAGS = ['VIP', 'Vegetariano', 'Cumpleañero', 'Corporativo', 'Delivery', 'Fiel', 'Nuevo', 'Alérgico'];
 
 const SOURCE_META: Record<string, { label: string; cls: string }> = {
-  reservation: { label: 'Reserva',  cls: 'badge-info'    },
-  event:       { label: 'Evento',   cls: 'badge-success' },
-  manual:      { label: 'Manual',   cls: 'badge-neutral' },
+  reservation: { label: 'Reserva',     cls: 'badge-info'    },
+  event:       { label: 'Evento',      cls: 'badge-success' },
+  manual:      { label: 'Manual',      cls: 'badge-neutral' },
+  form:        { label: 'Formulario',  cls: 'badge-warning' },
+  import:      { label: 'Importación', cls: 'badge-neutral' },
+  mongodb:     { label: 'MongoDB',     cls: 'badge-neutral' },
+  api:         { label: 'API',         cls: 'badge-warning' },
+  whatsapp:    { label: 'WhatsApp',    cls: 'badge-success' },
+  instagram:   { label: 'Instagram',   cls: 'badge-info'    },
 };
+
+/** Orden de los chips del filtro por origen. */
+const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongodb', 'api', 'whatsapp', 'instagram'];
 
 @Component({
   selector: 'app-customers',
@@ -114,8 +126,8 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
           <span class="stat-label">De eventos</span>
         </div>
         <div class="stat-card">
-          <span class="stat-value">{{ countBySource('manual') }}</span>
-          <span class="stat-label">Manuales</span>
+          <span class="stat-value">{{ countBySource('form') }}</span>
+          <span class="stat-label">De formularios</span>
         </div>
       </div>
 
@@ -128,6 +140,17 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
           @if (searchQuery()) {
             <button class="search-clear" (click)="searchQuery.set('')" aria-label="Limpiar búsqueda">
               <lucide-icon [img]="X" [size]="14"></lucide-icon>
+            </button>
+          }
+        </div>
+        <div class="tag-filters">
+          <button class="tag-filter-btn" [class.active]="!selectedSource()" (click)="selectedSource.set('')">
+            Todo origen
+          </button>
+          @for (src of activeSources(); track src) {
+            <button class="tag-filter-btn" [class.active]="selectedSource() === src"
+              (click)="selectedSource.set(selectedSource() === src ? '' : src)">
+              {{ sourceMeta(src).label }}
             </button>
           }
         </div>
@@ -215,7 +238,7 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
                       <div class="contact-avatar">{{ initials(c.name) }}</div>
                       <div class="contact-info">
                         <span class="contact-name">{{ c.name }}</span>
-                        <span class="contact-email">{{ c.email }}</span>
+                        <span class="contact-email">{{ c.email || c.phone || '—' }}</span>
                       </div>
                     </div>
                   </td>
@@ -231,7 +254,12 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
                     </div>
                   </td>
                   <td data-label="Origen">
-                    <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
+                    <div class="source-cell">
+                      <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
+                      @if (c.sourceLabel) {
+                        <span class="source-detail" [title]="c.sourceUrl || c.sourceLabel">{{ c.sourceLabel }}</span>
+                      }
+                    </div>
                   </td>
                   <td class="text-muted" data-label="Última visita">{{ formatDate(c.lastVisit) }}</td>
                   <td data-label="Historial">
@@ -456,6 +484,8 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
     .contact-email { font-size:12px; color:var(--color-text-muted); }
 
     .tags-cell { display:flex; gap:4px; flex-wrap:wrap; max-width:200px; }
+    .source-cell { display:flex; flex-direction:column; gap:3px; align-items:flex-start; }
+    .source-detail { font-size:11px; color:var(--color-text-muted); max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .tag-badge { font-size:11px; }
 
     .history-cell { display:flex; gap:6px; }
@@ -603,6 +633,7 @@ export class CustomersComponent implements OnInit {
   importOpen      = signal(false);
   searchQuery     = signal('');
   selectedTag     = signal('');
+  selectedSource  = signal('');
   drawerOpen      = signal(false);
   editingCustomer = signal<Customer | null>(null);
   saving          = signal(false);
@@ -619,12 +650,20 @@ export class CustomersComponent implements OnInit {
     const q = this.searchQuery().toLowerCase();
     if (q) list = list.filter(c =>
       c.name.toLowerCase().includes(q) ||
-      c.email.toLowerCase().includes(q) ||
+      (c.email?.toLowerCase().includes(q) ?? false) ||
       (c.phone?.includes(q) ?? false),
     );
     const tag = this.selectedTag();
     if (tag) list = list.filter(c => c.tags.includes(tag));
+    const src = this.selectedSource();
+    if (src) list = list.filter(c => c.source === src);
     return list;
+  });
+
+  /** Solo se ofrecen como filtro los orígenes que realmente existen. */
+  activeSources = computed(() => {
+    const present = new Set(this.customers().map(c => c.source));
+    return SOURCE_ORDER.filter(s => present.has(s));
   });
 
   activeTags = computed(() => {
@@ -660,7 +699,7 @@ export class CustomersComponent implements OnInit {
   openDrawer(c: Customer | null) {
     this.editingCustomer.set(c);
     if (c) {
-      this.form.setValue({ name: c.name, email: c.email, phone: c.phone ?? '', notes: c.notes ?? '' });
+      this.form.setValue({ name: c.name, email: c.email ?? '', phone: c.phone ?? '', notes: c.notes ?? '' });
       this.selectedTags.set([...c.tags]);
     } else {
       this.form.reset();

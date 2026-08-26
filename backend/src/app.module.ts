@@ -27,6 +27,7 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { SharedModule } from './shared/shared.module';
 import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates.module';
 import { ContactImportModule } from './contact-import/contact-import.module';
+import { FormsModule } from './forms/forms.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { ContactImportModule } from './contact-import/contact-import.module';
     InstagramAccountsModule,
     AiAgentsModule,
     ConversationsModule,
+    FormsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

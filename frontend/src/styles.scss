@@ -205,6 +205,32 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-brand);
 }
 
+.badge-neutral {
+  background-color: var(--color-bg-app);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.badge-info {
+  background-color: #EFF6FF;
+  color: #2563EB;
+}
+
+.badge-success {
+  background-color: #ECFDF5;
+  color: var(--color-success);
+}
+
+.badge-warning {
+  background-color: #FFFBEB;
+  color: #B45309;
+}
+
+.badge-danger {
+  background-color: #FEF2F2;
+  color: var(--color-error);
+}
+
 /* Utilities / Animations */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(15px); }

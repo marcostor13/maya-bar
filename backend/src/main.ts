@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import type { NextFunction, Request, Response } from 'express';
 import { AllExceptionsFilter } from './shared/http-exception.filter';
 
 async function bootstrap() {
@@ -23,6 +24,22 @@ async function bootstrap() {
   // completos (_id, createdAt, ...) en varios PATCH y deben recortarse sin error.
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // La API pública de formularios se embebe en landings de terceros, así que
+  // debe aceptar cualquier origen. Va ANTES de enableCors: el middleware de
+  // `cors` no pisa la cabecera si el origen no está en su lista blanca.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!req.originalUrl.startsWith('/public/forms')) return next();
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
 
   const corsOrigins = configService.get<string>('CORS_ORIGINS');
   const frontendUrl = configService.get<string>('FRONTEND_URL');

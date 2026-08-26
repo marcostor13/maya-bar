@@ -28,6 +28,7 @@ import { CampaignsComponent } from './pages/campaigns/campaigns';
 import { WhatsappTemplatesComponent } from './pages/whatsapp-templates/whatsapp-templates';
 import { SettingsComponent } from './pages/settings/settings';
 import { ListsComponent } from './pages/lists/lists';
+import { FormsComponent } from './pages/forms/forms';
 import { ImpulsadorPanelComponent } from './pages/impulsador-panel/impulsador-panel';
 import { VisitsComponent } from './pages/visits/visits';
 import { MisAsistentesComponent } from './pages/mis-asistentes/mis-asistentes';
@@ -134,6 +135,11 @@ export const routes: Routes = [
         path: 'lists',
         component: ListsComponent,
         canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+      },
+      {
+        path: 'forms',
+        component: FormsComponent,
+        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING')],
       },
       {
         path: 'visitas',

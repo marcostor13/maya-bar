@@ -2,7 +2,7 @@ import { Component, inject, signal, computed } from '@angular/core';
 import { NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { AuthService } from '../../auth/auth.service';
-import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate } from 'lucide-angular';
+import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate, FileText } from 'lucide-angular';
 
 @Component({
   selector: 'app-shell',
@@ -142,6 +142,10 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
               <a class="nav-item" routerLink="/lists" routerLinkActive="active">
                 <span class="nav-icon"><lucide-icon [img]="List" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
                 @if (!collapsed()) { <span>Listas</span> }
+              </a>
+              <a class="nav-item" routerLink="/forms" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="FileText" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Formularios</span> }
               </a>
               <a class="nav-item" routerLink="/campaigns" routerLinkActive="active">
                 <span class="nav-icon"><lucide-icon [img]="Megaphone" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
@@ -607,6 +611,7 @@ export class ShellComponent {
   readonly ContactRound = ContactRound;
   readonly Megaphone = Megaphone;
   readonly LayoutTemplate = LayoutTemplate;
+  readonly FileText = FileText;
   readonly Bot = Bot;
   readonly MessagesSquare = MessagesSquare;
   readonly Settings = Settings;

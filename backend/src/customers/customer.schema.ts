@@ -28,8 +28,23 @@ export class Customer extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   createdBy?: Types.ObjectId;
 
+  /**
+   * Canal por el que entró el contacto. Se fija al crearlo y no se pisa
+   * después: sirve para distinguir un alta directa de una que llegó por un
+   * formulario embebido en una landing externa.
+   */
   @Prop({
-    enum: ['reservation', 'event', 'manual', 'import', 'mongodb'],
+    enum: [
+      'reservation',
+      'event',
+      'manual',
+      'import',
+      'mongodb',
+      'form',
+      'api',
+      'whatsapp',
+      'instagram',
+    ],
     default: 'manual',
   })
   source: string;
@@ -37,6 +52,18 @@ export class Customer extends Document {
   /** Fuente de importación de la que vino el contacto, si aplica. */
   @Prop({ type: Types.ObjectId, ref: 'ContactSource', index: true })
   sourceId?: Types.ObjectId;
+
+  /** Formulario público que lo capturó, si `source === 'form'`. */
+  @Prop({ type: Types.ObjectId, ref: 'ContactForm', index: true })
+  formId?: Types.ObjectId;
+
+  /** Nombre legible del origen: "Landing Black Friday", "Import CSV enero"… */
+  @Prop({ trim: true })
+  sourceLabel?: string;
+
+  /** URL de la página desde la que se envió el formulario. */
+  @Prop({ trim: true })
+  sourceUrl?: string;
 
   /** Campos del origen que no encajan en el modelo, conservados tal cual. */
   @Prop({ type: Object, default: {} })
