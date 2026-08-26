@@ -57,6 +57,39 @@ export class MetaGraphClient {
     return this.request<T>('DELETE', path, opts);
   }
 
+  /**
+   * Sube bytes crudos a una sesión de la Resumable Upload API. Ese endpoint no
+   * usa Bearer sino `Authorization: OAuth <token>` y exige `file_offset`.
+   */
+  async postBinary<T>(
+    path: string,
+    bytes: ArrayBuffer | Uint8Array,
+    opts: MetaRequestOptions & { fileOffset?: number } = {},
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/octet-stream',
+      file_offset: String(opts.fileOffset ?? 0),
+    };
+    if (opts.accessToken) headers.Authorization = `OAuth ${opts.accessToken}`;
+
+    const res = await fetch(this.buildUrl(path, opts), {
+      method: 'POST',
+      headers,
+      body: bytes as BodyInit,
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    if (!res.ok || data.error) {
+      throw new MetaApiError(
+        data.error?.message || `Meta Graph API respondió ${res.status}`,
+        res.status,
+        data,
+      );
+    }
+    return data as T;
+  }
+
   private buildUrl(path: string, opts: MetaRequestOptions): string {
     const host = opts.host ?? 'https://graph.facebook.com';
     const version = opts.unversioned ? '' : `/${GRAPH_VERSION}`;

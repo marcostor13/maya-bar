@@ -102,24 +102,91 @@ export interface TokenRefreshResult {
 
 export type WaTemplateCategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
 
+export type WaTemplateStatus =
+  | 'APPROVED' | 'PENDING' | 'IN_APPEAL' | 'REJECTED' | 'PAUSED' | 'DISABLED';
+
+export type WaHeaderFormat = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION';
+
+export type WaButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'COPY_CODE';
+
+/** Cabecera de la plantilla tal como la edita el formulario. */
+export interface WaTemplateHeader {
+  format: WaHeaderFormat;
+  text?: string;
+  /** Handle devuelto por Meta; se resuelve solo si se manda mediaUrl. */
+  handle?: string;
+  mediaUrl?: string;
+  example?: string;
+}
+
+export interface WaTemplateButton {
+  type: WaButtonType;
+  text?: string;
+  url?: string;
+  urlExample?: string;
+  phoneNumber?: string;
+  example?: string;
+}
+
+/** Componente crudo de Meta (lo que devuelve el sync). */
+export interface WaTemplateComponent {
+  type: string;
+  format?: string;
+  text?: string;
+  example?: Record<string, unknown>;
+  buttons?: Record<string, unknown>[];
+}
+
 export interface WaTemplate {
   _id: string;
+  accountId: string;
+  metaId: string;
   name: string;
   category: WaTemplateCategory;
   language: string;
-  status: 'APPROVED' | 'PENDING' | 'REJECTED' | 'PAUSED';
+  status: WaTemplateStatus;
+  rejectedReason?: string;
+  qualityScore?: string;
   body: string;
+  headerType?: string;
   headerText?: string;
   footer?: string;
+  components?: WaTemplateComponent[];
 }
 
 export interface WaTemplatePayload {
+  accountId: string;
   name: string;
   category: WaTemplateCategory;
   language: string;
   body: string;
-  headerText?: string;
+  bodyExamples?: string[];
+  header?: WaTemplateHeader;
   footer?: string;
+  buttons?: WaTemplateButton[];
+  allowCategoryChange?: boolean;
+}
+
+/** Meta no deja cambiar nombre ni idioma: la edición solo toca componentes. */
+export interface WaTemplateUpdatePayload {
+  category?: WaTemplateCategory;
+  body: string;
+  bodyExamples?: string[];
+  header?: WaTemplateHeader;
+  footer?: string;
+  buttons?: WaTemplateButton[];
+}
+
+/** Cuenta Cloud API que puede tener plantillas. */
+export interface WaTemplateAccount {
+  _id: string;
+  label: string;
+  phoneNumber?: string;
+  wabaId?: string;
+  active: boolean;
+  isDefault: boolean;
+  /** false si falta Access Token o WABA ID. */
+  ready: boolean;
 }
 
 // ── Factories de formularios ──────────────────────────────────────────────

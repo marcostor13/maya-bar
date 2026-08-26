@@ -15,7 +15,9 @@ import {
   WaQr,
   WaStatus,
   WaTemplate,
+  WaTemplateAccount,
   WaTemplatePayload,
+  WaTemplateUpdatePayload,
   WaTestResult,
   WebhookConfig,
   WebhookResult,
@@ -142,21 +144,34 @@ export class AccountsApiService {
     return this.http.get<WebhookConfig>(`${this.base}/instagram-accounts/webhook-url`);
   }
 
-  // ── Plantillas WhatsApp (Cloud API) ──────────────────────────────────────
+  // ── Plantillas WhatsApp (Cloud API, por cuenta) ──────────────────────────
 
-  getTemplates(): Observable<WaTemplate[]> {
-    return this.http.get<WaTemplate[]>(`${this.base}/settings/templates`);
+  /** Cuentas Cloud API del tenant que pueden tener plantillas. */
+  getTemplateAccounts(): Observable<WaTemplateAccount[]> {
+    return this.http.get<WaTemplateAccount[]>(`${this.base}/whatsapp-templates/accounts`);
   }
 
-  syncTemplates(): Observable<WaTemplate[]> {
-    return this.http.post<WaTemplate[]>(`${this.base}/settings/templates/sync`, {});
+  getTemplates(accountId: string): Observable<WaTemplate[]> {
+    return this.http.get<WaTemplate[]>(
+      `${this.base}/whatsapp-templates?accountId=${encodeURIComponent(accountId)}`,
+    );
+  }
+
+  syncTemplates(accountId: string): Observable<WaTemplate[]> {
+    return this.http.post<WaTemplate[]>(
+      `${this.base}/whatsapp-templates/sync?accountId=${encodeURIComponent(accountId)}`, {},
+    );
   }
 
   createTemplate(dto: WaTemplatePayload): Observable<WaTemplate> {
-    return this.http.post<WaTemplate>(`${this.base}/settings/templates`, dto);
+    return this.http.post<WaTemplate>(`${this.base}/whatsapp-templates`, dto);
+  }
+
+  updateTemplate(id: string, dto: WaTemplateUpdatePayload): Observable<WaTemplate> {
+    return this.http.patch<WaTemplate>(`${this.base}/whatsapp-templates/${id}`, dto);
   }
 
   deleteTemplate(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.base}/settings/templates/${id}`);
+    return this.http.delete<void>(`${this.base}/whatsapp-templates/${id}`);
   }
 }

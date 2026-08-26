@@ -2,7 +2,7 @@ import { Component, inject, signal, computed } from '@angular/core';
 import { NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { AuthService } from '../../auth/auth.service';
-import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare } from 'lucide-angular';
+import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate } from 'lucide-angular';
 
 @Component({
   selector: 'app-shell',
@@ -147,6 +147,12 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
                 <span class="nav-icon"><lucide-icon [img]="Megaphone" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
                 @if (!collapsed()) { <span>Campañas</span> }
               </a>
+              @if (showTemplates()) {
+                <a class="nav-item" routerLink="/plantillas" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="LayoutTemplate" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Plantillas</span> }
+                </a>
+              }
               <a class="nav-item" routerLink="/ai-agents" routerLinkActive="active">
                 <span class="nav-icon"><lucide-icon [img]="Bot" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
                 @if (!collapsed()) { <span>Agentes IA</span> }
@@ -600,6 +606,7 @@ export class ShellComponent {
   readonly Zap = Zap;
   readonly ContactRound = ContactRound;
   readonly Megaphone = Megaphone;
+  readonly LayoutTemplate = LayoutTemplate;
   readonly Bot = Bot;
   readonly MessagesSquare = MessagesSquare;
   readonly Settings = Settings;
@@ -631,6 +638,7 @@ export class ShellComponent {
   showEvents       = computed(() => ['TENANT_ADMIN','MANAGER','MARKETING'].includes(this.role()));
   showCustomers    = computed(() => ['TENANT_ADMIN','MANAGER','MARKETING'].includes(this.role()));
   showVisitas      = computed(() => ['TENANT_ADMIN','MANAGER'].includes(this.role()));
+  showTemplates    = computed(() => ['TENANT_ADMIN','MANAGER'].includes(this.role()));
   showUsers       = computed(() => this.role() === 'TENANT_ADMIN');
 
   initials() {

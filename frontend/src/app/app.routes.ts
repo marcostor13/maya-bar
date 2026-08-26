@@ -25,6 +25,7 @@ import { EventDetailComponent } from './pages/events/event-detail';
 import { PublicEventComponent } from './pages/public-event/public-event';
 import { CustomersComponent } from './pages/customers/customers';
 import { CampaignsComponent } from './pages/campaigns/campaigns';
+import { WhatsappTemplatesComponent } from './pages/whatsapp-templates/whatsapp-templates';
 import { SettingsComponent } from './pages/settings/settings';
 import { ListsComponent } from './pages/lists/lists';
 import { ImpulsadorPanelComponent } from './pages/impulsador-panel/impulsador-panel';
@@ -113,6 +114,11 @@ export const routes: Routes = [
         path: 'campaigns',
         component: CampaignsComponent,
         canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+      },
+      {
+        path: 'plantillas',
+        component: WhatsappTemplatesComponent,
+        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER')],
       },
       {
         path: 'ai-agents',

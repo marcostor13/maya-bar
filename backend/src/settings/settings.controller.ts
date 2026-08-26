@@ -18,17 +18,12 @@ import {
   type AuthReq,
 } from '../auth/permissions';
 import { SettingsService } from './settings.service';
-import { WaTemplatesService } from './wa-templates.service';
 import { SaveSettingsDto } from './dto/settings.dto';
-import { CreateWaTemplateDto } from './dto/wa-template.dto';
 
 @Controller('settings')
 @UseGuards(JwtAuthGuard)
 export class SettingsController {
-  constructor(
-    private settings: SettingsService,
-    private templates: WaTemplatesService,
-  ) {}
+  constructor(private settings: SettingsService) {}
 
   @Get()
   get(@Request() req: AuthReq) {
@@ -60,30 +55,5 @@ export class SettingsController {
     if (!dto.phone)
       throw new BadRequestException('Falta el número de teléfono');
     return this.settings.testWaha(req.user.tenantId, dto.phone);
-  }
-
-  // Templates
-  @Get('templates')
-  listTemplates(@Request() req: AuthReq) {
-    assertRole(req.user.role, MANAGE_ROLES);
-    return this.templates.findAll(req.user.tenantId);
-  }
-
-  @Post('templates/sync')
-  syncTemplates(@Request() req: AuthReq) {
-    assertRole(req.user.role, ADMIN_ONLY);
-    return this.templates.sync(req.user.tenantId);
-  }
-
-  @Post('templates')
-  createTemplate(@Body() dto: CreateWaTemplateDto, @Request() req: AuthReq) {
-    assertRole(req.user.role, ADMIN_ONLY);
-    return this.templates.create(req.user.tenantId, dto);
-  }
-
-  @Delete('templates/:id')
-  deleteTemplate(@Param('id') id: string, @Request() req: AuthReq) {
-    assertRole(req.user.role, ADMIN_ONLY);
-    return this.templates.remove(req.user.tenantId, id);
   }
 }

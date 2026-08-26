@@ -208,35 +208,53 @@ describe('AccountsApiService', () => {
     expect(service.igWebhookUrl()).toBe(`${BASE}/ig/webhook`);
   });
 
-  // ── Plantillas ───────────────────────────────────────────────────────────
+  // ── Plantillas (por cuenta) ──────────────────────────────────────────────
 
-  it('getTemplates hace GET /settings/templates', () => {
-    service.getTemplates().subscribe();
-    const req = httpMock.expectOne(`${BASE}/settings/templates`);
+  it('getTemplateAccounts hace GET /whatsapp-templates/accounts', () => {
+    service.getTemplateAccounts().subscribe();
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates/accounts`);
     expect(req.request.method).toBe('GET');
     req.flush([]);
   });
 
-  it('syncTemplates hace POST /settings/templates/sync con body vacío', () => {
-    service.syncTemplates().subscribe();
-    const req = httpMock.expectOne(`${BASE}/settings/templates/sync`);
+  it('getTemplates filtra por accountId', () => {
+    service.getTemplates('acc-1').subscribe();
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates?accountId=acc-1`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('syncTemplates hace POST /whatsapp-templates/sync con la cuenta', () => {
+    service.syncTemplates('acc-1').subscribe();
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates/sync?accountId=acc-1`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
     req.flush([]);
   });
 
-  it('createTemplate hace POST /settings/templates con el dto', () => {
-    const dto = { name: 'promo', category: 'MARKETING' as const, language: 'es', body: 'Hola {{1}}' };
+  it('createTemplate hace POST /whatsapp-templates con el dto', () => {
+    const dto = {
+      accountId: 'acc-1', name: 'promo', category: 'MARKETING' as const,
+      language: 'es', body: 'Hola {{1}}', bodyExamples: ['Marcos'],
+    };
     service.createTemplate(dto).subscribe();
-    const req = httpMock.expectOne(`${BASE}/settings/templates`);
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(dto);
     req.flush({});
   });
 
-  it('deleteTemplate hace DELETE /settings/templates/:id', () => {
+  it('updateTemplate hace PATCH /whatsapp-templates/:id', () => {
+    service.updateTemplate('tpl-1', { body: 'Nuevo texto' }).subscribe();
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates/tpl-1`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ body: 'Nuevo texto' });
+    req.flush({});
+  });
+
+  it('deleteTemplate hace DELETE /whatsapp-templates/:id', () => {
     service.deleteTemplate('tpl-1').subscribe();
-    const req = httpMock.expectOne(`${BASE}/settings/templates/tpl-1`);
+    const req = httpMock.expectOne(`${BASE}/whatsapp-templates/tpl-1`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
   });

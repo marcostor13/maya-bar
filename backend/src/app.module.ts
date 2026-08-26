@@ -25,11 +25,13 @@ import { InstagramAccountsModule } from './instagram-accounts/instagram-accounts
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { SharedModule } from './shared/shared.module';
+import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     SharedModule,
+    WhatsAppTemplatesModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
