@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { CampaignsService } from './campaigns.service';
-import { WaTemplate } from '../whatsapp-templates/wa-template.schema';
+import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
 import { Campaign } from './campaign.schema';
 import { Customer } from '../customers/customer.schema';
 import { MailService } from '../mail/mail.service';
@@ -117,15 +117,16 @@ describe('CampaignsService', () => {
     mockSettings.sendWhatsAppTemplate.mockResolvedValue(undefined);
     mockLists.resolveCustomers.mockResolvedValue([]);
 
-    const templateModel = {
-      findOne: jest.fn().mockReturnValue({ exec: () => Promise.resolve(null) }),
+    // Sin cabecera variable: es el caso por defecto de una plantilla de texto.
+    const mockTemplates = {
+      resolveSendHeader: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
         { provide: getModelToken(Campaign.name), useValue: campaignModel },
-        { provide: getModelToken(WaTemplate.name), useValue: templateModel },
+        { provide: WhatsAppTemplatesService, useValue: mockTemplates },
         { provide: getModelToken(Customer.name), useValue: customerModel },
         { provide: MailService, useValue: mockMail },
         { provide: SettingsService, useValue: mockSettings },

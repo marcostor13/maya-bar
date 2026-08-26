@@ -3,10 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { CampaignsController } from './campaigns.controller';
 import { CampaignsService } from './campaigns.service';
 import { Campaign, CampaignSchema } from './campaign.schema';
-import {
-  WaTemplate,
-  WaTemplateSchema,
-} from '../whatsapp-templates/wa-template.schema';
+import { WhatsAppTemplatesModule } from '../whatsapp-templates/whatsapp-templates.module';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
 import { MailModule } from '../mail/mail.module';
 import { SettingsModule } from '../settings/settings.module';
@@ -17,9 +14,9 @@ import { AiModule } from '../ai/ai.module';
   imports: [
     MongooseModule.forFeature([
       { name: Campaign.name, schema: CampaignSchema },
-      { name: WaTemplate.name, schema: WaTemplateSchema },
       { name: Customer.name, schema: CustomerSchema },
     ]),
+    WhatsAppTemplatesModule,
     MailModule,
     SettingsModule,
     ListsModule,

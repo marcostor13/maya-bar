@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { WaTemplate } from '../../shared/models/campaign.model';
 
 export type FormFieldType =
   | 'text'
@@ -26,6 +27,23 @@ export interface FormField {
   mapTo: FormFieldMapTo;
 }
 
+/** Respuesta automática por WhatsApp al completarse el registro. */
+export interface WhatsAppReply {
+  enabled: boolean;
+  templateName?: string;
+  templateLanguage?: string;
+  /** Valor de cada hueco; admite {nombre}, {email} y {telefono}. */
+  templateVars: string[];
+  headerMediaUrl?: string;
+}
+
+/** Respuesta automática por email al completarse el registro. */
+export interface EmailReply {
+  enabled: boolean;
+  subject?: string;
+  body?: string;
+}
+
 export interface ContactForm {
   _id: string;
   name: string;
@@ -39,6 +57,8 @@ export interface ContactForm {
   redirectUrl?: string;
   submissionCount: number;
   lastSubmissionAt?: string;
+  autoWhatsApp?: WhatsAppReply;
+  autoEmail?: EmailReply;
   createdAt: string;
 }
 
@@ -61,6 +81,8 @@ export interface FormPayload {
   active: boolean;
   successMessage: string;
   redirectUrl?: string;
+  autoWhatsApp: WhatsAppReply;
+  autoEmail: EmailReply;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -89,6 +111,20 @@ export class FormsApiService {
 
   regenerateKey(id: string): Observable<ContactForm> {
     return this.http.post<ContactForm>(`${this.base}/${id}/regenerate-key`, {});
+  }
+
+  /** Plantillas aprobadas de la cuenta predeterminada, para el auto-WhatsApp. */
+  templates(): Observable<WaTemplate[]> {
+    return this.http.get<WaTemplate[]>(`${environment.apiUrl}/whatsapp-templates`);
+  }
+
+  upload(file: File): Observable<{ url: string }> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    return this.http.post<{ url: string }>(
+      `${environment.apiUrl}/upload?folder=forms`,
+      fd,
+    );
   }
 
   submissions(id: string): Observable<FormSubmission[]> {

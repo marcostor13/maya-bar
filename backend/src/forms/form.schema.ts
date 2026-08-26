@@ -27,6 +27,28 @@ export interface FormField {
 }
 
 /**
+ * Respuesta automática por WhatsApp al completarse el registro. Usa una
+ * plantilla aprobada porque, fuera de la ventana de 24 h, Meta solo admite
+ * plantillas: un formulario público casi siempre es un primer contacto.
+ */
+export interface FormWhatsAppReply {
+  enabled: boolean;
+  templateName?: string;
+  templateLanguage?: string;
+  /** Valor de cada hueco; admite los tokens {nombre}, {email} y {telefono}. */
+  templateVars: string[];
+  /** Archivo para la cabecera, si la plantilla se aprobó con una multimedia. */
+  headerMediaUrl?: string;
+}
+
+/** Respuesta automática por email al completarse el registro. */
+export interface FormEmailReply {
+  enabled: boolean;
+  subject?: string;
+  body?: string;
+}
+
+/**
  * Formulario publicable: se expone como API pública (`/public/forms/:publicKey`)
  * para que cualquier landing externa pueda enviar contactos a la plataforma.
  */
@@ -80,6 +102,19 @@ export class ContactForm extends Document {
 
   @Prop()
   lastSubmissionAt?: Date;
+
+  /**
+   * Mixed a propósito, igual que `fields`: un sub-esquema tipado trataría
+   * claves como `type` o `required` como opciones reservadas de Mongoose.
+   */
+  @Prop({
+    type: Object,
+    default: () => ({ enabled: false, templateVars: [] }),
+  })
+  autoWhatsApp: FormWhatsAppReply;
+
+  @Prop({ type: Object, default: () => ({ enabled: false }) })
+  autoEmail: FormEmailReply;
 
   @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   createdBy?: Types.ObjectId;

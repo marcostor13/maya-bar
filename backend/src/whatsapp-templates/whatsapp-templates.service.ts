@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { type TemplateHeader } from '../whatsapp/whatsapp.service';
 import { WaTemplate, TemplateStatus } from './wa-template.schema';
 import {
   CreateWaTemplateDto,
@@ -548,6 +549,35 @@ export class WhatsAppTemplatesService {
    * desde la que salen las campañas. El editor de campañas no elige cuenta, así
    * que sus plantillas tienen que ser justo las de esa cuenta.
    */
+  /**
+   * Cabecera que hay que reproducir en cada envío de esta plantilla.
+   *
+   * Meta exige que los componentes del mensaje calquen los de la plantilla
+   * aprobada: si se aprobó con cabecera de imagen y el envío no la manda,
+   * responde 400 (#132012). Devuelve `undefined` cuando la cabecera no lleva
+   * contenido variable, porque en ese caso Meta NO admite el componente.
+   */
+  async resolveSendHeader(
+    tenantId: string,
+    templateName?: string,
+    mediaUrlOverride?: string,
+  ): Promise<TemplateHeader | undefined> {
+    if (!templateName) return undefined;
+    const template = await this.model
+      .findOne({ tenantId: new Types.ObjectId(tenantId), name: templateName })
+      .exec();
+    if (!template?.headerType) return undefined;
+
+    const format = template.headerType.toUpperCase();
+    if (format === 'TEXT') {
+      // Solo hace falta parámetro si el texto de la cabecera tiene {{1}}.
+      if (!/\{\{\d+\}\}/.test(template.headerText ?? '')) return undefined;
+      // Se personaliza por destinatario igual que los huecos del cuerpo.
+      return { format, text: '{nombre}' };
+    }
+    return { format, mediaUrl: mediaUrlOverride || template.headerMediaUrl };
+  }
+
   private async resolveAccount(
     tenantId: string,
     accountId?: string,

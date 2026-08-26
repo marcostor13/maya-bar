@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -15,6 +16,10 @@ import { ContactList } from '../lists/contact-list.schema';
 import { CreateFormDto, UpdateFormDto } from './dto/form.dto';
 import { isOwnerScoped } from '../auth/permissions';
 import { formatPhone } from '../shared/phone';
+import { fillTokens, fillTokensMultiline } from '../shared/contact-tokens';
+import { SettingsService } from '../settings/settings.service';
+import { MailService } from '../mail/mail.service';
+import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
 
 /** Metadatos de la petición pública que sirven para trazar el origen. */
 export interface SubmitContext {
@@ -44,12 +49,17 @@ export interface PublicForm {
 
 @Injectable()
 export class FormsService {
+  private readonly logger = new Logger(FormsService.name);
+
   constructor(
     @InjectModel(ContactForm.name) private formModel: Model<ContactForm>,
     @InjectModel(FormSubmission.name)
     private submissionModel: Model<FormSubmission>,
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
     @InjectModel(ContactList.name) private listModel: Model<ContactList>,
+    private settings: SettingsService,
+    private mail: MailService,
+    private templates: WhatsAppTemplatesService,
   ) {}
 
   // ─── CRUD interno ─────────────────────────────────────────────────────────
@@ -229,6 +239,10 @@ export class FormsService {
       )
       .exec();
 
+    // Las respuestas automáticas no bloquean ni pueden tumbar el registro: el
+    // visitante ya envió sus datos y guardarlos es lo que de verdad importa.
+    await this.sendAutoReplies(form, customer);
+
     return {
       ok: true,
       message: form.successMessage,
@@ -236,6 +250,69 @@ export class FormsService {
       customerId: String(customer._id),
       created,
     };
+  }
+
+  /** Dispara el WhatsApp y el email de bienvenida configurados en el formulario. */
+  private async sendAutoReplies(
+    form: ContactForm,
+    customer: Customer,
+  ): Promise<void> {
+    const contact = {
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+    };
+
+    const tasks: Promise<unknown>[] = [];
+
+    const wa = form.autoWhatsApp;
+    if (wa?.enabled && wa.templateName && customer.phone) {
+      tasks.push(
+        this.templates
+          .resolveSendHeader(
+            String(form.tenantId),
+            wa.templateName,
+            wa.headerMediaUrl,
+          )
+          .then((header) =>
+            this.settings.sendWhatsAppTemplate(
+              customer.phone!,
+              wa.templateName!,
+              wa.templateLanguage ?? 'es',
+              (wa.templateVars ?? []).map((v) => fillTokens(v, contact)),
+              String(form.tenantId),
+              header?.text
+                ? { ...header, text: fillTokens(header.text, contact) }
+                : header,
+            ),
+          )
+          .catch((err) =>
+            this.logger.warn(
+              `No se pudo enviar el WhatsApp de "${form.name}" a ${customer.phone}: ${String(err)}`,
+            ),
+          ),
+      );
+    }
+
+    const mail = form.autoEmail;
+    if (mail?.enabled && mail.body && customer.email) {
+      tasks.push(
+        this.mail
+          .sendCampaign({
+            to: customer.email,
+            name: customer.name,
+            subject: fillTokens(mail.subject || form.name, contact),
+            body: fillTokensMultiline(mail.body, contact),
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `No se pudo enviar el email de "${form.name}" a ${customer.email}: ${String(err)}`,
+            ),
+          ),
+      );
+    }
+
+    await Promise.all(tasks);
   }
 
   /**

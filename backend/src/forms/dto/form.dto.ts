@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -52,6 +53,43 @@ export class FormFieldDto {
   mapTo?: string;
 }
 
+export class WhatsAppReplyDto {
+  @IsBoolean()
+  enabled: boolean;
+
+  @IsOptional()
+  @IsString()
+  templateName?: string;
+
+  @IsOptional()
+  @IsString()
+  templateLanguage?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  templateVars?: string[];
+
+  @IsOptional()
+  @IsString()
+  headerMediaUrl?: string;
+}
+
+export class EmailReplyDto {
+  @IsBoolean()
+  enabled: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  body?: string;
+}
+
 export class CreateFormDto {
   @IsString()
   @IsNotEmpty()
@@ -88,6 +126,16 @@ export class CreateFormDto {
   @IsOptional()
   @IsString()
   redirectUrl?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WhatsAppReplyDto)
+  autoWhatsApp?: WhatsAppReplyDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EmailReplyDto)
+  autoEmail?: EmailReplyDto;
 }
 
 export class UpdateFormDto extends CreateFormDto {

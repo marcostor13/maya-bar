@@ -12,13 +12,16 @@ import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import {
   ContactForm,
+  EmailReply,
   FormField,
   FormFieldMapTo,
   FormFieldType,
   FormPayload,
   FormSubmission,
   FormsApiService,
+  WhatsAppReply,
 } from '../../core/api/forms-api.service';
+import { WaTemplate } from '../../shared/models/campaign.model';
 import { environment } from '../../../environments/environment';
 import {
   LucideAngularModule,
@@ -37,6 +40,9 @@ import {
   ArrowUp,
   ArrowDown,
   ExternalLink,
+  MessageSquare,
+  Mail,
+  Upload,
 } from 'lucide-angular';
 
 interface ListMini {
@@ -74,6 +80,17 @@ const PRESET_FIELDS: FormField[] = [
 ];
 
 const API = environment.apiUrl;
+
+/** De dónde sale el valor de cada hueco de la plantilla. */
+const VAR_SOURCES: { token: string; label: string }[] = [
+  { token: '{nombre}',   label: 'Nombre del cliente' },
+  { token: '{email}',    label: 'Email del cliente' },
+  { token: '{telefono}', label: 'Teléfono del cliente' },
+  { token: '',           label: 'Texto fijo…' },
+];
+
+const EMPTY_WA: WhatsAppReply = { enabled: false, templateVars: [] };
+const EMPTY_MAIL: EmailReply = { enabled: false };
 
 @Component({
   selector: 'app-forms',
@@ -351,6 +368,118 @@ const API = environment.apiUrl;
                 </div>
               }
 
+              <!-- Respuestas automáticas -->
+              <div class="section-title"><span>Al registrarse, enviar</span></div>
+
+              <label class="check-row auto-toggle">
+                <input type="checkbox" [checked]="autoWa().enabled"
+                  (change)="toggleAutoWa($any($event.target).checked)" />
+                <span>
+                  <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
+                  WhatsApp con una plantilla aprobada
+                </span>
+              </label>
+
+              @if (autoWa().enabled) {
+                <div class="auto-box">
+                  @if (templatesLoading()) {
+                    <p class="muted small">Cargando plantillas…</p>
+                  } @else if (templates().length === 0) {
+                    <p class="muted small">
+                      No hay plantillas aprobadas. Sincronízalas desde Campañas o Plantillas.
+                    </p>
+                  } @else {
+                    <div class="field">
+                      <label class="field-label">Plantilla</label>
+                      <select class="select" [value]="autoWa().templateName || ''"
+                        (change)="selectAutoTemplate($any($event.target).value)">
+                        <option value="">— Elige una plantilla —</option>
+                        @for (t of templates(); track t._id) {
+                          <option [value]="t.name">{{ t.name }} ({{ t.language }})</option>
+                        }
+                      </select>
+                    </div>
+
+                    @if (autoTemplate(); as tpl) {
+                      <p class="tpl-body">{{ tpl.body }}</p>
+
+                      @for (i of autoVarIndexes(); track i) {
+                        <div class="var-row">
+                          <span class="var-tag">{{ '{{' + (i+1) + '}}' }}</span>
+                          <select class="select" [value]="autoVarSource(i)"
+                            (change)="setAutoVarSource(i, $any($event.target).value)">
+                            @for (src of varSources; track src.token) {
+                              <option [value]="src.token">{{ src.label }}</option>
+                            }
+                          </select>
+                          @if (autoVarSource(i) === '') {
+                            <input class="input input-sm" [value]="autoWa().templateVars[i] || ''"
+                              placeholder="Texto fijo"
+                              (input)="setAutoVarText(i, $any($event.target).value)" />
+                          }
+                        </div>
+                      }
+
+                      @if (autoHeaderFormat(); as fmt) {
+                        <div class="field">
+                          <label class="field-label">Archivo de cabecera ({{ fmt }}) *</label>
+                          @if (autoWa().headerMediaUrl) {
+                            <div class="auto-media">
+                              <lucide-icon [img]="Check" [size]="13"></lucide-icon>
+                              Archivo cargado
+                              <button type="button" class="btn btn-ghost btn-sm" (click)="clearAutoHeader()">
+                                Quitar
+                              </button>
+                            </div>
+                          } @else {
+                            <label class="btn btn-secondary btn-sm auto-upload">
+                              <input type="file" hidden [accept]="autoHeaderAccept()"
+                                (change)="onAutoHeaderFile($event)" [disabled]="uploadingAuto()" />
+                              <lucide-icon [img]="Upload" [size]="13"></lucide-icon>
+                              {{ uploadingAuto() ? 'Subiendo…' : 'Subir archivo' }}
+                            </label>
+                            <span class="field-hint">
+                              Esta plantilla se aprobó con cabecera {{ fmt }}: WhatsApp la exige en cada envío.
+                            </span>
+                          }
+                        </div>
+                      }
+                    }
+                  }
+                  <p class="field-hint">Solo se envía si el contacto dejó teléfono.</p>
+                </div>
+              }
+
+              <label class="check-row auto-toggle">
+                <input type="checkbox" [checked]="autoMail().enabled"
+                  (change)="toggleAutoMail($any($event.target).checked)" />
+                <span>
+                  <lucide-icon [img]="Mail" [size]="14"></lucide-icon>
+                  Email de bienvenida
+                </span>
+              </label>
+
+              @if (autoMail().enabled) {
+                <div class="auto-box">
+                  <div class="field">
+                    <label class="field-label">Asunto</label>
+                    <input class="input" [value]="autoMail().subject || ''"
+                      placeholder="Gracias por registrarte, {nombre}"
+                      (input)="setAutoMail('subject', $any($event.target).value)" />
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Mensaje</label>
+                    <textarea class="textarea" rows="5" [value]="autoMail().body || ''"
+                      placeholder="Hola {nombre}, hemos recibido tus datos…"
+                      (input)="setAutoMail('body', $any($event.target).value)"></textarea>
+                    <span class="field-hint">
+                      Puedes usar {{ '{nombre}' }}, {{ '{email}' }} y {{ '{telefono}' }}.
+                    </span>
+                  </div>
+                  <p class="field-hint">Solo se envía si el contacto dejó email.</p>
+                </div>
+              }
+
               <div class="field">
                 <label class="field-label" for="form-success">Mensaje de éxito</label>
                 <input id="form-success" class="input" formControlName="successMessage" />
@@ -563,6 +692,25 @@ const API = environment.apiUrl;
     .tag-selected button { background:none; border:none; cursor:pointer; padding:0; display:flex; color:inherit; opacity:.7; }
     .tag-selected button:hover { opacity:1; }
 
+    .auto-toggle { margin-bottom:12px; }
+    .auto-toggle span { display:inline-flex; align-items:center; gap:6px; }
+    .auto-box { border:1px solid var(--color-border); border-radius:var(--radius-lg);
+      padding:16px; margin:0 0 20px; background:var(--color-bg-app); }
+    .auto-box .field { margin-bottom:14px; }
+    .auto-box .field:last-of-type { margin-bottom:0; }
+    .tpl-body { margin:0 0 12px; font-size:12px; line-height:1.5; color:var(--color-text-muted);
+      background:#fff; border:1px solid var(--color-border); border-radius:var(--radius-sm);
+      padding:10px 12px; white-space:pre-wrap; max-height:120px; overflow-y:auto; }
+    .var-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+    .var-row .select, .var-row .input { flex:1; min-width:160px; padding:8px 14px; font-size:13px; }
+    .var-tag { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; font-weight:700;
+      color:var(--color-brand); background:var(--color-brand-light); border-radius:var(--radius-pill);
+      padding:3px 9px; flex-shrink:0; }
+    .auto-media { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600;
+      color:var(--color-success); }
+    .auto-upload { cursor:pointer; margin:0; }
+    .muted.small { font-size:13px; color:var(--color-text-muted); margin:0; }
+
     .form-error { color:var(--color-error); font-size:13px; font-weight:600; margin:16px 0 0; }
 
     /* ── Modal de integración ── */
@@ -650,6 +798,8 @@ export class FormsComponent implements OnInit {
   readonly ArrowUp = ArrowUp;
   readonly ArrowDown = ArrowDown;
   readonly ExternalLink = ExternalLink;
+  readonly MessageSquare = MessageSquare; readonly Mail = Mail;
+  readonly Upload = Upload;
 
   readonly fieldTypes = FIELD_TYPES;
   readonly mapTargets = MAP_TARGETS;
@@ -672,6 +822,13 @@ export class FormsComponent implements OnInit {
   tags = signal<string[]>([]);
   listIds = signal<string[]>([]);
   active = signal(true);
+  autoWa = signal<WhatsAppReply>({ ...EMPTY_WA });
+  autoMail = signal<EmailReply>({ ...EMPTY_MAIL });
+  templates = signal<WaTemplate[]>([]);
+  templatesLoading = signal(false);
+  uploadingAuto = signal(false);
+
+  readonly varSources = VAR_SOURCES;
 
   embedForm = signal<ContactForm | null>(null);
   embedTab = signal<'html' | 'js' | 'curl'>('html');
@@ -722,6 +879,123 @@ export class FormsComponent implements OnInit {
     });
   }
 
+
+  // ── Respuestas automáticas ────────────────────────────────────────────────
+
+  toggleAutoWa(enabled: boolean) {
+    this.autoWa.update(w => ({ ...w, enabled }));
+    if (enabled && this.templates().length === 0) this.loadTemplates();
+  }
+
+  toggleAutoMail(enabled: boolean) {
+    this.autoMail.update(m => ({ ...m, enabled }));
+  }
+
+  setAutoMail(key: 'subject' | 'body', value: string) {
+    this.autoMail.update(m => ({ ...m, [key]: value }));
+  }
+
+  private loadTemplates() {
+    this.templatesLoading.set(true);
+    this.api.templates().subscribe({
+      next: (list) => {
+        this.templates.set(list.filter(t => t.status === 'APPROVED'));
+        this.templatesLoading.set(false);
+      },
+      error: () => {
+        this.templatesLoading.set(false);
+        this.toast.error('No se pudieron cargar las plantillas de WhatsApp');
+      },
+    });
+  }
+
+  autoTemplate = computed(() =>
+    this.templates().find(t => t.name === this.autoWa().templateName) ?? null,
+  );
+
+  /** Cuántos huecos {{n}} tiene el cuerpo de la plantilla elegida. */
+  autoVarIndexes = computed(() => {
+    const body = this.autoTemplate()?.body ?? '';
+    const matches = body.match(/\{\{\d+\}\}/g) ?? [];
+    if (!matches.length) return [];
+    const count = Math.max(...matches.map(m => parseInt(m.replace(/\D/g, ''), 10)));
+    return Array.from({ length: count }, (_, i) => i);
+  });
+
+  selectAutoTemplate(name: string) {
+    const tpl = this.templates().find(t => t.name === name);
+    this.autoWa.update(w => ({
+      ...w,
+      templateName: name || undefined,
+      templateLanguage: tpl?.language ?? 'es',
+      // Los huecos arrancan en el nombre del cliente, que es lo habitual.
+      templateVars: [],
+      headerMediaUrl: undefined,
+    }));
+    const huecos = this.autoVarIndexes().length;
+    this.autoWa.update(w => ({
+      ...w,
+      templateVars: Array.from({ length: huecos }, () => '{nombre}'),
+    }));
+  }
+
+  autoVarSource(i: number): string {
+    const value = this.autoWa().templateVars[i] ?? '';
+    return VAR_SOURCES.some(s => s.token && s.token === value) ? value : '';
+  }
+
+  setAutoVarSource(i: number, token: string) {
+    this.setAutoVar(i, token || '');
+  }
+
+  setAutoVarText(i: number, text: string) {
+    this.setAutoVar(i, text);
+  }
+
+  private setAutoVar(i: number, value: string) {
+    this.autoWa.update(w => {
+      const vars = [...w.templateVars];
+      vars[i] = value;
+      return { ...w, templateVars: vars };
+    });
+  }
+
+  /** Formato de cabecera que obliga a adjuntar un archivo en cada envío. */
+  autoHeaderFormat = computed(() => {
+    const type = this.autoTemplate()?.headerType?.toUpperCase();
+    return type && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(type) ? type : null;
+  });
+
+  autoHeaderAccept(): string {
+    const fmt = this.autoHeaderFormat();
+    if (fmt === 'VIDEO') return 'video/*';
+    if (fmt === 'DOCUMENT') return '.pdf,.doc,.docx,.xls,.xlsx,.txt';
+    return 'image/*';
+  }
+
+  onAutoHeaderFile(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    this.uploadingAuto.set(true);
+    this.api.upload(file).subscribe({
+      next: (r) => {
+        this.autoWa.update(w => ({ ...w, headerMediaUrl: r.url }));
+        this.uploadingAuto.set(false);
+        this.toast.success('Archivo de cabecera subido');
+      },
+      error: () => {
+        this.uploadingAuto.set(false);
+        this.toast.error('No se pudo subir el archivo');
+      },
+    });
+  }
+
+  clearAutoHeader() {
+    this.autoWa.update(w => ({ ...w, headerMediaUrl: undefined }));
+  }
+
   // ─── Editor ───────────────────────────────────────────────────────────────
 
   openEditor(f: ContactForm | null) {
@@ -737,6 +1011,9 @@ export class FormsComponent implements OnInit {
     this.tags.set([...(f?.tags ?? [])]);
     this.listIds.set([...(f?.listIds ?? [])]);
     this.active.set(f?.active ?? true);
+    this.autoWa.set(f?.autoWhatsApp ? { ...f.autoWhatsApp, templateVars: [...(f.autoWhatsApp.templateVars ?? [])] } : { ...EMPTY_WA });
+    this.autoMail.set(f?.autoEmail ? { ...f.autoEmail } : { ...EMPTY_MAIL });
+    if (this.autoWa().enabled && this.templates().length === 0) this.loadTemplates();
     this.editorOpen.set(true);
   }
 
@@ -775,6 +1052,22 @@ export class FormsComponent implements OnInit {
       return;
     }
 
+    if (this.autoWa().enabled && !this.autoWa().templateName) {
+      this.formError.set('Elige la plantilla de WhatsApp o desactiva el envío');
+      this.toast.error('Elige la plantilla de WhatsApp o desactiva el envío');
+      return;
+    }
+    if (this.autoWa().enabled && this.autoHeaderFormat() && !this.autoWa().headerMediaUrl) {
+      this.formError.set('La plantilla exige un archivo de cabecera');
+      this.toast.error('La plantilla exige un archivo de cabecera');
+      return;
+    }
+    if (this.autoMail().enabled && !this.autoMail().body?.trim()) {
+      this.formError.set('Escribe el mensaje del email o desactiva el envío');
+      this.toast.error('Escribe el mensaje del email o desactiva el envío');
+      return;
+    }
+
     const v = this.form.getRawValue();
     const payload: FormPayload = {
       name: v.name!.trim(),
@@ -785,6 +1078,8 @@ export class FormsComponent implements OnInit {
       active: this.active(),
       successMessage: v.successMessage?.trim() || '¡Gracias! Hemos recibido tus datos.',
       redirectUrl: v.redirectUrl?.trim() || undefined,
+      autoWhatsApp: this.autoWa(),
+      autoEmail: this.autoMail(),
     };
 
     this.saving.set(true);

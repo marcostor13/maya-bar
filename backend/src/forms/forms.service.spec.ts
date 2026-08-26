@@ -7,6 +7,9 @@ import { ContactForm } from './form.schema';
 import { FormSubmission } from './form-submission.schema';
 import { Customer } from '../customers/customer.schema';
 import { ContactList } from '../lists/contact-list.schema';
+import { SettingsService } from '../settings/settings.service';
+import { MailService } from '../mail/mail.service';
+import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
 
 const tenantId = new Types.ObjectId();
 const formId = new Types.ObjectId();
@@ -39,6 +42,9 @@ describe('FormsService.submit', () => {
   let customerModel: jest.Mock & { findOne: jest.Mock };
   let submissionModel: { create: jest.Mock };
   let listModel: { updateMany: jest.Mock; find: jest.Mock };
+  let mockSettings: { sendWhatsAppTemplate: jest.Mock };
+  let mockMail: { sendCampaign: jest.Mock };
+  let mockTemplates: { resolveSendHeader: jest.Mock };
 
   const form = {
     _id: formId,
@@ -91,6 +97,10 @@ describe('FormsService.submit', () => {
       find: jest.fn().mockReturnValue({ exec: () => Promise.resolve([]) }),
     };
 
+    mockSettings = { sendWhatsAppTemplate: jest.fn().mockResolvedValue(undefined) };
+    mockMail = { sendCampaign: jest.fn().mockResolvedValue(undefined) };
+    mockTemplates = { resolveSendHeader: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         FormsService,
@@ -98,6 +108,9 @@ describe('FormsService.submit', () => {
         { provide: getModelToken(Customer.name), useValue: customerModel },
         { provide: getModelToken(FormSubmission.name), useValue: submissionModel },
         { provide: getModelToken(ContactList.name), useValue: listModel },
+        { provide: SettingsService, useValue: mockSettings },
+        { provide: MailService, useValue: mockMail },
+        { provide: WhatsAppTemplatesService, useValue: mockTemplates },
       ],
     }).compile();
 
@@ -209,5 +222,93 @@ describe('FormsService.submit', () => {
     expect(customerModel).toHaveBeenCalledWith(
       expect.objectContaining({ phone: '+51 999 888 777' }),
     );
+  });
+
+  describe('respuestas automáticas', () => {
+    /** Reconfigura el formulario del test para esta batería. */
+    const withAuto = (auto: Record<string, unknown>) =>
+      Object.assign(form, { autoWhatsApp: undefined, autoEmail: undefined }, auto);
+
+    afterEach(() => {
+      Object.assign(form, { autoWhatsApp: undefined, autoEmail: undefined });
+    });
+
+    it('no envía nada si no está configurado', async () => {
+      contactsFound(null, null);
+      await submit({ nombre: 'Ana', email: 'ana@test.com', telefono: '999888777' });
+      expect(mockSettings.sendWhatsAppTemplate).not.toHaveBeenCalled();
+      expect(mockMail.sendCampaign).not.toHaveBeenCalled();
+    });
+
+    it('manda la plantilla de WhatsApp con los tokens resueltos', async () => {
+      withAuto({
+        autoWhatsApp: {
+          enabled: true,
+          templateName: 'bienvenida',
+          templateLanguage: 'es',
+          templateVars: ['{nombre}'],
+        },
+      });
+      contactsFound(null, null);
+
+      await submit({ nombre: 'Ana Pérez', email: 'ana@test.com', telefono: '999888777' });
+
+      expect(mockSettings.sendWhatsAppTemplate).toHaveBeenCalledWith(
+        '+51 999 888 777',
+        'bienvenida',
+        'es',
+        ['Ana Pérez'],
+        String(tenantId),
+        undefined,
+      );
+    });
+
+    it('manda el email con el asunto y el cuerpo personalizados', async () => {
+      withAuto({
+        autoEmail: {
+          enabled: true,
+          subject: 'Gracias {nombre}',
+          body: 'Hola {nombre},\n\nTe escribimos a {email}.',
+        },
+      });
+      contactsFound(null, null);
+
+      await submit({ nombre: 'Ana', email: 'ana@test.com' });
+
+      expect(mockMail.sendCampaign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'ana@test.com',
+          subject: 'Gracias Ana',
+          // El cuerpo conserva los saltos de línea; el asunto no.
+          body: 'Hola Ana,\n\nTe escribimos a ana@test.com.',
+        }),
+      );
+    });
+
+    it('omite el WhatsApp si el contacto no dejó teléfono', async () => {
+      withAuto({
+        autoWhatsApp: { enabled: true, templateName: 'bienvenida', templateVars: [] },
+      });
+      contactsFound(null, null);
+
+      await submit({ nombre: 'Ana', email: 'ana@test.com' });
+
+      expect(mockSettings.sendWhatsAppTemplate).not.toHaveBeenCalled();
+    });
+
+    it('el registro se guarda aunque el envío falle', async () => {
+      withAuto({
+        autoWhatsApp: { enabled: true, templateName: 'bienvenida', templateVars: [] },
+        autoEmail: { enabled: true, subject: 'Hola', body: 'Texto' },
+      });
+      mockSettings.sendWhatsAppTemplate.mockRejectedValue(new Error('Meta caída'));
+      mockMail.sendCampaign.mockRejectedValue(new Error('Resend caído'));
+      contactsFound(null, null);
+
+      const res = await submit({ nombre: 'Ana', email: 'ana@test.com', telefono: '999888777' });
+
+      expect(res.ok).toBe(true);
+      expect(res.created).toBe(true);
+    });
   });
 });
