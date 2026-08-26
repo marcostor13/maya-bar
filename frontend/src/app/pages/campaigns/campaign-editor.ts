@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule, Mail, MessageSquare, CheckCircle2, X, Users, Zap, Edit2,
-  DollarSign, RefreshCw, Info, Wand2, Eye, Check,
+  DollarSign, RefreshCw, Info, Wand2, Eye, Check, Upload, Paperclip,
 } from 'lucide-angular';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ToastService } from '../../shared/toast';
@@ -197,16 +197,46 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
                 Esta plantilla se aprobó con una cabecera de tipo {{ fmt }}. WhatsApp
                 exige enviarla en cada mensaje.
               </div>
-              @if (headerMediaResolved()) {
-                <div class="header-media-ok">
-                  <lucide-icon [img]="Check" [size]="14"></lucide-icon>
-                  Se usará {{ form.mediaUrl ? 'el archivo que subas arriba' : 'la imagen de ejemplo de la plantilla' }}.
+              @if (headerPreviewUrl(); as url) {
+                <div class="header-media-card">
+                  @if (fmt === 'IMAGE') {
+                    <img [src]="url" alt="Cabecera" class="header-thumb" />
+                  } @else {
+                    <div class="header-thumb header-thumb-file">
+                      <lucide-icon [img]="Paperclip" [size]="18"></lucide-icon>
+                    </div>
+                  }
+                  <div class="header-media-info">
+                    <span class="header-media-ok">
+                      <lucide-icon [img]="Check" [size]="13"></lucide-icon>
+                      {{ form.mediaUrl ? 'Archivo propio de esta campaña' : 'Imagen de ejemplo de la plantilla' }}
+                    </span>
+                    <div class="header-media-actions">
+                      <label class="btn btn-secondary btn-sm" [class.disabled]="uploadingHeader()">
+                        <input type="file" [accept]="headerAccept()" hidden
+                          (change)="onHeaderFile($event)" [disabled]="uploadingHeader()" />
+                        <lucide-icon [img]="Upload" [size]="13"></lucide-icon>
+                        {{ uploadingHeader() ? 'Subiendo…' : (form.mediaUrl ? 'Cambiar' : 'Usar otro') }}
+                      </label>
+                      @if (form.mediaUrl) {
+                        <button type="button" class="btn btn-ghost btn-sm" (click)="clearHeaderFile()">
+                          <lucide-icon [img]="X" [size]="13"></lucide-icon>
+                          Quitar
+                        </button>
+                      }
+                    </div>
+                  </div>
                 </div>
               } @else {
-                <div class="info-note">
+                <label class="upload-zone" [class.uploading]="uploadingHeader()">
+                  <input type="file" [accept]="headerAccept()" hidden
+                    (change)="onHeaderFile($event)" [disabled]="uploadingHeader()" />
+                  <lucide-icon [img]="Upload" [size]="20"></lucide-icon>
+                  <span>{{ uploadingHeader() ? 'Subiendo…' : 'Haz clic para subir ' + headerLabel().toLowerCase() }}</span>
+                </label>
+                <div class="info-note" style="margin-top:8px">
                   <lucide-icon [img]="Info" [size]="13"></lucide-icon>
-                  Falta el archivo de cabecera: súbelo en "Imagen o video" o el envío
-                  será rechazado por WhatsApp.
+                  Sin este archivo WhatsApp rechazará el envío.
                 </div>
               }
             </div>
@@ -390,6 +420,24 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
     .header-media-ok { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
       color:var(--color-success); background:#ECFDF5; border-radius:var(--radius-sm); padding:8px 12px; }
 
+    .header-media-card { display:flex; gap:14px; align-items:center; border:1px solid var(--color-border);
+      border-radius:var(--radius-lg); padding:12px 14px; }
+    .header-thumb { width:64px; height:64px; border-radius:12px; object-fit:cover; flex-shrink:0;
+      border:1px solid var(--color-border); }
+    .header-thumb-file { display:flex; align-items:center; justify-content:center;
+      background:var(--color-bg-app); color:var(--color-text-muted); }
+    .header-media-info { display:flex; flex-direction:column; gap:8px; min-width:0; }
+    .header-media-ok { display:inline-flex; align-items:center; gap:5px; font-size:12px;
+      font-weight:600; color:var(--color-success); }
+    .header-media-actions { display:flex; gap:6px; flex-wrap:wrap; }
+    .header-media-actions label { cursor:pointer; margin:0; }
+    .header-media-actions label.disabled { opacity:.6; pointer-events:none; }
+    .upload-zone { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+      border:1.5px dashed var(--color-border); border-radius:var(--radius-lg); padding:24px;
+      cursor:pointer; color:var(--color-text-muted); font-size:13px; transition:border-color var(--transition-fast); }
+    .upload-zone:hover { border-color:var(--color-brand); }
+    .upload-zone.uploading { opacity:.6; pointer-events:none; }
+
     .var-tag {
       font-size: 12px; font-weight: 700; font-family: monospace;
       padding: 6px 10px; background: var(--color-bg-app); border: 1px solid var(--color-border);
@@ -498,6 +546,7 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   readonly X = X; readonly Users = Users; readonly Zap = Zap; readonly Edit2 = Edit2;
   readonly DollarSign = DollarSign; readonly RefreshCw = RefreshCw; readonly Info = Info;
   readonly Check = Check;
+  readonly Upload = Upload; readonly Paperclip = Paperclip;
   readonly Wand2 = Wand2; readonly Eye = Eye;
   readonly PRESET_TAGS = PRESET_TAGS;
 
@@ -591,10 +640,53 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     return 'Imagen';
   });
 
-  /** Hay archivo si lo sube la campaña o si la plantilla guardó el de ejemplo. */
-  headerMediaResolved = computed(
-    () => !!(this.form.mediaUrl || this.selectedTemplate()?.headerMediaUrl),
-  );
+  /**
+   * Archivo que se enviará como cabecera: el propio de la campaña o el de
+   * ejemplo de la plantilla. Método y no `computed`: `form` es un objeto plano,
+   * así que una señal derivada no se enteraría de que `mediaUrl` cambió.
+   */
+  headerPreviewUrl(): string {
+    return this.form.mediaUrl || this.selectedTemplate()?.headerMediaUrl || '';
+  }
+
+  uploadingHeader = signal(false);
+
+  /** Tipos que acepta el input según el formato con el que se aprobó la plantilla. */
+  headerAccept(): string {
+    const fmt = this.headerMediaFormat();
+    if (fmt === 'VIDEO') return 'video/*';
+    if (fmt === 'DOCUMENT') return '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt';
+    return 'image/*';
+  }
+
+  onHeaderFile(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    this.uploadingHeader.set(true);
+    this.api.upload(file, file.name).subscribe({
+      next: (r) => {
+        this.form.mediaUrl = r.url;
+        // El tipo acompaña al formato de la cabecera para el envío.
+        const fmt = this.headerMediaFormat();
+        this.form.mediaType =
+          fmt === 'VIDEO' ? 'video' : fmt === 'DOCUMENT' ? 'document' : 'image';
+        this.uploadingHeader.set(false);
+        this.toast.success('Archivo de cabecera subido');
+      },
+      error: () => {
+        this.uploadingHeader.set(false);
+        this.toast.error('No se pudo subir el archivo');
+      },
+    });
+  }
+
+  /** Vuelve a la imagen de ejemplo de la plantilla. */
+  clearHeaderFile() {
+    this.form.mediaUrl = '';
+  }
 
   cloudApiPriceEstimate = computed(() => {
     const t = this.selectedTemplate();
@@ -682,7 +774,12 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     this.selectedTemplate.set(t);
     const count = Math.max(...(t.body.match(/\{\{\d+\}\}/g) ?? ['{{0}}']).map(m => parseInt(m.replace(/\D/g, ''), 10)));
     const realCount = isFinite(count) ? count : 0;
-    this.form.templateVars = Array.from({ length: realCount }, (_, i) => this.form.templateVars[i] ?? '');
+    // Los huecos nuevos arrancan en el nombre del cliente, que es lo que casi
+    // siempre se quiere; los que ya tenían valor se conservan.
+    this.form.templateVars = Array.from(
+      { length: realCount },
+      (_, i) => this.form.templateVars[i] ?? '{nombre}',
+    );
   }
 
   toggleTag(tag: string) {
