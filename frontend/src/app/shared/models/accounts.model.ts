@@ -150,8 +150,23 @@ export interface WaTemplate {
   body: string;
   headerType?: string;
   headerText?: string;
+  /** URL del archivo de ejemplo de la cabecera multimedia (para la vista previa). */
+  headerMediaUrl?: string;
   footer?: string;
   components?: WaTemplateComponent[];
+}
+
+export type WaOtpType = 'COPY_CODE' | 'ONE_TAP' | 'ZERO_TAP';
+
+/** Opciones exclusivas de las plantillas de autenticación (Meta redacta el texto). */
+export interface WaTemplateAuth {
+  addSecurityRecommendation?: boolean;
+  codeExpirationMinutes?: number;
+  otpType: WaOtpType;
+  buttonText?: string;
+  autofillText?: string;
+  packageName?: string;
+  signatureHash?: string;
 }
 
 export interface WaTemplatePayload {
@@ -159,22 +174,24 @@ export interface WaTemplatePayload {
   name: string;
   category: WaTemplateCategory;
   language: string;
-  body: string;
+  body?: string;
   bodyExamples?: string[];
   header?: WaTemplateHeader;
   footer?: string;
   buttons?: WaTemplateButton[];
+  authentication?: WaTemplateAuth;
   allowCategoryChange?: boolean;
 }
 
 /** Meta no deja cambiar nombre ni idioma: la edición solo toca componentes. */
 export interface WaTemplateUpdatePayload {
   category?: WaTemplateCategory;
-  body: string;
+  body?: string;
   bodyExamples?: string[];
   header?: WaTemplateHeader;
   footer?: string;
   buttons?: WaTemplateButton[];
+  authentication?: WaTemplateAuth;
 }
 
 /** Cuenta Cloud API que puede tener plantillas. */

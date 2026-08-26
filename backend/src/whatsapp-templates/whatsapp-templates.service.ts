@@ -38,6 +38,17 @@ interface MetaTemplate {
   components?: MetaComponent[];
 }
 
+/** Texto que se muestra en la vista previa de una plantilla de autenticación. */
+const AUTH_BODY_PLACEHOLDER =
+  '{{1}} es tu código de verificación. Meta redacta este texto automáticamente.';
+
+/** Tipos que Meta acepta en la cabecera multimedia de una plantilla. */
+const HEADER_MEDIA_TYPES: Record<string, string[]> = {
+  IMAGE: ['image/jpeg', 'image/png'],
+  VIDEO: ['video/mp4', 'video/3gpp'],
+  DOCUMENT: ['application/pdf'],
+};
+
 /** Cuenta lista para operar plantillas: Cloud API con token y WABA. */
 interface TemplateAccount {
   account: WhatsAppAccount;
@@ -134,7 +145,11 @@ export class WhatsAppTemplatesService {
       tenantId,
       dto.accountId,
     );
-    const components = await this.buildComponents(dto, token);
+    const components = await this.buildComponents(
+      dto,
+      token,
+      dto.category,
+    );
 
     const created = await this.metaRequest<{ id: string; status?: string }>(
       () =>
@@ -159,6 +174,7 @@ export class WhatsAppTemplatesService {
       language: dto.language,
       status: (created.status as TemplateStatus) ?? 'PENDING',
       ...this.denormalizeComponents(components),
+      headerMediaUrl: dto.header?.mediaUrl,
     });
   }
 
@@ -177,7 +193,11 @@ export class WhatsAppTemplatesService {
       tenantId,
       String(template.accountId),
     );
-    const components = await this.buildComponents(dto, token);
+    const components = await this.buildComponents(
+      dto,
+      token,
+      dto.category ?? template.category,
+    );
 
     const payload: Record<string, unknown> = { components };
     if (dto.category && template.status !== 'APPROVED')
@@ -191,6 +211,8 @@ export class WhatsAppTemplatesService {
     );
 
     Object.assign(template, this.denormalizeComponents(components));
+    if (dto.header?.mediaUrl) template.headerMediaUrl = dto.header.mediaUrl;
+    if (!dto.header) template.headerMediaUrl = undefined;
     if (payload.category) template.category = dto.category!;
     // Toda edición vuelve a pasar por revisión de Meta.
     template.status = 'PENDING';
@@ -226,12 +248,20 @@ export class WhatsAppTemplatesService {
   private async buildComponents(
     dto: CreateWaTemplateDto | UpdateWaTemplateDto,
     token: string,
+    category?: string,
   ): Promise<MetaComponent[]> {
+    // Las de autenticación tienen una forma propia: Meta genera el texto.
+    if (category === 'AUTHENTICATION' || dto.authentication)
+      return this.buildAuthComponents(dto);
+
     const components: MetaComponent[] = [];
 
     if (dto.header) {
       components.push(await this.buildHeader(dto.header, token));
     }
+
+    if (!dto.body?.trim())
+      throw new BadRequestException('El cuerpo del mensaje es obligatorio');
 
     const body: MetaComponent = { type: 'BODY', text: dto.body };
     const examples = (dto.bodyExamples ?? []).filter((v) => v?.trim());
@@ -250,6 +280,53 @@ export class WhatsAppTemplatesService {
 
     const buttons = (dto.buttons ?? []).map((b) => this.buildButton(b));
     if (buttons.length) components.push({ type: 'BUTTONS', buttons });
+
+    return components;
+  }
+
+  /**
+   * Plantilla de autenticación: cuerpo y pie los redacta Meta a partir de estas
+   * opciones, y el único botón admitido es el OTP.
+   * https://developers.facebook.com/docs/whatsapp/business-management-api/authentication-templates
+   */
+  private buildAuthComponents(
+    dto: CreateWaTemplateDto | UpdateWaTemplateDto,
+  ): MetaComponent[] {
+    const auth = dto.authentication;
+    if (!auth)
+      throw new BadRequestException(
+        'Configura las opciones de la plantilla de autenticación',
+      );
+
+    const components: MetaComponent[] = [
+      {
+        type: 'BODY',
+        add_security_recommendation: !!auth.addSecurityRecommendation,
+      },
+    ];
+
+    if (auth.codeExpirationMinutes)
+      components.push({
+        type: 'FOOTER',
+        code_expiration_minutes: auth.codeExpirationMinutes,
+      });
+
+    const button: Record<string, unknown> = {
+      type: 'OTP',
+      otp_type: auth.otpType,
+    };
+    if (auth.buttonText?.trim()) button.text = auth.buttonText.trim();
+    if (auth.otpType !== 'COPY_CODE') {
+      if (!auth.packageName?.trim() || !auth.signatureHash?.trim())
+        throw new BadRequestException(
+          'El autorrelleno necesita el nombre del paquete Android y su hash de firma',
+        );
+      button.package_name = auth.packageName.trim();
+      button.signature_hash = auth.signatureHash.trim();
+      if (auth.autofillText?.trim())
+        button.autofill_text = auth.autofillText.trim();
+    }
+    components.push({ type: 'BUTTONS', buttons: [button] });
 
     return components;
   }
@@ -289,7 +366,7 @@ export class WhatsAppTemplatesService {
     const handle =
       header.handle?.trim() ||
       (header.mediaUrl
-        ? await this.uploadHeaderMedia(header.mediaUrl, token)
+        ? await this.uploadHeaderMedia(header.mediaUrl, token, header.format)
         : '');
     if (!handle)
       throw new BadRequestException(
@@ -354,6 +431,7 @@ export class WhatsAppTemplatesService {
   private async uploadHeaderMedia(
     mediaUrl: string,
     token: string,
+    format: string,
   ): Promise<string> {
     const appId = this.config.get<string>('FACEBOOK_APP_ID');
     if (!appId)
@@ -367,8 +445,15 @@ export class WhatsAppTemplatesService {
         'No se pudo descargar el archivo de la cabecera',
       );
     const bytes = new Uint8Array(await res.arrayBuffer());
-    const fileType =
-      res.headers.get('content-type') ?? 'application/octet-stream';
+    const fileType = (
+      res.headers.get('content-type') ?? 'application/octet-stream'
+    ).split(';')[0];
+
+    const allowed = HEADER_MEDIA_TYPES[format] ?? [];
+    if (!allowed.includes(fileType))
+      throw new BadRequestException(
+        `Meta no admite "${fileType}" en una cabecera de tipo ${format}. Formatos válidos: ${allowed.join(', ')}`,
+      );
 
     const session = await this.metaRequest<{ id: string }>(() =>
       this.graph.post(`/${appId}/uploads`, {
@@ -411,11 +496,18 @@ export class WhatsAppTemplatesService {
 
   private denormalizeComponents(components: MetaComponent[]) {
     const header = components.find((c) => c.type === 'HEADER');
+    const body = components.find((c) => c.type === 'BODY');
+    const footer = components.find((c) => c.type === 'FOOTER');
     return {
       headerType: header?.format,
       headerText: header?.text,
-      body: components.find((c) => c.type === 'BODY')?.text ?? '',
-      footer: components.find((c) => c.type === 'FOOTER')?.text,
+      // Las de autenticación no traen texto: Meta lo genera al enviar.
+      body: body?.text ?? (body ? AUTH_BODY_PLACEHOLDER : ''),
+      footer:
+        footer?.text ??
+        (footer?.code_expiration_minutes
+          ? `El código caduca en ${String(footer.code_expiration_minutes)} minutos`
+          : undefined),
       components: components as unknown as Record<string, unknown>[],
     };
   }

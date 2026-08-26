@@ -4,12 +4,15 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
   IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import type { TemplateCategory } from '../wa-template.schema';
@@ -92,6 +95,51 @@ export class TemplateButtonDto {
   example?: string;
 }
 
+export const OTP_TYPES = ['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'] as const;
+export type OtpType = (typeof OTP_TYPES)[number];
+
+/**
+ * Las plantillas de categoría AUTHENTICATION no llevan cuerpo libre: Meta genera
+ * el texto y solo se configuran estas opciones y un botón OTP.
+ */
+export class TemplateAuthDto {
+  /** Añade el aviso "No compartas este código con nadie". */
+  @IsOptional()
+  @IsBoolean()
+  addSecurityRecommendation?: boolean;
+
+  /** Minutos de validez que se muestran en el pie (1–90). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  codeExpirationMinutes?: number;
+
+  @IsIn(OTP_TYPES)
+  otpType: OtpType;
+
+  /** Texto del botón; Meta usa uno por defecto si se omite. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(25)
+  buttonText?: string;
+
+  /** Texto de autorrelleno (ONE_TAP / ZERO_TAP). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(25)
+  autofillText?: string;
+
+  /** App Android que recibe el código (ONE_TAP / ZERO_TAP). */
+  @IsOptional()
+  @IsString()
+  packageName?: string;
+
+  @IsOptional()
+  @IsString()
+  signatureHash?: string;
+}
+
 export class CreateWaTemplateDto {
   /** Cuenta de WhatsApp (Cloud API) en cuyo WABA se crea la plantilla. */
   @IsMongoId()
@@ -113,10 +161,11 @@ export class CreateWaTemplateDto {
   @IsNotEmpty()
   language: string;
 
+  /** Obligatorio salvo en las plantillas de autenticación, que no llevan cuerpo. */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(1024)
-  body: string;
+  body?: string;
 
   /** Ejemplos de las variables {{1}}, {{2}}… del cuerpo, en orden. */
   @IsOptional()
@@ -141,6 +190,12 @@ export class CreateWaTemplateDto {
   @Type(() => TemplateButtonDto)
   buttons?: TemplateButtonDto[];
 
+  /** Configuración exclusiva de las plantillas de autenticación. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TemplateAuthDto)
+  authentication?: TemplateAuthDto;
+
   /** Deja que Meta reclasifique la categoría en vez de rechazar la plantilla. */
   @IsOptional()
   @IsBoolean()
@@ -156,10 +211,10 @@ export class UpdateWaTemplateDto {
   @IsIn(TEMPLATE_CATEGORIES)
   category?: TemplateCategory;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(1024)
-  body: string;
+  body?: string;
 
   @IsOptional()
   @IsArray()
@@ -182,4 +237,9 @@ export class UpdateWaTemplateDto {
   @ValidateNested({ each: true })
   @Type(() => TemplateButtonDto)
   buttons?: TemplateButtonDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TemplateAuthDto)
+  authentication?: TemplateAuthDto;
 }

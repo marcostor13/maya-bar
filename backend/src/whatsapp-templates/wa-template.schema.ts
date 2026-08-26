@@ -73,7 +73,16 @@ export class WaTemplate extends Document {
   @Prop()
   headerText?: string;
 
-  @Prop({ required: true })
+  /**
+   * URL en S3 del archivo de ejemplo de la cabecera multimedia. Meta no devuelve
+   * una URL reutilizable en el sync, así que la guardamos para poder mostrar la
+   * vista previa y reenviar el mismo archivo al editar.
+   */
+  @Prop()
+  headerMediaUrl?: string;
+
+  /** Vacío en las plantillas de autenticación: el texto lo redacta Meta. */
+  @Prop({ default: '' })
   body: string;
 
   @Prop()

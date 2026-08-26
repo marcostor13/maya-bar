@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, Plus, RefreshCw, Trash2, Pencil, X, Save, Layout,
-  Search, AlertTriangle, MessageSquare, Upload, ExternalLink, Phone, Copy, Reply,
+  Search, AlertTriangle, MessageSquare, Upload, ExternalLink, Phone, Copy, Reply, Image,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ToastService } from '../../shared/toast';
@@ -12,9 +12,17 @@ import { AccountsApiService } from '../../core/api/accounts-api.service';
 import {
   WaTemplate, WaTemplateAccount, WaTemplateCategory, WaTemplateStatus,
   WaHeaderFormat, WaButtonType, WaTemplateButton, WaTemplatePayload, WaTemplateUpdatePayload,
+  WaTemplateAuth, WaOtpType,
 } from '../../shared/models/accounts.model';
 
 const API = environment.apiUrl;
+
+/** Tipos que Meta acepta en la cabecera multimedia de una plantilla. */
+const MEDIA_TYPES: Record<string, string[]> = {
+  IMAGE: ['image/jpeg', 'image/png'],
+  VIDEO: ['video/mp4', 'video/3gpp'],
+  DOCUMENT: ['application/pdf'],
+};
 
 /** Formulario de plantilla; refleja 1:1 lo que acepta Meta. */
 interface TemplateForm {
@@ -32,6 +40,7 @@ interface TemplateForm {
   bodyExamples: string[];
   footer: string;
   buttons: WaTemplateButton[];
+  auth: WaTemplateAuth;
 }
 
 function blankForm(): TemplateForm {
@@ -39,6 +48,7 @@ function blankForm(): TemplateForm {
     _id: '', name: '', category: 'MARKETING', language: 'es', allowCategoryChange: true,
     headerFormat: '', headerText: '', headerExample: '', headerMediaUrl: '', headerHandle: '',
     body: '', bodyExamples: [], footer: '', buttons: [],
+    auth: { otpType: 'COPY_CODE', addSecurityRecommendation: true, codeExpirationMinutes: 10, buttonText: '' },
   };
 }
 
@@ -120,8 +130,14 @@ function blankForm(): TemplateForm {
 
                 <div class="tpl-preview">
                   @if (t.headerText) { <div class="pv-header">{{ t.headerText }}</div> }
+                  @else if (t.headerType === 'IMAGE' && t.headerMediaUrl) {
+                    <img class="pv-image" [src]="t.headerMediaUrl" alt="Cabecera de la plantilla" />
+                  }
                   @else if (t.headerType && t.headerType !== 'TEXT') {
-                    <div class="pv-media">{{ headerLabel(t.headerType) }}</div>
+                    <div class="pv-media">
+                      <lucide-icon [img]="Image" [size]="16"></lucide-icon>
+                      {{ headerLabel(t.headerType) }}
+                    </div>
                   }
                   <div class="pv-body">{{ t.body }}</div>
                   @if (t.footer) { <div class="pv-footer">{{ t.footer }}</div> }
@@ -218,6 +234,59 @@ function blankForm(): TemplateForm {
               </label>
             }
 
+            @if (isAuth()) {
+              <!-- Autenticación: Meta redacta el texto; solo se configuran estas opciones -->
+              <div class="section-sep">Código de verificación</div>
+              <div class="hint-box">
+                En las plantillas de autenticación Meta redacta el mensaje. Tú solo eliges
+                cómo se entrega el código.
+              </div>
+
+              <label class="check-row">
+                <input type="checkbox" [(ngModel)]="form()!.auth.addSecurityRecommendation" />
+                <span>Añadir el aviso "No compartas este código con nadie"</span>
+              </label>
+
+              <div class="field-row">
+                <div class="field">
+                  <label class="label">Caduca a los (minutos)</label>
+                  <input class="input" type="number" min="1" max="90"
+                    [(ngModel)]="form()!.auth.codeExpirationMinutes" placeholder="10" />
+                  <span class="field-hint">Entre 1 y 90. Vacío = sin aviso de caducidad.</span>
+                </div>
+                <div class="field">
+                  <label class="label">Entrega del código *</label>
+                  <select class="select" [(ngModel)]="form()!.auth.otpType">
+                    <option value="COPY_CODE">Copiar código</option>
+                    <option value="ONE_TAP">Autorrelleno con un toque</option>
+                    <option value="ZERO_TAP">Autorrelleno sin toques</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <label class="label">Texto del botón <span class="opt">(opcional)</span></label>
+                <input class="input" [(ngModel)]="form()!.auth.buttonText" maxlength="25" placeholder="Copiar código" />
+              </div>
+
+              @if (form()!.auth.otpType !== 'COPY_CODE') {
+                <div class="field">
+                  <label class="label">Texto de autorrelleno <span class="opt">(opcional)</span></label>
+                  <input class="input" [(ngModel)]="form()!.auth.autofillText" maxlength="25" placeholder="Autorrellenar" />
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label class="label">Paquete Android *</label>
+                    <input class="input" [(ngModel)]="form()!.auth.packageName" placeholder="com.miempresa.app" />
+                  </div>
+                  <div class="field">
+                    <label class="label">Hash de firma *</label>
+                    <input class="input" [(ngModel)]="form()!.auth.signatureHash" placeholder="K8a/AINcGX7" />
+                  </div>
+                </div>
+              }
+            } @else {
+
             <!-- Cabecera -->
             <div class="section-sep">Cabecera <span>(opcional)</span></div>
             <div class="field">
@@ -248,15 +317,37 @@ function blankForm(): TemplateForm {
             } @else if (isMediaHeader()) {
               <div class="field">
                 <label class="label">Archivo de ejemplo *</label>
-                <div class="upload-row">
-                  <input type="file" #headerFile hidden (change)="uploadHeader($event)"
-                    [accept]="acceptFor(form()!.headerFormat)" />
-                  <button class="btn btn-secondary btn-sm" (click)="headerFile.click()" [disabled]="uploading()">
-                    <lucide-icon [img]="Upload" [size]="14" [class.spin]="uploading()"></lucide-icon>
-                    {{ uploading() ? 'Subiendo…' : 'Subir archivo' }}
+                <input type="file" #headerFile hidden (change)="uploadHeader($event)"
+                  [accept]="acceptFor(form()!.headerFormat)" />
+
+                @if (form()!.headerMediaUrl || form()!.headerHandle) {
+                  <div class="media-box">
+                    @if (form()!.headerFormat === 'IMAGE' && form()!.headerMediaUrl) {
+                      <img class="media-thumb" [src]="form()!.headerMediaUrl" alt="Vista previa de la cabecera" />
+                    } @else {
+                      <span class="media-thumb placeholder">
+                        <lucide-icon [img]="Image" [size]="20"></lucide-icon>
+                      </span>
+                    }
+                    <div class="media-info">
+                      <span class="upload-ok">
+                        {{ form()!.headerMediaUrl ? 'Archivo listo' : 'Archivo ya aprobado en Meta' }}
+                      </span>
+                      <div class="media-actions">
+                        <button class="btn btn-sm btn-ghost" (click)="headerFile.click()" [disabled]="uploading()">
+                          {{ uploading() ? 'Subiendo…' : 'Cambiar' }}
+                        </button>
+                        <button class="btn btn-sm btn-ghost" (click)="clearHeaderMedia()">Quitar</button>
+                      </div>
+                    </div>
+                  </div>
+                } @else {
+                  <button class="drop-zone" (click)="headerFile.click()" [disabled]="uploading()">
+                    <lucide-icon [img]="uploading() ? RefreshCw : Upload" [size]="22" [class.spin]="uploading()"></lucide-icon>
+                    <span>{{ uploading() ? 'Subiendo…' : 'Subir ' + mediaWord() }}</span>
+                    <small>{{ acceptHint() }}</small>
                   </button>
-                  @if (form()!.headerMediaUrl) { <span class="upload-ok">Archivo listo</span> }
-                </div>
+                }
                 <span class="field-hint">Meta exige un ejemplo del archivo para aprobar la plantilla.</span>
               </div>
             }
@@ -330,26 +421,45 @@ function blankForm(): TemplateForm {
               </button>
             }
 
+            }
+
             <!-- Vista previa -->
             <div class="section-sep">Vista previa</div>
             <div class="preview-phone">
               <div class="preview-bubble">
                 @if (form()!.headerFormat === 'TEXT' && form()!.headerText) {
                   <div class="pv-header">{{ form()!.headerText }}</div>
+                } @else if (form()!.headerFormat === 'IMAGE' && form()!.headerMediaUrl) {
+                  <img class="pv-image" [src]="form()!.headerMediaUrl" alt="Cabecera de la plantilla" />
                 } @else if (isMediaHeader()) {
-                  <div class="pv-media">{{ headerLabel(form()!.headerFormat) }}</div>
-                }
-                <div class="pv-body">{{ form()!.body || 'Escribe el mensaje…' }}</div>
-                @if (form()!.footer) { <div class="pv-footer">{{ form()!.footer }}</div> }
-                @if (form()!.buttons.length) {
-                  <div class="pv-buttons">
-                    @for (b of form()!.buttons; track $index) {
-                      <span class="pv-button">
-                        <lucide-icon [img]="buttonIcon(b.type)" [size]="12"></lucide-icon>
-                        {{ b.text || b.example || 'Copiar código' }}
-                      </span>
-                    }
+                  <div class="pv-media">
+                    <lucide-icon [img]="Image" [size]="16"></lucide-icon>
+                    {{ headerLabel(form()!.headerFormat) }}
                   </div>
+                }
+                <div class="pv-body">{{ isAuth() ? authPreview() : (form()!.body || 'Escribe el mensaje…') }}</div>
+                @if (isAuth()) {
+                  @if (form()!.auth.codeExpirationMinutes) {
+                    <div class="pv-footer">El código caduca en {{ form()!.auth.codeExpirationMinutes }} minutos</div>
+                  }
+                  <div class="pv-buttons">
+                    <span class="pv-button">
+                      <lucide-icon [img]="Copy" [size]="12"></lucide-icon>
+                      {{ form()!.auth.buttonText || 'Copiar código' }}
+                    </span>
+                  </div>
+                } @else {
+                  @if (form()!.footer) { <div class="pv-footer">{{ form()!.footer }}</div> }
+                  @if (form()!.buttons.length) {
+                    <div class="pv-buttons">
+                      @for (b of form()!.buttons; track $index) {
+                        <span class="pv-button">
+                          <lucide-icon [img]="buttonIcon(b.type)" [size]="12"></lucide-icon>
+                          {{ b.text || b.example || 'Copiar código' }}
+                        </span>
+                      }
+                    </div>
+                  }
                 }
               </div>
             </div>
@@ -428,7 +538,8 @@ function blankForm(): TemplateForm {
       display: flex; flex-direction: column; gap: 6px;
     }
     .pv-header { font-weight: 700; font-size: 13px; color: var(--color-text-main); }
-    .pv-media { font-size: 12px; font-weight: 600; color: var(--color-text-muted); background: var(--color-white); border-radius: 10px; padding: 14px; text-align: center; }
+    .pv-media { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--color-text-muted); background: var(--color-white); border-radius: 10px; padding: 14px; }
+    .pv-image { width: 100%; max-height: 180px; object-fit: cover; border-radius: 10px; display: block; }
     .pv-body { font-size: 13px; color: var(--color-text-main); white-space: pre-wrap; word-break: break-word; }
     .pv-footer { font-size: 11px; color: var(--color-text-muted); }
     .pv-buttons { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; border-top: 1px solid rgba(15,23,42,0.08); padding-top: 8px; }
@@ -470,8 +581,24 @@ function blankForm(): TemplateForm {
     .example-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
     .example-tag { font-family: monospace; font-size: 12px; font-weight: 700; color: var(--color-brand); flex-shrink: 0; }
 
-    .upload-row { display: flex; align-items: center; gap: 12px; }
     .upload-ok { font-size: 12px; font-weight: 600; color: #16A34A; }
+
+    .drop-zone {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; padding: 28px 20px; cursor: pointer;
+      border: 1.5px dashed var(--color-border); border-radius: var(--radius-lg);
+      background: var(--color-bg-app); color: var(--color-text-muted);
+      font-size: 13px; font-weight: 600; transition: all var(--transition-fast);
+    }
+    .drop-zone:hover:not(:disabled) { border-color: var(--color-brand); color: var(--color-brand); }
+    .drop-zone:disabled { cursor: default; opacity: 0.7; }
+    .drop-zone small { font-weight: 500; font-size: 11px; }
+
+    .media-box { display: flex; align-items: center; gap: 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 12px 14px; }
+    .media-thumb { width: 72px; height: 72px; border-radius: 12px; object-fit: cover; flex-shrink: 0; background: var(--color-bg-app); }
+    .media-thumb.placeholder { display: flex; align-items: center; justify-content: center; color: var(--color-text-muted); }
+    .media-info { display: flex; flex-direction: column; gap: 4px; }
+    .media-actions { display: flex; gap: 4px; }
 
     .button-card { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
     .button-card-head { display: flex; align-items: center; gap: 8px; }
@@ -513,6 +640,8 @@ export class WhatsappTemplatesComponent implements OnInit {
   readonly AlertTriangle = AlertTriangle;
   readonly MessageSquare = MessageSquare;
   readonly Upload = Upload;
+  readonly Image = Image;
+  readonly Copy = Copy;
 
   readonly languages = [
     { code: 'es', label: 'Español (es)' },
@@ -629,12 +758,13 @@ export class WhatsappTemplatesComponent implements OnInit {
       headerFormat: (header?.format as WaHeaderFormat) ?? '',
       headerText: header?.text ?? '',
       headerExample: ((header?.example?.['header_text'] as string[]) ?? [])[0] ?? '',
-      headerMediaUrl: '',
+      headerMediaUrl: t.headerMediaUrl ?? '',
       headerHandle: ((header?.example?.['header_handle'] as string[]) ?? [])[0] ?? '',
       body: t.body,
       bodyExamples: [...bodyExamples],
       footer: t.footer ?? '',
       buttons: this.buttonsOf(t),
+      auth: this.authOf(t),
     });
     this.syncBodyExamples(t.body);
   }
@@ -695,9 +825,21 @@ export class WhatsappTemplatesComponent implements OnInit {
   uploadHeader(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
+    input.value = '';
     if (!file) return;
     const f = this.form();
     if (!f) return;
+
+    const allowed = MEDIA_TYPES[f.headerFormat] ?? [];
+    if (!allowed.includes(file.type)) {
+      this.toast.error(`Meta solo admite ${this.acceptHint()} en esta cabecera`);
+      return;
+    }
+    // Meta rechaza imágenes de más de 5 MB en las plantillas.
+    if (f.headerFormat === 'IMAGE' && file.size > 5 * 1024 * 1024) {
+      this.toast.error('La imagen no puede pasar de 5 MB');
+      return;
+    }
 
     this.uploading.set(true);
     const fd = new FormData();
@@ -709,9 +851,18 @@ export class WhatsappTemplatesComponent implements OnInit {
         this.uploading.set(false);
         this.toast.success('Archivo subido');
       },
-      error: () => { this.uploading.set(false); this.toast.error('No se pudo subir el archivo'); },
+      error: (err: { error?: { message?: string } }) => {
+        this.uploading.set(false);
+        this.toast.error(err.error?.message || 'No se pudo subir el archivo');
+      },
     });
-    input.value = '';
+  }
+
+  clearHeaderMedia() {
+    const f = this.form();
+    if (!f) return;
+    f.headerMediaUrl = '';
+    f.headerHandle = '';
   }
 
   save() {
@@ -762,6 +913,17 @@ export class WhatsappTemplatesComponent implements OnInit {
 
   /** Parte común del payload: cabecera, cuerpo, pie y botones. */
   private componentPayload(f: TemplateForm) {
+    if (f.category === 'AUTHENTICATION') {
+      return {
+        authentication: {
+          ...f.auth,
+          codeExpirationMinutes: f.auth.codeExpirationMinutes
+            ? Number(f.auth.codeExpirationMinutes)
+            : undefined,
+          buttonText: f.auth.buttonText?.trim() || undefined,
+        },
+      };
+    }
     return {
       body: f.body.trim(),
       bodyExamples: f.bodyExamples.map(v => v.trim()),
@@ -781,6 +943,17 @@ export class WhatsappTemplatesComponent implements OnInit {
 
   private validate(f: TemplateForm): string {
     if (!f._id && !f.name.trim()) return 'El nombre es obligatorio';
+
+    if (f.category === 'AUTHENTICATION') {
+      const minutes = Number(f.auth.codeExpirationMinutes);
+      if (f.auth.codeExpirationMinutes && (minutes < 1 || minutes > 90))
+        return 'La caducidad del código debe estar entre 1 y 90 minutos';
+      if (f.auth.otpType !== 'COPY_CODE' &&
+        (!f.auth.packageName?.trim() || !f.auth.signatureHash?.trim()))
+        return 'El autorrelleno necesita el paquete Android y su hash de firma';
+      return '';
+    }
+
     if (!f.body.trim()) return 'El cuerpo del mensaje es obligatorio';
     if (f.bodyExamples.some(v => !v.trim()))
       return 'Indica un ejemplo para cada variable del cuerpo';
@@ -848,6 +1021,34 @@ export class WhatsappTemplatesComponent implements OnInit {
     return `{{${index + 1}}}`;
   }
 
+  isAuth(): boolean { return this.form()?.category === 'AUTHENTICATION'; }
+
+  /** Texto aproximado que Meta genera para una plantilla de autenticación. */
+  authPreview(): string {
+    const base = '123456 es tu código de verificación.';
+    return this.form()?.auth.addSecurityRecommendation
+      ? `${base} Por tu seguridad, no lo compartas.`
+      : base;
+  }
+
+  /** Reconstruye las opciones de autenticación desde los componentes de Meta. */
+  authOf(t: WaTemplate): WaTemplateAuth {
+    const comps = t.components ?? [];
+    const body = comps.find(c => c.type === 'BODY') as Record<string, unknown> | undefined;
+    const footer = comps.find(c => c.type === 'FOOTER') as Record<string, unknown> | undefined;
+    const otp = ((comps.find(c => c.type === 'BUTTONS')?.buttons ?? []) as Record<string, unknown>[])
+      .find(b => b['type'] === 'OTP');
+    return {
+      addSecurityRecommendation: !!body?.['add_security_recommendation'],
+      codeExpirationMinutes: (footer?.['code_expiration_minutes'] as number) ?? undefined,
+      otpType: ((otp?.['otp_type'] as WaOtpType) ?? 'COPY_CODE'),
+      buttonText: (otp?.['text'] as string) ?? '',
+      autofillText: (otp?.['autofill_text'] as string) ?? '',
+      packageName: (otp?.['package_name'] as string) ?? '',
+      signatureHash: (otp?.['signature_hash'] as string) ?? '',
+    };
+  }
+
   placeholderCount(text = ''): number {
     return new Set([...text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(m => m[1])).size;
   }
@@ -865,9 +1066,25 @@ export class WhatsappTemplatesComponent implements OnInit {
   }
 
   acceptFor(format: '' | WaHeaderFormat): string {
-    if (format === 'IMAGE') return 'image/*';
-    if (format === 'VIDEO') return 'video/*';
-    return '.pdf,.doc,.docx,.xls,.xlsx';
+    return (MEDIA_TYPES[format] ?? []).join(',');
+  }
+
+  /** Formatos que Meta admite, en texto para el usuario. */
+  acceptHint(): string {
+    switch (this.form()?.headerFormat) {
+      case 'IMAGE': return 'JPG o PNG, hasta 5 MB';
+      case 'VIDEO': return 'MP4 o 3GP';
+      case 'DOCUMENT': return 'PDF';
+      default: return '';
+    }
+  }
+
+  mediaWord(): string {
+    switch (this.form()?.headerFormat) {
+      case 'IMAGE': return 'imagen';
+      case 'VIDEO': return 'video';
+      default: return 'documento';
+    }
   }
 
   headerLabel(format?: string): string {

@@ -330,6 +330,175 @@ describe('WhatsAppTemplatesService', () => {
     });
   });
 
+  describe('plantillas de autenticación', () => {
+    beforeEach(() => graph.post.mockResolvedValue({ id: 'meta-auth' }));
+
+    it('construye los componentes que pide Meta, sin cuerpo libre', async () => {
+      await service.create(tenantId, {
+        accountId,
+        name: 'codigo_verificacion',
+        category: 'AUTHENTICATION',
+        language: 'es',
+        authentication: {
+          otpType: 'COPY_CODE',
+          addSecurityRecommendation: true,
+          codeExpirationMinutes: 10,
+          buttonText: 'Copiar código',
+        },
+      });
+
+      const json = graph.post.mock.calls[0][1].json as {
+        components: Record<string, unknown>[];
+      };
+      expect(json.components).toEqual([
+        { type: 'BODY', add_security_recommendation: true },
+        { type: 'FOOTER', code_expiration_minutes: 10 },
+        {
+          type: 'BUTTONS',
+          buttons: [
+            { type: 'OTP', otp_type: 'COPY_CODE', text: 'Copiar código' },
+          ],
+        },
+      ]);
+    });
+
+    it('el autorrelleno exige paquete y hash de firma', async () => {
+      await expect(
+        service.create(tenantId, {
+          accountId,
+          name: 'codigo',
+          category: 'AUTHENTICATION',
+          language: 'es',
+          authentication: { otpType: 'ONE_TAP' },
+        }),
+      ).rejects.toThrow(/paquete Android/);
+    });
+
+    it('manda los datos de la app en ONE_TAP', async () => {
+      await service.create(tenantId, {
+        accountId,
+        name: 'codigo',
+        category: 'AUTHENTICATION',
+        language: 'es',
+        authentication: {
+          otpType: 'ONE_TAP',
+          packageName: 'com.bar.app',
+          signatureHash: 'K8a',
+          autofillText: 'Autorrellenar',
+        },
+      });
+      const json = graph.post.mock.calls[0][1].json as {
+        components: { type: string; buttons?: Record<string, unknown>[] }[];
+      };
+      expect(json.components[1].buttons![0]).toEqual({
+        type: 'OTP',
+        otp_type: 'ONE_TAP',
+        package_name: 'com.bar.app',
+        signature_hash: 'K8a',
+        autofill_text: 'Autorrellenar',
+      });
+    });
+  });
+
+  describe('cabeceras multimedia', () => {
+    beforeEach(() => graph.post.mockResolvedValue({ id: 'meta-1' }));
+
+    it('acepta video y documento además de imagen', async () => {
+      for (const [format, mime] of [
+        ['VIDEO', 'video/mp4'],
+        ['DOCUMENT', 'application/pdf'],
+      ] as const) {
+        graph.post.mockClear();
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          arrayBuffer: async () => new ArrayBuffer(4),
+          headers: { get: () => mime },
+        }) as unknown as typeof fetch;
+        graph.post
+          .mockResolvedValueOnce({ id: 'upload:1' })
+          .mockResolvedValueOnce({ id: 'meta-1' });
+        graph.postBinary.mockResolvedValue({ h: `handle-${format}` });
+
+        await service.create(tenantId, {
+          accountId,
+          name: 'promo',
+          category: 'MARKETING',
+          language: 'es',
+          body: 'Cuerpo',
+          header: { format, mediaUrl: 'https://s3/x' },
+        });
+
+        const json = graph.post.mock.calls[1][1].json as {
+          components: Record<string, unknown>[];
+        };
+        expect(json.components[0]).toEqual({
+          type: 'HEADER',
+          format,
+          example: { header_handle: [`handle-${format}`] },
+        });
+      }
+    });
+
+    it('rechaza un tipo que Meta no admite en esa cabecera', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(4),
+        headers: { get: () => 'image/webp' },
+      }) as unknown as typeof fetch;
+      graph.post.mockResolvedValueOnce({ id: 'upload:1' });
+
+      await expect(
+        service.create(tenantId, {
+          accountId,
+          name: 'promo',
+          category: 'MARKETING',
+          language: 'es',
+          body: 'Cuerpo',
+          header: { format: 'IMAGE', mediaUrl: 'https://s3/x.webp' },
+        }),
+      ).rejects.toThrow(/no admite "image\/webp"/);
+    });
+
+    it('la cabecera de ubicación no lleva ejemplo', async () => {
+      await service.create(tenantId, {
+        accountId,
+        name: 'promo',
+        category: 'UTILITY',
+        language: 'es',
+        body: 'Te esperamos',
+        header: { format: 'LOCATION' },
+      });
+      const json = graph.post.mock.calls[0][1].json as {
+        components: Record<string, unknown>[];
+      };
+      expect(json.components[0]).toEqual({ type: 'HEADER', format: 'LOCATION' });
+    });
+
+    it('guarda la URL del archivo para la vista previa', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(4),
+        headers: { get: () => 'image/png' },
+      }) as unknown as typeof fetch;
+      graph.post
+        .mockResolvedValueOnce({ id: 'upload:1' })
+        .mockResolvedValueOnce({ id: 'meta-1' });
+      graph.postBinary.mockResolvedValue({ h: 'handle-abc' });
+
+      await service.create(tenantId, {
+        accountId,
+        name: 'promo',
+        category: 'MARKETING',
+        language: 'es',
+        body: 'Cuerpo',
+        header: { format: 'IMAGE', mediaUrl: 'https://s3/x.png' },
+      });
+
+      const doc = model.create.mock.calls[0][0] as { headerMediaUrl: string };
+      expect(doc.headerMediaUrl).toBe('https://s3/x.png');
+    });
+  });
+
   // ── Sincronización ──
 
   describe('sync', () => {
