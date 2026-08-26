@@ -68,12 +68,43 @@ export function isOwnerScoped(role: string): boolean {
   return role === 'IMPULSADOR';
 }
 
+/** Roles que trae la plataforma de fábrica. */
+const SYSTEM_ROLE_KEYS = [
+  'SUPERADMIN',
+  'TENANT_ADMIN',
+  'MANAGER',
+  'HOST',
+  'SERVER',
+  'KITCHEN',
+  'BAR',
+  'MARKETING',
+  'IMPULSADOR',
+];
+
 /**
  * Throws ForbiddenException if the user's role is not in the allowed list.
  * SUPERADMIN bypasses all tenant-level role checks.
+ *
+ * Los roles propios de una empresa no aparecen en estas listas y nunca podrían
+ * pasar la comprobación. Para ellos manda la matriz configurable, que ya se ha
+ * aplicado antes en `ModuleGuard`: si llegan hasta aquí es porque tienen el
+ * módulo y la acción concedidos. Estas listas siguen gobernando a los roles del
+ * sistema, donde expresan distinciones más finas que la matriz no representa.
  */
 export function assertRole(userRole: string, allowed: string[]): void {
   if (userRole === 'SUPERADMIN') return;
+  if (!SYSTEM_ROLE_KEYS.includes(userRole)) return;
   if (!allowed.includes(userRole))
     throw new ForbiddenException('Permiso insuficiente');
 }
+
+/**
+ * Módulo de la plataforma al que pertenece cada grupo de roles heredado. Es el
+ * puente entre `assertRole`, que compara contra una lista fija, y la matriz
+ * configurable por empresa.
+ */
+export const GROUP_MODULE: Record<string, string> = {
+  CRM_ROLES: 'customers',
+  EVENT_ROLES: 'events',
+  VISIT_ROLES: 'visits',
+};

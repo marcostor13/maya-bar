@@ -11,6 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
@@ -32,7 +33,7 @@ import {
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
 
 @Controller('customers/import')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('customers'))
 export class ContactImportController {
   constructor(private service: ContactImportService) {}
 

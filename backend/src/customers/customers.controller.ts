@@ -12,13 +12,14 @@ import {
   Res,
   StreamableFile,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 
 @Controller('customers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('customers'))
 export class CustomersController {
   constructor(private customersService: CustomersService) {}
 

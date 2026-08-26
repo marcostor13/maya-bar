@@ -2,7 +2,11 @@ import { Routes } from '@angular/router';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { authGuard } from './auth/auth.guard';
+// SUPERADMIN sigue con roleGuard: es un rol de plataforma, no de empresa,
+// y por eso queda fuera de la matriz configurable.
 import { roleGuard } from './auth/role.guard';
+import { moduleGuard, homeFor } from './auth/module.guard';
+import { PermissionsService } from './auth/permissions.service';
 import { AuthService } from './auth/auth.service';
 import { LoginComponent } from './pages/login/login';
 import { RegisterComponent } from './pages/register/register';
@@ -35,15 +39,17 @@ import { MisAsistentesComponent } from './pages/mis-asistentes/mis-asistentes';
 import { AiAgentsComponent } from './pages/ai-agents/ai-agents';
 import { InboxComponent } from './pages/inbox/inbox';
 
-const homeRedirectGuard = () => {
+const homeRedirectGuard = async () => {
   const auth = inject(AuthService);
+  const permissions = inject(PermissionsService);
   const router = inject(Router);
   const user = auth.currentUser();
   if (!user?.role) { router.navigate(['/login']); return false; }
   if (user.mustChangePassword) { router.navigate(['/change-password']); return false; }
   if (user.role === 'SUPERADMIN') { router.navigate(['/admin/tenants']); return false; }
-  if (user.role === 'IMPULSADOR') { router.navigate(['/impulsador']); return false; }
-  router.navigate(['/dashboard']); return false;
+  // La primera pantalla depende de los módulos configurados, no del rol.
+  await permissions.load();
+  router.navigateByUrl(homeFor(user.role, permissions)); return false;
 };
 
 export const routes: Routes = [
@@ -64,102 +70,102 @@ export const routes: Routes = [
       {
         path: 'dashboard',
         component: DashboardComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BAR', 'MARKETING')],
+        canActivate: [moduleGuard('dashboard')],
       },
       {
         path: 'impulsador',
         component: ImpulsadorPanelComponent,
-        canActivate: [roleGuard('IMPULSADOR')],
+        canActivate: [moduleGuard('impulsador-panel')],
       },
       {
         path: 'locals',
         component: LocalsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER')],
+        canActivate: [moduleGuard('locals')],
       },
       {
         path: 'menu',
         component: MenuComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'KITCHEN', 'BAR')],
+        canActivate: [moduleGuard('menu')],
       },
       {
         path: 'orders',
         component: OrdersComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BAR')],
+        canActivate: [moduleGuard('orders')],
       },
       {
         path: 'kds',
         component: KdsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'KITCHEN', 'BAR')],
+        canActivate: [moduleGuard('kds')],
       },
       {
         path: 'reservations',
         component: ReservationsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'HOST')],
+        canActivate: [moduleGuard('reservations')],
       },
       {
         path: 'events',
         component: EventsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+        canActivate: [moduleGuard('events')],
       },
       {
         path: 'events/:id',
         component: EventDetailComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+        canActivate: [moduleGuard('events')],
       },
       {
         path: 'customers',
         component: CustomersComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+        canActivate: [moduleGuard('customers')],
       },
       {
         path: 'campaigns',
         component: CampaignsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+        canActivate: [moduleGuard('campaigns')],
       },
       {
         path: 'plantillas',
         component: WhatsappTemplatesComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER')],
+        canActivate: [moduleGuard('templates')],
       },
       {
         path: 'ai-agents',
         component: AiAgentsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+        canActivate: [moduleGuard('ai-agents')],
       },
       {
         path: 'inbox',
         component: InboxComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+        canActivate: [moduleGuard('inbox')],
       },
       {
         path: 'lists',
         component: ListsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING', 'IMPULSADOR')],
+        canActivate: [moduleGuard('lists')],
       },
       {
         path: 'forms',
         component: FormsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER', 'MARKETING')],
+        canActivate: [moduleGuard('forms')],
       },
       {
         path: 'visitas',
         component: VisitsComponent,
-        canActivate: [roleGuard('IMPULSADOR', 'TENANT_ADMIN', 'MANAGER')],
+        canActivate: [moduleGuard('visits')],
       },
       {
         path: 'mis-asistentes',
         component: MisAsistentesComponent,
-        canActivate: [roleGuard('IMPULSADOR')],
+        canActivate: [moduleGuard('my-guests')],
       },
       {
         path: 'settings',
         component: SettingsComponent,
-        canActivate: [roleGuard('TENANT_ADMIN', 'MANAGER')],
+        canActivate: [moduleGuard('settings')],
       },
       {
         path: 'users',
         component: UsersComponent,
-        canActivate: [roleGuard('TENANT_ADMIN')],
+        canActivate: [moduleGuard('users')],
       },
       {
         path: 'admin/tenants',

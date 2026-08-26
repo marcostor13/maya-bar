@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
@@ -14,14 +18,29 @@ export class AuthService {
     private mailService: MailService,
   ) {}
 
+  /**
+   * Un usuario desactivado ya no podía entrar (la consulta filtraba por
+   * `isActive`), pero recibía "Invalid credentials" y no había forma de saber
+   * que el problema era la cuenta y no la contraseña. Ahora se busca sin filtro
+   * y el motivo solo se revela tras acertar la contraseña, de modo que esto no
+   * sirve para averiguar qué emails existen.
+   */
   async validateUser(email: string, pass: string): Promise<any> {
-    const user = await this.usersService.findOneByEmail(email);
-    if (user && (await bcrypt.compare(pass, user.password))) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unused-vars
-      const { password: _pw, ...result } = (user as any).toObject();
-      return result;
-    }
-    return null;
+    const user = await this.usersService.findOneByEmailAnyStatus(email);
+    if (!user) return null;
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    const matches = await bcrypt.compare(pass, user.password);
+    if (!matches) return null;
+
+    if (user.isActive === false)
+      throw new UnauthorizedException(
+        'Tu cuenta está desactivada. Contacta con el administrador de tu empresa.',
+      );
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unused-vars
+    const { password: _pw, ...result } = (user as any).toObject();
+    return result;
   }
 
   login(user: Record<string, any>) {

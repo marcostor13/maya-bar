@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { RolesService } from '../roles/roles.service';
 
 const mockOrdersService = {
   getPublicMenu: jest.fn(),
@@ -17,6 +18,13 @@ const mockOrdersService = {
 
 const mockReq = { user: { tenantId: 'tenant-1', role: 'TENANT_ADMIN' } };
 
+/** El ModuleGuard consulta la matriz; aquí se concede todo para no mezclar preocupaciones. */
+const mockRolesService = {
+  modulesFor: jest.fn().mockResolvedValue([
+    'orders', 'reservations', 'kds', 'menu', 'customers', 'dashboard',
+  ]),
+};
+
 describe('OrdersController', () => {
   let controller: OrdersController;
 
@@ -25,7 +33,8 @@ describe('OrdersController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrdersController],
-      providers: [{ provide: OrdersService, useValue: mockOrdersService }],
+      providers: [
+        { provide: RolesService, useValue: mockRolesService },{ provide: OrdersService, useValue: mockOrdersService }],
     }).compile();
 
     controller = module.get<OrdersController>(OrdersController);

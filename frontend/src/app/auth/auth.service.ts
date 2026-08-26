@@ -15,6 +15,13 @@ export interface AuthUser {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  /**
+   * Lo registra `PermissionsService` al construirse. Se hace con un gancho y no
+   * inyectando el servicio para no crear una dependencia circular: los permisos
+   * necesitan al usuario para su matriz de respaldo.
+   */
+  permissionsReset?: () => void;
+
   private apiUrl = environment.apiUrl;
 
   private _user = signal<AuthUser | null>(null);
@@ -48,6 +55,8 @@ export class AuthService {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     this._user.set(null);
+    // Si no se limpian, el siguiente usuario heredaría el menú del anterior.
+    this.permissionsReset?.();
   }
 
   forgotPassword(email: string): Observable<any> {
@@ -71,6 +80,7 @@ export class AuthService {
       localStorage.setItem('token', res.access_token);
       localStorage.setItem('user', JSON.stringify(res.user));
       this._user.set(res.user);
+      this.permissionsReset?.();
     }
   }
 

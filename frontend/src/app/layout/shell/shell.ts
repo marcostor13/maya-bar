@@ -2,6 +2,7 @@ import { Component, inject, signal, computed } from '@angular/core';
 import { NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { AuthService } from '../../auth/auth.service';
+import { PermissionsService } from '../../auth/permissions.service';
 import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate, FileText } from 'lucide-angular';
 
 @Component({
@@ -50,41 +51,57 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
             @if (!collapsed()) {
               <span class="nav-label">MI ACTIVIDAD</span>
             }
-            <a class="nav-item" routerLink="/impulsador" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="Gauge" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Mi Panel</span> }
-            </a>
-            <a class="nav-item" routerLink="/visitas" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="MapPin" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Visitas</span> }
-            </a>
-            <a class="nav-item" routerLink="/events" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="Zap" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Eventos</span> }
-            </a>
-            <a class="nav-item" routerLink="/mis-asistentes" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="Users" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Mis Asistentes</span> }
-            </a>
-            <a class="nav-item" routerLink="/inbox" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="MessagesSquare" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Conversaciones</span> }
-            </a>
+            @if (showImpulsadorPanel()) {
+              <a class="nav-item" routerLink="/impulsador" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="Gauge" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Mi Panel</span> }
+              </a>
+            }
+            @if (showVisitas()) {
+              <a class="nav-item" routerLink="/visitas" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="MapPin" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Visitas</span> }
+              </a>
+            }
+            @if (showEvents()) {
+              <a class="nav-item" routerLink="/events" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="Zap" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Eventos</span> }
+              </a>
+            }
+            @if (showMyGuests()) {
+              <a class="nav-item" routerLink="/mis-asistentes" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="Users" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Mis Asistentes</span> }
+              </a>
+            }
+            @if (showInbox()) {
+              <a class="nav-item" routerLink="/inbox" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="MessagesSquare" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Conversaciones</span> }
+              </a>
+            }
             @if (!collapsed()) {
               <span class="nav-label">MIS CLIENTES</span>
             }
-            <a class="nav-item" routerLink="/customers" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="ContactRound" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Contactos</span> }
-            </a>
-            <a class="nav-item" routerLink="/lists" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="List" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Listas</span> }
-            </a>
-            <a class="nav-item" routerLink="/campaigns" routerLinkActive="active">
-              <span class="nav-icon"><lucide-icon [img]="Megaphone" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-              @if (!collapsed()) { <span>Campañas</span> }
-            </a>
+            @if (showCustomers()) {
+              <a class="nav-item" routerLink="/customers" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="ContactRound" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Contactos</span> }
+              </a>
+            }
+            @if (showLists()) {
+              <a class="nav-item" routerLink="/lists" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="List" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Listas</span> }
+              </a>
+            }
+            @if (showCampaigns()) {
+              <a class="nav-item" routerLink="/campaigns" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="Megaphone" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Campañas</span> }
+              </a>
+            }
           } @else {
             @if (!collapsed()) {
               <span class="nav-label">OPERACIONES</span>
@@ -131,40 +148,52 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
                 @if (!collapsed()) { <span>Eventos</span> }
               </a>
             }
-            @if (showCustomers()) {
+            @if (showClientesGroup()) {
               @if (!collapsed()) {
                 <span class="nav-label">CLIENTES</span>
               }
-              <a class="nav-item" routerLink="/customers" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="ContactRound" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Clientes</span> }
-              </a>
-              <a class="nav-item" routerLink="/lists" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="List" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Listas</span> }
-              </a>
-              <a class="nav-item" routerLink="/forms" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="FileText" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Formularios</span> }
-              </a>
-              <a class="nav-item" routerLink="/campaigns" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="Megaphone" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Campañas</span> }
-              </a>
+              @if (showCustomers()) {
+                <a class="nav-item" routerLink="/customers" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="ContactRound" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Clientes</span> }
+                </a>
+              }
+              @if (showLists()) {
+                <a class="nav-item" routerLink="/lists" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="List" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Listas</span> }
+                </a>
+              }
+              @if (showForms()) {
+                <a class="nav-item" routerLink="/forms" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="FileText" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Formularios</span> }
+                </a>
+              }
+              @if (showCampaigns()) {
+                <a class="nav-item" routerLink="/campaigns" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="Megaphone" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Campañas</span> }
+                </a>
+              }
               @if (showTemplates()) {
                 <a class="nav-item" routerLink="/plantillas" routerLinkActive="active">
                   <span class="nav-icon"><lucide-icon [img]="LayoutTemplate" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
                   @if (!collapsed()) { <span>Plantillas</span> }
                 </a>
               }
-              <a class="nav-item" routerLink="/ai-agents" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="Bot" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Agentes IA</span> }
-              </a>
-              <a class="nav-item" routerLink="/inbox" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="MessagesSquare" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Conversaciones</span> }
-              </a>
+              @if (showAiAgents()) {
+                <a class="nav-item" routerLink="/ai-agents" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="Bot" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Agentes IA</span> }
+                </a>
+              }
+              @if (showInbox()) {
+                <a class="nav-item" routerLink="/inbox" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="MessagesSquare" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Conversaciones</span> }
+                </a>
+              }
             }
             @if (showVisitas()) {
               <a class="nav-item" routerLink="/visitas" routerLinkActive="active">
@@ -172,18 +201,22 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
                 @if (!collapsed()) { <span>Visitas</span> }
               </a>
             }
-            @if (showUsers()) {
+            @if (showGestionGroup()) {
               @if (!collapsed()) {
                 <span class="nav-label">GESTIÓN</span>
               }
-              <a class="nav-item" routerLink="/users" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="Users" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Usuarios</span> }
-              </a>
-              <a class="nav-item" routerLink="/settings" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="Settings" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Configuración</span> }
-              </a>
+              @if (showUsers()) {
+                <a class="nav-item" routerLink="/users" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="Users" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Usuarios</span> }
+                </a>
+              }
+              @if (showSettings()) {
+                <a class="nav-item" routerLink="/settings" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="Settings" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Configuración</span> }
+                </a>
+              }
             }
           }
         </nav>
@@ -593,6 +626,7 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
 })
 export class ShellComponent {
   private auth = inject(AuthService);
+  private permissions = inject(PermissionsService);
   private router = inject(Router);
 
   // Icons
@@ -626,25 +660,54 @@ export class ShellComponent {
   user = this.auth.currentUser;
 
   constructor() {
+    // El menú no puede pintarse antes de saber qué módulos tiene el usuario.
+    void this.permissions.load();
     this.router.events.pipe(filter(e => e instanceof NavigationStart)).subscribe(() => {
       this.mobileOpen.set(false);
     });
   }
 
   private role = computed(() => this.user()?.role ?? '');
+
+  /**
+   * La visibilidad ya no depende del rol sino de los módulos que la empresa le
+   * haya configurado. `permissionsReady` fuerza el recálculo en cuanto llegan.
+   */
+  private permissionsReady = computed(() => this.permissions.ready());
+  private can(moduleKey: string): boolean {
+    this.permissionsReady();
+    return this.permissions.can(moduleKey);
+  }
+
   isSuperAdmin    = computed(() => this.role() === 'SUPERADMIN');
   isImpulsador    = computed(() => this.role() === 'IMPULSADOR');
-  showDashboard   = computed(() => ['TENANT_ADMIN','MANAGER','HOST','SERVER','KITCHEN','BAR','MARKETING'].includes(this.role()));
-  showLocals      = computed(() => ['TENANT_ADMIN','MANAGER'].includes(this.role()));
-  showMenu        = computed(() => ['TENANT_ADMIN','MANAGER','KITCHEN','BAR'].includes(this.role()));
-  showOrders      = computed(() => ['TENANT_ADMIN','MANAGER','HOST','SERVER','KITCHEN','BAR'].includes(this.role()));
-  showReservations = computed(() => ['TENANT_ADMIN','MANAGER','HOST'].includes(this.role()));
-  showKds          = computed(() => ['TENANT_ADMIN','MANAGER','KITCHEN','BAR'].includes(this.role()));
-  showEvents       = computed(() => ['TENANT_ADMIN','MANAGER','MARKETING'].includes(this.role()));
-  showCustomers    = computed(() => ['TENANT_ADMIN','MANAGER','MARKETING'].includes(this.role()));
-  showVisitas      = computed(() => ['TENANT_ADMIN','MANAGER'].includes(this.role()));
-  showTemplates    = computed(() => ['TENANT_ADMIN','MANAGER'].includes(this.role()));
-  showUsers       = computed(() => this.role() === 'TENANT_ADMIN');
+  showDashboard   = computed(() => this.can('dashboard'));
+  showLocals      = computed(() => this.can('locals'));
+  showMenu        = computed(() => this.can('menu'));
+  showOrders      = computed(() => this.can('orders'));
+  showReservations = computed(() => this.can('reservations'));
+  showKds          = computed(() => this.can('kds'));
+  showEvents       = computed(() => this.can('events'));
+  showCustomers    = computed(() => this.can('customers'));
+  showLists        = computed(() => this.can('lists'));
+  showForms        = computed(() => this.can('forms'));
+  showCampaigns    = computed(() => this.can('campaigns'));
+  showAiAgents     = computed(() => this.can('ai-agents'));
+  showInbox        = computed(() => this.can('inbox'));
+  showVisitas      = computed(() => this.can('visits'));
+  showTemplates    = computed(() => this.can('templates'));
+  showMyGuests     = computed(() => this.can('my-guests'));
+  showImpulsadorPanel = computed(() => this.can('impulsador-panel'));
+  showUsers        = computed(() => this.can('users'));
+  showSettings     = computed(() => this.can('settings'));
+
+  /** La cabecera de un grupo solo aparece si queda algún enlace dentro. */
+  showClientesGroup = computed(() =>
+    this.showCustomers() || this.showLists() || this.showForms() ||
+    this.showCampaigns() || this.showTemplates() || this.showAiAgents() ||
+    this.showInbox(),
+  );
+  showGestionGroup = computed(() => this.showUsers() || this.showSettings());
 
   initials() {
     const u = this.user();

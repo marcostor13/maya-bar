@@ -10,6 +10,8 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { assertLocalAllowed } from '../roles/local-scope';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   assertRole,
@@ -62,13 +64,15 @@ export class ReservationsController {
   // ─── Staff routes ─────────────────────────────────────────────────────────
 
   @Get('reservations')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('reservations'))
   findReservations(
     @Query('localId') localId: string,
     @Query('date') date: string,
     @Query('status') status: string,
     @Request() req: AuthReq,
   ) {
+    // Un usuario con locales asignados solo consulta los suyos.
+    assertLocalAllowed(req.user, localId);
     assertRole(req.user.role, OPERATIONAL_ROLES);
     return this.reservationsService.findReservations(
       req.user.tenantId,
@@ -79,7 +83,7 @@ export class ReservationsController {
   }
 
   @Patch('reservations/:id/status')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('reservations'))
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateReservationStatusDto,
@@ -95,14 +99,16 @@ export class ReservationsController {
   }
 
   @Get('reservations/config')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('reservations'))
   getConfig(@Query('localId') localId: string, @Request() req: AuthReq) {
+    // Un usuario con locales asignados solo consulta los suyos.
+    assertLocalAllowed(req.user, localId);
     assertRole(req.user.role, MANAGE_ROLES);
     return this.reservationsService.getConfig(localId, req.user.tenantId);
   }
 
   @Put('reservations/config')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('reservations'))
   updateConfig(@Body() dto: ReservationConfigDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
     return this.reservationsService.updateConfig(req.user.tenantId, dto);

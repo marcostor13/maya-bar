@@ -10,6 +10,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   assertRole,
@@ -31,7 +32,7 @@ import {
 } from './dto/wa-template.dto';
 
 @Controller('whatsapp-templates')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('templates'))
 export class WhatsAppTemplatesController {
   constructor(private service: WhatsAppTemplatesService) {}
 

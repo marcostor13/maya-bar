@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
+import { RolesService } from '../roles/roles.service';
 import { Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
@@ -75,6 +76,12 @@ describe('UsersService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
+        {
+          provide: RolesService,
+          // Sin roles configurados: se usa la lista del sistema, que es el
+          // comportamiento por defecto de una empresa recién creada.
+          useValue: { assignableKeys: jest.fn().mockResolvedValue([]) },
+        },
         { provide: getModelToken(User.name), useValue: userModel },
       ],
     }).compile();

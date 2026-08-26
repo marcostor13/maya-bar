@@ -10,6 +10,8 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { assertLocalAllowed } from '../roles/local-scope';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   assertRole,
@@ -27,7 +29,7 @@ import {
 } from './dto/menu.dto';
 
 @Controller('menu')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('menu'))
 export class MenuController {
   constructor(private menuService: MenuService) {}
 
@@ -35,6 +37,8 @@ export class MenuController {
 
   @Get('categories')
   getCategories(@Query('localId') localId: string, @Request() req: AuthReq) {
+    // Un usuario con locales asignados solo consulta los suyos.
+    assertLocalAllowed(req.user, localId);
     return this.menuService.findCategories(req.user.tenantId, localId);
   }
 
@@ -74,6 +78,8 @@ export class MenuController {
     @Query('categoryId') categoryId: string,
     @Request() req: AuthReq,
   ) {
+    // Un usuario con locales asignados solo consulta los suyos.
+    assertLocalAllowed(req.user, localId);
     return this.menuService.findItems(req.user.tenantId, localId, categoryId);
   }
 

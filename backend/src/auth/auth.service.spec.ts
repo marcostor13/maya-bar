@@ -43,6 +43,7 @@ describe('AuthService', () => {
 
   const usersService = {
     findOneByEmail: jest.fn(),
+      findOneByEmailAnyStatus: jest.fn(),
     create: jest.fn(),
     changePassword: jest.fn(),
     saveResetCode: jest.fn(),
@@ -74,36 +75,50 @@ describe('AuthService', () => {
   describe('validateUser', () => {
     it('returns the user without password when credentials are correct', async () => {
       const user = makeUserDoc();
-      usersService.findOneByEmail.mockResolvedValue(user);
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(user);
 
       const result = await service.validateUser('user@test.com', PASSWORD);
 
-      expect(usersService.findOneByEmail).toHaveBeenCalledWith('user@test.com');
+      expect(usersService.findOneByEmailAnyStatus).toHaveBeenCalledWith(
+        'user@test.com',
+      );
       expect(result).toBeTruthy();
       expect(result.email).toBe('user@test.com');
       expect(result.password).toBeUndefined();
     });
 
     it('returns null when the password is wrong', async () => {
-      usersService.findOneByEmail.mockResolvedValue(makeUserDoc());
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(makeUserDoc());
 
       const result = await service.validateUser('user@test.com', 'otra-clave');
       expect(result).toBeNull();
     });
 
     it('returns null when the user does not exist', async () => {
-      usersService.findOneByEmail.mockResolvedValue(null);
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(null);
 
       const result = await service.validateUser('nadie@test.com', PASSWORD);
       expect(result).toBeNull();
     });
 
-    it('returns null for inactive users (findOneByEmail filters isActive)', async () => {
-      // UsersService.findOneByEmail consulta { isActive: true }, por lo que un
-      // usuario desactivado llega aquí como null.
-      usersService.findOneByEmail.mockResolvedValue(null);
+    it('explica que la cuenta está desactivada si la contraseña es correcta', async () => {
+      const user = makeUserDoc();
+      (user as unknown as { isActive: boolean }).isActive = false;
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(user);
 
-      const result = await service.validateUser('inactivo@test.com', PASSWORD);
+      await expect(
+        service.validateUser('inactivo@test.com', PASSWORD),
+      ).rejects.toThrow(/desactivada/i);
+    });
+
+    it('no revela la desactivación si la contraseña es incorrecta', async () => {
+      const user = makeUserDoc();
+      (user as unknown as { isActive: boolean }).isActive = false;
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(user);
+
+      // Mismo resultado que un email inexistente: así no se puede averiguar
+      // qué cuentas existen probando contraseñas al azar.
+      const result = await service.validateUser('inactivo@test.com', 'mala');
       expect(result).toBeNull();
     });
   });

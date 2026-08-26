@@ -29,10 +29,23 @@ export class LocalsService {
       .exec();
   }
 
-  async findAllByTenant(tenantId: string): Promise<Local[]> {
-    return this.localModel
-      .find({ tenantId: new Types.ObjectId(tenantId), isActive: true })
-      .exec();
+  /**
+   * Locales visibles para el usuario. `localIds` vacío significa "todos": es
+   * como estaban todos los usuarios antes de que existiera la asignación, y por
+   * eso pasar una lista vacía no restringe nada.
+   */
+  async findAllByTenant(
+    tenantId: string,
+    localIds?: string[],
+  ): Promise<Local[]> {
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+      isActive: true,
+    };
+    const assigned = (localIds ?? []).filter((id) => Types.ObjectId.isValid(id));
+    if (assigned.length)
+      filter._id = { $in: assigned.map((id) => new Types.ObjectId(id)) };
+    return this.localModel.find(filter).exec();
   }
 
   async findById(id: string, tenantId: string): Promise<Local> {

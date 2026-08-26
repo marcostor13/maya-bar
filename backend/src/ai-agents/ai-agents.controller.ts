@@ -10,6 +10,7 @@ import {
   Request,
   BadRequestException,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { AiAgentsService } from './ai-agents.service';
@@ -22,7 +23,7 @@ import {
 } from './dto/ai-agent.dto';
 
 @Controller('ai-agents')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('ai-agents'))
 export class AiAgentsController {
   constructor(private service: AiAgentsService) {}
 

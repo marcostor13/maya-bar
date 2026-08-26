@@ -1,7 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-export type UserRole =
+/**
+ * Roles del sistema. La empresa puede crear los suyos, así que `User.role` es
+ * un `string`: esta unión sirve para escribir código contra los conocidos, no
+ * para limitar lo que se puede guardar.
+ */
+export type SystemUserRole =
   | 'SUPERADMIN'
   | 'TENANT_ADMIN'
   | 'MANAGER'
@@ -11,6 +16,9 @@ export type UserRole =
   | 'BAR'
   | 'MARKETING'
   | 'IMPULSADOR';
+
+/** Alias histórico; se conserva para no tocar los imports existentes. */
+export type UserRole = string;
 
 @Schema({ timestamps: true })
 export class User extends Document {
@@ -24,7 +32,7 @@ export class User extends Document {
   name?: string;
 
   @Prop({ default: 'SERVER' })
-  role: UserRole;
+  role: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Tenant', index: true })
   tenantId?: Types.ObjectId;

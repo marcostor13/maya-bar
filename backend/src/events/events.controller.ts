@@ -10,6 +10,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { assertLocalAllowed } from '../roles/local-scope';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   assertRole,
@@ -57,6 +58,8 @@ export class EventsController {
   @Get('events')
   @UseGuards(JwtAuthGuard)
   findEvents(@Query('localId') localId: string, @Request() req: AuthReq) {
+    // Un usuario con locales asignados solo consulta los suyos.
+    assertLocalAllowed(req.user, localId);
     assertRole(req.user.role, EVENT_ROLES);
     return this.eventsService.findEvents(
       req.user.tenantId,

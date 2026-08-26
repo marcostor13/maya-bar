@@ -11,6 +11,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import type { Request as ExpressRequest } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
@@ -49,7 +50,7 @@ export class FormsController {
   // ─── Gestión interna ──────────────────────────────────────────────────────
 
   @Get('forms')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('forms'))
   findAll(@Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.formsService.findAll(
@@ -60,7 +61,7 @@ export class FormsController {
   }
 
   @Get('forms/:id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('forms'))
   findOne(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.formsService.findOne(
@@ -72,7 +73,7 @@ export class FormsController {
   }
 
   @Get('forms/:id/submissions')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('forms'))
   findSubmissions(
     @Param('id') id: string,
     @Query('limit') limit: string,
@@ -89,7 +90,7 @@ export class FormsController {
   }
 
   @Post('forms')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('forms'))
   create(@Body() dto: CreateFormDto, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.formsService.create(
@@ -101,7 +102,7 @@ export class FormsController {
   }
 
   @Post('forms/:id/regenerate-key')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('forms'))
   regenerateKey(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.formsService.regenerateKey(
@@ -113,7 +114,7 @@ export class FormsController {
   }
 
   @Patch('forms/:id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('forms'))
   update(
     @Param('id') id: string,
     @Body() dto: UpdateFormDto,
@@ -130,7 +131,7 @@ export class FormsController {
   }
 
   @Delete('forms/:id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('forms'))
   delete(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.formsService.delete(

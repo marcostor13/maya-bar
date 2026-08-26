@@ -11,6 +11,8 @@ import {
   Request,
   Headers,
 } from '@nestjs/common';
+import { assertLocalAllowed } from '../roles/local-scope';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   assertRole,
@@ -57,23 +59,27 @@ export class OrdersController {
   // ─── Staff routes (auth required) ─────────────────────────────────────────
 
   @Get('orders')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('orders'))
   findOrders(
     @Query('localId') localId: string,
     @Query('status') status: string,
     @Request() req: AuthReq,
   ) {
+    // Un usuario con locales asignados solo consulta los suyos.
+    assertLocalAllowed(req.user, localId);
     assertRole(req.user.role, OPERATIONAL_ROLES);
     return this.ordersService.findOrders(req.user.tenantId, localId, status);
   }
 
   @Get('orders/tables')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('orders'))
   getLocalTables(
     @Query('localId') localId: string,
     @Request() req: AuthReq,
     @Headers('origin') origin: string,
   ) {
+    // Un usuario con locales asignados solo consulta los suyos.
+    assertLocalAllowed(req.user, localId);
     assertRole(req.user.role, MANAGE_ROLES);
     const baseUrl = origin || 'http://localhost:4200';
     return this.ordersService.getLocalTables(
@@ -84,7 +90,7 @@ export class OrdersController {
   }
 
   @Patch('orders/:id/status')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('orders'))
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,
@@ -99,7 +105,7 @@ export class OrdersController {
   }
 
   @Patch('orders/:id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('orders'))
   modifyOrder(
     @Param('id') id: string,
     @Body() body: { items: OrderLineItem[]; notes?: string },
@@ -115,7 +121,7 @@ export class OrdersController {
   }
 
   @Delete('orders/:id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ModuleGuard('orders'))
   cancelOrder(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
     return this.ordersService.cancelOrder(id, req.user.tenantId);

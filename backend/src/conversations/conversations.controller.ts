@@ -11,6 +11,7 @@ import {
   Request,
   BadRequestException,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { ConversationsService } from './conversations.service';
@@ -21,7 +22,7 @@ import {
 } from './dto/conversation.dto';
 
 @Controller('conversations')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('inbox'))
 export class ConversationsController {
   constructor(private service: ConversationsService) {}
 

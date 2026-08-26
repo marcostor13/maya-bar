@@ -8,13 +8,14 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, VISIT_ROLES, type AuthReq } from '../auth/permissions';
 import { VisitsService } from './visits.service';
 import { CreateVisitDto } from './dto/visit.dto';
 
 @Controller('visits')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('visits'))
 export class VisitsController {
   constructor(private visitsService: VisitsService) {}
 

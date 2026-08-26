@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsEmail,
   IsNotEmpty,
@@ -10,6 +11,12 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
   name!: string;
+
+  /** Locales a los que se limita. Vacío = todos los de la empresa. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  localIds?: string[];
 
   @IsEmail()
   email!: string;
@@ -23,6 +30,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  localIds?: string[];
 
   @IsOptional()
   @IsString()

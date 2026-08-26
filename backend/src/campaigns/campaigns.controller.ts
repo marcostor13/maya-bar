@@ -10,6 +10,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   assertRole,
@@ -21,7 +22,7 @@ import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
 
 @Controller('campaigns')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('campaigns'))
 export class CampaignsController {
   constructor(private campaignsService: CampaignsService) {}
 

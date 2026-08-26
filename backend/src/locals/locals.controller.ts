@@ -9,6 +9,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   assertRole,
@@ -20,14 +21,14 @@ import { LocalsService } from './locals.service';
 import { CreateLocalDto, UpdateLocalDto } from './dto/create-local.dto';
 
 @Controller('locals')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('locals'))
 export class LocalsController {
   constructor(private localsService: LocalsService) {}
 
   @Get()
   findAll(@Request() req: AuthReq) {
     if (req.user.role === 'SUPERADMIN') return this.localsService.findAll();
-    return this.localsService.findAllByTenant(req.user.tenantId);
+    return this.localsService.findAllByTenant(req.user.tenantId, req.user.localIds);
   }
 
   @Get(':id')

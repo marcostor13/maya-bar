@@ -28,6 +28,7 @@ import { SharedModule } from './shared/shared.module';
 import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates.module';
 import { ContactImportModule } from './contact-import/contact-import.module';
 import { FormsModule } from './forms/forms.module';
+import { RolesModule } from './roles/roles.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { FormsModule } from './forms/forms.module';
     AiAgentsModule,
     ConversationsModule,
     FormsModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

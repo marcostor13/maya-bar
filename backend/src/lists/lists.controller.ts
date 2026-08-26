@@ -9,6 +9,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { ListsService } from './lists.service';
@@ -16,7 +17,7 @@ import { CreateListDto, UpdateListDto, AddMembersDto } from './dto/list.dto';
 import { SegmentRule } from './contact-list.schema';
 
 @Controller('lists')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard('lists'))
 export class ListsController {
   constructor(private listsService: ListsService) {}
 

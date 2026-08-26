@@ -1,9 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
+import { ActiveUserCache } from './active-user.cache';
 import { UsersModule } from '../users/users.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -11,7 +12,7 @@ import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
-    UsersModule,
+    forwardRef(() => UsersModule),
     TenantsModule,
     MailModule,
     PassportModule,
@@ -24,7 +25,8 @@ import { MailModule } from '../mail/mail.module';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, ActiveUserCache],
   controllers: [AuthController],
+  exports: [ActiveUserCache],
 })
 export class AuthModule {}
