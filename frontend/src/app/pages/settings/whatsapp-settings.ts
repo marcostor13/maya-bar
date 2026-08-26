@@ -35,32 +35,6 @@ declare const FB: any;
           {{ connectingWa() ? 'Conectando…' : 'Conectar con WhatsApp' }}
         </button>
 
-        <div class="webhook-box">
-          <div class="webhook-box-title">
-            <lucide-icon [img]="Webhook" [size]="14"></lucide-icon>
-            Webhook de Cloud API (Meta → App Dashboard → WhatsApp → Configuración)
-          </div>
-          <div class="webhook-hint">
-            <span>URL de devolución de llamada:</span>
-            <code>{{ waWebhookConfig().url || '(falta PUBLIC_API_URL en el servidor)' }}</code>
-            @if (waWebhookConfig().url) {
-              <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(waWebhookConfig().url!, 'URL del webhook copiada')" title="Copiar URL del webhook">
-                <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
-              </button>
-            }
-          </div>
-          <div class="webhook-hint">
-            <span>Token de verificación:</span>
-            <code>{{ waWebhookConfig().verifyToken || '(define el Verify Token al crear la cuenta)' }}</code>
-            @if (waWebhookConfig().verifyToken) {
-              <button class="btn btn-sm btn-ghost btn-icon" (click)="copy(waWebhookConfig().verifyToken!, 'Verify token copiado')" title="Copiar verify token">
-                <lucide-icon [img]="Copy" [size]="13"></lucide-icon>
-              </button>
-            }
-          </div>
-          <span class="field-hint">Se configura una sola vez en Meta y aplica a todas las cuentas Cloud API; cada cuenta conectada además recibe su URL propia. El token es el "Verify Token" que guardas en la cuenta (Editar → Verify Token).</span>
-        </div>
-
         <div class="field" style="max-width: 260px; margin-bottom: 20px;">
           <label class="label">Límite diario de mensajes</label>
           <input class="input" type="number" [(ngModel)]="dailyLimit" min="1" max="500" placeholder="50"
@@ -321,11 +295,6 @@ declare const FB: any;
     .test-row { display: flex; align-items: center; gap: 8px; }
     .qr-placeholder { width: 220px; height: 220px; border: 2px dashed var(--color-border); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; }
     .qr-image { width: 220px; height: 220px; border-radius: var(--radius-lg); border: 4px solid var(--color-white); box-shadow: var(--shadow-lg); }
-
-    .webhook-box { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 20px; background: var(--color-bg-app); }
-    .webhook-box-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--color-text-main); }
-    .webhook-box .webhook-hint { margin-top: 10px; }
-    .webhook-box code { background: var(--color-white); }
 
     .webhook-hint { margin-top: 14px; font-size: 11px; color: var(--color-text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .webhook-hint code { background: var(--color-bg-app); padding: 3px 8px; border-radius: 6px; font-size: 11px; word-break: break-all; }

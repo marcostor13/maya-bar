@@ -53,6 +53,16 @@ interface Conv {
   status: 'open' | 'closed';
 }
 
+/** Cuenta conectada (WhatsApp o Instagram) por la que entran las conversaciones. */
+interface InboxAccount {
+  _id: string;
+  channel: 'whatsapp' | 'instagram';
+  label: string;
+  detail: string;
+  active: boolean;
+  isDefault: boolean;
+}
+
 type Filter = 'all' | 'unread' | 'auto' | 'manual';
 
 const EMOJIS = [
@@ -87,6 +97,16 @@ const EMOJIS = [
               aria-label="Buscar conversaciones"
             />
           </div>
+          @if (accounts().length > 1) {
+            <select class="select account-select" [ngModel]="accountId()" (ngModelChange)="setAccount($event)" aria-label="Cuenta">
+              <option value="">Todas las cuentas</option>
+              @for (a of accounts(); track a._id) {
+                <option [value]="a._id">
+                  {{ a.channel === 'instagram' ? 'Instagram' : 'WhatsApp' }} · {{ a.label }}{{ a.active ? '' : ' (inactiva)' }}
+                </option>
+              }
+            </select>
+          }
           <div class="filters">
             @for (f of filters; track f.key) {
               <button
@@ -129,6 +149,9 @@ const EMOJIS = [
                     <span class="chat-name">{{ displayName(c) }}</span>
                     <span class="chat-time">{{ shortTime(c.lastMessageAt) }}</span>
                   </div>
+                  @if (accounts().length > 1 && accountName(c)) {
+                    <span class="chat-account">{{ accountName(c) }}</span>
+                  }
                   <div class="chat-item-bottom">
                     <span class="chat-preview">
                       @if (c.lastMessageDirection === 'out') { <span class="you">Tú:</span> }
@@ -175,6 +198,7 @@ const EMOJIS = [
               <span class="thread-name">{{ displayName(selected()!) }}</span>
               <span class="thread-sub">
                 {{ selected()!.channel === 'instagram' ? 'Instagram DM' : '+' + selected()!.contact }}
+                @if (accountName(selected()!)) { <span class="thread-account">· vía {{ accountName(selected()!) }}</span> }
                 @if (typing()) { <em class="typing">· el agente está escribiendo…</em> }
               </span>
             </div>
@@ -430,6 +454,8 @@ const EMOJIS = [
     }
     .search-input { padding-left: 40px; width: 100%; }
 
+    .account-select { width: 100%; }
+
     .filters { display: flex; gap: 6px; flex-wrap: wrap; }
     .chip {
       border: 1px solid var(--color-border);
@@ -493,6 +519,11 @@ const EMOJIS = [
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .chat-time { font-size: 11px; color: var(--color-text-muted); flex-shrink: 0; }
+
+    .chat-account {
+      display: block; font-size: 11px; font-weight: 600; color: var(--color-text-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;
+    }
 
     .chat-item-bottom { display: flex; align-items: center; gap: 8px; }
     .chat-preview {
@@ -866,6 +897,8 @@ export class InboxComponent implements OnInit, OnDestroy {
   ];
 
   conversations = signal<Conv[]>([]);
+  accounts = signal<InboxAccount[]>([]);
+  accountId = signal('');
   messages = signal<Msg[]>([]);
   selectedId = signal<string | null>(null);
   search = signal('');
@@ -926,6 +959,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   });
 
   ngOnInit() {
+    this.loadAccounts();
     this.loadConversations();
     this.connectWs();
     // Red de seguridad por si el websocket se cae.
@@ -943,10 +977,28 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   // ── Datos ──
 
+  loadAccounts() {
+    this.http.get<InboxAccount[]>(`${API}/conversations/accounts`).subscribe({
+      next: list => {
+        this.accounts.set(list);
+        // Si la cuenta seleccionada desapareció, vuelve a "todas".
+        if (this.accountId() && !list.some(a => a._id === this.accountId())) {
+          this.accountId.set('');
+          this.loadConversations(false);
+        }
+      },
+      error: () => this.accounts.set([]),
+    });
+  }
+
   loadConversations(showLoader = true) {
     if (showLoader) this.loadingList.set(true);
+    const params = new URLSearchParams();
     const q = this.search().trim();
-    const url = `${API}/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`;
+    if (q) params.set('q', q);
+    if (this.accountId()) params.set('accountId', this.accountId());
+    const query = params.toString();
+    const url = `${API}/conversations${query ? `?${query}` : ''}`;
     this.http.get<Conv[]>(url).subscribe({
       next: list => { this.conversations.set(list); this.loadingList.set(false); },
       error: () => {
@@ -956,7 +1008,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     });
   }
 
-  reload() { this.loadConversations(); if (this.selectedId()) this.loadMessages(); }
+  reload() { this.loadAccounts(); this.loadConversations(); if (this.selectedId()) this.loadMessages(); }
 
   onSearch(value: string) {
     this.search.set(value);
@@ -965,6 +1017,19 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   setFilter(f: Filter) { this.filter.set(f); }
+
+  /** Cambia la cuenta cuyas conversaciones se listan ('' = todas las conectadas). */
+  setAccount(id: string) {
+    if (this.accountId() === id) return;
+    this.accountId.set(id);
+    this.closeThread();
+    this.loadConversations();
+  }
+
+  /** Etiqueta de la cuenta por la que entra la conversación. */
+  accountName(c: Conv): string {
+    return this.accounts().find(a => a._id === c.accountId)?.label ?? '';
+  }
 
   openConversation(c: Conv) {
     if (this.selectedId() === c._id) return;
@@ -1268,6 +1333,10 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   private upsertConv(conv: Conv) {
+    // El socket es por tenant: llegan los eventos de todas las cuentas conectadas.
+    // Si hay una cuenta seleccionada, ignora los de las demás.
+    const account = this.accountId();
+    if (account && conv.accountId !== account) return;
     this.conversations.update(list => {
       const next = list.some(c => c._id === conv._id)
         ? list.map(c => (c._id === conv._id ? { ...c, ...conv } : c))

@@ -28,6 +28,16 @@ import { ConversationsGateway } from './conversations.gateway';
 const AI_HISTORY_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 50;
 
+/** Cuenta conectada tal como la consume el selector de la bandeja de entrada. */
+export interface InboxAccount {
+  _id: string;
+  channel: ConversationChannel;
+  label: string;
+  detail: string;
+  active: boolean;
+  isDefault: boolean;
+}
+
 /** Turno del historial tal como lo espera AiAgentsService.generateAnswer. */
 interface AiHistoryTurn {
   role: 'user' | 'assistant';
@@ -108,10 +118,40 @@ export class ConversationsService {
   // Consulta (bandeja de entrada)
   // ------------------------------------------------------------------
 
+  /**
+   * Cuentas conectadas del tenant (WhatsApp + Instagram) por las que puede
+   * entrar una conversación. Sirve para el selector de cuenta de la bandeja.
+   */
+  async listAccounts(tenantId: string): Promise<InboxAccount[]> {
+    const [wa, ig] = await Promise.all([
+      this.waAccounts.findAll(tenantId),
+      this.igAccounts.findAll(tenantId),
+    ]);
+    return [
+      ...wa.map((a) => ({
+        _id: String(a._id),
+        channel: 'whatsapp' as const,
+        label: a.label,
+        detail: a.phoneNumber || (a.provider === 'waha' ? 'WAHA' : 'Cloud API'),
+        active: a.active,
+        isDefault: !!a.isDefault,
+      })),
+      ...ig.map((a) => ({
+        _id: String(a._id),
+        channel: 'instagram' as const,
+        label: a.label,
+        detail: a.username ? `@${a.username}` : 'Instagram DM',
+        active: a.active,
+        isDefault: false,
+      })),
+    ];
+  }
+
   async listConversations(
     tenantId: string,
     filters: {
       channel?: string;
+      accountId?: string;
       status?: string;
       q?: string;
       unread?: boolean;
@@ -121,6 +161,8 @@ export class ConversationsService {
       tenantId: new Types.ObjectId(tenantId),
     };
     if (filters.channel) query.channel = filters.channel as ConversationChannel;
+    if (filters.accountId && Types.ObjectId.isValid(filters.accountId))
+      query.accountId = new Types.ObjectId(filters.accountId);
     if (filters.status) query.status = filters.status;
     if (filters.unread) query.unreadCount = { $gt: 0 };
     if (filters.q) {

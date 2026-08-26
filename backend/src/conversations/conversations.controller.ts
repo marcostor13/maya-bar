@@ -29,6 +29,7 @@ export class ConversationsController {
   list(
     @Request() req: AuthReq,
     @Query('channel') channel?: string,
+    @Query('accountId') accountId?: string,
     @Query('status') status?: string,
     @Query('q') q?: string,
     @Query('unread') unread?: string,
@@ -36,10 +37,18 @@ export class ConversationsController {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.listConversations(req.user.tenantId, {
       channel,
+      accountId,
       status,
       q,
       unread: unread === 'true',
     });
+  }
+
+  /** Cuentas conectadas (WhatsApp + Instagram) para el selector de la bandeja. */
+  @Get('accounts')
+  accounts(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.listAccounts(req.user.tenantId);
   }
 
   @Get('unread-count')
