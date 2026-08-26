@@ -5,9 +5,10 @@ export class CreateCustomerDto {
   @IsNotEmpty()
   name: string;
 
+  /** Opcional: un contacto puede tener solo teléfono. */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  email: string;
+  email?: string;
 
   @IsOptional()
   @IsString()

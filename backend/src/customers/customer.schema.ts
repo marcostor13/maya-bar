@@ -9,10 +9,14 @@ export class Customer extends Document {
   @Prop({ required: true })
   name: string;
 
-  @Prop({ required: true, lowercase: true, trim: true })
-  email: string;
+  /**
+   * Opcional: muchas listas importadas solo traen teléfono. La unicidad se
+   * resuelve con índices parciales (ver más abajo).
+   */
+  @Prop({ lowercase: true, trim: true })
+  email?: string;
 
-  @Prop()
+  @Prop({ trim: true })
   phone?: string;
 
   @Prop({ type: [String], default: [] })
@@ -24,8 +28,19 @@ export class Customer extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   createdBy?: Types.ObjectId;
 
-  @Prop({ enum: ['reservation', 'event', 'manual'], default: 'manual' })
+  @Prop({
+    enum: ['reservation', 'event', 'manual', 'import', 'mongodb'],
+    default: 'manual',
+  })
   source: string;
+
+  /** Fuente de importación de la que vino el contacto, si aplica. */
+  @Prop({ type: Types.ObjectId, ref: 'ContactSource', index: true })
+  sourceId?: Types.ObjectId;
+
+  /** Campos del origen que no encajan en el modelo, conservados tal cual. */
+  @Prop({ type: Object, default: {} })
+  customFields?: Record<string, unknown>;
 
   @Prop({ default: 0 })
   totalReservations: number;
@@ -38,5 +53,25 @@ export class Customer extends Document {
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);
-// Unique per (email, tenant, owner) — impulsadores have their own contact pools
-CustomerSchema.index({ email: 1, tenantId: 1, createdBy: 1 }, { unique: true });
+
+// Unicidad por (email, tenant, dueño) — los impulsadores tienen su propia lista.
+// Es parcial: los contactos sin email (importados solo con teléfono) no chocan
+// entre sí, cosa que un índice único normal sí haría al tratar null como valor.
+CustomerSchema.index(
+  { email: 1, tenantId: 1, createdBy: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { email: { $type: 'string' } },
+    name: 'email_tenant_owner_unique',
+  },
+);
+
+// Misma idea para el teléfono, que es la clave real en WhatsApp.
+CustomerSchema.index(
+  { phone: 1, tenantId: 1, createdBy: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { phone: { $type: 'string' } },
+    name: 'phone_tenant_owner_unique',
+  },
+);

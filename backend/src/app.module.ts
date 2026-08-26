@@ -26,12 +26,14 @@ import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { SharedModule } from './shared/shared.module';
 import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates.module';
+import { ContactImportModule } from './contact-import/contact-import.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     SharedModule,
     WhatsAppTemplatesModule,
+    ContactImportModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

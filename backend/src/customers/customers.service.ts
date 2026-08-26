@@ -1,5 +1,7 @@
 import {
   Injectable,
+  Logger,
+  OnModuleInit,
   NotFoundException,
   ForbiddenException,
   ConflictException,
@@ -13,13 +15,43 @@ import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { isOwnerScoped } from '../auth/permissions';
 
 @Injectable()
-export class CustomersService {
+export class CustomersService implements OnModuleInit {
+  private readonly logger = new Logger(CustomersService.name);
+
   constructor(
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
     @InjectModel(Reservation.name) private reservationModel: Model<Reservation>,
     @InjectModel(EventRegistration.name)
     private eventRegModel: Model<EventRegistration>,
   ) {}
+
+  /**
+   * El índice único de email pasó a ser parcial para admitir contactos sin
+   * email (importados solo con teléfono). Mongo no reemplaza un índice con el
+   * mismo patrón de claves y distintas opciones, así que hay que soltar el
+   * viejo antes de sincronizar.
+   */
+  async onModuleInit() {
+    try {
+      const existing = await this.customerModel.collection.indexes();
+      for (const index of existing) {
+        const isEmailKey =
+          JSON.stringify(index.key) ===
+          JSON.stringify({ email: 1, tenantId: 1, createdBy: 1 });
+        if (isEmailKey && !index.partialFilterExpression) {
+          await this.customerModel.collection.dropIndex(index.name!);
+          this.logger.log(`Índice ${index.name} reemplazado por uno parcial`);
+        }
+      }
+      await this.customerModel.syncIndexes();
+    } catch (err) {
+      // Duplicados previos de teléfono impiden crear el índice único; no es
+      // motivo para tumbar el arranque, pero hay que verlo en los logs.
+      this.logger.warn(
+        `No se pudieron sincronizar los índices de contactos: ${String(err)}`,
+      );
+    }
+  }
 
   async findAll(
     tenantId: string,
@@ -49,7 +81,7 @@ export class CustomersService {
     try {
       const customer = new this.customerModel({
         ...dto,
-        email: dto.email.toLowerCase().trim(),
+        email: dto.email?.toLowerCase().trim(),
         tenantId: new Types.ObjectId(tenantId),
         tags: dto.tags ?? [],
         source: 'manual',
@@ -61,7 +93,9 @@ export class CustomersService {
     } catch (err: unknown) {
       const mongoErr = err as { code?: number };
       if (mongoErr.code === 11000)
-        throw new ConflictException('Ya existe un contacto con ese email');
+        throw new ConflictException(
+          'Ya existe un contacto con ese email o teléfono',
+        );
       throw err;
     }
   }
@@ -185,7 +219,7 @@ export class CustomersService {
       .map((c) =>
         [
           c.name,
-          c.email,
+          c.email ?? '',
           c.phone ?? '',
           c.tags.join(';'),
           c.source,

@@ -193,10 +193,12 @@ export class CampaignsService implements OnModuleInit {
     await campaign.save();
 
     if (campaign.type === 'email') {
+      // Desde que se importan contactos, un contacto puede tener solo teléfono.
+      const withEmail = customers.filter((c) => !!c.email);
       const results = await Promise.allSettled(
-        customers.map((c) =>
+        withEmail.map((c) =>
           this.mail.sendCampaign({
-            to: c.email,
+            to: c.email as string,
             name: c.name,
             subject: campaign.subject ?? campaign.name,
             body: campaign.body.replace(/\{nombre\}/gi, c.name),
@@ -209,10 +211,15 @@ export class CampaignsService implements OnModuleInit {
         ),
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
+      const withoutEmail = customers.length - withEmail.length;
+      campaign.recipientCount = withEmail.length;
       campaign.status = 'sent';
       campaign.sentAt = new Date();
-      if (failed > 0)
-        campaign.errorMessage = `${failed} email(s) no se pudieron enviar`;
+      const problems = [
+        failed > 0 ? `${failed} email(s) no se pudieron enviar` : '',
+        withoutEmail > 0 ? `${withoutEmail} contacto(s) sin email` : '',
+      ].filter(Boolean);
+      if (problems.length) campaign.errorMessage = problems.join('; ');
     } else if (campaign.waProvider === 'cloudapi') {
       // Cloud API: parallel, no daily limit
       const withPhone = customers.filter(

@@ -11,6 +11,7 @@ import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { AuthService } from '../../auth/auth.service';
+import { ContactImportComponent } from './contact-import/contact-import';
 import {
   LucideAngularModule,
   Users,
@@ -20,6 +21,7 @@ import {
   Search,
   RefreshCw,
   Download,
+  Upload,
   X,
   Tag,
   Mail,
@@ -67,7 +69,7 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
 @Component({
   selector: 'app-customers',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule],
+  imports: [ReactiveFormsModule, LucideAngularModule, ContactImportComponent],
   template: `
     <div class="page animate-fade-in">
 
@@ -81,6 +83,10 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
           <button class="btn btn-secondary" (click)="sync()" [disabled]="syncing()">
             <lucide-icon [img]="RefreshCw" [size]="15" [class.spin]="syncing()"></lucide-icon>
             {{ syncing() ? 'Sincronizando...' : 'Sincronizar' }}
+          </button>
+          <button class="btn btn-secondary" (click)="importOpen.set(true)" title="Importar contactos">
+            <lucide-icon [img]="Upload" [size]="15"></lucide-icon>
+            Importar
           </button>
           <button class="btn btn-secondary" (click)="exportCsv()" title="Exportar CSV">
             <lucide-icon [img]="Download" [size]="15"></lucide-icon>
@@ -388,6 +394,11 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
         </div>
       </div>
     }
+
+    <!-- ── Importador (Excel/CSV y MongoDB) ── -->
+    @if (importOpen()) {
+      <app-contact-import (closed)="onImportClosed($event)" />
+    }
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
@@ -578,7 +589,7 @@ export class CustomersComponent implements OnInit {
 
   readonly Users = Users; readonly Plus = Plus; readonly Pencil = Pencil;
   readonly Trash2 = Trash2; readonly Search = Search; readonly RefreshCw = RefreshCw;
-  readonly Download = Download; readonly X = X; readonly Tag = Tag;
+  readonly Download = Download; readonly Upload = Upload; readonly X = X; readonly Tag = Tag;
   readonly Mail = Mail; readonly Phone = Phone; readonly Calendar = Calendar;
   readonly ContactRound = ContactRound; readonly List = List;
   readonly UserPlus = UserPlus; readonly CheckSquare = CheckSquare;
@@ -589,6 +600,7 @@ export class CustomersComponent implements OnInit {
   customers       = signal<Customer[]>([]);
   loading         = signal(false);
   syncing         = signal(false);
+  importOpen      = signal(false);
   searchQuery     = signal('');
   selectedTag     = signal('');
   drawerOpen      = signal(false);
@@ -765,6 +777,12 @@ export class CustomersComponent implements OnInit {
       next: () => { this.toast.success('Contacto eliminado'); this.loadCustomers(); },
       error: err => this.toast.error((err.error as { message?: string })?.message || 'Error'),
     });
+  }
+
+  /** El importador avisa si hubo cambios para no recargar de balde. */
+  onImportClosed(changed: boolean) {
+    this.importOpen.set(false);
+    if (changed) this.loadCustomers();
   }
 
   sync() {
