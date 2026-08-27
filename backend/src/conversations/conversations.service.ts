@@ -36,6 +36,9 @@ export interface InboxAccount {
   detail: string;
   active: boolean;
   isDefault: boolean;
+  /** Conversaciones de esta cuenta, para que el selector sea informativo. */
+  total: number;
+  unread: number;
 }
 
 /** Turno del historial tal como lo espera AiAgentsService.generateAnswer. */
@@ -123,10 +126,15 @@ export class ConversationsService {
    * entrar una conversación. Sirve para el selector de cuenta de la bandeja.
    */
   async listAccounts(tenantId: string): Promise<InboxAccount[]> {
-    const [wa, ig] = await Promise.all([
+    const [wa, ig, counts] = await Promise.all([
       this.waAccounts.findAll(tenantId),
       this.igAccounts.findAll(tenantId),
+      this.countsByAccount(tenantId),
     ]);
+
+    const withCounts = (id: string) =>
+      counts[id] ?? { total: 0, unread: 0 };
+
     return [
       ...wa.map((a) => ({
         _id: String(a._id),
@@ -135,6 +143,7 @@ export class ConversationsService {
         detail: a.phoneNumber || (a.provider === 'waha' ? 'WAHA' : 'Cloud API'),
         active: a.active,
         isDefault: !!a.isDefault,
+        ...withCounts(String(a._id)),
       })),
       ...ig.map((a) => ({
         _id: String(a._id),
@@ -143,8 +152,37 @@ export class ConversationsService {
         detail: a.username ? `@${a.username}` : 'Instagram DM',
         active: a.active,
         isDefault: false,
+        ...withCounts(String(a._id)),
       })),
     ];
+  }
+
+  /**
+   * Cuántas conversaciones y cuántas sin leer tiene cada cuenta. Una sola
+   * agregación en vez de una consulta por cuenta.
+   */
+  private async countsByAccount(
+    tenantId: string,
+  ): Promise<Record<string, { total: number; unread: number }>> {
+    const rows = await this.convModel.aggregate<{
+      _id: Types.ObjectId;
+      total: number;
+      unread: number;
+    }>([
+      { $match: { tenantId: new Types.ObjectId(tenantId) } },
+      {
+        $group: {
+          _id: '$accountId',
+          total: { $sum: 1 },
+          unread: {
+            $sum: { $cond: [{ $gt: ['$unreadCount', 0] }, 1, 0] },
+          },
+        },
+      },
+    ]);
+    return Object.fromEntries(
+      rows.map((r) => [String(r._id), { total: r.total, unread: r.unread }]),
+    );
   }
 
   async listConversations(

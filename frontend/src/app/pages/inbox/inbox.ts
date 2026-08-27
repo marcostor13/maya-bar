@@ -61,6 +61,9 @@ interface InboxAccount {
   detail: string;
   active: boolean;
   isDefault: boolean;
+  /** Conversaciones de esta cuenta, para que el selector sea informativo. */
+  total: number;
+  unread: number;
 }
 
 type Filter = 'all' | 'unread' | 'auto' | 'manual';
@@ -97,13 +100,43 @@ const EMOJIS = [
               aria-label="Buscar conversaciones"
             />
           </div>
-          @if (accounts().length > 1) {
-            <select class="select account-select" [ngModel]="accountId()" (ngModelChange)="setAccount($event)" aria-label="Cuenta">
-              <option value="">Todas las cuentas</option>
-              @for (a of accounts(); track a._id) {
-                <option [value]="a._id">
-                  {{ a.channel === 'instagram' ? 'Instagram' : 'WhatsApp' }} · {{ a.label }}{{ a.active ? '' : ' (inactiva)' }}
-                </option>
+          @if (accounts().length > 0) {
+            @if (hasBothChannels()) {
+              <div class="channel-tabs" role="group" aria-label="Canal">
+                @for (c of channelTabs(); track c.key) {
+                  <button
+                    class="channel-tab"
+                    [class.active]="channel() === c.key"
+                    (click)="setChannel(c.key)"
+                    [title]="c.total + ' conversación(es)'"
+                  >
+                    {{ c.label }}
+                    @if (c.unread > 0) {
+                      <span class="tab-badge">{{ c.unread }}</span>
+                    }
+                  </button>
+                }
+              </div>
+            }
+
+            <select
+              class="select account-select"
+              [ngModel]="accountId()"
+              (ngModelChange)="setAccount($event)"
+              aria-label="Cuenta"
+            >
+              <option value="">
+                Todas las cuentas{{ channelLabel() }} ({{ totalForChannel() }})
+              </option>
+              @for (g of accountGroups(); track g.channel) {
+                <optgroup [label]="g.label">
+                  @for (a of g.accounts; track a._id) {
+                    <option [value]="a._id">
+                      {{ a.label }}{{ a.detail ? ' · ' + a.detail : '' }}
+                      ({{ a.total }}{{ a.unread ? ', ' + a.unread + ' sin leer' : '' }}){{ a.active ? '' : ' — inactiva' }}
+                    </option>
+                  }
+                </optgroup>
               }
             </select>
           }
@@ -457,6 +490,19 @@ const EMOJIS = [
     .account-select { width: 100%; }
 
     .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .channel-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-pill);
+      background: var(--color-bg-app); border: 1px solid var(--color-border); }
+    .channel-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center;
+      gap: 5px; padding: 6px 12px; border: none; background: none; cursor: pointer;
+      border-radius: var(--radius-pill); font-size: 12.5px; font-weight: 600;
+      color: var(--color-text-muted); transition: all .18s; white-space: nowrap; }
+    .channel-tab:hover { color: var(--color-text-main); }
+    .channel-tab.active { background: #fff; color: var(--color-brand);
+      box-shadow: var(--shadow-sm); }
+    .tab-badge { background: var(--color-brand); color: #fff; border-radius: var(--radius-pill);
+      font-size: 10px; font-weight: 700; padding: 1px 6px; min-width: 16px; }
+    .account-select { width: 100%; }
     .chip {
       border: 1px solid var(--color-border);
       background: var(--color-white);
@@ -899,6 +945,59 @@ export class InboxComponent implements OnInit, OnDestroy {
   conversations = signal<Conv[]>([]);
   accounts = signal<InboxAccount[]>([]);
   accountId = signal('');
+  /** '' = todos los canales. Filtra el selector y la propia consulta. */
+  channel = signal<'' | 'whatsapp' | 'instagram'>('');
+
+  hasBothChannels = computed(() => {
+    const ch = new Set(this.accounts().map(a => a.channel));
+    return ch.has('whatsapp') && ch.has('instagram');
+  });
+
+  /** Cuentas del canal elegido; con '' se devuelven todas. */
+  private accountsInChannel = computed(() => {
+    const ch = this.channel();
+    return ch ? this.accounts().filter(a => a.channel === ch) : this.accounts();
+  });
+
+  /** Agrupadas por canal para los `optgroup` del selector. */
+  accountGroups = computed(() => {
+    const groups: { channel: string; label: string; accounts: InboxAccount[] }[] = [];
+    for (const ch of ['whatsapp', 'instagram'] as const) {
+      const list = this.accountsInChannel().filter(a => a.channel === ch);
+      if (list.length) {
+        groups.push({
+          channel: ch,
+          label: ch === 'whatsapp' ? 'WhatsApp' : 'Instagram',
+          accounts: list,
+        });
+      }
+    }
+    return groups;
+  });
+
+  channelTabs = computed(() => {
+    const sum = (list: InboxAccount[], k: 'total' | 'unread') =>
+      list.reduce((n, a) => n + (a[k] ?? 0), 0);
+    const all = this.accounts();
+    const wa = all.filter(a => a.channel === 'whatsapp');
+    const ig = all.filter(a => a.channel === 'instagram');
+    return [
+      { key: '' as const, label: 'Todo', total: sum(all, 'total'), unread: sum(all, 'unread') },
+      { key: 'whatsapp' as const, label: 'WhatsApp', total: sum(wa, 'total'), unread: sum(wa, 'unread') },
+      { key: 'instagram' as const, label: 'Instagram', total: sum(ig, 'total'), unread: sum(ig, 'unread') },
+    ];
+  });
+
+  channelLabel = computed(() => {
+    const ch = this.channel();
+    if (ch === 'whatsapp') return ' de WhatsApp';
+    if (ch === 'instagram') return ' de Instagram';
+    return '';
+  });
+
+  totalForChannel = computed(() =>
+    this.accountsInChannel().reduce((n, a) => n + (a.total ?? 0), 0),
+  );
   messages = signal<Msg[]>([]);
   selectedId = signal<string | null>(null);
   search = signal('');
@@ -997,6 +1096,8 @@ export class InboxComponent implements OnInit, OnDestroy {
     const q = this.search().trim();
     if (q) params.set('q', q);
     if (this.accountId()) params.set('accountId', this.accountId());
+    // Con una cuenta concreta el canal sobra: el accountId ya lo determina.
+    else if (this.channel()) params.set('channel', this.channel());
     const query = params.toString();
     const url = `${API}/conversations${query ? `?${query}` : ''}`;
     this.http.get<Conv[]>(url).subscribe({
@@ -1017,6 +1118,16 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   setFilter(f: Filter) { this.filter.set(f); }
+
+  /** Cambia el canal; si la cuenta elegida no pertenece a él, se vuelve a "todas". */
+  setChannel(ch: '' | 'whatsapp' | 'instagram') {
+    if (this.channel() === ch) return;
+    this.channel.set(ch);
+    const current = this.accounts().find(a => a._id === this.accountId());
+    if (current && ch && current.channel !== ch) this.accountId.set('');
+    this.closeThread();
+    this.loadConversations();
+  }
 
   /** Cambia la cuenta cuyas conversaciones se listan ('' = todas las conectadas). */
   setAccount(id: string) {
