@@ -3,7 +3,7 @@ import { NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } f
 import { filter } from 'rxjs/operators';
 import { AuthService } from '../../auth/auth.service';
 import { PermissionsService } from '../../auth/permissions.service';
-import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed, ClipboardList, Users, LogOut, ChevronLeft, ChevronRight, Calendar, ChefHat, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate, FileText } from 'lucide-angular';
+import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate, FileText } from 'lucide-angular';
 
 @Component({
   selector: 'app-shell',
@@ -116,30 +116,6 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, UtensilsCrossed
               <a class="nav-item" routerLink="/locals" routerLinkActive="active">
                 <span class="nav-icon"><lucide-icon [img]="Store" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
                 @if (!collapsed()) { <span>Mis Locales</span> }
-              </a>
-            }
-            @if (showMenu()) {
-              <a class="nav-item" routerLink="/menu" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="UtensilsCrossed" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Menú</span> }
-              </a>
-            }
-            @if (showReservations()) {
-              <a class="nav-item" routerLink="/reservations" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="Calendar" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Reservas</span> }
-              </a>
-            }
-            @if (showOrders()) {
-              <a class="nav-item" routerLink="/orders" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="ClipboardList" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>Pedidos</span> }
-              </a>
-            }
-            @if (showKds()) {
-              <a class="nav-item" routerLink="/kds" routerLinkActive="active">
-                <span class="nav-icon"><lucide-icon [img]="ChefHat" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
-                @if (!collapsed()) { <span>KDS</span> }
               </a>
             }
             @if (showEvents()) {
@@ -633,14 +609,10 @@ export class ShellComponent {
   readonly Building2 = Building2;
   readonly LayoutDashboard = LayoutDashboard;
   readonly Store = Store;
-  readonly UtensilsCrossed = UtensilsCrossed;
-  readonly ClipboardList = ClipboardList;
   readonly Users = Users;
   readonly LogOut = LogOut;
   readonly ChevronLeft = ChevronLeft;
   readonly ChevronRight = ChevronRight;
-  readonly Calendar = Calendar;
-  readonly ChefHat = ChefHat;
   readonly Zap = Zap;
   readonly ContactRound = ContactRound;
   readonly Megaphone = Megaphone;
@@ -683,10 +655,6 @@ export class ShellComponent {
   isImpulsador    = computed(() => this.role() === 'IMPULSADOR');
   showDashboard   = computed(() => this.can('dashboard'));
   showLocals      = computed(() => this.can('locals'));
-  showMenu        = computed(() => this.can('menu'));
-  showOrders      = computed(() => this.can('orders'));
-  showReservations = computed(() => this.can('reservations'));
-  showKds          = computed(() => this.can('kds'));
   showEvents       = computed(() => this.can('events'));
   showCustomers    = computed(() => this.can('customers'));
   showLists        = computed(() => this.can('lists'));

@@ -5,31 +5,36 @@ import {
   type LucideIconData,
   ArrowRight,
   Bot,
-  CalendarCheck,
+  Building2,
   Check,
-  ChefHat,
-  Coffee,
   ContactRound,
   FileText,
   Gauge,
+  GraduationCap,
+  HeartPulse,
+  LayoutTemplate,
+  List,
   MapPin,
-  Martini,
   Megaphone,
   Menu,
   MessageCircle,
   MessagesSquare,
-  QrCode,
   ShieldCheck,
   Sparkles,
   Store,
   Ticket,
-  UtensilsCrossed,
+  Upload,
   Users,
   X,
-  Zap,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { SeoService } from '../../shared/seo';
+import {
+  ArtCampaignComponent,
+  ArtFunnelComponent,
+  ArtInboxComponent,
+} from './landing-art';
+import { RevealDirective } from './reveal.directive';
 import {
   CAPABILITY_GROUPS,
   DEFINITION,
@@ -41,21 +46,26 @@ import {
   STEPS,
 } from './landing.data';
 
-const TITLE =
-  'Maya — Software todo-en-uno para restaurantes, bares y discotecas';
+const TITLE = 'Maya CRM — CRM de ventas y marketing con WhatsApp e IA';
 const DESCRIPTION =
-  'Carta QR, pedidos desde la mesa, pantalla de cocina, reservas, eventos, CRM y agentes de IA que responden por WhatsApp e Instagram. Una sola plataforma para tu local. Escríbenos por WhatsApp.';
+  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Escríbenos por WhatsApp.';
 
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterLink, LucideAngularModule],
+  imports: [
+    RouterLink,
+    LucideAngularModule,
+    RevealDirective,
+    ArtInboxComponent,
+    ArtFunnelComponent,
+    ArtCampaignComponent,
+  ],
   template: `
     <header class="lp-header" [class.open]="menuOpen()">
       <div class="lp-wrap header-inner">
-        <a class="brand" routerLink="/" aria-label="Maya, inicio">
-          <img src="/logo.png" alt="Maya" width="36" height="36" />
-          <span>Maya</span>
+        <a class="brand" routerLink="/" aria-label="Maya CRM, inicio">
+          <img src="/logo.png" alt="Maya CRM" width="132" height="40" />
         </a>
 
         <nav class="header-nav" aria-label="Secciones">
@@ -97,43 +107,49 @@ const DESCRIPTION =
     <main id="contenido">
       <!-- HERO -->
       <section class="hero">
-        <div class="lp-wrap hero-inner">
-          <p class="eyebrow">
-            <lucide-icon [img]="Sparkles" [size]="14" />
-            Operación, clientes e inteligencia artificial en un solo lugar
-          </p>
-          <h1>
-            Llena tu local, saca los pedidos a tiempo y haz que tus clientes
-            <em>vuelvan</em>
-          </h1>
-          <p class="hero-sub">
-            Maya reúne carta con QR, pedidos desde la mesa, pantalla de cocina, reservas,
-            eventos, CRM y agentes de IA que atienden tu WhatsApp e Instagram.
-            Sin instalar nada y funcionando esta misma semana.
-          </p>
-          <div class="hero-cta">
-            <a class="btn btn-primary btn-lg" [href]="waDemo()" target="_blank" rel="noopener">
-              <lucide-icon [img]="MessageCircle" [size]="18" />
-              Habla con nosotros por WhatsApp
-            </a>
-            <a class="btn btn-secondary btn-lg" href="#plataforma">
-              Ver todo lo que incluye
-              <lucide-icon [img]="ArrowRight" [size]="18" />
-            </a>
+        <div class="lp-wrap hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">
+              <lucide-icon [img]="Sparkles" [size]="14" />
+              CRM de ventas y marketing con WhatsApp e IA
+            </p>
+            <h1>
+              Capta más contactos, respóndeles en segundos y véndeles
+              <em>otra vez</em>
+            </h1>
+            <p class="hero-sub">
+              Maya CRM reúne tus formularios, tus eventos, tu base de clientes, tu WhatsApp y
+              tus campañas en una sola plataforma — con agentes de inteligencia artificial que
+              contestan por ti las 24 horas.
+            </p>
+            <div class="hero-cta">
+              <a class="btn btn-primary btn-lg" [href]="waDemo()" target="_blank" rel="noopener">
+                <lucide-icon [img]="MessageCircle" [size]="18" />
+                Habla con nosotros por WhatsApp
+              </a>
+              <a class="btn btn-secondary btn-lg" href="#plataforma">
+                Ver todo lo que incluye
+                <lucide-icon [img]="ArrowRight" [size]="18" />
+              </a>
+            </div>
+            <ul class="hero-trust">
+              <li><lucide-icon [img]="Check" [size]="15" /> Para cualquier sector</li>
+              <li><lucide-icon [img]="Check" [size]="15" /> Funciona en el navegador</li>
+              <li><lucide-icon [img]="Check" [size]="15" /> Hecho para LATAM y para WhatsApp</li>
+            </ul>
           </div>
-          <ul class="hero-trust">
-            <li><lucide-icon [img]="Check" [size]="15" /> Multi-local desde el primer día</li>
-            <li><lucide-icon [img]="Check" [size]="15" /> Funciona en el navegador</li>
-            <li><lucide-icon [img]="Check" [size]="15" /> Hecha para LATAM y para WhatsApp</li>
-          </ul>
+
+          <div class="hero-art" appReveal>
+            <app-art-inbox />
+          </div>
         </div>
       </section>
 
       <!-- DEFINICIÓN (respuesta directa, para buscadores y asistentes) -->
       <section class="definition" aria-labelledby="que-es">
         <div class="lp-wrap">
-          <div class="definition-card">
-            <h2 id="que-es">¿Qué es Maya?</h2>
+          <div class="definition-card" appReveal>
+            <h2 id="que-es">¿Qué es Maya CRM?</h2>
             <p>{{ definition }}</p>
           </div>
         </div>
@@ -142,17 +158,17 @@ const DESCRIPTION =
       <!-- PROBLEMA -->
       <section class="band" aria-labelledby="problema">
         <div class="lp-wrap">
-          <p class="eyebrow center">El costo de seguir igual</p>
-          <h2 id="problema" class="section-title center">
-            Tu local ya funciona. Lo que no funciona son las herramientas sueltas.
+          <p class="eyebrow center" appReveal>El costo de seguir igual</p>
+          <h2 id="problema" class="section-title center" appReveal>
+            Tu producto ya se vende. Lo que no funciona son las herramientas sueltas.
           </h2>
-          <p class="section-intro center">
-            Cada sistema aparte es dinero que sale y datos que se pierden. Esto es lo que
+          <p class="section-intro center" appReveal>
+            Cada sistema aparte es dinero que sale y leads que se pierden. Esto es lo que
             escuchamos todas las semanas.
           </p>
           <div class="grid-3">
-            @for (pain of pains; track pain.title) {
-              <article class="pain-card">
+            @for (pain of pains; track pain.title; let i = $index) {
+              <article class="pain-card" [appReveal]="(i % 3) * 90">
                 <h3>{{ pain.title }}</h3>
                 <p>{{ pain.body }}</p>
               </article>
@@ -163,27 +179,23 @@ const DESCRIPTION =
 
       <!-- SOLUCIÓN / MECANISMO -->
       <section class="band alt" aria-labelledby="solucion">
-        <div class="lp-wrap solution">
-          <p class="eyebrow center">La diferencia</p>
-          <h2 id="solucion" class="section-title center">
-            Una sola base de datos para tu carta, tus mesas, tus clientes y tus conversaciones
+        <div class="lp-wrap">
+          <p class="eyebrow center" appReveal>La diferencia</p>
+          <h2 id="solucion" class="section-title center" appReveal>
+            De desconocido a cliente sin salir de Maya CRM
           </h2>
-          <p class="section-intro center">
-            Quien pidió por QR el viernes es la misma persona que reservó el sábado y la que
-            recibe tu campaña el jueves. No hay integraciones que mantener ni exportaciones
-            que cuadrar: es el mismo sistema de principio a fin.
+          <p class="section-intro center" appReveal>
+            Quien llenó tu formulario el lunes es la misma persona que te escribió por Instagram
+            el martes y la que recibe tu campaña el jueves. No hay integraciones que mantener ni
+            exportaciones que cuadrar: es el mismo sistema de principio a fin.
           </p>
-          <div class="flow">
-            <span>Escanea el QR</span>
-            <lucide-icon [img]="ArrowRight" [size]="16" />
-            <span>Pide desde la mesa</span>
-            <lucide-icon [img]="ArrowRight" [size]="16" />
-            <span>Cocina y barra lo ven</span>
-            <lucide-icon [img]="ArrowRight" [size]="16" />
-            <span>Entra a tu CRM</span>
-            <lucide-icon [img]="ArrowRight" [size]="16" />
-            <span>Vuelve con tu campaña</span>
-          </div>
+          <figure class="art-wide" appReveal>
+            <app-art-funnel />
+            <figcaption>
+              Formularios, eventos, promotores y redes alimentan una sola base de datos; de ahí
+              salen la conversación y la campaña.
+            </figcaption>
+          </figure>
         </div>
       </section>
 
@@ -192,12 +204,22 @@ const DESCRIPTION =
         @for (group of groups; track group.id) {
           <section class="band" [id]="group.id" [attr.aria-labelledby]="group.id + '-t'">
             <div class="lp-wrap">
-              <p class="eyebrow">{{ group.eyebrow }}</p>
-              <h2 class="section-title" [id]="group.id + '-t'">{{ group.title }}</h2>
-              <p class="section-intro">{{ group.intro }}</p>
+              <p class="eyebrow" appReveal>{{ group.eyebrow }}</p>
+              <h2 class="section-title" [id]="group.id + '-t'" appReveal>{{ group.title }}</h2>
+              <p class="section-intro" appReveal>{{ group.intro }}</p>
+
+              @if (group.id === 'base') {
+                <figure class="art-inline" appReveal>
+                  <app-art-campaign />
+                  <figcaption>
+                    Eliges el segmento, escribes una vez y sale por WhatsApp o por email.
+                  </figcaption>
+                </figure>
+              }
+
               <div class="grid-2">
-                @for (item of group.items; track item.name) {
-                  <article class="cap-card">
+                @for (item of group.items; track item.name; let i = $index) {
+                  <article class="cap-card" [appReveal]="(i % 2) * 90">
                     <div class="cap-head">
                       <span class="cap-icon">
                         <lucide-icon [img]="icons[item.icon]" [size]="20" />
@@ -224,21 +246,23 @@ const DESCRIPTION =
       <!-- CÓMO FUNCIONA -->
       <section class="band alt" id="como-funciona" aria-labelledby="pasos">
         <div class="lp-wrap">
-          <p class="eyebrow center">Puesta en marcha</p>
-          <h2 id="pasos" class="section-title center">De la primera conversación a tu equipo trabajando</h2>
-          <p class="section-intro center">
+          <p class="eyebrow center" appReveal>Puesta en marcha</p>
+          <h2 id="pasos" class="section-title center" appReveal>
+            De la primera conversación a tu equipo vendiendo
+          </h2>
+          <p class="section-intro center" appReveal>
             No te dejamos solo frente a un panel vacío. Nosotros hacemos la configuración inicial.
           </p>
           <div class="grid-3 steps">
-            @for (step of steps; track step.n) {
-              <article class="step-card">
+            @for (step of steps; track step.n; let i = $index) {
+              <article class="step-card" [appReveal]="i * 110">
                 <span class="step-n">{{ step.n }}</span>
                 <h3>{{ step.title }}</h3>
                 <p>{{ step.body }}</p>
               </article>
             }
           </div>
-          <div class="center">
+          <div class="center" appReveal>
             <a class="btn btn-primary btn-lg" [href]="waStart()" target="_blank" rel="noopener">
               <lucide-icon [img]="MessageCircle" [size]="18" />
               Empezar por WhatsApp
@@ -250,11 +274,13 @@ const DESCRIPTION =
       <!-- PARA QUIÉN -->
       <section class="band" id="para-quien" aria-labelledby="segmentos">
         <div class="lp-wrap">
-          <p class="eyebrow center">Para quién es</p>
-          <h2 id="segmentos" class="section-title center">Hecha para negocios que atienden gente</h2>
-          <div class="grid-4">
-            @for (seg of segments; track seg.name) {
-              <article class="seg-card">
+          <p class="eyebrow center" appReveal>Para quién es</p>
+          <h2 id="segmentos" class="section-title center" appReveal>
+            Cualquier equipo que capte interesados y les venda
+          </h2>
+          <div class="grid-3">
+            @for (seg of segments; track seg.name; let i = $index) {
+              <article class="seg-card" [appReveal]="(i % 3) * 90">
                 <span class="cap-icon"><lucide-icon [img]="icons[seg.icon]" [size]="20" /></span>
                 <h3>{{ seg.name }}</h3>
                 <p>{{ seg.body }}</p>
@@ -267,11 +293,13 @@ const DESCRIPTION =
       <!-- DIFERENCIADORES -->
       <section class="band alt" aria-labelledby="porque">
         <div class="lp-wrap">
-          <p class="eyebrow center">Por qué Maya</p>
-          <h2 id="porque" class="section-title center">Cuatro cosas que no vas a encontrar juntas en otro lado</h2>
+          <p class="eyebrow center" appReveal>Por qué Maya CRM</p>
+          <h2 id="porque" class="section-title center" appReveal>
+            Cuatro cosas que no vas a encontrar juntas en otro lado
+          </h2>
           <div class="grid-2">
-            @for (d of differentiators; track d.title) {
-              <article class="diff-card">
+            @for (d of differentiators; track d.title; let i = $index) {
+              <article class="diff-card" [appReveal]="(i % 2) * 90">
                 <h3>{{ d.title }}</h3>
                 <p>{{ d.body }}</p>
               </article>
@@ -283,11 +311,13 @@ const DESCRIPTION =
       <!-- GARANTÍAS -->
       <section class="band" aria-labelledby="garantias">
         <div class="lp-wrap">
-          <p class="eyebrow center">Sin riesgo para ti</p>
-          <h2 id="garantias" class="section-title center">Lo que te aseguramos antes de que decidas</h2>
+          <p class="eyebrow center" appReveal>Sin riesgo para ti</p>
+          <h2 id="garantias" class="section-title center" appReveal>
+            Lo que te aseguramos antes de que decidas
+          </h2>
           <div class="grid-4">
-            @for (g of guarantees; track g.title) {
-              <article class="guarantee-card">
+            @for (g of guarantees; track g.title; let i = $index) {
+              <article class="guarantee-card" [appReveal]="i * 80">
                 <span class="g-icon"><lucide-icon [img]="ShieldCheck" [size]="18" /></span>
                 <h3>{{ g.title }}</h3>
                 <p>{{ g.body }}</p>
@@ -300,11 +330,13 @@ const DESCRIPTION =
       <!-- FAQ -->
       <section class="band alt" id="preguntas" aria-labelledby="faq">
         <div class="lp-wrap narrow">
-          <p class="eyebrow center">Preguntas frecuentes</p>
-          <h2 id="faq" class="section-title center">Lo que nos preguntan antes de empezar</h2>
+          <p class="eyebrow center" appReveal>Preguntas frecuentes</p>
+          <h2 id="faq" class="section-title center" appReveal>
+            Lo que nos preguntan antes de empezar
+          </h2>
           <div class="faq">
             @for (f of faqs; track f.q) {
-              <details class="faq-item">
+              <details class="faq-item" appReveal>
                 <summary>
                   <span>{{ f.q }}</span>
                   <span class="faq-mark" aria-hidden="true"></span>
@@ -318,8 +350,8 @@ const DESCRIPTION =
 
       <!-- CTA FINAL -->
       <section class="cta" aria-labelledby="cta">
-        <div class="lp-wrap cta-inner">
-          <h2 id="cta">Cuéntanos cómo funciona tu local y te mostramos Maya con tu propia carta</h2>
+        <div class="lp-wrap cta-inner" appReveal>
+          <h2 id="cta">Cuéntanos cómo vendes y te mostramos Maya CRM con tus propios contactos</h2>
           <p>
             Una conversación por WhatsApp, sin formularios eternos. Te hacemos unas preguntas,
             te enseñamos la plataforma con tus datos y decides tú.
@@ -338,21 +370,20 @@ const DESCRIPTION =
     <footer class="lp-footer">
       <div class="lp-wrap footer-inner">
         <div class="footer-brand">
-          <a class="brand" routerLink="/">
-            <img src="/logo.png" alt="Maya" width="32" height="32" />
-            <span>Maya</span>
+          <a class="brand" routerLink="/" aria-label="Maya CRM, inicio">
+            <img src="/logo.png" alt="Maya CRM" width="118" height="36" />
           </a>
           <p>
-            Plataforma todo-en-uno para restaurantes, bares, discotecas, cafeterías y
-            productoras de eventos.
+            CRM de ventas y marketing: captación, base de datos, WhatsApp con inteligencia
+            artificial y campañas, en una sola plataforma.
           </p>
         </div>
         <nav class="footer-links" aria-label="Plataforma">
           <h3>Plataforma</h3>
-          <a href="#operacion">Operación</a>
-          <a href="#clientes">Clientes e IA</a>
-          <a href="#gestion">Equipo y permisos</a>
-          <a href="#para-quien">Para quién es</a>
+          <a href="#captacion">Captación</a>
+          <a href="#conversacion">Conversación e IA</a>
+          <a href="#base">Base de datos</a>
+          <a href="#equipo">Equipo y permisos</a>
         </nav>
         <nav class="footer-links" aria-label="Cuenta">
           <h3>Tu cuenta</h3>
@@ -363,7 +394,7 @@ const DESCRIPTION =
         </nav>
       </div>
       <div class="lp-wrap footer-bottom">
-        <span>© {{ year }} Maya. Todos los derechos reservados.</span>
+        <span>© {{ year }} Maya CRM. Todos los derechos reservados.</span>
       </div>
     </footer>
 
@@ -387,6 +418,25 @@ const DESCRIPTION =
       .lp-wrap.narrow { max-width: 820px; }
       .center { text-align: center; }
 
+      /* ---------- Aparición al scroll ----------
+         El estado por defecto es visible: la clase que oculta la añade el
+         navegador (ver reveal.directive.ts). Así el HTML prerenderizado que
+         recibe el buscador llega completo. */
+      .reveal-armed {
+        opacity: 0;
+        transform: translateY(22px);
+        transition: opacity 620ms cubic-bezier(0.16, 1, 0.3, 1),
+                    transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
+        will-change: opacity, transform;
+      }
+      .reveal-in {
+        opacity: 1;
+        transform: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .reveal-armed { opacity: 1; transform: none; transition: none; }
+      }
+
       /* ---------- Header ---------- */
       .lp-header {
         position: sticky;
@@ -400,19 +450,21 @@ const DESCRIPTION =
         display: flex;
         align-items: center;
         gap: 24px;
-        height: 68px;
+        height: 72px;
       }
       .brand {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
         text-decoration: none;
-        color: var(--color-text-main);
-        font-family: var(--font-heading);
-        font-weight: 700;
-        font-size: 19px;
       }
-      .brand img { border-radius: 10px; object-fit: cover; }
+      /* object-fit contain y no cover: el logo lleva el nombre dentro, así
+         que recortarlo se comería parte de la palabra. */
+      .brand img {
+        height: 40px;
+        width: auto;
+        max-width: 168px;
+        object-fit: contain;
+      }
       .header-nav {
         display: flex;
         gap: 28px;
@@ -453,12 +505,17 @@ const DESCRIPTION =
 
       /* ---------- Hero ---------- */
       .hero {
-        padding: 88px 0 72px;
+        padding: 76px 0 68px;
         background:
-          radial-gradient(1000px 460px at 50% -140px, var(--color-brand-light), transparent 70%),
+          radial-gradient(1000px 460px at 20% -160px, var(--color-brand-light), transparent 70%),
           var(--color-white);
       }
-      .hero-inner { text-align: center; }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.12fr 0.88fr;
+        gap: 48px;
+        align-items: center;
+      }
       .eyebrow {
         display: inline-flex;
         align-items: center;
@@ -473,12 +530,10 @@ const DESCRIPTION =
         font-size: 12.5px;
         letter-spacing: 0.01em;
       }
-      .eyebrow.center { display: inline-flex; }
       h1 {
-        font-size: clamp(34px, 5.4vw, 60px);
-        line-height: 1.08;
-        margin: 0 auto 20px;
-        max-width: 19ch;
+        font-size: clamp(31px, 3.3vw, 44px);
+        line-height: 1.12;
+        margin: 0 0 20px;
         font-weight: 700;
       }
       h1 em {
@@ -486,25 +541,23 @@ const DESCRIPTION =
         color: var(--color-brand);
       }
       .hero-sub {
-        max-width: 660px;
-        margin: 0 auto 34px;
-        font-size: 17.5px;
+        max-width: 52ch;
+        margin: 0 0 32px;
+        font-size: 17px;
         line-height: 1.65;
         color: var(--color-text-muted);
       }
       .hero-cta {
         display: flex;
         gap: 14px;
-        justify-content: center;
         flex-wrap: wrap;
-        margin-bottom: 36px;
+        margin-bottom: 30px;
       }
       .hero-cta .btn { gap: 9px; }
       .hero-trust {
         list-style: none;
         display: flex;
-        gap: 26px;
-        justify-content: center;
+        gap: 22px;
         flex-wrap: wrap;
         margin: 0;
         padding: 0;
@@ -517,6 +570,30 @@ const DESCRIPTION =
         color: var(--color-text-muted);
       }
       .hero-trust lucide-icon { color: var(--color-success); }
+
+      /* ---------- Ilustraciones ---------- */
+      .art-wide, .art-inline {
+        margin: 0;
+        background: var(--color-white);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 28px;
+        box-shadow: var(--shadow-sm);
+      }
+      .art-wide { margin-top: 8px; }
+      .art-inline { margin-bottom: 26px; }
+      .art-wide figcaption, .art-inline figcaption {
+        margin-top: 18px;
+        text-align: center;
+        font-size: 13.5px;
+        line-height: 1.6;
+        color: var(--color-text-muted);
+      }
+      .art-inline app-art-campaign {
+        display: block;
+        max-width: 420px;
+        margin: 0 auto;
+      }
 
       /* ---------- Definición ---------- */
       .definition { padding: 0 0 64px; }
@@ -546,9 +623,9 @@ const DESCRIPTION =
         font-size: clamp(26px, 3.2vw, 36px);
         line-height: 1.2;
         margin: 0 0 14px;
-        max-width: 22ch;
+        max-width: 24ch;
       }
-      .section-title.center { max-width: 24ch; margin-left: auto; margin-right: auto; }
+      .section-title.center { max-width: 26ch; margin-left: auto; margin-right: auto; }
       .section-intro {
         font-size: 16.5px;
         line-height: 1.7;
@@ -569,7 +646,10 @@ const DESCRIPTION =
         border: 1px solid var(--color-border);
         border-radius: var(--radius-lg);
         padding: 24px;
-        transition: all var(--transition-smooth);
+        transition: transform var(--transition-smooth),
+                    box-shadow var(--transition-smooth),
+                    border-color var(--transition-smooth),
+                    opacity 620ms cubic-bezier(0.16, 1, 0.3, 1);
       }
       .pain-card:hover, .cap-card:hover, .seg-card:hover,
       .diff-card:hover, .guarantee-card:hover {
@@ -618,26 +698,6 @@ const DESCRIPTION =
         color: var(--color-text-main);
       }
       .cap-list lucide-icon { color: var(--color-success); flex: none; margin-top: 2px; }
-
-      .flow {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 8px;
-      }
-      .flow span {
-        background: var(--color-white);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-pill);
-        padding: 10px 20px;
-        font-family: var(--font-heading);
-        font-weight: 600;
-        font-size: 13.5px;
-        box-shadow: var(--shadow-sm);
-      }
-      .flow lucide-icon { color: var(--color-brand); }
 
       .steps { margin-bottom: 40px; }
       .step-card { position: relative; padding-top: 28px; }
@@ -753,7 +813,8 @@ const DESCRIPTION =
         padding-top: 56px;
         padding-bottom: 40px;
       }
-      .lp-footer .brand { color: var(--color-white); margin-bottom: 14px; }
+      .lp-footer .brand { margin-bottom: 16px; }
+      .lp-footer .brand img { height: 36px; }
       .footer-brand p { margin: 0; font-size: 14.5px; line-height: 1.7; max-width: 42ch; }
       .footer-links { display: flex; flex-direction: column; gap: 11px; }
       .footer-links h3 {
@@ -798,6 +859,8 @@ const DESCRIPTION =
 
       /* ---------- Responsive ---------- */
       @media (max-width: 1024px) {
+        .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+        .hero-art { max-width: 480px; }
         .grid-4 { grid-template-columns: repeat(2, 1fr); }
       }
       @media (max-width: 900px) {
@@ -808,13 +871,13 @@ const DESCRIPTION =
         .footer-inner { grid-template-columns: 1fr; gap: 32px; }
       }
       @media (max-width: 640px) {
-        .hero { padding: 56px 0 52px; }
+        .hero { padding: 48px 0; }
         .band { padding: 56px 0; }
         .grid-4 { grid-template-columns: 1fr; }
         .definition-card { padding: 26px 22px; }
+        .art-wide, .art-inline { padding: 18px; }
         .hero-cta .btn, .cta-actions .btn { width: 100%; }
-        .flow lucide-icon { transform: rotate(90deg); }
-        .flow { flex-direction: column; }
+        .brand img { height: 34px; }
       }
     `,
   ],
@@ -836,9 +899,9 @@ export class LandingComponent implements OnInit {
 
   /** Íconos referenciados por nombre desde `landing.data.ts`. */
   readonly icons: Record<string, LucideIconData> = {
-    QrCode, ChefHat, CalendarCheck, Store, Bot, MessagesSquare, ContactRound,
-    Megaphone, FileText, Zap, Users, MapPin, Gauge, UtensilsCrossed, Martini,
-    Coffee, Ticket,
+    FileText, Ticket, Upload, MapPin, Bot, MessagesSquare, LayoutTemplate,
+    ContactRound, List, Megaphone, Gauge, Users, Building2, GraduationCap,
+    HeartPulse, Store, Sparkles,
   };
 
   readonly ArrowRight = ArrowRight;
@@ -854,10 +917,10 @@ export class LandingComponent implements OnInit {
   }
 
   waDemo = computed(() =>
-    this.wa('Hola, quiero ver una demo de Maya para mi local.'),
+    this.wa('Hola, quiero ver una demo de Maya CRM para mi equipo.'),
   );
   waStart = computed(() =>
-    this.wa('Hola, quiero empezar a usar Maya. ¿Cómo arrancamos?'),
+    this.wa('Hola, quiero empezar a usar Maya CRM. ¿Cómo arrancamos?'),
   );
 
   ngOnInit(): void {
@@ -868,28 +931,28 @@ export class LandingComponent implements OnInit {
       description: DESCRIPTION,
       path: '/',
       image: '/logo.png',
+      siteName: 'Maya CRM',
       siteUrl,
     });
 
     this.seo.setJsonLd('app', {
       '@context': 'https://schema.org',
       '@type': 'SoftwareApplication',
-      name: 'Maya',
+      name: 'Maya CRM',
       applicationCategory: 'BusinessApplication',
-      applicationSubCategory: 'Restaurant Management Software',
+      applicationSubCategory: 'Customer Relationship Management Software',
       operatingSystem: 'Web',
       url: siteUrl,
       description: DEFINITION,
       inLanguage: 'es',
       audience: {
         '@type': 'BusinessAudience',
-        audienceType:
-          'Restaurantes, bares, discotecas, cafeterías y productoras de eventos',
+        audienceType: 'Equipos de ventas y marketing',
       },
       featureList: this.groups.flatMap((g) => g.items.map((i) => i.name)),
       provider: {
         '@type': 'Organization',
-        name: 'Maya',
+        name: 'Maya CRM',
         url: siteUrl,
         logo: `${siteUrl}/logo.png`,
       },
@@ -908,7 +971,7 @@ export class LandingComponent implements OnInit {
     this.seo.setJsonLd('site', {
       '@context': 'https://schema.org',
       '@type': 'WebSite',
-      name: 'Maya',
+      name: 'Maya CRM',
       url: siteUrl,
       inLanguage: 'es',
     });

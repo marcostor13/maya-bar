@@ -14,6 +14,7 @@ import {
   MODULE_KEYS,
   ROLE_LABELS,
   ACTIONS,
+  visibleModules,
 } from './modules.catalog';
 
 /**
@@ -101,10 +102,15 @@ export class RolesService {
 
     // Sin documento todavía (empresa que aún no ha abierto la pantalla) se usa
     // la matriz de partida: nadie se queda sin menú por no haber sembrado.
+    // `visibleModules` filtra los módulos retirados del catálogo. Es necesario
+    // aquí y no solo en el catálogo porque las empresas creadas antes del
+    // cambio tienen esas claves guardadas en su documento de rol.
     const access: RoleAccess = {
-      modules: this.withLockedModules(
-        roleKey,
-        role ? role.modules : (DEFAULT_ROLE_MODULES[roleKey] ?? []),
+      modules: visibleModules(
+        this.withLockedModules(
+          roleKey,
+          role ? role.modules : (DEFAULT_ROLE_MODULES[roleKey] ?? []),
+        ),
       ),
       actions: role?.actions ?? {},
     };

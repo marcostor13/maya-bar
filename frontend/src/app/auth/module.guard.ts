@@ -32,8 +32,8 @@ export function homeFor(role: string, permissions: PermissionsService): string {
   if (permissions.can('impulsador-panel')) return '/impulsador';
 
   const first = [
-    'orders', 'kds', 'reservations', 'menu', 'events',
-    'customers', 'inbox', 'visits', 'settings',
+    'events', 'customers', 'inbox', 'campaigns', 'lists',
+    'forms', 'ai-agents', 'visits', 'settings',
   ].find((m) => permissions.can(m));
 
   return first ? `/${routeOf(first)}` : '/change-password';

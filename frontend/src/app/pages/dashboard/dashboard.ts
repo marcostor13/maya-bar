@@ -75,8 +75,8 @@ const API = environment.apiUrl;
                   <span>{{ local.tableCount || 0 }} mesas</span>
                 </div>
                 <div class="local-actions">
-                  <a routerLink="/menu" class="btn btn-secondary btn-sm">Menú</a>
-                  <a routerLink="/orders" class="btn btn-secondary btn-sm">Pedidos</a>
+                  <a routerLink="/customers" class="btn btn-secondary btn-sm">Contactos</a>
+                  <a routerLink="/campaigns" class="btn btn-secondary btn-sm">Campañas</a>
                 </div>
               </div>
             }

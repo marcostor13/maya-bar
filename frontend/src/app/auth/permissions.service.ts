@@ -20,12 +20,12 @@ export interface MyPermissions {
  */
 const FALLBACK: Record<string, string[]> = {
   TENANT_ADMIN: [
-    'dashboard', 'locals', 'menu', 'orders', 'kds', 'reservations', 'events',
+    'dashboard', 'locals', 'events',
     'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
     'visits', 'users', 'settings',
   ],
   MANAGER: [
-    'dashboard', 'locals', 'menu', 'orders', 'kds', 'reservations', 'events',
+    'dashboard', 'locals', 'events',
     'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
     'visits',
   ],
@@ -33,10 +33,10 @@ const FALLBACK: Record<string, string[]> = {
     'dashboard', 'events', 'customers', 'lists', 'forms', 'campaigns',
     'ai-agents', 'inbox',
   ],
-  HOST: ['dashboard', 'orders', 'reservations'],
-  SERVER: ['dashboard', 'orders'],
-  KITCHEN: ['dashboard', 'menu', 'orders', 'kds'],
-  BAR: ['dashboard', 'menu', 'orders', 'kds'],
+  HOST: ['dashboard'],
+  SERVER: ['dashboard'],
+  KITCHEN: ['dashboard'],
+  BAR: ['dashboard'],
   IMPULSADOR: [
     'impulsador-panel', 'visits', 'events', 'my-guests', 'inbox',
     'customers', 'lists', 'campaigns',

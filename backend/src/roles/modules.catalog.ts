@@ -18,7 +18,7 @@ export interface PlatformModule {
   route: string;
 }
 
-export const MODULES: PlatformModule[] = [
+const ALL_MODULES: PlatformModule[] = [
   // Operaciones
   { key: 'dashboard', label: 'Dashboard', group: 'Operaciones', route: 'dashboard' },
   { key: 'locals', label: 'Mis Locales', group: 'Operaciones', route: 'locals' },
@@ -47,6 +47,35 @@ export const MODULES: PlatformModule[] = [
   { key: 'settings', label: 'Configuración', group: 'Gestión', route: 'settings' },
 ];
 
+/**
+ * Módulos de hostelería retirados al reposicionar el producto como CRM de
+ * ventas y marketing. No se borran: el código, los esquemas y los datos siguen
+ * intactos, simplemente dejan de ofrecerse. Vaciar esta lista los devuelve.
+ *
+ * El filtro se aplica también sobre los roles ya guardados en base de datos
+ * (`RolesService.accessFor`), porque las empresas existentes tienen estas
+ * claves persistidas y de otro modo les seguirían apareciendo en el menú.
+ */
+export const HIDDEN_MODULES: readonly string[] = [
+  'menu',
+  'orders',
+  'kds',
+  'reservations',
+];
+
+export function isHiddenModule(key: string): boolean {
+  return HIDDEN_MODULES.includes(key);
+}
+
+/** Quita del listado los módulos retirados. */
+export function visibleModules(keys: string[]): string[] {
+  return keys.filter((k) => !isHiddenModule(k));
+}
+
+export const MODULES: PlatformModule[] = ALL_MODULES.filter(
+  (m) => !isHiddenModule(m.key),
+);
+
 export const MODULE_KEYS = MODULES.map((m) => m.key);
 
 /**
@@ -63,7 +92,7 @@ export const ADMIN_LOCKED_MODULES = ['users', 'settings'];
  * Derivada de `shell.ts` (visibilidad del menú) y de los `roleGuard` de
  * `app.routes.ts`.
  */
-export const DEFAULT_ROLE_MODULES: Record<string, string[]> = {
+const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   TENANT_ADMIN: MODULE_KEYS.filter((k) => k !== 'impulsador-panel' && k !== 'my-guests'),
   MANAGER: [
     'dashboard', 'locals', 'menu', 'orders', 'kds', 'reservations', 'events',
@@ -83,6 +112,13 @@ export const DEFAULT_ROLE_MODULES: Record<string, string[]> = {
     'customers', 'lists', 'campaigns',
   ],
 };
+
+export const DEFAULT_ROLE_MODULES: Record<string, string[]> = Object.fromEntries(
+  Object.entries(RAW_DEFAULT_ROLE_MODULES).map(([role, mods]) => [
+    role,
+    visibleModules(mods),
+  ]),
+);
 
 /** Etiquetas de los roles del sistema, para la pantalla de administración. */
 export const ROLE_LABELS: Record<string, string> = {

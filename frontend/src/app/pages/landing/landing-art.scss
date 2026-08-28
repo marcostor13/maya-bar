@@ -1,0 +1,16 @@
+/* Paleta compartida por las tres ilustraciones. Vive en un archivo y no en una
+   constante de TypeScript porque el compilador AOT exige que `styles` sea un
+   literal: una variable no la puede resolver estáticamente. */
+:host { display: block; }
+
+svg { display: block; width: 100%; height: auto; }
+
+.surface { fill: var(--color-white); }
+.line { fill: var(--color-border); }
+.muted { fill: #cbd5e1; }
+.brand { fill: var(--color-brand); }
+.brand-soft { fill: var(--color-brand-light); }
+.ai { fill: var(--color-ai); }
+.ink { fill: var(--color-text-main); }
+.wa { fill: #25d366; }
+.stroke { stroke: var(--color-border); stroke-width: 1.5; }

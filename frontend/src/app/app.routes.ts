@@ -14,16 +14,9 @@ import { OnboardingComponent } from './pages/onboarding/onboarding';
 import { ShellComponent } from './layout/shell/shell';
 import { DashboardComponent } from './pages/dashboard/dashboard';
 import { LocalsComponent } from './pages/locals/locals';
-import { MenuComponent } from './pages/menu/menu';
 import { AdminTenantsComponent } from './pages/admin/tenants';
-import { OrdersComponent } from './pages/orders/orders';
-import { PublicMenuComponent } from './pages/public-menu/public-menu';
-import { OrderTrackingComponent } from './pages/order-tracking/order-tracking';
 import { ChangePasswordComponent } from './pages/change-password/change-password';
 import { UsersComponent } from './pages/users/users';
-import { KdsComponent } from './pages/kds/kds';
-import { ReservationsComponent } from './pages/reservations/reservations';
-import { PublicBookingComponent } from './pages/public-booking/public-booking';
 import { EventsComponent } from './pages/events/events';
 import { EventDetailComponent } from './pages/events/event-detail';
 import { PublicEventComponent } from './pages/public-event/public-event';
@@ -53,6 +46,10 @@ const homeRedirectGuard = async () => {
   router.navigateByUrl(homeFor(user.role, permissions)); return false;
 };
 
+// Las rutas de hostelería (menú, pedidos, KDS, reservas y sus páginas públicas)
+// quedan sin registrar al reposicionar el producto como CRM. Los componentes
+// siguen en el repositorio: volver a añadirlas aquí y vaciar `HIDDEN_MODULES`
+// en el backend las reactiva.
 export const routes: Routes = [
   // Landing pública. Es la única ruta que se prerenderiza (ver
   // `app.routes.server.ts`), por eso vive fuera del Shell y no lleva guards.
@@ -61,10 +58,6 @@ export const routes: Routes = [
   { path: 'register', component: RegisterComponent },
   { path: 'change-password', component: ChangePasswordComponent, canActivate: [authGuard] },
   { path: 'onboarding', component: OnboardingComponent, canActivate: [authGuard] },
-  { path: 'q/:localId/:table', component: PublicMenuComponent },
-  { path: 'track/:orderId', component: OrderTrackingComponent },
-  { path: 'book/:localId', component: PublicBookingComponent },
-  { path: 'book/confirm/:token', component: PublicBookingComponent },
   { path: 'e/:slug', component: PublicEventComponent },
   {
     path: '',
@@ -85,26 +78,6 @@ export const routes: Routes = [
         path: 'locals',
         component: LocalsComponent,
         canActivate: [moduleGuard('locals')],
-      },
-      {
-        path: 'menu',
-        component: MenuComponent,
-        canActivate: [moduleGuard('menu')],
-      },
-      {
-        path: 'orders',
-        component: OrdersComponent,
-        canActivate: [moduleGuard('orders')],
-      },
-      {
-        path: 'kds',
-        component: KdsComponent,
-        canActivate: [moduleGuard('kds')],
-      },
-      {
-        path: 'reservations',
-        component: ReservationsComponent,
-        canActivate: [moduleGuard('reservations')],
       },
       {
         path: 'events',
