@@ -1,61 +1,31 @@
+import { AngularAppEngine, createRequestHandler } from '@angular/ssr';
 import {
-  AngularNodeAppEngine,
-  createNodeRequestHandler,
-  isMainModule,
-  writeResponseToNodeResponse,
-} from '@angular/ssr/node';
-import express from 'express';
-import { join } from 'node:path';
-
-const browserDistFolder = join(import.meta.dirname, '../browser');
+  getAllowedHosts,
+  getContext,
+  getTrustProxyHeaders,
+} from '@netlify/angular-runtime/app-engine.js';
 
 /**
- * Angular 21 rechaza toda petición cuyo `Host` no esté en la lista blanca y cae
- * a render de cliente, con lo que la landing dejaría de servirse prerenderizada.
- * La lista base viene de `angular.json`; esta variable permite añadir dominios
- * en el despliegue sin volver a compilar.
+ * Manejador de peticiones para Netlify. El despliegue no es una máquina con
+ * Node escuchando un puerto, sino una edge function, así que en lugar del
+ * servidor Express que genera Angular se exporta este handler: es el que
+ * `@netlify/angular-runtime` empaqueta durante el build.
+ *
+ * `getAllowedHosts()` y `getTrustProxyHeaders()` los aporta el runtime con los
+ * dominios reales del sitio. Sin ellos Angular 21 rechazaría la cabecera `Host`
+ * y degradaría a render de cliente, con lo que la landing dejaría de servirse
+ * prerenderizada y perdería la indexación.
  */
-const extraHosts = (process.env['ALLOWED_HOSTS'] ?? '')
-  .split(',')
-  .map((h) => h.trim())
-  .filter(Boolean);
-
-/**
- * Detrás de un proxy inverso (nginx, Cloudflare) llegan cabeceras `X-Forwarded-*`.
- * Si no se declaran como fiables, Angular también degrada a render de cliente.
- */
-const trustProxyHeaders = process.env['TRUST_PROXY_HEADERS'] === 'true';
-
-const app = express();
-const angularApp = new AngularNodeAppEngine({
-  allowedHosts: extraHosts,
-  trustProxyHeaders,
+const angularAppEngine = new AngularAppEngine({
+  allowedHosts: getAllowedHosts(),
+  trustProxyHeaders: getTrustProxyHeaders(),
 });
 
-/** Estáticos del build de navegador. */
-app.use(
-  express.static(browserDistFolder, {
-    maxAge: '1y',
-    index: false,
-    redirect: false,
-  }),
-);
-
-/** El resto lo resuelve Angular: landing prerenderizada o shell de cliente. */
-app.use((req, res, next) => {
-  angularApp
-    .handle(req)
-    .then((response) =>
-      response ? writeResponseToNodeResponse(response, res) : next(),
-    )
-    .catch(next);
-});
-
-if (isMainModule(import.meta.url) || process.env['pm_id']) {
-  const port = process.env['PORT'] || 4000;
-  app.listen(port, () => {
-    console.log(`Maya SSR escuchando en http://localhost:${port}`);
-  });
+export async function netlifyAppEngineHandler(request: Request): Promise<Response> {
+  const context = getContext();
+  const result = await angularAppEngine.handle(request, context);
+  return result ?? new Response('Not found', { status: 404 });
 }
 
-export const reqHandler = createNodeRequestHandler(app);
+/** Handler que usa el CLI de Angular (dev-server y build). */
+export const reqHandler = createRequestHandler(netlifyAppEngineHandler);

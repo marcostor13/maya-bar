@@ -5,9 +5,15 @@
   ignore = "git diff --quiet HEAD^ HEAD -- . ../netlify.toml"
 
 [build.environment]
-  NODE_VERSION = "20"
+  # @netlify/angular-runtime@4 exige Node >= 22.22.
+  NODE_VERSION = "22"
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# Empaqueta el handler de `src/server.ts` como edge function. Sin este plugin
+# el sitio se serviría como estático y la landing perdería el render de servidor.
+[[plugins]]
+  package = "@netlify/angular-runtime"
+
+# Nota: no hay redirect `/* -> /index.html`. Esa regla adelantaría al plugin y
+# devolvería el HTML de la landing en todas las rutas; el enrutado lo resuelve
+# ahora la edge function (landing prerenderizada en `/`, shell de cliente en el
+# resto).
