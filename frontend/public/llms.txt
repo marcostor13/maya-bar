@@ -1,0 +1,65 @@
+# Maya
+
+> Maya es una plataforma web todo-en-uno para restaurantes, bares, discotecas, cafeterías
+> y productoras de eventos en Latinoamérica. Reúne carta digital con QR, pedidos desde la
+> mesa, pantalla de cocina (KDS), reservas, eventos con página pública, CRM de clientes,
+> campañas por WhatsApp y email, y agentes de inteligencia artificial que atienden
+> conversaciones de WhatsApp e Instagram. Todo funciona sobre la misma base de datos,
+> desde el navegador y sin instalar nada.
+
+## Qué resuelve
+
+Los negocios de hospitalidad suelen pagar entre cinco y siete herramientas distintas que no
+comparten datos: una para la carta QR, otra para reservas, otra para mailing, una hoja de
+cálculo como CRM y el WhatsApp del dueño como canal de atención. Maya sustituye ese conjunto
+por un solo sistema, de modo que quien pide por QR, quien reserva y quien se registra a un
+evento son el mismo contacto.
+
+## Módulos
+
+- **Carta digital y pedidos QR**: un QR por mesa, categorías, variantes, modificadores,
+  fotos, alérgenos, etiquetas dietéticas, sistema 86 para agotados, llamar al mesero y
+  pedir la cuenta, seguimiento del pedido en vivo.
+- **Pantalla de cocina (KDS)**: ruteo automático de cada ítem a su estación (cocina, barra,
+  postres), tiempos y alertas de demora, avance del pedido con un toque, sincronización en
+  tiempo real por WebSocket entre todos los dispositivos.
+- **Reservas**: turnos, aforo y duración de mesa configurables por local; página pública de
+  reserva en cuatro pasos; confirmación del cliente por token único.
+- **Eventos**: landing pública por evento, registro con ticket único, control de cupos,
+  generación de copy con IA, enlaces de invitación por promotor.
+- **CRM y listas**: ficha por cliente con historial, etiquetas y campos personalizados;
+  listas estáticas y segmentos; importación masiva desde Excel, CSV o texto pegado.
+- **Formularios publicables**: formularios embebibles en cualquier web que envían los
+  contactos directo al CRM, con respuesta automática por WhatsApp y email.
+- **Campañas**: envíos masivos de WhatsApp (plantillas aprobadas por Meta o número propio)
+  y de email, segmentados por etiquetas o listas, con imagen, video o documento.
+- **Agentes de IA**: asistentes entrenados con los documentos del negocio (RAG) que
+  responden por WhatsApp e Instagram; modelo elegible entre Claude, OpenAI, Gemini y DeepSeek.
+- **Bandeja unificada**: conversaciones de WhatsApp e Instagram en una sola pantalla,
+  ligadas a la ficha del contacto, con intervención humana cuando se quiera.
+- **Equipo y permisos**: roles configurables módulo por módulo y acción por acción
+  (ver, crear, editar, borrar); roles listos para gerente, anfitrión, mesero, cocina,
+  barra, marketing e impulsador.
+- **Impulsadores**: panel propio, código de referido y registro de visitas con GPS, con los
+  datos de cada promotor aislados del resto.
+- **Multi-local**: cada sede con su carta, horarios, aforo y equipo; clonado de la
+  configuración de un local para abrir el siguiente en minutos.
+
+## Para quién es
+
+Restaurantes, bares, discotecas, cafeterías, cadenas con varias sedes y productoras de
+eventos.
+
+## Cómo se contrata
+
+El precio depende del número de sedes y de los módulos que se usen; no hay tarifa publicada.
+El contacto es por WhatsApp y la puesta en marcha (carga de la carta, generación de QR,
+configuración de turnos y roles, conexión del WhatsApp) la hace el equipo de Maya, con la
+mayoría de locales operativos en la misma semana. Sin permanencia y con los datos
+exportables en cualquier momento.
+
+## Enlaces
+
+- Inicio: https://mayabar.marcostorresalarcon.com/
+- Ingresar: https://mayabar.marcostorresalarcon.com/login
+- Crear cuenta: https://mayabar.marcostorresalarcon.com/register

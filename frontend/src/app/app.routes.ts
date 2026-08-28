@@ -38,6 +38,7 @@ import { VisitsComponent } from './pages/visits/visits';
 import { MisAsistentesComponent } from './pages/mis-asistentes/mis-asistentes';
 import { AiAgentsComponent } from './pages/ai-agents/ai-agents';
 import { InboxComponent } from './pages/inbox/inbox';
+import { LandingComponent } from './pages/landing/landing';
 
 const homeRedirectGuard = async () => {
   const auth = inject(AuthService);
@@ -53,6 +54,9 @@ const homeRedirectGuard = async () => {
 };
 
 export const routes: Routes = [
+  // Landing pública. Es la única ruta que se prerenderiza (ver
+  // `app.routes.server.ts`), por eso vive fuera del Shell y no lleva guards.
+  { path: '', pathMatch: 'full', component: LandingComponent },
   { path: 'login', component: LoginComponent },
   { path: 'register', component: RegisterComponent },
   { path: 'change-password', component: ChangePasswordComponent, canActivate: [authGuard] },
@@ -172,7 +176,7 @@ export const routes: Routes = [
         component: AdminTenantsComponent,
         canActivate: [roleGuard('SUPERADMIN')],
       },
-      { path: '', pathMatch: 'full', canActivate: [homeRedirectGuard], component: DashboardComponent },
+      { path: 'inicio', pathMatch: 'full', canActivate: [homeRedirectGuard], component: DashboardComponent },
     ],
   },
 ];

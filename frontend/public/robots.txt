@@ -1,0 +1,31 @@
+User-agent: *
+Allow: /
+
+# Páginas de sesión y de operación: no aportan nada en un índice público.
+Disallow: /login
+Disallow: /register
+Disallow: /onboarding
+Disallow: /change-password
+Disallow: /dashboard
+Disallow: /inicio
+Disallow: /orders
+Disallow: /kds
+Disallow: /menu
+Disallow: /locals
+Disallow: /customers
+Disallow: /campaigns
+Disallow: /inbox
+Disallow: /ai-agents
+Disallow: /lists
+Disallow: /forms
+Disallow: /users
+Disallow: /settings
+Disallow: /admin
+Disallow: /impulsador
+Disallow: /visitas
+Disallow: /mis-asistentes
+Disallow: /plantillas
+Disallow: /q/
+Disallow: /track/
+
+Sitemap: https://mayabar.marcostorresalarcon.com/sitemap.xml

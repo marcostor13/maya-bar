@@ -1,1 +1,5 @@
-/*    /index.html   200
+# La landing prerenderizada se sirve tal cual; el resto de rutas caen al shell
+# de cliente. Sin la segunda regla, un hosting estático devolvería el HTML de la
+# landing en /login y se vería un parpadeo antes de que Angular enrute.
+/            /index.html       200
+/*           /index.csr.html   200

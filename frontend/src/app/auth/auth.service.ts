@@ -68,6 +68,7 @@ export class AuthService {
   }
 
   getToken(): string | null {
+    if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem('token');
   }
 
@@ -85,6 +86,9 @@ export class AuthService {
   }
 
   private restoreSession() {
+    // La landing se prerenderiza en Node, donde no existe `localStorage`. Sin
+    // esta salida el servicio reventaría al construirse durante el build.
+    if (typeof localStorage === 'undefined') return;
     const token = localStorage.getItem('token');
     const raw = localStorage.getItem('user');
     if (!token || !raw) return;
