@@ -133,6 +133,11 @@ export class FormsService {
   ): Promise<void> {
     const form = await this.findOne(id, tenantId, userId, role);
     await this.submissionModel.deleteMany({ formId: form._id }).exec();
+    // Los contactos se quedan: lo que se va es la referencia, para que el
+    // formulario borrado no siga apareciendo en sus filtros.
+    await this.customerModel
+      .updateMany({ formIds: form._id }, { $pull: { formIds: form._id } })
+      .exec();
     await this.formModel.findByIdAndDelete(form._id).exec();
   }
 
@@ -373,6 +378,7 @@ export class FormsService {
         customFields: data.customFields,
         source: 'form',
         formId: form._id,
+        formIds: [form._id],
         sourceLabel: form.name,
         sourceUrl: ctx.pageUrl || ctx.referer,
         ...(form.createdBy ? { createdBy: form.createdBy } : {}),
@@ -443,6 +449,9 @@ export class FormsService {
       existing.formId = form._id as Types.ObjectId;
       existing.sourceLabel = existing.sourceLabel || form.name;
     }
+    // Pero sí se acumula el formulario: la misma persona puede registrarse en
+    // varias landings y hay que poder filtrarla por cualquiera de ellas.
+    existing.formIds = addFormId(existing.formIds, form._id);
 
     try {
       return await existing.save();
@@ -544,6 +553,20 @@ export class FormsService {
       mapTo: (f.mapTo ?? '') as FormField['mapTo'],
     }));
   }
+}
+
+/**
+ * Añade el formulario a la lista del contacto sin repetirlo. Se compara por
+ * cadena porque un mismo ObjectId puede llegar como documento hidratado o como
+ * valor plano según de dónde venga el contacto.
+ */
+function addFormId(
+  current: Types.ObjectId[] | undefined,
+  formId: Types.ObjectId,
+): Types.ObjectId[] {
+  const list = current ?? [];
+  const key = String(formId);
+  return list.some((id) => String(id) === key) ? list : [...list, formId];
 }
 
 /** E11000: Mongo rechazó la escritura por chocar con un índice único. */

@@ -7,6 +7,7 @@ import {
   computed,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -38,6 +39,7 @@ import {
   Database,
   Filter,
   Columns3,
+  FileText,
 } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
@@ -53,6 +55,8 @@ interface Customer {
   source: string;
   /** Nombre legible del origen: el formulario o la importación que lo trajo. */
   sourceLabel?: string;
+  /** Todos los formularios en los que se ha registrado el contacto. */
+  formIds?: string[];
   sourceUrl?: string;
   /** Campos del origen que no encajan en el modelo, conservados tal cual. */
   customFields?: Record<string, unknown>;
@@ -67,6 +71,12 @@ interface ListMini {
   name: string;
   color: string;
   type: string;
+}
+
+/** Formulario del tenant, solo lo necesario para el filtro y la columna. */
+interface FormMini {
+  _id: string;
+  name: string;
 }
 
 const PRESET_TAGS = ['VIP', 'Vegetariano', 'Cumpleañero', 'Corporativo', 'Delivery', 'Fiel', 'Nuevo', 'Alérgico'];
@@ -102,6 +112,7 @@ const BASE_COLUMNS: ColumnDef[] = [
   { key: 'phone',      label: 'Teléfono',      custom: false },
   { key: 'tags',       label: 'Tags',          custom: false },
   { key: 'source',     label: 'Origen',        custom: false },
+  { key: 'forms',      label: 'Formularios',   custom: false },
   { key: 'lastVisit',  label: 'Última visita', custom: false },
   { key: 'history',    label: 'Historial',     custom: false },
   { key: 'createdAt',  label: 'Alta',          custom: false },
@@ -200,6 +211,25 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
             </button>
           }
         </div>
+
+        @if (activeForms().length > 0) {
+          <div class="form-filter">
+            <lucide-icon [img]="FileText" [size]="15" class="form-filter-icon"></lucide-icon>
+            <select class="select form-filter-select" [value]="selectedForm()"
+              (change)="selectForm($any($event.target).value)" aria-label="Filtrar por formulario">
+              <option value="">Todos los formularios</option>
+              @for (f of activeForms(); track f._id) {
+                <option [value]="f._id">{{ f.name }} ({{ countByForm(f._id) }})</option>
+              }
+            </select>
+            @if (selectedForm()) {
+              <button class="btn btn-ghost btn-sm btn-icon" (click)="selectForm('')"
+                aria-label="Quitar filtro de formulario">
+                <lucide-icon [img]="X" [size]="14"></lucide-icon>
+              </button>
+            }
+          </div>
+        }
 
         <div class="table-tools">
           <button class="btn btn-secondary btn-sm" [class.active-tool]="filtersOpen()"
@@ -387,6 +417,20 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                             }
                           </div>
                         }
+                        @case ('forms') {
+                          <div class="tags-cell">
+                            @for (f of formsOf(c).slice(0, 2); track f._id) {
+                              <button type="button" class="badge badge-warning tag-badge form-chip"
+                                (click)="selectForm(f._id)" [title]="'Filtrar por ' + f.name">
+                                {{ f.name }}
+                              </button>
+                            }
+                            @if (formsOf(c).length > 2) {
+                              <span class="badge badge-neutral">+{{ formsOf(c).length - 2 }}</span>
+                            }
+                            @if (!formsOf(c).length) { <span class="text-muted">—</span> }
+                          </div>
+                        }
                         @case ('history') {
                           <div class="history-cell">
                             @if (c.totalReservations > 0) {
@@ -497,6 +541,22 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                 <p class="muted small">Sin etiquetas.</p>
               }
             </div>
+
+            <!-- Formularios -->
+            @if (formsOf(c).length) {
+              <div class="view-section">
+                <span class="view-section-title">Formularios</span>
+                <div class="view-tags">
+                  @for (f of formsOf(c); track f._id) {
+                    <button type="button" class="badge badge-warning form-chip"
+                      (click)="viewing.set(null); selectForm(f._id)"
+                      [title]="'Ver los contactos de ' + f.name">
+                      {{ f.name }}
+                    </button>
+                  }
+                </div>
+              </div>
+            }
 
             <!-- Procedencia -->
             <div class="view-section">
@@ -758,6 +818,12 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
     .tag-filter-btn:hover { border-color:var(--color-brand); color:var(--color-brand); }
     .tag-filter-btn.active { background:var(--color-brand); border-color:var(--color-brand); color:#fff; }
 
+    .form-filter { display:flex; align-items:center; gap:6px; position:relative; }
+    .form-filter-icon { color:var(--color-text-muted); position:absolute; left:14px; pointer-events:none; }
+    .form-filter-select { padding-left:38px; min-width:220px; font-size:13px; font-weight:600; }
+    .form-chip { border:none; cursor:pointer; font-family:inherit; transition:filter .2s; }
+    .form-chip:hover { filter:brightness(.92); }
+
     /* ── Bulk bar ── */
     .bulk-bar {
       display: flex; align-items: center; justify-content: space-between;
@@ -969,6 +1035,8 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
       .filters-row { flex-direction:column; align-items:stretch; }
       .search-wrap { min-width:0; width:100%; }
       .tag-filters { width:100%; }
+      .form-filter { width:100%; }
+      .form-filter-select { flex:1; min-width:0; }
 
       .bulk-bar { flex-direction:column; align-items:stretch; gap:10px; }
       .bulk-actions { width:100%; }
@@ -1010,6 +1078,8 @@ export class CustomersComponent implements OnInit {
   private toast    = inject(ToastService);
   private confirm  = inject(ConfirmService);
   private auth     = inject(AuthService);
+  private router   = inject(Router);
+  private route    = inject(ActivatedRoute);
 
   readonly Users = Users; readonly Plus = Plus; readonly Pencil = Pencil;
   readonly Trash2 = Trash2; readonly Search = Search; readonly RefreshCw = RefreshCw;
@@ -1021,6 +1091,7 @@ export class CustomersComponent implements OnInit {
   readonly Eye = Eye; readonly ExternalLink = ExternalLink;
   readonly StickyNote = StickyNote; readonly Database = Database;
   readonly Filter = Filter; readonly Columns3 = Columns3;
+  readonly FileText = FileText;
 
   readonly presetTags = PRESET_TAGS;
 
@@ -1031,6 +1102,8 @@ export class CustomersComponent implements OnInit {
   searchQuery     = signal('');
   selectedTag     = signal('');
   selectedSource  = signal('');
+  selectedForm    = signal('');
+  forms           = signal<FormMini[]>([]);
   filtersOpen     = signal(false);
   columnsOpen     = signal(false);
   columnFilters   = signal<Record<string, string>>({});
@@ -1059,6 +1132,10 @@ export class CustomersComponent implements OnInit {
     if (tag) list = list.filter(c => c.tags.includes(tag));
     const src = this.selectedSource();
     if (src) list = list.filter(c => c.source === src);
+    // Un contacto puede estar en varios formularios: basta con que el elegido
+    // esté entre los suyos.
+    const formId = this.selectedForm();
+    if (formId) list = list.filter(c => (c.formIds ?? []).includes(formId));
 
     // Filtros por columna: coincidencia parcial, sin distinguir mayúsculas.
     const filters = Object.entries(this.columnFilters())
@@ -1082,6 +1159,24 @@ export class CustomersComponent implements OnInit {
     const present = new Set(this.customers().map(c => c.source));
     return SOURCE_ORDER.filter(s => present.has(s));
   });
+
+  /**
+   * Formularios ofrecibles: los que han traído algún contacto, más el que esté
+   * filtrado aunque esté vacío, para que el chip activo no desaparezca.
+   */
+  activeForms = computed<FormMini[]>(() => {
+    const used = new Set<string>();
+    for (const c of this.customers()) {
+      for (const id of c.formIds ?? []) used.add(id);
+    }
+    const selected = this.selectedForm();
+    return this.forms().filter(f => used.has(f._id) || f._id === selected);
+  });
+
+  /** Índice id → nombre, para pintar los chips de cada fila sin recorrer todo. */
+  private formNames = computed(
+    () => new Map(this.forms().map(f => [f._id, f.name] as const)),
+  );
 
   readonly baseColumns = BASE_COLUMNS;
 
@@ -1130,7 +1225,43 @@ export class CustomersComponent implements OnInit {
     notes: [''],
   });
 
-  ngOnInit() { this.loadCustomers(); }
+  ngOnInit() {
+    // Se entra aquí desde el listado de formularios con ?formId=…, para ver de
+    // golpe los contactos que trajo ese formulario.
+    const formId = this.route.snapshot.queryParamMap.get('formId');
+    if (formId) this.selectedForm.set(formId);
+    this.loadForms();
+    this.loadCustomers();
+  }
+
+  /** Nombres de los formularios en los que está el contacto. */
+  formsOf(c: Customer): FormMini[] {
+    const names = this.formNames();
+    return (c.formIds ?? []).map(id => ({ _id: id, name: names.get(id) ?? 'Formulario' }));
+  }
+
+  /** El filtro también viaja en la URL: así el enlace se puede compartir. */
+  selectForm(formId: string) {
+    this.selectedForm.set(formId);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { formId: formId || null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  countByForm(formId: string) {
+    return this.customers().filter(c => (c.formIds ?? []).includes(formId)).length;
+  }
+
+  loadForms() {
+    this.http.get<FormMini[]>(`${API}/customers/forms`).subscribe({
+      next: fs => this.forms.set(fs),
+      // Sin la lista solo se pierde el filtro; la tabla sigue funcionando.
+      error: () => this.forms.set([]),
+    });
+  }
 
   loadCustomers() {
     this.loading.set(true);
@@ -1363,6 +1494,7 @@ export class CustomersComponent implements OnInit {
       case 'phone':     return c.phone ?? '';
       case 'tags':      return c.tags.join(', ');
       case 'source':    return `${this.sourceMeta(c.source).label} ${c.sourceLabel ?? ''}`.trim();
+      case 'forms':     return this.formsOf(c).map(f => f.name).join(', ');
       case 'lastVisit': return c.lastVisit ? this.formatDate(c.lastVisit) : '';
       case 'createdAt': return this.formatDate(c.createdAt);
       case 'notes':     return c.notes ?? '';

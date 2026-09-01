@@ -11,6 +11,7 @@ import {
   EventRegistration,
   EventRegistrationSchema,
 } from '../events/event-registration.schema';
+import { ContactForm, ContactFormSchema } from '../forms/form.schema';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import {
       { name: Customer.name, schema: CustomerSchema },
       { name: Reservation.name, schema: ReservationSchema },
       { name: EventRegistration.name, schema: EventRegistrationSchema },
+      { name: ContactForm.name, schema: ContactFormSchema },
     ]),
   ],
   controllers: [CustomersController],

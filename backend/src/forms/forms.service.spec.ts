@@ -130,6 +130,43 @@ describe('FormsService.submit', () => {
     );
   });
 
+  it('deja registrado el formulario del que vino el contacto nuevo', async () => {
+    contactsFound(null, null);
+    await submit({ email: 'ana@test.com' });
+    expect(customerModel).toHaveBeenCalledWith(
+      expect.objectContaining({ formId, formIds: [formId] }),
+    );
+  });
+
+  it('suma el formulario al contacto que ya existía, sin duplicarlo', async () => {
+    const otroForm = new Types.ObjectId();
+    const previo = customerDoc({
+      email: 'ana@test.com',
+      formId: otroForm,
+      formIds: [otroForm],
+    });
+    contactsFound(previo, null);
+
+    await submit({ email: 'ana@test.com' });
+
+    // El de alta no se pisa; el nuevo se acumula para poder filtrar por ambos.
+    expect(previo.formId).toBe(otroForm);
+    expect(previo.formIds).toEqual([otroForm, formId]);
+  });
+
+  it('no repite el formulario si la misma persona lo vuelve a enviar', async () => {
+    const previo = customerDoc({
+      email: 'ana@test.com',
+      formId,
+      formIds: [formId],
+    });
+    contactsFound(previo, null);
+
+    await submit({ email: 'ana@test.com' });
+
+    expect(previo.formIds).toEqual([formId]);
+  });
+
   it('busca por teléfono aunque el envío traiga email: es lo que provocaba el E11000', async () => {
     const previo = customerDoc({ email: 'previo@test.com', phone: '+51 975 760 418' });
     contactsFound(null, previo);
