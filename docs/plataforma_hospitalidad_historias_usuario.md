@@ -751,7 +751,7 @@ Estas adiciones tienen ratio **alto valor / bajo esfuerzo de desarrollo** y debe
 - **Colas async:** BullMQ / Celery / Sidekiq para envíos masivos y procesamiento de imports.
 - **Storage:** S3-compatible (Cloudflare R2 / AWS S3) para media de eventos.
 - **AI:** Anthropic Claude API para generación de copy, landings, resúmenes; modelo de visión para procesar imágenes.
-- **Hosting:** Vercel/Netlify (frontend) + Railway/Render/AWS (backend) + Cloudflare CDN.
+- **Hosting:** Coolify self-hosted (frontend SSR + backend) + Cloudflare DNS.
 - **Observabilidad:** Sentry + Posthog + Logtail.
 
 ### 7.2 Multitenant

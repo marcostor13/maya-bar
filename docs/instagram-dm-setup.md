@@ -19,7 +19,7 @@ En el producto Instagram → **Business login settings** → **Valid OAuth Redir
 {PUBLIC_API_URL}/instagram-accounts/oauth/callback
 ```
 
-(reemplaza `{PUBLIC_API_URL}` por la URL pública real del backend, ej. `https://apimayabar.marcostorresalarcon.com`).
+(reemplaza `{PUBLIC_API_URL}` por la URL pública real del backend, ej. `https://api.mayacrm.site`).
 
 ### A.3. Configurar el webhook (uno solo para toda la app)
 

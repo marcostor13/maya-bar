@@ -1,0 +1,112 @@
+name: Deploy to Coolify
+
+# Push a main -> se detecta qué parte del monorepo cambió, se pasan los checks
+# de CI solo de esa parte y se lanzan los jobs de despliegue en Coolify.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Qué desplegar
+        type: choice
+        options: [all, backend, frontend]
+        default: all
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detectar rutas modificadas
+        id: filter
+        env:
+          BEFORE: ${{ github.event.before }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.target || '' }}
+        run: |
+          set -euo pipefail
+
+          # Disparo manual: manda el input, sin mirar el diff.
+          if [ -n "$MANUAL" ]; then
+            case "$MANUAL" in
+              all)      backend=true;  frontend=true ;;
+              backend)  backend=true;  frontend=false ;;
+              frontend) backend=false; frontend=true ;;
+              *)        echo "target desconocido: $MANUAL" >&2; exit 1 ;;
+            esac
+            echo "backend=$backend" >> "$GITHUB_OUTPUT"
+            echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Primer push de la rama (o historia no disponible): despliega todo.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          files=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
+          echo "Archivos modificados:"; echo "$files"
+
+          backend=false; frontend=false
+          echo "$files" | grep -qE '^backend/'  && backend=true  || true
+          echo "$files" | grep -qE '^frontend/' && frontend=true || true
+          # Cambios en la infraestructura común: se redespliega todo.
+          echo "$files" | grep -qE '^(scripts/|package\.json|\.github/workflows/)' && { backend=true; frontend=true; } || true
+
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      backend: ${{ needs.changes.outputs.backend == 'true' }}
+      frontend: ${{ needs.changes.outputs.frontend == 'true' }}
+
+  deploy-backend:
+    needs: [changes, ci]
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Desplegar backend en Coolify
+        env:
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_BACKEND_UUID: ${{ secrets.COOLIFY_BACKEND_UUID }}
+        run: node scripts/deploy.js backend
+
+  deploy-frontend:
+    needs: [changes, ci]
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Desplegar frontend en Coolify
+        env:
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_FRONTEND_UUID: ${{ secrets.COOLIFY_FRONTEND_UUID }}
+        run: node scripts/deploy.js frontend

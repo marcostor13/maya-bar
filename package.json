@@ -1,0 +1,19 @@
+{
+  "name": "maya-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo Maya CRM — backend NestJS y frontend Angular SSR desplegados en Coolify.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dns": "node scripts/dns.js",
+    "dns:check": "node scripts/dns.js --check",
+    "coolify:list": "node scripts/provision.js --list",
+    "provision": "node scripts/provision.js",
+    "provision:check": "node scripts/provision.js --check",
+    "deploy": "node scripts/deploy.js",
+    "deploy:backend": "node scripts/deploy.js backend",
+    "deploy:frontend": "node scripts/deploy.js frontend"
+  }
+}

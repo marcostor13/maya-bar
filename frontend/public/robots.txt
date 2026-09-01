@@ -24,4 +24,4 @@ Disallow: /impulsador
 Disallow: /visitas
 Disallow: /mis-asistentes
 
-Sitemap: https://mayabar.marcostorresalarcon.com/sitemap.xml
+Sitemap: https://mayacrm.site/sitemap.xml

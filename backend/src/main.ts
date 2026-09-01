@@ -53,9 +53,8 @@ async function bootstrap() {
         ? [
             frontendUrl,
             'http://localhost:4200',
-            'https://casagarbo.netlify.com',
-            'https://gruposolar.netlify.app',
-            'https://mayabar.marcostorresalarcon.com',
+            'https://mayacrm.site',
+            'https://www.mayacrm.site',
           ]
         : true,
     credentials: true,

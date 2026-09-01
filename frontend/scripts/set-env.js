@@ -2,13 +2,13 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Netlify no versiona secretos, así que este script reescribe
- * `environment.prod.ts` en cada build a partir de variables de entorno.
- * Todo lo que la app lee en producción tiene que salir de aquí: lo que no se
- * escriba se pierde, porque el archivo se sobrescribe entero.
+ * `environment.prod.ts` no se versiona con los valores reales: este script lo
+ * reescribe entero en cada build (imagen Docker en Coolify) a partir de
+ * variables de entorno. Todo lo que la app lee en producción tiene que salir de
+ * aquí; lo que no se escriba se pierde, porque el archivo se sobrescribe.
  */
-const apiUrl = process.env.BACKEND_URL || 'http://localhost:3000';
-const siteUrl = process.env.SITE_URL || 'https://mayabar.marcostorresalarcon.com';
+const apiUrl = process.env.BACKEND_URL || 'https://api.mayacrm.site';
+const siteUrl = process.env.SITE_URL || 'https://mayacrm.site';
 const whatsappNumber = process.env.WHATSAPP_NUMBER || '51975760418';
 
 const content = `export const environment = {

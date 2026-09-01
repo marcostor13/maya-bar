@@ -1,12 +1,24 @@
 name: CI
 
+# Se ejecuta en cada PR y, vía `workflow_call`, como puerta previa al despliegue
+# desde `deploy.yml`. Los inputs permiten saltarse la parte del monorepo que no
+# ha cambiado en el push.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
+    inputs:
+      backend:
+        description: Ejecutar los checks del backend
+        type: boolean
+        default: true
+      frontend:
+        description: Ejecutar los checks del frontend
+        type: boolean
+        default: true
 
 jobs:
   backend:
+    if: ${{ github.event_name == 'pull_request' || inputs.backend }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,6 +43,7 @@ jobs:
         run: npm run build
 
   frontend:
+    if: ${{ github.event_name == 'pull_request' || inputs.frontend }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,5 +58,7 @@ jobs:
       - run: npm ci
       - name: Unit tests
         run: npx ng test --watch false
-      - name: Build
-        run: npx ng build
+      - name: Build SSR
+        # Mismo comando que corre el Dockerfile, para que un fallo de build se
+        # vea aquí y no a mitad del despliegue en Coolify.
+        run: node scripts/set-env.js && npx ng build --configuration production

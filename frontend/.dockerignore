@@ -1,0 +1,7 @@
+node_modules
+dist
+.angular
+.vscode
+*.log
+coverage
+bun.lock

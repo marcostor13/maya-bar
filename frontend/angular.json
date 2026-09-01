@@ -70,8 +70,8 @@
               "outputHashing": "all",
               "security": {
                 "allowedHosts": [
-                  "mayabar.marcostorresalarcon.com",
-                  "www.mayabar.marcostorresalarcon.com"
+                  "mayacrm.site",
+                  "www.mayacrm.site"
                 ]
               }
             },

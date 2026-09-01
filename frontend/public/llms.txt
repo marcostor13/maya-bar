@@ -62,6 +62,6 @@ exportables en cualquier momento.
 
 ## Enlaces
 
-- Inicio: https://mayabar.marcostorresalarcon.com/
-- Ingresar: https://mayabar.marcostorresalarcon.com/login
-- Crear cuenta: https://mayabar.marcostorresalarcon.com/register
+- Inicio: https://mayacrm.site/
+- Ingresar: https://mayacrm.site/login
+- Crear cuenta: https://mayacrm.site/register
