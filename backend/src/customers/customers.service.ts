@@ -9,6 +9,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Customer } from './customer.schema';
+import { ContactForm } from '../forms/form.schema';
 import { Reservation } from '../reservations/reservation.schema';
 import { EventRegistration } from '../events/event-registration.schema';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
@@ -24,6 +25,7 @@ export class CustomersService implements OnModuleInit {
     @InjectModel(Reservation.name) private reservationModel: Model<Reservation>,
     @InjectModel(EventRegistration.name)
     private eventRegModel: Model<EventRegistration>,
+    @InjectModel(ContactForm.name) private formModel: Model<ContactForm>,
   ) {}
 
   /**
@@ -45,6 +47,7 @@ export class CustomersService implements OnModuleInit {
         }
       }
       await this.customerModel.syncIndexes();
+      await this.backfillFormIds();
     } catch (err) {
       // Duplicados previos de teléfono impiden crear el índice único; no es
       // motivo para tumbar el arranque, pero hay que verlo en los logs.
@@ -54,18 +57,58 @@ export class CustomersService implements OnModuleInit {
     }
   }
 
+  /**
+   * `formIds` llegó después de `formId`: los contactos que ya estaban en la
+   * base solo tienen el formulario que los dio de alta, y sin volcarlo al
+   * array no aparecerían al filtrar por ese mismo formulario.
+   */
+  private async backfillFormIds(): Promise<void> {
+    const res = await this.customerModel
+      .updateMany({ formId: { $ne: null }, formIds: { $in: [null, []] } }, [
+        { $set: { formIds: ['$formId'] } },
+      ])
+      .exec();
+    if (res.modifiedCount)
+      this.logger.log(
+        `Formulario de origen volcado a formIds en ${res.modifiedCount} contacto(s)`,
+      );
+  }
+
+  /** Formularios del tenant, en versión mínima para poblar el filtro. */
+  async findForms(
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<{ _id: string; name: string }[]> {
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+    };
+    if (isOwnerScoped(role)) filter['createdBy'] = new Types.ObjectId(userId);
+    const forms = await this.formModel
+      .find(filter, { name: 1 })
+      .sort({ name: 1 })
+      .lean()
+      .exec();
+    return forms.map((f) => ({ _id: String(f._id), name: f.name }));
+  }
+
   async findAll(
     tenantId: string,
     userId: string,
     role: string,
     search?: string,
     tag?: string,
+    formId?: string,
   ): Promise<Customer[]> {
     const filter: Record<string, unknown> = {
       tenantId: new Types.ObjectId(tenantId),
     };
     if (isOwnerScoped(role)) filter['createdBy'] = new Types.ObjectId(userId);
     if (tag) filter['tags'] = tag;
+    // Un contacto puede estar en varios formularios: se busca dentro del array,
+    // no en el `formId` de alta, que solo guarda el primero.
+    if (formId && Types.ObjectId.isValid(formId))
+      filter['formIds'] = new Types.ObjectId(formId);
     if (search) {
       const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       filter['$or'] = [{ name: re }, { email: re }, { phone: re }];

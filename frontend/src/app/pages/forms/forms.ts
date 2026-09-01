@@ -7,6 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -43,6 +44,7 @@ import {
   MessageSquare,
   Mail,
   Upload,
+  Users,
 } from 'lucide-angular';
 
 interface ListMini {
@@ -194,6 +196,10 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
                       </button>
                       <button class="btn btn-ghost btn-sm btn-icon" (click)="openSubmissions(f)" title="Ver envíos">
                         <lucide-icon [img]="Inbox" [size]="15" [strokeWidth]="2.5"></lucide-icon>
+                      </button>
+                      <button class="btn btn-ghost btn-sm btn-icon" (click)="openContacts(f)"
+                        title="Ver los contactos de este formulario">
+                        <lucide-icon [img]="Users" [size]="15" [strokeWidth]="2.5"></lucide-icon>
                       </button>
                       <button class="btn btn-ghost btn-sm btn-icon" (click)="openEditor(f)" title="Editar">
                         <lucide-icon [img]="Pencil" [size]="15" [strokeWidth]="2.5"></lucide-icon>
@@ -782,6 +788,7 @@ export class FormsComponent implements OnInit {
   private fb = inject(FormBuilder);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private router = inject(Router);
 
   readonly Plus = Plus;
   readonly Pencil = Pencil;
@@ -800,6 +807,7 @@ export class FormsComponent implements OnInit {
   readonly ExternalLink = ExternalLink;
   readonly MessageSquare = MessageSquare; readonly Mail = Mail;
   readonly Upload = Upload;
+  readonly Users = Users;
 
   readonly fieldTypes = FIELD_TYPES;
   readonly mapTargets = MAP_TARGETS;
@@ -1369,6 +1377,14 @@ curl '${this.api.publicBase}/${f.publicKey}'`;
         this.toast.error(err.error?.message || 'No se pudieron cargar los envíos');
       },
     });
+  }
+
+  /**
+   * Abre la tabla de contactos ya filtrada por este formulario. Un contacto que
+   * se registró en varios sale en todos: no se duplica, se etiqueta.
+   */
+  openContacts(f: ContactForm) {
+    void this.router.navigate(['/customers'], { queryParams: { formId: f._id } });
   }
 
   entries(data: Record<string, unknown>): [string, string][] {

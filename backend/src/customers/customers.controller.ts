@@ -27,6 +27,7 @@ export class CustomersController {
   findAll(
     @Query('search') search: string,
     @Query('tag') tag: string,
+    @Query('formId') formId: string,
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, CRM_ROLES);
@@ -36,6 +37,22 @@ export class CustomersController {
       req.user.role,
       search,
       tag,
+      formId,
+    );
+  }
+
+  /**
+   * Formularios del tenant para poblar el filtro de la tabla. Va aquí y no en
+   * `/forms` porque quien administra contactos no tiene por qué tener acceso
+   * al módulo de formularios, y solo necesita el nombre y el id.
+   */
+  @Get('forms')
+  findForms(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.customersService.findForms(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
     );
   }
 

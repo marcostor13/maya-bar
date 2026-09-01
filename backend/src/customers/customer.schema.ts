@@ -53,9 +53,21 @@ export class Customer extends Document {
   @Prop({ type: Types.ObjectId, ref: 'ContactSource', index: true })
   sourceId?: Types.ObjectId;
 
-  /** Formulario público que lo capturó, si `source === 'form'`. */
+  /** Primer formulario público que lo capturó, si `source === 'form'`. */
   @Prop({ type: Types.ObjectId, ref: 'ContactForm', index: true })
   formId?: Types.ObjectId;
+
+  /**
+   * Todos los formularios por los que ha pasado el contacto. La misma persona
+   * puede registrarse en varias landings sin duplicarse: en vez de crear otro
+   * contacto se acumula aquí el formulario, y así se puede filtrar por
+   * cualquiera de ellos. `formId` sigue siendo el que lo dio de alta.
+   */
+  @Prop({
+    type: [{ type: Types.ObjectId, ref: 'ContactForm' }],
+    default: [],
+  })
+  formIds: Types.ObjectId[];
 
   /** Nombre legible del origen: "Landing Black Friday", "Import CSV enero"… */
   @Prop({ trim: true })
@@ -80,6 +92,10 @@ export class Customer extends Document {
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);
+
+// Filtrar los contactos de un formulario es la consulta que abre la ficha del
+// formulario: se acota por tenant para no barrer la colección entera.
+CustomerSchema.index({ tenantId: 1, formIds: 1 });
 
 // Unicidad por (email, tenant, dueño) — los impulsadores tienen su propia lista.
 // Es parcial: los contactos sin email (importados solo con teléfono) no chocan
