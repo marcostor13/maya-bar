@@ -29,4 +29,10 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 EXPOSE 4000
+
+# Healthcheck propio: la imagen alpine no trae curl y el wget de busybox resuelve
+# `localhost` a ::1, donde el servidor (que escucha en 0.0.0.0) no responde. Con
+# HEALTHCHECK definido aquí, Coolify respeta este en vez de generar el suyo.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "dist/frontend/server/server.mjs"]
