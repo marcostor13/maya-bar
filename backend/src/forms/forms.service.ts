@@ -34,6 +34,11 @@ export interface SubmitResult {
   message: string;
   redirectUrl?: string;
   customerId: string;
+  /**
+   * Es un alta en ESTE formulario. No dice si el contacto se acaba de crear:
+   * alguien que ya estaba en la base por otra landing, o dado de alta a mano,
+   * cuenta como registro nuevo la primera vez que envía este formulario.
+   */
   created: boolean;
   /** El contacto ya se había registrado antes en ESTE formulario. */
   duplicate: boolean;
@@ -203,7 +208,8 @@ export class FormsService {
    * no es un alta: se responde `duplicate: true, registered: true` y no se
    * apunta un envío nuevo, no se suma al contador ni se repiten las respuestas
    * automáticas. Estar en la base por otro formulario no cuenta como duplicado:
-   * para esta landing sigue siendo un registro nuevo.
+   * para esta landing es un registro nuevo con todas las consecuencias, o sea
+   * envío guardado, WhatsApp y email de bienvenida, y `created: true`.
    */
   async submit(
     publicKey: string,
@@ -227,23 +233,23 @@ export class FormsService {
       );
 
     const tid = form.tenantId;
-    const { customer, created, linkedBefore } = await this.resolveCustomer(
-      form,
-      ctx,
-      {
-        email,
-        phone,
-        name: mapped['name']?.trim(),
-        notes: mapped['notes'],
-        customFields,
-      },
-    );
+    const {
+      customer,
+      created: createdContact,
+      linkedBefore,
+    } = await this.resolveCustomer(form, ctx, {
+      email,
+      phone,
+      name: mapped['name']?.trim(),
+      notes: mapped['notes'],
+      customFields,
+    });
 
     // Los datos del contacto sí se han refrescado con lo que acaba de mandar,
     // pero el registro no se repite: sin `redirectUrl`, para que la landing
     // muestre el aviso en vez de saltar a la página de gracias.
     if (
-      !created &&
+      !createdContact &&
       (await this.isAlreadyRegistered(form, customer, linkedBefore))
     )
       return {
@@ -287,7 +293,10 @@ export class FormsService {
       message: form.successMessage,
       redirectUrl: form.redirectUrl,
       customerId: String(customer._id),
-      created,
+      // Se ha llegado hasta aquí, así que es la primera vez que esta persona
+      // envía este formulario: para la landing es un alta, aunque el contacto
+      // ya estuviera en la base por otra vía.
+      created: true,
       duplicate: false,
       registered: false,
     };

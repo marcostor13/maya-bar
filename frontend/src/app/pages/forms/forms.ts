@@ -1325,7 +1325,8 @@ curl -X POST '${this.submitUrl(f)}' \\
   -H 'Content-Type: application/json' \\
   -d '${JSON.stringify({ data: body, pageUrl: 'https://tusitio.com/landing' })}'
 
-# Respuesta de un registro nuevo
+# Respuesta de un registro nuevo (también si el contacto ya existía por otra vía:
+# la primera vez que envía ESTE formulario cuenta como alta y recibe el WhatsApp)
 # { "ok": true, "message": "${f.successMessage}", "customerId": "...", "created": true, "duplicate": false, "registered": false }
 
 # Respuesta si esa persona ya se había registrado en este formulario

@@ -252,11 +252,39 @@ describe('FormsService.submit', () => {
 
       expect(res).toMatchObject({
         message: 'Gracias',
-        created: false,
+        created: true,
         duplicate: false,
         registered: false,
       });
       expect(submissionModel.create).toHaveBeenCalled();
+    });
+
+    it('manda el WhatsApp al contacto que ya existía pero estrena formulario', async () => {
+      const otroForm = new Types.ObjectId();
+      const previo = customerDoc({
+        email: 'ana@test.com',
+        phone: '+51 975 760 418',
+        formId: otroForm,
+        formIds: [otroForm],
+      });
+      contactsFound(previo, null);
+      Object.assign(form, {
+        autoWhatsApp: { enabled: true, templateName: 'bienvenida' },
+      });
+
+      const res = await submit({ nombre: 'Ana', email: 'ana@test.com' });
+
+      expect(mockSettings.sendWhatsAppTemplate).toHaveBeenCalledWith(
+        '+51 975 760 418',
+        'bienvenida',
+        'es',
+        [],
+        String(tenantId),
+        undefined,
+      );
+      expect(res).toMatchObject({ created: true, registered: false });
+
+      Object.assign(form, { autoWhatsApp: undefined });
     });
 
     it('reconoce a los contactos antiguos sin formIds por su envío anterior', async () => {
@@ -299,7 +327,8 @@ describe('FormsService.submit', () => {
       telefono: '975760418',
     });
 
-    expect(res.created).toBe(false);
+    // Estrena formulario, así que para la landing es un alta.
+    expect(res.created).toBe(true);
     // No se intenta insertar: ahí estaba el fallo.
     expect(customerModel).not.toHaveBeenCalled();
     expect(previo.save).toHaveBeenCalled();
@@ -365,7 +394,7 @@ describe('FormsService.submit', () => {
 
     const res = await submit({ email: 'ana@test.com', telefono: '999888777' });
 
-    expect(res.created).toBe(false);
+    expect(res.created).toBe(true);
     expect(res.customerId).toBe(String(ganador._id));
   });
 
