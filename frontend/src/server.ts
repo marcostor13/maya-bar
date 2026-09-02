@@ -59,7 +59,10 @@ app.use((req, res, next) => {
 
 if (isMainModule(import.meta.url)) {
   const port = Number(process.env['PORT'] ?? 4000);
-  app.listen(port, '0.0.0.0', () => {
+  // Sin host explícito Node escucha en dual-stack (::  + 0.0.0.0). Es lo que
+  // necesita el healthcheck del contenedor: el wget de busybox resuelve
+  // `localhost` a ::1 y con bind solo a 0.0.0.0 recibía "connection refused".
+  app.listen(port, () => {
     console.log(`[ssr] servidor Angular escuchando en http://0.0.0.0:${port}`);
   });
 }

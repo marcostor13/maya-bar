@@ -25,6 +25,8 @@ RUN node scripts/set-env.js && npx ng build --configuration production
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production PORT=4000
+# curl: lo usa el healthcheck que genera Coolify (la imagen alpine no lo trae).
+RUN apk add --no-cache curl
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
