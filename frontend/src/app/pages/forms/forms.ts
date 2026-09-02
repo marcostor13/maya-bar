@@ -1325,8 +1325,11 @@ curl -X POST '${this.submitUrl(f)}' \\
   -H 'Content-Type: application/json' \\
   -d '${JSON.stringify({ data: body, pageUrl: 'https://tusitio.com/landing' })}'
 
-# Respuesta
-# { "ok": true, "message": "${f.successMessage}", "customerId": "...", "created": true }
+# Respuesta de un registro nuevo
+# { "ok": true, "message": "${f.successMessage}", "customerId": "...", "created": true, "duplicate": false, "registered": false }
+
+# Respuesta si esa persona ya se había registrado en este formulario
+# { "ok": true, "message": "Ya estás registrado...", "customerId": "...", "created": false, "duplicate": true, "registered": true }
 
 # Definición del formulario (para renderizarlo dinámicamente)
 curl '${this.api.publicBase}/${f.publicKey}'`;

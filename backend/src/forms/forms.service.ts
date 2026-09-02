@@ -35,7 +35,15 @@ export interface SubmitResult {
   redirectUrl?: string;
   customerId: string;
   created: boolean;
+  /** El contacto ya se había registrado antes en ESTE formulario. */
+  duplicate: boolean;
+  /** Igual que `duplicate`, con el nombre que espera el embed. */
+  registered: boolean;
 }
+
+/** Lo que se responde cuando la persona ya estaba registrada en el formulario. */
+const ALREADY_REGISTERED_MESSAGE =
+  'Ya estás registrado con estos datos. No hace falta que lo envíes otra vez.';
 
 /** Vista pública del formulario: nunca expone tags, listas ni contadores. */
 export interface PublicForm {
@@ -190,6 +198,12 @@ export class FormsService {
    * Convierte un envío en contacto. Deduplica por email y, en su defecto, por
    * teléfono dentro del tenant; si el contacto ya existe se completa sin borrar
    * lo que ya tenía y se conserva el origen con el que entró la primera vez.
+   *
+   * Un reenvío de alguien que YA se había registrado en este mismo formulario
+   * no es un alta: se responde `duplicate: true, registered: true` y no se
+   * apunta un envío nuevo, no se suma al contador ni se repiten las respuestas
+   * automáticas. Estar en la base por otro formulario no cuenta como duplicado:
+   * para esta landing sigue siendo un registro nuevo.
    */
   async submit(
     publicKey: string,
@@ -213,13 +227,33 @@ export class FormsService {
       );
 
     const tid = form.tenantId;
-    const { customer, created } = await this.resolveCustomer(form, ctx, {
-      email,
-      phone,
-      name: mapped['name']?.trim(),
-      notes: mapped['notes'],
-      customFields,
-    });
+    const { customer, created, linkedBefore } = await this.resolveCustomer(
+      form,
+      ctx,
+      {
+        email,
+        phone,
+        name: mapped['name']?.trim(),
+        notes: mapped['notes'],
+        customFields,
+      },
+    );
+
+    // Los datos del contacto sí se han refrescado con lo que acaba de mandar,
+    // pero el registro no se repite: sin `redirectUrl`, para que la landing
+    // muestre el aviso en vez de saltar a la página de gracias.
+    if (
+      !created &&
+      (await this.isAlreadyRegistered(form, customer, linkedBefore))
+    )
+      return {
+        ok: true,
+        message: ALREADY_REGISTERED_MESSAGE,
+        customerId: String(customer._id),
+        created: false,
+        duplicate: true,
+        registered: true,
+      };
 
     if (form.listIds.length > 0) await this.addToLists(form.listIds, customer);
 
@@ -254,7 +288,26 @@ export class FormsService {
       redirectUrl: form.redirectUrl,
       customerId: String(customer._id),
       created,
+      duplicate: false,
+      registered: false,
     };
+  }
+
+  /**
+   * ¿Esta persona ya se había registrado en este mismo formulario? El vínculo
+   * vive en `formIds` del contacto, pero los contactos anteriores a ese campo
+   * no lo tienen: para ellos vale con que exista un envío suyo al formulario.
+   */
+  private async isAlreadyRegistered(
+    form: ContactForm,
+    customer: Customer,
+    linkedBefore: boolean,
+  ): Promise<boolean> {
+    if (linkedBefore) return true;
+    const previous = await this.submissionModel
+      .exists({ formId: form._id, customerId: customer._id })
+      .exec();
+    return !!previous;
   }
 
   /** Dispara el WhatsApp y el email de bienvenida configurados en el formulario. */
@@ -339,7 +392,12 @@ export class FormsService {
       notes?: string;
       customFields: Record<string, unknown>;
     },
-  ): Promise<{ customer: Customer; created: boolean }> {
+  ): Promise<{
+    customer: Customer;
+    created: boolean;
+    /** Ya venía vinculado a este formulario, antes de fusionar este envío. */
+    linkedBefore: boolean;
+  }> {
     const { email, phone } = data;
     // `createdBy: null` casa con el campo ausente y con el guardado a null;
     // `$exists: false` solo casaba con el primero.
@@ -358,12 +416,15 @@ export class FormsService {
     const existing = byEmail ?? byPhone;
 
     if (existing) {
+      // Se mira antes del merge: `mergeIntoCustomer` añade el formulario.
+      const linkedBefore = hasForm(existing, form._id);
       return {
         customer: await this.mergeIntoCustomer(existing, form, data, {
           byEmail,
           byPhone,
         }),
         created: false,
+        linkedBefore,
       };
     }
 
@@ -383,7 +444,7 @@ export class FormsService {
         sourceUrl: ctx.pageUrl || ctx.referer,
         ...(form.createdBy ? { createdBy: form.createdBy } : {}),
       }).save();
-      return { customer, created: true };
+      return { customer, created: true, linkedBefore: false };
     } catch (err) {
       if (!isDuplicateKey(err)) throw err;
       // Dos envíos simultáneos del mismo visitante: el otro ganó la carrera.
@@ -395,12 +456,14 @@ export class FormsService {
         throw new ConflictException(
           'Ya tenemos estos datos registrados. Si necesitas actualizarlos, ponte en contacto con nosotros.',
         );
+      const linkedBefore = hasForm(raced, form._id);
       return {
         customer: await this.mergeIntoCustomer(raced, form, data, {
           byEmail: null,
           byPhone: null,
         }),
         created: false,
+        linkedBefore,
       };
     }
   }
@@ -429,15 +492,13 @@ export class FormsService {
     if (data.notes) existing.notes = data.notes;
 
     if (data.email && existing.email !== data.email) {
-      const libre =
-        !owners.byEmail || String(owners.byEmail._id) === id;
+      const libre = !owners.byEmail || String(owners.byEmail._id) === id;
       if (!existing.email && libre) existing.email = data.email;
       else extra['Email alternativo'] = data.email;
     }
 
     if (data.phone && existing.phone !== data.phone) {
-      const libre =
-        !owners.byPhone || String(owners.byPhone._id) === id;
+      const libre = !owners.byPhone || String(owners.byPhone._id) === id;
       if (!existing.phone && libre) existing.phone = data.phone;
       else extra['Teléfono alternativo'] = data.phone;
     }
@@ -446,7 +507,7 @@ export class FormsService {
     existing.customFields = { ...existing.customFields, ...extra };
     // El origen no se pisa: interesa por dónde entró la primera vez.
     if (!existing.formId) {
-      existing.formId = form._id as Types.ObjectId;
+      existing.formId = form._id;
       existing.sourceLabel = existing.sourceLabel || form.name;
     }
     // Pero sí se acumula el formulario: la misma persona puede registrarse en
@@ -560,6 +621,15 @@ export class FormsService {
  * cadena porque un mismo ObjectId puede llegar como documento hidratado o como
  * valor plano según de dónde venga el contacto.
  */
+/** ¿El contacto ya está vinculado a este formulario? */
+function hasForm(customer: Customer, formId: Types.ObjectId): boolean {
+  const key = String(formId);
+  return (
+    (customer.formIds ?? []).some((id) => String(id) === key) ||
+    String(customer.formId ?? '') === key
+  );
+}
+
 function addFormId(
   current: Types.ObjectId[] | undefined,
   formId: Types.ObjectId,

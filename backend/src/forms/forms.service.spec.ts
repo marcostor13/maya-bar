@@ -33,14 +33,16 @@ function customerDoc(over: Partial<Record<string, unknown>> = {}) {
 
 /** Error tal como lo lanza Mongo al chocar con un índice único. */
 function duplicateKeyError() {
-  return Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
+  return Object.assign(new Error('E11000 duplicate key error'), {
+    code: 11000,
+  });
 }
 
 describe('FormsService.submit', () => {
   let service: FormsService;
   let formModel: { findOne: jest.Mock; updateOne: jest.Mock };
   let customerModel: jest.Mock & { findOne: jest.Mock };
-  let submissionModel: { create: jest.Mock };
+  let submissionModel: { create: jest.Mock; exists: jest.Mock };
   let listModel: { updateMany: jest.Mock; find: jest.Mock };
   let mockSettings: { sendWhatsAppTemplate: jest.Mock };
   let mockMail: { sendCampaign: jest.Mock };
@@ -57,9 +59,30 @@ describe('FormsService.submit', () => {
     listIds: [] as Types.ObjectId[],
     successMessage: 'Gracias',
     fields: [
-      { key: 'nombre', label: 'Nombre', type: 'text', required: false, options: [], mapTo: 'name' },
-      { key: 'email', label: 'Email', type: 'email', required: false, options: [], mapTo: 'email' },
-      { key: 'telefono', label: 'Teléfono', type: 'tel', required: false, options: [], mapTo: 'phone' },
+      {
+        key: 'nombre',
+        label: 'Nombre',
+        type: 'text',
+        required: false,
+        options: [],
+        mapTo: 'name',
+      },
+      {
+        key: 'email',
+        label: 'Email',
+        type: 'email',
+        required: false,
+        options: [],
+        mapTo: 'email',
+      },
+      {
+        key: 'telefono',
+        label: 'Teléfono',
+        type: 'tel',
+        required: false,
+        options: [],
+        mapTo: 'phone',
+      },
     ],
   };
 
@@ -91,22 +114,35 @@ describe('FormsService.submit', () => {
       { findOne: jest.fn(), created },
     ) as never;
 
-    submissionModel = { create: jest.fn().mockResolvedValue({}) };
+    submissionModel = {
+      create: jest.fn().mockResolvedValue({}),
+      // Sin envío previo salvo que el test diga lo contrario.
+      exists: jest.fn().mockReturnValue({ exec: () => Promise.resolve(null) }),
+    };
     listModel = {
-      updateMany: jest.fn().mockReturnValue({ exec: () => Promise.resolve({}) }),
+      updateMany: jest
+        .fn()
+        .mockReturnValue({ exec: () => Promise.resolve({}) }),
       find: jest.fn().mockReturnValue({ exec: () => Promise.resolve([]) }),
     };
 
-    mockSettings = { sendWhatsAppTemplate: jest.fn().mockResolvedValue(undefined) };
+    mockSettings = {
+      sendWhatsAppTemplate: jest.fn().mockResolvedValue(undefined),
+    };
     mockMail = { sendCampaign: jest.fn().mockResolvedValue(undefined) };
-    mockTemplates = { resolveSendHeader: jest.fn().mockResolvedValue(undefined) };
+    mockTemplates = {
+      resolveSendHeader: jest.fn().mockResolvedValue(undefined),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         FormsService,
         { provide: getModelToken(ContactForm.name), useValue: formModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
-        { provide: getModelToken(FormSubmission.name), useValue: submissionModel },
+        {
+          provide: getModelToken(FormSubmission.name),
+          useValue: submissionModel,
+        },
         { provide: getModelToken(ContactList.name), useValue: listModel },
         { provide: SettingsService, useValue: mockSettings },
         { provide: MailService, useValue: mockMail },
@@ -119,7 +155,11 @@ describe('FormsService.submit', () => {
 
   it('crea el contacto cuando no existe nada parecido', async () => {
     contactsFound(null, null);
-    const res = await submit({ nombre: 'Ana', email: 'ana@test.com', telefono: '999888777' });
+    const res = await submit({
+      nombre: 'Ana',
+      email: 'ana@test.com',
+      telefono: '999888777',
+    });
     expect(res.created).toBe(true);
     expect(customerModel).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -167,8 +207,90 @@ describe('FormsService.submit', () => {
     expect(previo.formIds).toEqual([formId]);
   });
 
+  describe('reenvío de alguien ya registrado', () => {
+    it('responde duplicate y registered sin volver a registrar nada', async () => {
+      const previo = customerDoc({
+        email: 'ana@test.com',
+        formId,
+        formIds: [formId],
+      });
+      contactsFound(previo, null);
+      Object.assign(form, {
+        redirectUrl: 'https://landing.test/gracias',
+        autoEmail: { enabled: true, subject: 'Hola', body: 'Hola {nombre}' },
+      });
+
+      const res = await submit({ nombre: 'Ana', email: 'ana@test.com' });
+
+      expect(res).toMatchObject({
+        ok: true,
+        created: false,
+        duplicate: true,
+        registered: true,
+        customerId: String(previo._id),
+      });
+      // Nada de reserva nueva: ni envío, ni contador, ni respuesta automática.
+      expect(submissionModel.create).not.toHaveBeenCalled();
+      expect(formModel.updateOne).not.toHaveBeenCalled();
+      expect(mockMail.sendCampaign).not.toHaveBeenCalled();
+      // Sin redirección, para que la landing pueda mostrar el aviso.
+      expect(res.redirectUrl).toBeUndefined();
+
+      Object.assign(form, { redirectUrl: undefined, autoEmail: undefined });
+    });
+
+    it('es un registro nuevo si el contacto existía pero por otro formulario', async () => {
+      const otroForm = new Types.ObjectId();
+      const previo = customerDoc({
+        email: 'ana@test.com',
+        formId: otroForm,
+        formIds: [otroForm],
+      });
+      contactsFound(previo, null);
+
+      const res = await submit({ email: 'ana@test.com' });
+
+      expect(res).toMatchObject({
+        message: 'Gracias',
+        created: false,
+        duplicate: false,
+        registered: false,
+      });
+      expect(submissionModel.create).toHaveBeenCalled();
+    });
+
+    it('reconoce a los contactos antiguos sin formIds por su envío anterior', async () => {
+      const previo = customerDoc({ email: 'ana@test.com' });
+      contactsFound(previo, null);
+      submissionModel.exists.mockReturnValueOnce({
+        exec: () => Promise.resolve({ _id: new Types.ObjectId() }),
+      });
+
+      const res = await submit({ email: 'ana@test.com' });
+
+      expect(submissionModel.exists).toHaveBeenCalledWith({
+        formId,
+        customerId: previo._id,
+      });
+      expect(res).toMatchObject({ duplicate: true, registered: true });
+    });
+
+    it('marca como no duplicado el alta de un contacto nuevo', async () => {
+      contactsFound(null, null);
+      const res = await submit({ email: 'ana@test.com' });
+      expect(res).toMatchObject({
+        created: true,
+        duplicate: false,
+        registered: false,
+      });
+    });
+  });
+
   it('busca por teléfono aunque el envío traiga email: es lo que provocaba el E11000', async () => {
-    const previo = customerDoc({ email: 'previo@test.com', phone: '+51 975 760 418' });
+    const previo = customerDoc({
+      email: 'previo@test.com',
+      phone: '+51 975 760 418',
+    });
     contactsFound(null, previo);
 
     const res = await submit({
@@ -184,7 +306,10 @@ describe('FormsService.submit', () => {
   });
 
   it('no pisa el email guardado: archiva el nuevo como campo adicional', async () => {
-    const previo = customerDoc({ email: 'previo@test.com', phone: '+51 975 760 418' });
+    const previo = customerDoc({
+      email: 'previo@test.com',
+      phone: '+51 975 760 418',
+    });
     contactsFound(null, previo);
 
     await submit({ email: 'nuevo@test.com', telefono: '975760418' });
@@ -196,8 +321,14 @@ describe('FormsService.submit', () => {
   });
 
   it('archiva el teléfono cuando ya pertenece a otro contacto', async () => {
-    const porEmail = customerDoc({ email: 'ana@test.com', phone: '+51 900 000 001' });
-    const otro = customerDoc({ email: 'otro@test.com', phone: '+51 999 888 777' });
+    const porEmail = customerDoc({
+      email: 'ana@test.com',
+      phone: '+51 900 000 001',
+    });
+    const otro = customerDoc({
+      email: 'otro@test.com',
+      phone: '+51 999 888 777',
+    });
     contactsFound(porEmail, otro);
 
     await submit({ email: 'ana@test.com', telefono: '999888777' });
@@ -219,7 +350,10 @@ describe('FormsService.submit', () => {
   });
 
   it('resuelve la carrera de dos envíos simultáneos sin romper', async () => {
-    const ganador = customerDoc({ email: 'ana@test.com', phone: '+51 999 888 777' });
+    const ganador = customerDoc({
+      email: 'ana@test.com',
+      phone: '+51 999 888 777',
+    });
     contactsFound(null, null);
     customerModel.mockImplementationOnce(() => ({
       save: () => Promise.reject(duplicateKeyError()),
@@ -240,7 +374,9 @@ describe('FormsService.submit', () => {
     customerModel.mockImplementationOnce(() => ({
       save: () => Promise.reject(duplicateKeyError()),
     }));
-    customerModel.findOne.mockReturnValueOnce({ exec: () => Promise.resolve(null) });
+    customerModel.findOne.mockReturnValueOnce({
+      exec: () => Promise.resolve(null),
+    });
 
     await expect(
       submit({ email: 'ana@test.com', telefono: '999888777' }),
@@ -264,7 +400,11 @@ describe('FormsService.submit', () => {
   describe('respuestas automáticas', () => {
     /** Reconfigura el formulario del test para esta batería. */
     const withAuto = (auto: Record<string, unknown>) =>
-      Object.assign(form, { autoWhatsApp: undefined, autoEmail: undefined }, auto);
+      Object.assign(
+        form,
+        { autoWhatsApp: undefined, autoEmail: undefined },
+        auto,
+      );
 
     afterEach(() => {
       Object.assign(form, { autoWhatsApp: undefined, autoEmail: undefined });
@@ -272,7 +412,11 @@ describe('FormsService.submit', () => {
 
     it('no envía nada si no está configurado', async () => {
       contactsFound(null, null);
-      await submit({ nombre: 'Ana', email: 'ana@test.com', telefono: '999888777' });
+      await submit({
+        nombre: 'Ana',
+        email: 'ana@test.com',
+        telefono: '999888777',
+      });
       expect(mockSettings.sendWhatsAppTemplate).not.toHaveBeenCalled();
       expect(mockMail.sendCampaign).not.toHaveBeenCalled();
     });
@@ -288,7 +432,11 @@ describe('FormsService.submit', () => {
       });
       contactsFound(null, null);
 
-      await submit({ nombre: 'Ana Pérez', email: 'ana@test.com', telefono: '999888777' });
+      await submit({
+        nombre: 'Ana Pérez',
+        email: 'ana@test.com',
+        telefono: '999888777',
+      });
 
       expect(mockSettings.sendWhatsAppTemplate).toHaveBeenCalledWith(
         '+51 999 888 777',
@@ -324,7 +472,11 @@ describe('FormsService.submit', () => {
 
     it('omite el WhatsApp si el contacto no dejó teléfono', async () => {
       withAuto({
-        autoWhatsApp: { enabled: true, templateName: 'bienvenida', templateVars: [] },
+        autoWhatsApp: {
+          enabled: true,
+          templateName: 'bienvenida',
+          templateVars: [],
+        },
       });
       contactsFound(null, null);
 
@@ -335,14 +487,24 @@ describe('FormsService.submit', () => {
 
     it('el registro se guarda aunque el envío falle', async () => {
       withAuto({
-        autoWhatsApp: { enabled: true, templateName: 'bienvenida', templateVars: [] },
+        autoWhatsApp: {
+          enabled: true,
+          templateName: 'bienvenida',
+          templateVars: [],
+        },
         autoEmail: { enabled: true, subject: 'Hola', body: 'Texto' },
       });
-      mockSettings.sendWhatsAppTemplate.mockRejectedValue(new Error('Meta caída'));
+      mockSettings.sendWhatsAppTemplate.mockRejectedValue(
+        new Error('Meta caída'),
+      );
       mockMail.sendCampaign.mockRejectedValue(new Error('Resend caído'));
       contactsFound(null, null);
 
-      const res = await submit({ nombre: 'Ana', email: 'ana@test.com', telefono: '999888777' });
+      const res = await submit({
+        nombre: 'Ana',
+        email: 'ana@test.com',
+        telefono: '999888777',
+      });
 
       expect(res.ok).toBe(true);
       expect(res.created).toBe(true);
