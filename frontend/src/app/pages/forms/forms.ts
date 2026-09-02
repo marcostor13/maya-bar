@@ -1284,6 +1284,32 @@ export class FormsComponent implements OnInit {
 
   private jsSnippet(f: ContactForm): string {
     return `<script>
+/*
+  Estados que devuelve la API (HTTP 200 = envío aceptado):
+
+  status: "new"         → REGISTRO NUEVO. Es la primera vez que esta persona
+                          envía ESTE formulario, aunque ya estuviera en la base
+                          por otra landing o dada de alta a mano. Se guarda el
+                          envío y salen las respuestas automáticas
+                          (WhatsApp / email). Equivale a created:true,
+                          duplicate:false, registered:false.
+
+  status: "registered"  → YA ESTABA REGISTRADA en este mismo formulario. Sus
+                          datos se actualizan, pero no se apunta un envío nuevo
+                          ni se repiten las respuestas automáticas, y no viene
+                          redirectUrl para que puedas mostrar el aviso.
+                          Equivale a created:false, duplicate:true,
+                          registered:true.
+
+  Otros campos: message (texto a mostrar), customerId (id del contacto en el
+  CRM, sirve para cruzarlo con tu sistema) y redirectUrl (solo en "new", si el
+  formulario tiene página de gracias configurada).
+
+  HTTP 400 = falta un campo obligatorio o no llegó ni email ni teléfono.
+  HTTP 404 = clave pública inválida o formulario desactivado.
+  HTTP 409 = esos datos chocan con otro contacto (email/teléfono de otra ficha).
+  En los errores, message puede ser un texto o un array de textos.
+*/
 (function () {
   var form = document.getElementById('${this.formId(f)}');
   form.addEventListener('submit', function (e) {
@@ -1305,9 +1331,17 @@ export class FormsComponent implements OnInit {
           alert(Array.isArray(msg) ? msg.join('\n') : (msg || 'No se pudo enviar. Revisa los datos.'));
           return;
         }
-        if (out.res.redirectUrl) { location.href = out.res.redirectUrl; return; }
+        var res = out.res;
+        if (res.status === 'registered') {
+          // Ya estaba en este formulario: avisa, no lo cuentes como alta nueva.
+          alert(res.message || 'Ya estás registrado con estos datos.');
+          return;
+        }
+        // status === 'new': registro guardado. Aquí es donde debes disparar tu
+        // "gracias", el píxel de conversión o lo que tengas montado.
         form.reset();
-        alert(out.res.message || '¡Gracias!');
+        if (res.redirectUrl) { location.href = res.redirectUrl; return; }
+        alert(res.message || '¡Gracias!');
       })
       .catch(function () { alert('No se pudo enviar. Inténtalo de nuevo.'); });
   });
@@ -1325,12 +1359,19 @@ curl -X POST '${this.submitUrl(f)}' \\
   -H 'Content-Type: application/json' \\
   -d '${JSON.stringify({ data: body, pageUrl: 'https://tusitio.com/landing' })}'
 
-# Respuesta de un registro nuevo (también si el contacto ya existía por otra vía:
+# REGISTRO NUEVO — status "new" (también si el contacto ya existía por otra vía:
 # la primera vez que envía ESTE formulario cuenta como alta y recibe el WhatsApp)
-# { "ok": true, "message": "${f.successMessage}", "customerId": "...", "created": true, "duplicate": false, "registered": false }
+# { "ok": true, "status": "new", "message": "${f.successMessage}", "customerId": "...", "created": true, "duplicate": false, "registered": false }
 
-# Respuesta si esa persona ya se había registrado en este formulario
-# { "ok": true, "message": "Ya estás registrado...", "customerId": "...", "created": false, "duplicate": true, "registered": true }
+# YA REGISTRADA EN ESTE FORMULARIO — status "registered" (se actualizan sus datos,
+# pero no se guarda otro envío, no se repiten las respuestas automáticas y no hay redirectUrl)
+# { "ok": true, "status": "registered", "message": "Ya estás registrado...", "customerId": "...", "created": false, "duplicate": true, "registered": true }
+
+# Cómo interpretarlo: mira solo "status". "new" = alta correcta, cuéntala como
+# conversión. "registered" = reenvío, avisa y no la cuentes. Los booleanos
+# created / duplicate / registered dicen lo mismo y se mantienen por compatibilidad.
+# Errores: 400 campo obligatorio o sin email ni teléfono · 404 clave inválida o
+# formulario desactivado · 409 datos que chocan con otro contacto.
 
 # Definición del formulario (para renderizarlo dinámicamente)
 curl '${this.api.publicBase}/${f.publicKey}'`;

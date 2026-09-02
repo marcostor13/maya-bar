@@ -29,8 +29,17 @@ export interface SubmitContext {
   userAgent?: string;
 }
 
+/**
+ * Resultado del envío en una sola palabra, para quien no quiera interpretar
+ * tres booleanos: `new` es un alta en este formulario, `registered` es un
+ * reenvío de alguien que ya se había registrado en él.
+ */
+export type SubmitStatus = 'new' | 'registered';
+
 export interface SubmitResult {
   ok: true;
+  /** `new` cuando el registro se ha guardado; `registered` cuando ya estaba. */
+  status: SubmitStatus;
   message: string;
   redirectUrl?: string;
   customerId: string;
@@ -254,6 +263,7 @@ export class FormsService {
     )
       return {
         ok: true,
+        status: 'registered',
         message: ALREADY_REGISTERED_MESSAGE,
         customerId: String(customer._id),
         created: false,
@@ -290,6 +300,7 @@ export class FormsService {
 
     return {
       ok: true,
+      status: 'new',
       message: form.successMessage,
       redirectUrl: form.redirectUrl,
       customerId: String(customer._id),

@@ -224,6 +224,7 @@ describe('FormsService.submit', () => {
 
       expect(res).toMatchObject({
         ok: true,
+        status: 'registered',
         created: false,
         duplicate: true,
         registered: true,
@@ -251,6 +252,7 @@ describe('FormsService.submit', () => {
       const res = await submit({ email: 'ana@test.com' });
 
       expect(res).toMatchObject({
+        status: 'new',
         message: 'Gracias',
         created: true,
         duplicate: false,
@@ -300,13 +302,18 @@ describe('FormsService.submit', () => {
         formId,
         customerId: previo._id,
       });
-      expect(res).toMatchObject({ duplicate: true, registered: true });
+      expect(res).toMatchObject({
+        status: 'registered',
+        duplicate: true,
+        registered: true,
+      });
     });
 
     it('marca como no duplicado el alta de un contacto nuevo', async () => {
       contactsFound(null, null);
       const res = await submit({ email: 'ana@test.com' });
       expect(res).toMatchObject({
+        status: 'new',
         created: true,
         duplicate: false,
         registered: false,
