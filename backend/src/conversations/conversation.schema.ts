@@ -61,6 +61,23 @@ export class Conversation extends Document {
 
   @Prop({ enum: ['open', 'closed'], default: 'open' })
   status: string;
+
+  // --- Escalamiento a un agente humano ---
+
+  /** true desde que el agente IA deriva el chat hasta que alguien lo reactiva. */
+  @Prop({ default: false, index: true })
+  escalated: boolean;
+
+  @Prop({ type: Date })
+  escalatedAt?: Date;
+
+  /** Motivo que dio el agente IA al derivar. */
+  @Prop()
+  escalationReason?: string;
+
+  /** Números a los que se les avisó por WhatsApp. */
+  @Prop({ type: [String], default: [] })
+  escalationNotifiedTo: string[];
 }
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);

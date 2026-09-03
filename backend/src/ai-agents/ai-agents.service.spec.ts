@@ -272,6 +272,61 @@ describe('AiAgentsService', () => {
       expect(result.reply).toBe('Lo siento, no puedo ayudarte con eso.');
     });
 
+    it('teaches the HANDOFF token only when handoff is enabled', async () => {
+      await service.generateAnswer(makeAgent(), 'hola');
+      expect(mockAi.chatMessages.mock.calls[0][0][0].content).not.toContain(
+        '--- DERIVAR A UNA PERSONA ---',
+      );
+
+      await service.generateAnswer(
+        makeAgent({
+          handoffEnabled: true,
+          handoffInstructions: 'el cliente reclama',
+        }),
+        'hola',
+      );
+      const system = mockAi.chatMessages.mock.calls[1][0][0].content;
+      expect(system).toContain('--- DERIVAR A UNA PERSONA ---');
+      expect(system).toContain('{{HANDOFF:motivo breve}}');
+      expect(system).toContain(
+        'Deriva especialmente cuando: el cliente reclama',
+      );
+    });
+
+    it('extracts the HANDOFF token with its reason and cleans the text', async () => {
+      mockAi.chatMessages.mockResolvedValue(
+        'Te paso con una persona. {{HANDOFF:el cliente pide un humano}}',
+      );
+
+      const result = await service.generateAnswer(
+        makeAgent({ handoffEnabled: true }),
+        'quiero hablar con alguien',
+      );
+
+      expect(result.reply).toBe('Te paso con una persona.');
+      expect(result.handoff).toEqual({ reason: 'el cliente pide un humano' });
+    });
+
+    it('accepts the HANDOFF token without reason and leaves the reply empty', async () => {
+      mockAi.chatMessages.mockResolvedValue('{{HANDOFF}}');
+
+      const result = await service.generateAnswer(
+        makeAgent({ handoffEnabled: true }),
+        'hola',
+      );
+
+      // Sin texto no se usa el fallback: el mensaje de derivación lo pone la conversación.
+      expect(result.reply).toBe('');
+      expect(result.handoff).toEqual({ reason: undefined });
+    });
+
+    it('leaves the HANDOFF token untouched when handoff is disabled', async () => {
+      mockAi.chatMessages.mockResolvedValue('texto {{HANDOFF:x}}');
+      const result = await service.generateAnswer(makeAgent(), 'hola');
+      expect(result.handoff).toBeNull();
+      expect(result.reply).toContain('{{HANDOFF:x}}');
+    });
+
     it('propagates AiService errors', async () => {
       mockAi.chatMessages.mockRejectedValue(
         new BadRequestException('openai API error: boom'),

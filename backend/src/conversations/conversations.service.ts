@@ -23,6 +23,7 @@ import { AiAgentsService } from '../ai-agents/ai-agents.service';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
+import { HandoffService } from './handoff.service';
 
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
@@ -115,6 +116,7 @@ export class ConversationsService {
     private agents: AiAgentsService,
     private uploads: UploadService,
     private gateway: ConversationsGateway,
+    private handoff: HandoffService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -132,8 +134,7 @@ export class ConversationsService {
       this.countsByAccount(tenantId),
     ]);
 
-    const withCounts = (id: string) =>
-      counts[id] ?? { total: 0, unread: 0 };
+    const withCounts = (id: string) => counts[id] ?? { total: 0, unread: 0 };
 
     return [
       ...wa.map((a) => ({
@@ -302,6 +303,12 @@ export class ConversationsService {
   ) {
     const conv = await this.getConversation(id, tenantId);
     conv.autoReply = enabled;
+    // Reactivar el agente cierra la derivación: ya nadie tiene que entrar a atenderla.
+    if (enabled) {
+      conv.escalated = false;
+      conv.escalationReason = undefined;
+      conv.escalatedAt = undefined;
+    }
     conv.takenOverBy = enabled
       ? undefined
       : userId
@@ -591,7 +598,7 @@ export class ConversationsService {
     }
 
     try {
-      const { reply, filesToSend } = await this.agents.generateAnswer(
+      const { reply, filesToSend, handoff } = await this.agents.generateAnswer(
         agent,
         userMessage,
         history,
@@ -600,8 +607,10 @@ export class ConversationsService {
       conv.agentId = agent._id;
       await conv.save();
 
-      if (reply) {
-        await this.sendFromAgent(conv, { type: 'text', text: reply });
+      // Al derivar siempre se le dice algo al cliente, aunque la IA no escribiera.
+      const text = reply || (handoff ? agent.handoffMessage : '');
+      if (text) {
+        await this.sendFromAgent(conv, { type: 'text', text });
       }
       for (const file of filesToSend) {
         await this.sendFromAgent(conv, {
@@ -611,6 +620,10 @@ export class ConversationsService {
           mimeType: file.contentType,
           filename: file.name,
         });
+      }
+
+      if (handoff) {
+        await this.escalateToHuman(conv, agent, handoff.reason, userMessage);
       }
     } catch (err) {
       this.logger.error(
@@ -622,6 +635,69 @@ export class ConversationsService {
         this.gateway.emitTyping(tenantId, String(conv._id), false);
       }
     }
+  }
+
+  /**
+   * Deriva la conversación a una persona: avisa por WhatsApp a los números
+   * configurados en el agente, apaga la respuesta automática y deja constancia
+   * en el hilo. Un fallo al avisar no impide apagar el agente — si nadie
+   * responde el chat, el cliente no puede quedar hablando con un bot mudo.
+   */
+  private async escalateToHuman(
+    conv: Conversation,
+    agent: AiAgent,
+    reason: string | undefined,
+    lastCustomerMessage: string,
+  ) {
+    const tenantId = String(conv.tenantId);
+    // El aviso puede fallar entero (cuenta caída, WhatsApp sin responder); el
+    // chat se deriva igual, porque dejarlo con el agente encendido es peor.
+    const { notified, error } = await this.handoff
+      .notify(conv, agent, reason, lastCustomerMessage)
+      .catch((err: unknown) => ({
+        notified: [] as string[],
+        error: String(err),
+      }));
+
+    conv.autoReply = false;
+    conv.escalated = true;
+    conv.escalatedAt = new Date();
+    conv.escalationReason = reason;
+    conv.escalationNotifiedTo = notified;
+    conv.takenOverBy = undefined;
+    conv.takenOverAt = new Date();
+    await conv.save();
+
+    const detail = reason ? ` Motivo: ${reason}.` : '';
+    const who = notified.length
+      ? `Se avisó por WhatsApp a ${notified.map((n) => `+${n}`).join(', ')}.`
+      : `No se pudo avisar a nadie por WhatsApp${error ? ` (${error})` : ''}.`;
+    await this.systemNote(
+      conv,
+      `🔔 El agente IA derivó la conversación a una persona.${detail} ${who} El agente quedó apagado en este chat.`,
+    );
+
+    this.gateway.emitConversation(tenantId, conv);
+    if (error)
+      this.logger.warn(
+        `Derivación de ${String(conv._id)} con avisos fallidos: ${error}`,
+      );
+  }
+
+  /** Nota interna en el hilo: se ve en la bandeja, no se envía al cliente. */
+  private async systemNote(conv: Conversation, text: string) {
+    const msg = await this.msgModel.create({
+      tenantId: conv.tenantId,
+      conversationId: conv._id,
+      direction: 'out',
+      author: 'system',
+      type: 'text',
+      text,
+      status: 'sent',
+      at: new Date(),
+    });
+    this.gateway.emitMessage(String(conv.tenantId), msg);
+    return msg;
   }
 
   /** Persiste y entrega un mensaje originado por el agente IA. */

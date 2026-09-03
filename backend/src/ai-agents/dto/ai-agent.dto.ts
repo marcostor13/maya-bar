@@ -66,6 +66,35 @@ export class CreateAiAgentDto {
 
   @IsOptional()
   @IsBoolean()
+  handoffEnabled?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  handoffNumbers?: string[];
+
+  @IsOptional()
+  @IsString()
+  handoffAccountId?: string;
+
+  @IsOptional()
+  @IsString()
+  handoffInstructions?: string;
+
+  @IsOptional()
+  @IsString()
+  handoffMessage?: string;
+
+  @IsOptional()
+  @IsString()
+  handoffTemplateName?: string;
+
+  @IsOptional()
+  @IsString()
+  handoffTemplateLang?: string;
+
+  @IsOptional()
+  @IsBoolean()
   published?: boolean;
 }
 

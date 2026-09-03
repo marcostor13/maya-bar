@@ -6,6 +6,7 @@ import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { InstagramWebhookController } from './instagram-webhook.controller';
 import { ConversationsService } from './conversations.service';
 import { ConversationsGateway } from './conversations.gateway';
+import { HandoffService } from './handoff.service';
 import { Conversation, ConversationSchema } from './conversation.schema';
 import { Message, MessageSchema } from './message.schema';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
@@ -34,7 +35,7 @@ import { UploadModule } from '../upload/upload.module';
     WhatsAppWebhookController,
     InstagramWebhookController,
   ],
-  providers: [ConversationsService, ConversationsGateway],
+  providers: [ConversationsService, ConversationsGateway, HandoffService],
   exports: [ConversationsService],
 })
 export class ConversationsModule {}

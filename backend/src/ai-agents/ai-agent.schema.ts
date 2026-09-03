@@ -56,6 +56,47 @@ export class AiAgent extends Document {
   })
   instagramAccountIds: Types.ObjectId[];
 
+  // ------------------------------------------------------------------
+  // Escalamiento a un agente humano
+  // ------------------------------------------------------------------
+
+  /** Habilita el token {{HANDOFF}}: el agente puede derivar el chat a una persona. */
+  @Prop({ default: false })
+  handoffEnabled: boolean;
+
+  /** Números que reciben el aviso por WhatsApp (E.164, sin +). */
+  @Prop({ type: [String], default: [] })
+  handoffNumbers: string[];
+
+  /**
+   * Cuenta de WhatsApp desde la que sale el aviso. Si no se indica se usa la
+   * cuenta de la conversación (si es WhatsApp) o la predeterminada del tenant.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'WhatsAppAccount' })
+  handoffAccountId?: Types.ObjectId;
+
+  /** Criterios de escalamiento que se inyectan en el prompt del sistema. */
+  @Prop()
+  handoffInstructions?: string;
+
+  /** Lo que se le responde al cliente al derivar, si el agente no escribió nada. */
+  @Prop({
+    default:
+      'Te comunico con una persona del equipo, en un momento te escriben por acá.',
+  })
+  handoffMessage: string;
+
+  /**
+   * Plantilla de Cloud API para el aviso. Hace falta cuando el agente humano no
+   * escribió al número en las últimas 24 h (Meta bloquea el texto libre).
+   * Debe tener 3 variables en el cuerpo: cliente, motivo y enlace.
+   */
+  @Prop()
+  handoffTemplateName?: string;
+
+  @Prop({ default: 'es' })
+  handoffTemplateLang: string;
+
   @Prop({ default: false })
   published: boolean;
 

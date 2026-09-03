@@ -1,11 +1,13 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed, ElementRef, viewChild } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { io, Socket } from 'socket.io-client';
 import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
-  Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, CheckCheck as ReadIcon,
+  Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
+  CheckCheck as ReadIcon,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -51,6 +53,10 @@ interface Conv {
   unreadCount: number;
   autoReply: boolean;
   status: 'open' | 'closed';
+  escalated?: boolean;
+  escalatedAt?: string;
+  escalationReason?: string;
+  escalationNotifiedTo?: string[];
 }
 
 /** Cuenta conectada (WhatsApp o Instagram) por la que entran las conversaciones. */
@@ -204,6 +210,11 @@ const EMOJIS = [
                         <lucide-icon [img]="UserRound" [size]="11" [strokeWidth]="2.4"></lucide-icon> Manual
                       </span>
                     }
+                    @if (c.escalated) {
+                      <span class="tag tag-handoff">
+                        <lucide-icon [img]="PhoneForwarded" [size]="11" [strokeWidth]="2.4"></lucide-icon> Derivado
+                      </span>
+                    }
                     @if (c.status === 'closed') { <span class="tag tag-closed">Cerrado</span> }
                   </div>
                 </div>
@@ -259,7 +270,20 @@ const EMOJIS = [
             </div>
           </header>
 
-          @if (!selected()!.autoReply) {
+          @if (selected()!.escalated) {
+            <div class="handoff-banner">
+              <lucide-icon [img]="PhoneForwarded" [size]="14" [strokeWidth]="2.4"></lucide-icon>
+              <span>
+                El agente IA derivó este chat a una persona{{ selected()!.escalationReason ? ': ' + selected()!.escalationReason : '' }}.
+                @if (selected()!.escalationNotifiedTo?.length) {
+                  Se avisó por WhatsApp a {{ notifiedList(selected()!) }}.
+                } @else {
+                  No se pudo avisar por WhatsApp a nadie.
+                }
+                Continúa tú la conversación; al reactivar el agente se cierra la derivación.
+              </span>
+            </div>
+          } @else if (!selected()!.autoReply) {
             <div class="manual-banner">
               <lucide-icon [img]="UserRound" [size]="14" [strokeWidth]="2.4"></lucide-icon>
               Estás respondiendo manualmente. El agente IA no contestará este chat hasta que lo reactives.
@@ -274,6 +298,12 @@ const EMOJIS = [
             @for (group of groupedMessages(); track group.day) {
               <div class="day-sep"><span>{{ group.day }}</span></div>
               @for (m of group.items; track m._id) {
+                @if (m.author === 'system') {
+                  <div class="system-note">
+                    <lucide-icon [img]="PhoneForwarded" [size]="13" [strokeWidth]="2.4"></lucide-icon>
+                    <span>{{ m.text }}</span>
+                  </div>
+                } @else {
                 <div class="row" [class.out]="m.direction === 'out'">
                   <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'">
                     @if (m.author === 'agent') {
@@ -343,6 +373,7 @@ const EMOJIS = [
                     }
                   </div>
                 </div>
+                }
               }
             }
           </div>
@@ -594,6 +625,7 @@ const EMOJIS = [
     }
     .tag-ai { background: rgba(139, 92, 246, 0.12); color: var(--color-ai); }
     .tag-manual { background: rgba(16, 185, 129, 0.12); color: var(--color-success); }
+    .tag-handoff { background: rgba(245, 158, 11, 0.14); color: #B45309; }
     .tag-closed { background: var(--color-bg-light); color: var(--color-text-muted); }
 
     /* ── Hilo ── */
@@ -661,6 +693,28 @@ const EMOJIS = [
     .ai-switch.on .ai-label { color: var(--color-ai); }
 
     .btn-icon.danger:hover { color: var(--color-error); }
+
+    .handoff-banner {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 9px 24px;
+      background: rgba(245, 158, 11, 0.10);
+      color: #92400E;
+      font-size: 12.5px; font-weight: 500; line-height: 1.5;
+      border-bottom: 1px solid rgba(245, 158, 11, 0.22);
+    }
+    .handoff-banner lucide-icon { flex-shrink: 0; margin-top: 2px; }
+
+    .system-note {
+      display: flex; align-items: center; gap: 6px;
+      align-self: center; max-width: min(560px, 86%);
+      margin: 4px auto;
+      padding: 7px 14px;
+      background: rgba(245, 158, 11, 0.12);
+      color: #92400E;
+      border-radius: var(--radius-pill);
+      font-size: 11.5px; font-weight: 500; line-height: 1.45; text-align: center;
+    }
+    .system-note lucide-icon { flex-shrink: 0; }
 
     .manual-banner {
       display: flex; align-items: center; gap: 8px;
@@ -904,6 +958,7 @@ const EMOJIS = [
 })
 export class InboxComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
+  private route = inject(ActivatedRoute);
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
   private auth = inject(AuthService);
@@ -932,6 +987,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly RefreshCw = RefreshCw;
   readonly Smile = Smile;
   readonly UserRound = UserRound;
+  readonly PhoneForwarded = PhoneForwarded;
   readonly Phone = Phone;
 
   readonly emojis = EMOJIS;
@@ -1060,6 +1116,9 @@ export class InboxComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.loadAccounts();
     this.loadConversations();
+    // El aviso de derivación enlaza a /inbox?c=<id>: abre ese chat al entrar.
+    const deepLink = this.route.snapshot.queryParamMap.get('c');
+    if (deepLink) this.openById(deepLink);
     this.connectWs();
     // Red de seguridad por si el websocket se cae.
     this.pollTimer = setInterval(() => {
@@ -1111,6 +1170,22 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   reload() { this.loadAccounts(); this.loadConversations(); if (this.selectedId()) this.loadMessages(); }
 
+  /** Abre un chat por id aunque todavía no esté en la lista cargada (deep link). */
+  private openById(id: string) {
+    this.selectedId.set(id);
+    this.loadMessages();
+    this.http.get<Conv>(`${API}/conversations/${id}`).subscribe({
+      next: conv => {
+        this.upsertConv(conv);
+        if (conv.unreadCount > 0) this.markRead(conv._id);
+      },
+      error: () => {
+        this.selectedId.set(null);
+        this.toast.error('No se encontró la conversación');
+      },
+    });
+  }
+
   onSearch(value: string) {
     this.search.set(value);
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -1135,6 +1210,11 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.accountId.set(id);
     this.closeThread();
     this.loadConversations();
+  }
+
+  /** Números del equipo a los que se les avisó la derivación. */
+  notifiedList(c: Conv): string {
+    return (c.escalationNotifiedTo ?? []).map(n => `+${n}`).join(', ');
   }
 
   /** Etiqueta de la cuenta por la que entra la conversación. */

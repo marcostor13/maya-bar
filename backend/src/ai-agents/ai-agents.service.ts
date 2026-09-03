@@ -22,11 +22,26 @@ import { WaMediaType } from '../whatsapp/whatsapp.service';
 
 const HISTORY_LIMIT = 10;
 const SEND_FILE_TOKEN = /\{\{SEND_FILE:([a-zA-Z0-9_-]+)\}\}/g;
+/** {{HANDOFF}} o {{HANDOFF:motivo breve}} — deriva el chat a una persona. */
+const HANDOFF_TOKEN = /\{\{HANDOFF(?::([^}]*))?\}\}/g;
 
 export interface AgentFileSend {
   url: string;
   contentType?: string;
   name: string;
+}
+
+/** El agente pidió que una persona tome la conversación. */
+export interface AgentHandoff {
+  reason?: string;
+}
+
+/** Deja los números en E.164 sin '+' y descarta los vacíos o duplicados. */
+function normalizePhones(numbers?: string[]): string[] {
+  const clean = (numbers ?? [])
+    .map((n) => n.replace(/\D/g, ''))
+    .filter((n) => n.length >= 8);
+  return [...new Set(clean)];
 }
 
 @Injectable()
@@ -91,6 +106,10 @@ export class AiAgentsService {
       instagramAccountIds: (dto.instagramAccountIds ?? []).map(
         (a) => new Types.ObjectId(a),
       ),
+      handoffNumbers: normalizePhones(dto.handoffNumbers),
+      handoffAccountId: dto.handoffAccountId
+        ? new Types.ObjectId(dto.handoffAccountId)
+        : undefined,
       tenantId: new Types.ObjectId(tenantId),
       createdBy: new Types.ObjectId(userId),
     });
@@ -104,6 +123,12 @@ export class AiAgentsService {
       patch.instagramAccountIds = dto.instagramAccountIds.map(
         (a) => new Types.ObjectId(a),
       );
+    if (dto.handoffNumbers)
+      patch.handoffNumbers = normalizePhones(dto.handoffNumbers);
+    if (dto.handoffAccountId !== undefined)
+      patch.handoffAccountId = dto.handoffAccountId
+        ? new Types.ObjectId(dto.handoffAccountId)
+        : null;
     const doc = await this.agentModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), tenantId: this.tenantMatch(tenantId) },
@@ -267,6 +292,32 @@ export class AiAgentsService {
     return `\n\n--- ARCHIVOS QUE PUEDES ENVIAR ---\nCuando el cliente lo pida o sea muy relevante, incluye el token exacto en tu respuesta para enviar el archivo (puede ir antes o después de tu texto):\n\n${list}\n\nIMPORTANTE: Usa estos tokens solo cuando realmente debas enviar el archivo. El texto de tu respuesta (sin los tokens) se enviará como mensaje de texto normal.\n--- FIN ARCHIVOS ---`;
   }
 
+  /** Sección del prompt que le enseña al agente a derivar el chat a una persona. */
+  private buildHandoffPromptSection(agent: AiAgent): string {
+    if (!agent.handoffEnabled) return '';
+    const criteria = agent.handoffInstructions?.trim()
+      ? `\n\nDeriva especialmente cuando: ${agent.handoffInstructions.trim()}`
+      : '';
+    return `\n\n--- DERIVAR A UNA PERSONA ---\nSi el cliente pide hablar con una persona, se molesta, reclama, o la consulta excede lo que puedes resolver, incluye el token exacto {{HANDOFF:motivo breve}} en tu respuesta.\nAl usarlo se avisa por WhatsApp a un agente humano para que entre a la plataforma y continúe el chat, y tú dejas de responder esta conversación.\nEscribe antes del token una frase avisando al cliente que lo estás derivando; el token se elimina y nunca se le muestra.${criteria}\nUsa el token una sola vez y solo cuando de verdad haga falta: una vez derivado no podrás volver a contestar.\n--- FIN DERIVAR ---`;
+  }
+
+  /** Extrae el token {{HANDOFF}} de la respuesta y devuelve texto limpio + motivo. */
+  private parseHandoffToken(
+    reply: string,
+    agent: AiAgent,
+  ): { text: string; handoff: AgentHandoff | null } {
+    if (!agent.handoffEnabled) return { text: reply, handoff: null };
+    let handoff: AgentHandoff | null = null;
+    const text = reply
+      .replace(HANDOFF_TOKEN, (_, reason?: string) => {
+        handoff ??= { reason: reason?.trim() || undefined };
+        return '';
+      })
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return { text, handoff };
+  }
+
   /** Extrae tokens {{SEND_FILE:alias}} de la respuesta y devuelve texto limpio + archivos. */
   private parseFileTokens(
     reply: string,
@@ -299,7 +350,12 @@ export class AiAgentsService {
     agent: AiAgent,
     userMessage: string,
     history: { role: 'user' | 'assistant'; content: string }[] = [],
-  ): Promise<{ reply: string; sources: number; filesToSend: AgentFileSend[] }> {
+  ): Promise<{
+    reply: string;
+    sources: number;
+    filesToSend: AgentFileSend[];
+    handoff: AgentHandoff | null;
+  }> {
     const [ragChunks, agentFiles] = await Promise.all([
       agent.ragEnabled
         ? this.rag.retrieve(
@@ -328,6 +384,7 @@ export class AiAgentsService {
           ? '\n\nNo hay información relevante en la base de conocimiento para esta consulta. Si no sabes la respuesta, indícalo amablemente.'
           : '',
       this.buildFilesPromptSection(agentFiles),
+      this.buildHandoffPromptSection(agent),
     ].join('');
 
     const messages: ChatMessage[] = [
@@ -353,8 +410,17 @@ export class AiAgentsService {
     });
 
     const rawReply = raw.trim() || agent.fallbackMessage;
-    const { text, filesToSend } = this.parseFileTokens(rawReply, agentFiles);
-    return { reply: text || agent.fallbackMessage, sources, filesToSend };
+    const { text: withoutHandoff, handoff } = this.parseHandoffToken(
+      rawReply,
+      agent,
+    );
+    const { text, filesToSend } = this.parseFileTokens(
+      withoutHandoff,
+      agentFiles,
+    );
+    // Al derivar, el texto puede quedar vacío: ahí habla el mensaje de derivación.
+    const reply = text || (handoff ? '' : agent.fallbackMessage);
+    return { reply, sources, filesToSend, handoff };
   }
 
   /** Test desde el playground (sin persistir conversación). Muestra archivos como notas. */
@@ -367,12 +433,12 @@ export class AiAgentsService {
     const last = [...messages].reverse().find((m) => m.role === 'user');
     if (!last) throw new BadRequestException('No hay mensaje del usuario');
     const history = messages.slice(0, messages.lastIndexOf(last));
-    const { reply, sources, filesToSend } = await this.generateAnswer(
+    const { reply, sources, filesToSend, handoff } = await this.generateAnswer(
       agent,
       last.content,
       history,
     );
-    let displayReply = reply;
+    let displayReply = reply || (handoff ? agent.handoffMessage : reply);
     if (filesToSend.length > 0) {
       displayReply +=
         '\n\n' +
@@ -380,7 +446,11 @@ export class AiAgentsService {
           .map((f) => `📎 [Se enviaría archivo: ${f.name}]`)
           .join('\n');
     }
-    return { reply: displayReply, sources };
+    if (handoff) {
+      const reason = handoff.reason ? `: ${handoff.reason}` : '';
+      displayReply += `\n\n🔔 [Se avisaría a un agente humano y el agente IA se apagaría en el chat${reason}]`;
+    }
+    return { reply: displayReply, sources, handoff: !!handoff };
   }
 
   async findPublishedByAccount(accountId: string): Promise<AiAgent | null> {
