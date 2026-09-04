@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { Types } from 'mongoose';
 import { HandoffService } from './handoff.service';
+import { Conversation } from './conversation.schema';
+import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 
@@ -20,7 +22,7 @@ const mockAccounts = {
   toConfig: jest.fn(),
 };
 
-function makeConv(overrides: Record<string, unknown> = {}) {
+function makeConv(overrides: Record<string, unknown> = {}): Conversation {
   return {
     _id: convOid,
     tenantId: tenantOid,
@@ -29,16 +31,16 @@ function makeConv(overrides: Record<string, unknown> = {}) {
     contact: '51999888777',
     contactName: 'Ana',
     ...overrides,
-  } as any;
+  } as unknown as Conversation;
 }
 
-function makeAgent(overrides: Record<string, unknown> = {}) {
+function makeAgent(overrides: Record<string, unknown> = {}): AiAgent {
   return {
     handoffEnabled: true,
     handoffNumbers: ['51911111111'],
     handoffTemplateLang: 'es',
     ...overrides,
-  } as any;
+  } as unknown as AiAgent;
 }
 
 describe('HandoffService', () => {

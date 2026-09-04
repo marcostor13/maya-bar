@@ -29,7 +29,6 @@ export class AuthService {
     const user = await this.usersService.findOneByEmailAnyStatus(email);
     if (!user) return null;
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const matches = await bcrypt.compare(pass, user.password);
     if (!matches) return null;
 

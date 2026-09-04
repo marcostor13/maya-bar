@@ -9,7 +9,6 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
-import { type TemplateHeader } from '../whatsapp/whatsapp.service';
 import { fillTokens } from '../shared/contact-tokens';
 import { Campaign } from './campaign.schema';
 import { Customer } from '../customers/customer.schema';
@@ -456,7 +455,6 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
       .exec();
     return campaigns.reduce((sum, c) => sum + (c.recipientCount ?? 0), 0);
   }
-
 }
 
 /** Convierte el reason de una promesa rechazada a texto legible. */

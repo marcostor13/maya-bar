@@ -42,7 +42,9 @@ export class LocalsService {
       tenantId: new Types.ObjectId(tenantId),
       isActive: true,
     };
-    const assigned = (localIds ?? []).filter((id) => Types.ObjectId.isValid(id));
+    const assigned = (localIds ?? []).filter((id) =>
+      Types.ObjectId.isValid(id),
+    );
     if (assigned.length)
       filter._id = { $in: assigned.map((id) => new Types.ObjectId(id)) };
     return this.localModel.find(filter).exec();

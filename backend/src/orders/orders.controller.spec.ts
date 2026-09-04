@@ -20,9 +20,16 @@ const mockReq = { user: { tenantId: 'tenant-1', role: 'TENANT_ADMIN' } };
 
 /** El ModuleGuard consulta la matriz; aquí se concede todo para no mezclar preocupaciones. */
 const mockRolesService = {
-  modulesFor: jest.fn().mockResolvedValue([
-    'orders', 'reservations', 'kds', 'menu', 'customers', 'dashboard',
-  ]),
+  modulesFor: jest
+    .fn()
+    .mockResolvedValue([
+      'orders',
+      'reservations',
+      'kds',
+      'menu',
+      'customers',
+      'dashboard',
+    ]),
 };
 
 describe('OrdersController', () => {
@@ -34,7 +41,9 @@ describe('OrdersController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrdersController],
       providers: [
-        { provide: RolesService, useValue: mockRolesService },{ provide: OrdersService, useValue: mockOrdersService }],
+        { provide: RolesService, useValue: mockRolesService },
+        { provide: OrdersService, useValue: mockOrdersService },
+      ],
     }).compile();
 
     controller = module.get<OrdersController>(OrdersController);

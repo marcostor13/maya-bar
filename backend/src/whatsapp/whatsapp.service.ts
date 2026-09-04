@@ -786,8 +786,10 @@ function buildHeaderParameter(
     return header?.text ? { type: 'text', text: header.text } : null;
 
   if (!header?.mediaUrl) return null;
-  if (format === 'IMAGE') return { type: 'image', image: { link: header.mediaUrl } };
-  if (format === 'VIDEO') return { type: 'video', video: { link: header.mediaUrl } };
+  if (format === 'IMAGE')
+    return { type: 'image', image: { link: header.mediaUrl } };
+  if (format === 'VIDEO')
+    return { type: 'video', video: { link: header.mediaUrl } };
   if (format === 'DOCUMENT')
     return { type: 'document', document: { link: header.mediaUrl } };
   return null;

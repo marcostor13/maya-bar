@@ -43,7 +43,7 @@ describe('AuthService', () => {
 
   const usersService = {
     findOneByEmail: jest.fn(),
-      findOneByEmailAnyStatus: jest.fn(),
+    findOneByEmailAnyStatus: jest.fn(),
     create: jest.fn(),
     changePassword: jest.fn(),
     saveResetCode: jest.fn(),

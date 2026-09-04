@@ -84,7 +84,7 @@ export class RolesController {
     // El recuento evita que el administrador borre un rol que alguien usa sin
     // enterarse hasta que el servidor lo rechaza.
     return roles.map((r) => ({
-      ...r.toObject(),
+      ...(r.toObject() as Record<string, unknown>),
       userCount: counts[r.key] ?? 0,
     }));
   }
@@ -102,12 +102,7 @@ export class RolesController {
     @Request() req: AuthReq,
   ) {
     this.assertAdmin(req);
-    return this.roles.update(
-      req.user.tenantId,
-      key,
-      dto.modules,
-      dto.actions,
-    );
+    return this.roles.update(req.user.tenantId, key, dto.modules, dto.actions);
   }
 
   @Delete('roles/:key')
@@ -122,7 +117,9 @@ export class RolesController {
   }
 
   /** Cuántos usuarios tiene cada rol, para avisar antes de borrarlo. */
-  private async usersPerRole(tenantId: string): Promise<Record<string, number>> {
+  private async usersPerRole(
+    tenantId: string,
+  ): Promise<Record<string, number>> {
     const rows = await this.userModel.aggregate<{ _id: string; n: number }>([
       { $match: { tenantId: new Types.ObjectId(tenantId) } },
       { $group: { _id: '$role', n: { $sum: 1 } } },

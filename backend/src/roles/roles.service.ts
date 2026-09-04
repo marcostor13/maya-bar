@@ -61,18 +61,20 @@ export class RolesService {
     );
 
     if (missing.length) {
-      await this.roleModel.insertMany(
-        missing.map(([key, modules]) => ({
-          tenantId: tid,
-          key,
-          label: ROLE_LABELS[key] ?? key,
-          modules: [...modules],
-          isSystem: true,
-        })),
-        // `ordered: false` para que dos peticiones simultáneas no se estorben:
-        // el índice único rechaza el duplicado y el resto se inserta igual.
-        { ordered: false },
-      ).catch(() => undefined);
+      await this.roleModel
+        .insertMany(
+          missing.map(([key, modules]) => ({
+            tenantId: tid,
+            key,
+            label: ROLE_LABELS[key] ?? key,
+            modules: [...modules],
+            isSystem: true,
+          })),
+          // `ordered: false` para que dos peticiones simultáneas no se estorben:
+          // el índice único rechaza el duplicado y el resto se inserta igual.
+          { ordered: false },
+        )
+        .catch(() => undefined);
       return this.roleModel.find({ tenantId: tid }).sort({ key: 1 }).exec();
     }
 

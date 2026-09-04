@@ -18,6 +18,8 @@ export interface PlatformModule {
   route: string;
 }
 
+// Una línea por módulo: la tabla se lee igual que el menú lateral.
+// prettier-ignore
 const ALL_MODULES: PlatformModule[] = [
   // Operaciones
   { key: 'dashboard', label: 'Dashboard', group: 'Operaciones', route: 'dashboard' },
@@ -93,6 +95,8 @@ export const ADMIN_LOCKED_MODULES = ['users', 'settings'];
  * Derivada de `shell.ts` (visibilidad del menú) y de los `roleGuard` de
  * `app.routes.ts`.
  */
+// Cada rol en pocas líneas, para comparar accesos de un vistazo.
+// prettier-ignore
 const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   TENANT_ADMIN: MODULE_KEYS.filter((k) => k !== 'impulsador-panel' && k !== 'my-guests'),
   MANAGER: [
@@ -114,12 +118,13 @@ const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   ],
 };
 
-export const DEFAULT_ROLE_MODULES: Record<string, string[]> = Object.fromEntries(
-  Object.entries(RAW_DEFAULT_ROLE_MODULES).map(([role, mods]) => [
-    role,
-    visibleModules(mods),
-  ]),
-);
+export const DEFAULT_ROLE_MODULES: Record<string, string[]> =
+  Object.fromEntries(
+    Object.entries(RAW_DEFAULT_ROLE_MODULES).map(([role, mods]) => [
+      role,
+      visibleModules(mods),
+    ]),
+  );
 
 /** Etiquetas de los roles del sistema, para la pantalla de administración. */
 export const ROLE_LABELS: Record<string, string> = {

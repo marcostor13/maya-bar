@@ -7,7 +7,9 @@ import {
   WhatsAppService,
   WaConfig,
   WaStatus,
-  WaMediaType, type TemplateHeader } from '../whatsapp/whatsapp.service';
+  WaMediaType,
+  type TemplateHeader,
+} from '../whatsapp/whatsapp.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 
 @Injectable()

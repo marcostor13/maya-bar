@@ -7,7 +7,12 @@ export class FormSubmission extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Tenant', required: true, index: true })
   tenantId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'ContactForm', required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'ContactForm',
+    required: true,
+    index: true,
+  })
   formId: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Customer', index: true })

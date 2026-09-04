@@ -165,7 +165,7 @@ describe('LeadsService', () => {
     });
 
     it('fills in a missing email on the existing contact', async () => {
-      const existing = {
+      const existing: Record<string, unknown> = {
         _id: customerOid,
         name: 'Ana',
         phone: '+51 999 888 777',
@@ -180,8 +180,8 @@ describe('LeadsService', () => {
         email: 'Ana@Mail.com',
       });
 
-      expect(existing.email).toBe('ana@mail.com');
-      expect(existing.save).toHaveBeenCalled();
+      expect(existing['email']).toBe('ana@mail.com');
+      expect(existing['save']).toHaveBeenCalled();
     });
 
     it('creates a normalized contact when none matches', async () => {
