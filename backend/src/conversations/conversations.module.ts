@@ -15,6 +15,7 @@ import { InstagramModule } from '../instagram/instagram.module';
 import { InstagramAccountsModule } from '../instagram-accounts/instagram-accounts.module';
 import { AiAgentsModule } from '../ai-agents/ai-agents.module';
 import { UploadModule } from '../upload/upload.module';
+import { LeadsModule } from '../leads/leads.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { UploadModule } from '../upload/upload.module';
     InstagramAccountsModule,
     AiAgentsModule,
     UploadModule,
+    LeadsModule,
   ],
   controllers: [
     ConversationsController,

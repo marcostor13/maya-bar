@@ -30,6 +30,7 @@ const ALL_MODULES: PlatformModule[] = [
 
   // Clientes
   { key: 'customers', label: 'Clientes', group: 'Clientes', route: 'customers' },
+  { key: 'leads', label: 'Seguimiento', group: 'Clientes', route: 'leads' },
   { key: 'lists', label: 'Listas', group: 'Clientes', route: 'lists' },
   { key: 'forms', label: 'Formularios', group: 'Clientes', route: 'forms' },
   { key: 'campaigns', label: 'Campañas', group: 'Clientes', route: 'campaigns' },
@@ -96,12 +97,12 @@ const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   TENANT_ADMIN: MODULE_KEYS.filter((k) => k !== 'impulsador-panel' && k !== 'my-guests'),
   MANAGER: [
     'dashboard', 'locals', 'menu', 'orders', 'kds', 'reservations', 'events',
-    'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
+    'customers', 'leads', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
     'visits',
   ],
   MARKETING: [
     'dashboard', 'events',
-    'customers', 'lists', 'forms', 'campaigns', 'ai-agents', 'inbox',
+    'customers', 'leads', 'lists', 'forms', 'campaigns', 'ai-agents', 'inbox',
   ],
   HOST: ['dashboard', 'orders', 'reservations'],
   SERVER: ['dashboard', 'orders'],
@@ -109,7 +110,7 @@ const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   BAR: ['dashboard', 'menu', 'orders', 'kds'],
   IMPULSADOR: [
     'impulsador-panel', 'visits', 'events', 'my-guests', 'inbox',
-    'customers', 'lists', 'campaigns',
+    'customers', 'leads', 'lists', 'campaigns',
   ],
 };
 

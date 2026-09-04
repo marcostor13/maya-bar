@@ -62,6 +62,10 @@ export class Conversation extends Document {
   @Prop({ enum: ['open', 'closed'], default: 'open' })
   status: string;
 
+  /** Contacto del CRM al que se guardó esta conversación, si se guardó. */
+  @Prop({ type: Types.ObjectId, ref: 'Customer', index: true })
+  customerId?: Types.ObjectId;
+
   // --- Escalamiento a un agente humano ---
 
   /** true desde que el agente IA deriva el chat hasta que alguien lo reactiva. */

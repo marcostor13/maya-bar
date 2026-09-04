@@ -24,6 +24,7 @@ import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.mo
 import { InstagramAccountsModule } from './instagram-accounts/instagram-accounts.module';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { LeadsModule } from './leads/leads.module';
 import { SharedModule } from './shared/shared.module';
 import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates.module';
 import { ContactImportModule } from './contact-import/contact-import.module';
@@ -64,6 +65,7 @@ import { RolesModule } from './roles/roles.module';
     InstagramAccountsModule,
     AiAgentsModule,
     ConversationsModule,
+    LeadsModule,
     FormsModule,
     RolesModule,
   ],

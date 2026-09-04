@@ -31,6 +31,7 @@ import { VisitsComponent } from './pages/visits/visits';
 import { MisAsistentesComponent } from './pages/mis-asistentes/mis-asistentes';
 import { AiAgentsComponent } from './pages/ai-agents/ai-agents';
 import { InboxComponent } from './pages/inbox/inbox';
+import { LeadsComponent } from './pages/leads/leads';
 import { LandingComponent } from './pages/landing/landing';
 
 const homeRedirectGuard = async () => {
@@ -93,6 +94,11 @@ export const routes: Routes = [
         path: 'customers',
         component: CustomersComponent,
         canActivate: [moduleGuard('customers')],
+      },
+      {
+        path: 'leads',
+        component: LeadsComponent,
+        canActivate: [moduleGuard('leads')],
       },
       {
         path: 'campaigns',

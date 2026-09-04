@@ -19,6 +19,7 @@ import {
   SendMessageDto,
   AutoReplyDto,
   StatusDto,
+  SaveContactDto,
 } from './dto/conversation.dto';
 
 @Controller('conversations')
@@ -88,6 +89,30 @@ export class ConversationsController {
     if (!dto.text?.trim() && !dto.mediaUrl)
       throw new BadRequestException('El mensaje está vacío');
     return this.service.sendManual(id, req.user.tenantId, req.user.userId, dto);
+  }
+
+  /** Guarda a quien escribe como contacto del CRM (y opcionalmente crea lead). */
+  @Post(':id/contact')
+  saveContact(
+    @Param('id') id: string,
+    @Body() dto: SaveContactDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.saveContact(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
+  /** Contacto vinculado y sus oportunidades, para el panel del chat. */
+  @Get(':id/contact')
+  crmCard(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.crmCard(id, req.user.tenantId);
   }
 
   @Patch(':id/read')

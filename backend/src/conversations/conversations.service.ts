@@ -8,7 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
 import { Message, MessageType, MessageStatus } from './message.schema';
-import { SendMessageDto } from './dto/conversation.dto';
+import { SendMessageDto, SaveContactDto } from './dto/conversation.dto';
 import {
   WhatsAppService,
   WaConfig,
@@ -24,6 +24,9 @@ import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
+import { LeadsService } from '../leads/leads.service';
+import { Customer } from '../customers/customer.schema';
+import { Lead } from '../leads/lead.schema';
 
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
@@ -117,6 +120,7 @@ export class ConversationsService {
     private uploads: UploadService,
     private gateway: ConversationsGateway,
     private handoff: HandoffService,
+    private leads: LeadsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -333,6 +337,88 @@ export class ConversationsService {
     await this.msgModel.deleteMany({ conversationId: conv._id }).exec();
     await this.convModel.deleteOne({ _id: conv._id }).exec();
     return { deleted: true };
+  }
+
+  // ------------------------------------------------------------------
+  // Ficha del contacto (CRM)
+  // ------------------------------------------------------------------
+
+  /**
+   * Guarda a quien escribe como contacto del CRM y lo vincula a la
+   * conversación. Si ya existe alguien con ese teléfono o email se reutiliza,
+   * para que la misma persona no se duplique por escribir desde dos canales.
+   */
+  async saveContact(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: SaveContactDto,
+  ): Promise<{ conversation: Conversation; customer: Customer; lead?: Lead }> {
+    const conv = await this.getConversation(id, tenantId);
+    // En WhatsApp el identificador del chat ya es el teléfono; en Instagram no
+    // hay número, así que solo se guarda lo que escriba quien atiende.
+    const phone =
+      dto.phone?.trim() ||
+      (conv.channel === 'whatsapp' ? conv.contact : undefined);
+    const name =
+      dto.name?.trim() ||
+      conv.contactName?.trim() ||
+      (phone ? `+${conv.contact}` : conv.contact);
+
+    const customer = await this.leads.upsertCustomer(tenantId, userId, role, {
+      name,
+      email: dto.email,
+      phone,
+      source: conv.channel,
+    });
+
+    // Lo que escribe quien atiende manda sobre lo que trae el canal.
+    if (dto.name?.trim()) customer.name = dto.name.trim();
+    if (dto.tags?.length)
+      customer.tags = [...new Set([...customer.tags, ...dto.tags])];
+    if (dto.notes !== undefined) customer.notes = dto.notes;
+    if (conv.channel === 'instagram')
+      customer.customFields = {
+        ...(customer.customFields ?? {}),
+        instagramId: conv.contact,
+      };
+    await customer.save();
+
+    conv.customerId = customer._id;
+    await conv.save();
+    this.gateway.emitConversation(tenantId, conv);
+
+    let lead: Lead | undefined;
+    if (dto.createLead) {
+      lead = await this.leads.create(tenantId, userId, role, {
+        customerId: String(customer._id),
+        title: dto.leadTitle?.trim() || `Seguimiento de ${customer.name}`,
+        value: dto.leadValue,
+        source: conv.channel,
+        conversationId: String(conv._id),
+      });
+    }
+
+    return { conversation: conv, customer, lead };
+  }
+
+  /** Contacto vinculado a la conversación y sus oportunidades abiertas. */
+  async crmCard(
+    id: string,
+    tenantId: string,
+  ): Promise<{ customer: Customer | null; leads: Lead[] }> {
+    const conv = await this.getConversation(id, tenantId);
+    if (!conv.customerId) return { customer: null, leads: [] };
+    const customer = await this.leads.findCustomer(
+      String(conv.customerId),
+      tenantId,
+    );
+    if (!customer) return { customer: null, leads: [] };
+    return {
+      customer,
+      leads: await this.leads.findByCustomer(String(customer._id), tenantId),
+    };
   }
 
   // ------------------------------------------------------------------

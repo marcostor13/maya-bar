@@ -1,13 +1,13 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed, ElementRef, viewChild } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { io, Socket } from 'socket.io-client';
 import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
-  CheckCheck as ReadIcon,
+  UserPlus, ContactRound, Target, CheckCheck as ReadIcon,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -15,6 +15,12 @@ import { AuthService } from '../../auth/auth.service';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
+
+/** Etapas del embudo, para nombrar las oportunidades del contacto en el chat. */
+const LEAD_STAGE_LABELS: Record<string, string> = {
+  new: 'Nuevo', contacted: 'Contactado', qualified: 'Calificado',
+  proposal: 'Propuesta', negotiation: 'Negociación', won: 'Ganado', lost: 'Perdido',
+};
 
 type MsgType =
   | 'text' | 'image' | 'video' | 'audio' | 'voice'
@@ -53,6 +59,7 @@ interface Conv {
   unreadCount: number;
   autoReply: boolean;
   status: 'open' | 'closed';
+  customerId?: string;
   escalated?: boolean;
   escalatedAt?: string;
   escalationReason?: string;
@@ -261,6 +268,17 @@ const EMOJIS = [
                   {{ selected()!.autoReply ? 'Agente IA' : 'Manual' }}
                 </span>
               </label>
+              @if (selected()!.customerId) {
+                <button class="saved-chip" (click)="openContactModal()" title="Ver y editar el contacto guardado">
+                  <lucide-icon [img]="ContactRound" [size]="13" [strokeWidth]="2.5"></lucide-icon>
+                  Contacto guardado
+                </button>
+              } @else {
+                <button class="btn btn-sm btn-secondary" (click)="openContactModal()">
+                  <lucide-icon [img]="UserPlus" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                  Guardar contacto
+                </button>
+              }
               <button class="btn-icon btn-ghost" (click)="toggleStatus()" [title]="selected()!.status === 'closed' ? 'Reabrir chat' : 'Cerrar chat'" aria-label="Cambiar estado">
                 <lucide-icon [img]="selected()!.status === 'closed' ? RefreshCw : Check" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
@@ -471,6 +489,86 @@ const EMOJIS = [
     @if (lightbox(); as url) {
       <div class="overlay" (click)="lightbox.set(null)">
         <img class="lightbox-img" [src]="url" alt="Imagen ampliada" (click)="$event.stopPropagation()" />
+      </div>
+    }
+
+    <!-- ══ Guardar contacto en el CRM ══ -->
+    @if (contactModal()) {
+      <div class="overlay" (click)="closeContactModal()" role="dialog" aria-modal="true">
+        <div class="contact-modal card" (click)="$event.stopPropagation()">
+          <div class="cm-head">
+            <div>
+              <h2>{{ selected()?.customerId ? 'Contacto guardado' : 'Guardar contacto' }}</h2>
+              <p class="cm-sub">Se guarda en Clientes y queda vinculado a esta conversación.</p>
+            </div>
+            <button class="btn-icon btn-ghost" (click)="closeContactModal()" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.4"></lucide-icon>
+            </button>
+          </div>
+
+          <div class="cm-body">
+            <div class="cm-field">
+              <label class="cm-label">Nombre *</label>
+              <input class="input" [(ngModel)]="contactForm.name" placeholder="Nombre del cliente" />
+            </div>
+            <div class="cm-row">
+              <div class="cm-field">
+                <label class="cm-label">Teléfono</label>
+                <input class="input" [(ngModel)]="contactForm.phone" placeholder="51999888777" />
+              </div>
+              <div class="cm-field">
+                <label class="cm-label">Email</label>
+                <input class="input" [(ngModel)]="contactForm.email" placeholder="cliente@correo.com" />
+              </div>
+            </div>
+            <div class="cm-field">
+              <label class="cm-label">Etiquetas</label>
+              <input class="input" [(ngModel)]="contactForm.tags" placeholder="VIP, corporativo (separadas por comas)" />
+            </div>
+            <div class="cm-field">
+              <label class="cm-label">Notas</label>
+              <textarea class="textarea" [(ngModel)]="contactForm.notes" rows="2" placeholder="Lo que convenga recordar de este cliente…"></textarea>
+            </div>
+
+            @if (!selected()?.customerId) {
+              <label class="cm-check">
+                <input type="checkbox" [(ngModel)]="contactForm.createLead" />
+                <span>
+                  <strong>Crear oportunidad de seguimiento</strong>
+                  <small>Aparece en el embudo para no perderle el rastro.</small>
+                </span>
+              </label>
+              @if (contactForm.createLead) {
+                <div class="cm-field">
+                  <label class="cm-label">Título de la oportunidad</label>
+                  <input class="input" [(ngModel)]="contactForm.leadTitle" placeholder="Seguimiento del cliente" />
+                </div>
+              }
+            }
+
+            @if (crmLeads().length > 0) {
+              <div class="cm-leads">
+                <span class="cm-label">Oportunidades de este cliente</span>
+                @for (l of crmLeads(); track l._id) {
+                  <div class="cm-lead">
+                    <strong>{{ l.title }}</strong>
+                    <span class="cm-lead-stage">{{ stageLabel(l.stage) }}</span>
+                  </div>
+                }
+                <button class="btn btn-sm btn-ghost" (click)="goToLeads()">
+                  <lucide-icon [img]="Target" [size]="14" [strokeWidth]="2.5"></lucide-icon> Ver en Seguimiento
+                </button>
+              </div>
+            }
+          </div>
+
+          <div class="cm-actions">
+            <button class="btn btn-secondary" (click)="closeContactModal()">Cancelar</button>
+            <button class="btn btn-primary" [disabled]="savingContact()" (click)="saveContact()">
+              {{ savingContact() ? 'Guardando…' : (selected()?.customerId ? 'Actualizar contacto' : 'Guardar contacto') }}
+            </button>
+          </div>
+        </div>
       </div>
     }
   `,
@@ -932,6 +1030,36 @@ const EMOJIS = [
       display: flex; align-items: center; justify-content: center;
       z-index: 100;
     }
+    .saved-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border: 1px solid rgba(16,185,129,.35);
+      background: rgba(16,185,129,.10); color: #047857;
+      border-radius: var(--radius-pill); font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all var(--transition-fast);
+    }
+    .saved-chip:hover { background: rgba(16,185,129,.18); }
+
+    .contact-modal {
+      width: calc(100% - 48px); max-width: 480px;
+      max-height: calc(100vh - 80px);
+      display: flex; flex-direction: column; padding: 0;
+    }
+    .cm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 28px 8px; }
+    .cm-head h2 { margin: 0 0 3px; font-family: var(--font-heading); font-size: 19px; }
+    .cm-sub { margin: 0; font-size: 12.5px; color: var(--color-text-muted); }
+    .cm-body { flex: 1; overflow-y: auto; padding: 12px 28px 16px; display: flex; flex-direction: column; gap: 13px; }
+    .cm-field { display: flex; flex-direction: column; gap: 6px; }
+    .cm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .cm-label { font-size: 12px; font-weight: 600; }
+    .cm-check { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: var(--color-bg-light); border-radius: var(--radius-md); cursor: pointer; }
+    .cm-check span { display: flex; flex-direction: column; }
+    .cm-check small { font-size: 11.5px; color: var(--color-text-muted); }
+    .cm-leads { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--color-bg-light); border-radius: var(--radius-md); }
+    .cm-lead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+    .cm-lead-stage { font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
+    .cm-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 24px; border-top: 1px solid var(--color-border); }
+    @media (max-width: 520px) { .cm-row { grid-template-columns: 1fr; } }
+
     .lightbox-img {
       max-width: calc(100vw - 64px); max-height: calc(100vh - 64px);
       border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
@@ -959,6 +1087,7 @@ const EMOJIS = [
 export class InboxComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
   private auth = inject(AuthService);
@@ -988,6 +1117,9 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Smile = Smile;
   readonly UserRound = UserRound;
   readonly PhoneForwarded = PhoneForwarded;
+  readonly UserPlus = UserPlus;
+  readonly ContactRound = ContactRound;
+  readonly Target = Target;
   readonly Phone = Phone;
 
   readonly emojis = EMOJIS;
@@ -1210,6 +1342,109 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.accountId.set(id);
     this.closeThread();
     this.loadConversations();
+  }
+
+  // ── Contacto del CRM ──
+  contactModal = signal(false);
+  savingContact = signal(false);
+  crmLeads = signal<{ _id: string; title: string; stage: string }[]>([]);
+  contactForm = {
+    name: '', phone: '', email: '', tags: '', notes: '',
+    createLead: false, leadTitle: '',
+  };
+
+  /** Etiqueta legible de la etapa del embudo (el backend guarda la clave). */
+  stageLabel(key: string): string {
+    return LEAD_STAGE_LABELS[key] ?? key;
+  }
+
+  openContactModal() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.crmLeads.set([]);
+    this.contactForm = {
+      name: conv.contactName ?? '',
+      // En WhatsApp el identificador del chat ya es el número del cliente.
+      phone: conv.channel === 'whatsapp' ? conv.contact : '',
+      email: '', tags: '', notes: '',
+      createLead: false, leadTitle: '',
+    };
+    this.contactModal.set(true);
+    if (conv.customerId) this.loadCrmCard(conv._id);
+  }
+
+  closeContactModal() { this.contactModal.set(false); }
+
+  /** Trae el contacto ya vinculado para poder revisarlo y completarlo. */
+  private loadCrmCard(convId: string) {
+    this.http
+      .get<{ customer: { name: string; phone?: string; email?: string; tags?: string[]; notes?: string } | null; leads: { _id: string; title: string; stage: string }[] }>(
+        `${API}/conversations/${convId}/contact`,
+      )
+      .subscribe({
+        next: card => {
+          this.crmLeads.set(card.leads ?? []);
+          if (card.customer) {
+            this.contactForm = {
+              ...this.contactForm,
+              name: card.customer.name,
+              phone: card.customer.phone ?? this.contactForm.phone,
+              email: card.customer.email ?? '',
+              tags: (card.customer.tags ?? []).join(', '),
+              notes: card.customer.notes ?? '',
+            };
+          }
+        },
+        error: () => {},
+      });
+  }
+
+  saveContact() {
+    const conv = this.selected();
+    if (!conv) return;
+    if (!this.contactForm.name.trim()) {
+      this.toast.error('El nombre es obligatorio');
+      return;
+    }
+    this.savingContact.set(true);
+    const body = {
+      name: this.contactForm.name.trim(),
+      phone: this.contactForm.phone.trim() || undefined,
+      email: this.contactForm.email.trim() || undefined,
+      tags: this.contactForm.tags
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean),
+      notes: this.contactForm.notes.trim() || undefined,
+      createLead: this.contactForm.createLead,
+      leadTitle: this.contactForm.leadTitle.trim() || undefined,
+    };
+    this.http
+      .post<{ conversation: Conv; customer: { name: string }; lead?: { _id: string } }>(
+        `${API}/conversations/${conv._id}/contact`,
+        body,
+      )
+      .subscribe({
+        next: res => {
+          this.upsertConv(res.conversation);
+          this.savingContact.set(false);
+          this.contactModal.set(false);
+          this.toast.success(
+            res.lead
+              ? 'Contacto guardado y oportunidad creada'
+              : 'Contacto guardado en Clientes',
+          );
+        },
+        error: err => {
+          this.toast.error(err.error?.message || 'No se pudo guardar el contacto');
+          this.savingContact.set(false);
+        },
+      });
+  }
+
+  goToLeads() {
+    this.contactModal.set(false);
+    void this.router.navigate(['/leads']);
   }
 
   /** Números del equipo a los que se les avisó la derivación. */

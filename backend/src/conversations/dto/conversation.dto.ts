@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsNumber,
@@ -72,4 +73,41 @@ export class AutoReplyDto {
 export class StatusDto {
   @IsIn(['open', 'closed'])
   status: 'open' | 'closed';
+}
+
+/** Alta del contacto (y opcionalmente de una oportunidad) desde el chat. */
+export class SaveContactDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  /** Crea además una oportunidad de seguimiento apuntando a esta conversación. */
+  @IsOptional()
+  @IsBoolean()
+  createLead?: boolean;
+
+  @IsOptional()
+  @IsString()
+  leadTitle?: string;
+
+  @IsOptional()
+  @IsNumber()
+  leadValue?: number;
 }

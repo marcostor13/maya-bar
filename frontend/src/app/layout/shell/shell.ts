@@ -3,7 +3,7 @@ import { NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } f
 import { filter } from 'rxjs/operators';
 import { AuthService } from '../../auth/auth.service';
 import { PermissionsService } from '../../auth/permissions.service';
-import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate, FileText } from 'lucide-angular';
+import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate, FileText, Target } from 'lucide-angular';
 
 @Component({
   selector: 'app-shell',
@@ -90,6 +90,12 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
                 @if (!collapsed()) { <span>Contactos</span> }
               </a>
             }
+            @if (showLeads()) {
+              <a class="nav-item" routerLink="/leads" routerLinkActive="active">
+                <span class="nav-icon"><lucide-icon [img]="Target" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                @if (!collapsed()) { <span>Seguimiento</span> }
+              </a>
+            }
             @if (showLists()) {
               <a class="nav-item" routerLink="/lists" routerLinkActive="active">
                 <span class="nav-icon"><lucide-icon [img]="List" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
@@ -132,6 +138,12 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
                 <a class="nav-item" routerLink="/customers" routerLinkActive="active">
                   <span class="nav-icon"><lucide-icon [img]="ContactRound" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
                   @if (!collapsed()) { <span>Clientes</span> }
+                </a>
+              }
+              @if (showLeads()) {
+                <a class="nav-item" routerLink="/leads" routerLinkActive="active">
+                  <span class="nav-icon"><lucide-icon [img]="Target" [size]="18" [strokeWidth]="2.5"></lucide-icon></span>
+                  @if (!collapsed()) { <span>Seguimiento</span> }
                 </a>
               }
               @if (showLists()) {
@@ -615,6 +627,7 @@ export class ShellComponent {
   readonly ChevronRight = ChevronRight;
   readonly Zap = Zap;
   readonly ContactRound = ContactRound;
+  readonly Target = Target;
   readonly Megaphone = Megaphone;
   readonly LayoutTemplate = LayoutTemplate;
   readonly FileText = FileText;
@@ -657,6 +670,7 @@ export class ShellComponent {
   showLocals      = computed(() => this.can('locals'));
   showEvents       = computed(() => this.can('events'));
   showCustomers    = computed(() => this.can('customers'));
+  showLeads        = computed(() => this.can('leads'));
   showLists        = computed(() => this.can('lists'));
   showForms        = computed(() => this.can('forms'));
   showCampaigns    = computed(() => this.can('campaigns'));
@@ -671,7 +685,7 @@ export class ShellComponent {
 
   /** La cabecera de un grupo solo aparece si queda algún enlace dentro. */
   showClientesGroup = computed(() =>
-    this.showCustomers() || this.showLists() || this.showForms() ||
+    this.showCustomers() || this.showLeads() || this.showLists() || this.showForms() ||
     this.showCampaigns() || this.showTemplates() || this.showAiAgents() ||
     this.showInbox(),
   );
