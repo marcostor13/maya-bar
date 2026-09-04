@@ -37,3 +37,55 @@ La plataforma abandona los bordes duros. Todo es suave y táctil:
 ## 7. Animaciones
 - **Sutiles y Fluidas:** Curvas `cubic-bezier(0.4, 0, 0.2, 1)`.
 - **Interacciones:** Al hacer hover, las tarjetas se elevan muy sutilmente (`transform: translateY(-4px)`) y la sombra se expande. Botones se escalan ligeramente (`transform: scale(1.02)`).
+
+## 8. App Shell móvil (PWA)
+
+La plataforma se instala en el teléfono y se comporta como una app nativa. El
+`ShellComponent` (`frontend/src/app/layout/shell/shell.ts`) monta tres piezas:
+
+- **Cabecera fija** (`.mobile-topbar`): alto `--app-header-h` (56px) más
+  `env(safe-area-inset-top)` para el notch. Muestra el logo arriba del todo y,
+  en cuanto el contenido se desplaza 24px, lo cruza con el título de la pantalla
+  — así no se repite el `<h1>` que ya pinta cada página. A la derecha van la
+  campana de notificaciones (`<app-push-center>`) y el avatar, que abre "Más".
+- **Barra inferior** (`.tabbar`): cuatro destinos según el rol
+  (`TAB_PRIORITY`) más el botón **Más**. Alto `--app-tabbar-h` (62px) más
+  `env(safe-area-inset-bottom)`. Lleva insignia de no leídos en Conversaciones,
+  alimentada por `ConversationsRealtimeService`.
+- **Hoja "Más"** (bottom sheet): el menú completo agrupado, el perfil y salir.
+
+Reglas que se aplican solas y no hay que repetir en cada página:
+
+- `.shell` usa `100dvh` (no `100vh`): con `vh` la barra inferior queda fuera de
+  pantalla cuando el navegador móvil contrae su propia barra.
+- El contenido reserva el alto de cabecera y barra inferior con `padding`, y
+  lleva `overscroll-behavior-y: contain` para que el scroll no dispare el
+  "tirar para recargar" del navegador.
+- **Modo inmersivo**: `AppChromeService.immersive` esconde cabecera y barra
+  inferior. Lo activa la bandeja de entrada al abrir un chat, para que el hilo
+  ocupe la pantalla entera como cualquier app de mensajería.
+
+### Áreas seguras
+
+`--safe-top` / `--safe-bottom` (en `styles.scss`) envuelven
+`env(safe-area-inset-*)`. Fuera de un dispositivo con muescas valen `0`, así
+que se pueden sumar siempre. Toda pantalla a pantalla completa fuera del shell
+(login, registro, onboarding, cambio de contraseña) las suma a su `padding`.
+
+### Tablas → tarjetas
+
+En móvil una tabla no se arrastra de lado: se convierte en tarjetas. Añade
+`.table-cards` al contenedor y `data-label="Columna"` a cada `<td>`; el `<td>`
+sin `data-label` ocupa la fila entera sin etiqueta (título de la tarjeta o fila
+de botones). La regla vive en `styles.scss` y usa `!important` a propósito:
+Angular encapsula los estilos de componente añadiendo un atributo a cada
+selector, así que una `.mi-celda` de una página gana en especificidad a
+cualquier selector razonable de la hoja global.
+
+### Hojas inferiores (bottom sheets)
+
+Patrón de la campana de notificaciones y del menú "Más": `.overlay` a pantalla
+completa con `align-items: flex-end`, tarjeta al 100% de ancho con radio solo
+arriba, `padding-bottom` que suma `env(safe-area-inset-bottom)` y entrada con
+`--transition-spring`. Recuerda el "grip" (`.sheet-grip`) para que se lea como
+una hoja arrastrable.

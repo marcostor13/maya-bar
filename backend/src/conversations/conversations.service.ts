@@ -25,6 +25,7 @@ import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
 import { LeadsService } from '../leads/leads.service';
+import { PushService } from '../push/push.service';
 import { Customer } from '../customers/customer.schema';
 import { Lead } from '../leads/lead.schema';
 
@@ -121,6 +122,7 @@ export class ConversationsService {
     private gateway: ConversationsGateway,
     private handoff: HandoffService,
     private leads: LeadsService,
+    private push: PushService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -642,6 +644,9 @@ export class ConversationsService {
     if (!isEcho) conv.unreadCount += 1;
     await this.touchConversation(conv, msg);
     this.gateway.emitMessage(tenantId, msg);
+    // Aviso al móvil del equipo. Va sin `await`: el push nunca debe retrasar
+    // ni romper la recepción del mensaje.
+    if (!isEcho) void this.notifyInbound(conv, msg);
 
     if (isEcho) {
       // Contestaron desde el móvil: el agente se aparta para no pisar a la persona.
@@ -764,10 +769,47 @@ export class ConversationsService {
     );
 
     this.gateway.emitConversation(tenantId, conv);
+    // Además del WhatsApp a los números del agente, se avisa al móvil de todo
+    // el equipo con acceso a la bandeja: una derivación no puede pasar de largo.
+    void this.push.sendToTenant(
+      tenantId,
+      {
+        title: '🔔 Un chat necesita atención',
+        body: `${conv.contactName?.trim() || `+${conv.contact}`}${reason ? ` · ${reason}` : ''}`,
+        url: `/inbox?c=${String(conv._id)}`,
+        tag: `handoff-${String(conv._id)}`,
+        conversationId: String(conv._id),
+      },
+      { moduleKey: 'inbox' },
+    );
     if (error)
       this.logger.warn(
         `Derivación de ${String(conv._id)} con avisos fallidos: ${error}`,
       );
+  }
+
+  /**
+   * Notificación push a los móviles del equipo por un mensaje entrante.
+   *
+   * Solo la reciben los usuarios cuyo rol tenga el módulo `inbox`, y al tocarla
+   * se abre justo esa conversación (`/inbox?c=<id>`).
+   */
+  private async notifyInbound(conv: Conversation, msg: Message) {
+    const who =
+      conv.contactName?.trim() ||
+      (conv.channel === 'instagram' ? conv.contact : `+${conv.contact}`);
+    const channel = conv.channel === 'instagram' ? 'Instagram' : 'WhatsApp';
+    await this.push.sendToTenant(
+      String(conv.tenantId),
+      {
+        title: `${who} · ${channel}`,
+        body: this.previewOf(msg) || 'Nuevo mensaje',
+        url: `/inbox?c=${String(conv._id)}`,
+        tag: `conversation-${String(conv._id)}`,
+        conversationId: String(conv._id),
+      },
+      { moduleKey: 'inbox' },
+    );
   }
 
   /** Nota interna en el hilo: se ve en la bandeja, no se envía al cliente. */

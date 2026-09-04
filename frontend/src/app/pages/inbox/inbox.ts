@@ -1,17 +1,20 @@
-import { Component, OnInit, OnDestroy, inject, signal, computed, ElementRef, viewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, DestroyRef, effect, inject, signal, computed, ElementRef, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { io, Socket } from 'socket.io-client';
 import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
-  UserPlus, ContactRound, Target, CheckCheck as ReadIcon,
+  UserPlus, ContactRound, Target, MoreVertical, CheckCheck as ReadIcon,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
-import { AuthService } from '../../auth/auth.service';
+import { AppChromeService } from '../../shared/app-chrome';
+import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
+import { PushService } from '../../shared/push.service';
+import { silentRequest } from '../../shared/loader';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -286,7 +289,59 @@ const EMOJIS = [
                 <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
             </div>
+
+            <!-- En el móvil no caben cinco controles: van a una hoja de acciones. -->
+            <button class="btn-icon btn-ghost thread-more" (click)="threadMenu.set(true)" aria-label="Acciones del chat">
+              <lucide-icon [img]="MoreVertical" [size]="20" [strokeWidth]="2.2"></lucide-icon>
+            </button>
           </header>
+
+          @if (threadMenu()) {
+            <div class="overlay sheet-overlay" (click)="threadMenu.set(false)">
+              <div class="bottom-sheet" (click)="$event.stopPropagation()">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <span class="sheet-title">{{ displayName(selected()!) }}</span>
+
+                <label class="sheet-row" [class.on]="selected()!.autoReply">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="selected()!.autoReply ? Bot : UserRound" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    {{ selected()!.autoReply ? 'Responde el agente IA' : 'Respondes tú' }}
+                    <small>{{ selected()!.autoReply ? 'Tócalo para tomar el control' : 'Tócalo para devolvérselo al agente' }}</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    [checked]="selected()!.autoReply"
+                    (change)="toggleAutoReply($event)"
+                    aria-label="Respuesta automática del agente"
+                  />
+                  <span class="ai-track"><span class="ai-knob"></span></span>
+                </label>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); openContactModal()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="selected()!.customerId ? ContactRound : UserPlus" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">{{ selected()!.customerId ? 'Ver contacto guardado' : 'Guardar contacto' }}</span>
+                </button>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); toggleStatus()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="selected()!.status === 'closed' ? RefreshCw : Check" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">{{ selected()!.status === 'closed' ? 'Reabrir conversación' : 'Cerrar conversación' }}</span>
+                </button>
+
+                <button class="sheet-row danger" (click)="threadMenu.set(false); deleteConversation()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">Eliminar conversación</span>
+                </button>
+              </div>
+            </div>
+          }
 
           @if (selected()!.escalated) {
             <div class="handoff-banner">
@@ -749,10 +804,26 @@ const EMOJIS = [
       border-bottom: 1px solid var(--color-border);
       flex-shrink: 0;
     }
-    .back-btn { display: none; }
+    .back-btn, .thread-more { display: none; }
     .thread-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-    .thread-name { font-weight: 600; font-size: 15px; color: var(--color-text-main); }
-    .thread-sub { font-size: 12px; color: var(--color-text-muted); }
+    .thread-name {
+      font-weight: 600; font-size: 15px; color: var(--color-text-main);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .thread-sub {
+      font-size: 12px; color: var(--color-text-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── Hoja de acciones del chat (móvil) ──
+       Las piezas comunes (.sheet-grip, .sheet-row*, la animación) viven en
+       styles.scss: las comparten también el menú "Más" y las notificaciones. */
+    .overlay.sheet-overlay { align-items: flex-end; }
+    /* El interruptor reutiliza el pill del escritorio, pero su estado
+       "encendido" cuelga de .sheet-row.on, no de .ai-switch.on. */
+    .sheet-row.on .ai-track { background: var(--color-ai); }
+    .sheet-row.on .ai-knob { transform: translateX(14px); }
+
     .typing { color: var(--color-ai); font-style: normal; }
 
     .thread-actions { display: flex; align-items: center; gap: 8px; }
@@ -1065,22 +1136,44 @@ const EMOJIS = [
       border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
     }
 
-    /* ── Móvil ── */
-    @media (max-width: 900px) {
+    /* ── Móvil ──
+       El corte es 968px, el mismo del shell: al abrir un chat la app entra en
+       modo inmersivo (sin cabecera ni barra de pestañas) y el hilo ocupa la
+       pantalla entera, como cualquier app de mensajería. */
+    @media (max-width: 968px) {
       .inbox { grid-template-columns: 1fr; }
       .thread { display: none; }
       .inbox.thread-open .chat-list { display: none; }
       .inbox.thread-open .thread { display: flex; }
       .back-btn { display: flex; }
-      .thread-head { padding: 12px 14px; }
-      .thread-actions .ai-label { display: none; }
-      .ai-switch { padding: 6px 8px; }
+      .thread-head { padding: 12px 14px; gap: 10px; }
+      /* Los controles del chat se mueven a la hoja de acciones. */
+      .thread-actions { display: none; }
+      .thread-more { display: flex; }
       .messages { padding: 14px 14px 6px; }
       .bubble { max-width: 84%; }
-      .composer { padding: 10px 12px; }
-      .list-head { padding: 16px 16px 10px; }
-      .chat-item { padding: 12px 16px; }
+      .composer { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+      /* La cabecera de la lista se compacta: en el teléfono la mitad de la
+         pantalla no puede ser filtros. El título ya lo pinta la propia página. */
+      .list-head { padding: 14px 16px 10px; gap: 10px; }
+      .list-title h1 { font-size: 18px; }
+      .filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        margin: 0 -16px;
+        padding: 0 16px 2px;
+      }
+      .filters::-webkit-scrollbar { display: none; }
+      .chip { flex: 0 0 auto; }
+      .chat-item { padding: 14px 16px; }
       .media-img, .media-video { width: 240px; }
+      /* En el hilo solo caben las acciones esenciales: el resto vive en el
+         panel del contacto, al que se llega desde la cabecera. */
+      .chat-item, .back-btn, .thread-more { min-height: 44px; }
+      /* Los mensajes son lo único seleccionable del hilo. */
+      .bubble { user-select: text; -webkit-user-select: text; }
     }
   `],
 })
@@ -1090,7 +1183,10 @@ export class InboxComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
-  private auth = inject(AuthService);
+  private realtime = inject(ConversationsRealtimeService);
+  private chrome = inject(AppChromeService);
+  private push = inject(PushService);
+  private destroyRef = inject(DestroyRef);
 
   readonly MessagesSquare = MessagesSquare;
   readonly Send = Send;
@@ -1121,6 +1217,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly ContactRound = ContactRound;
   readonly Target = Target;
   readonly Phone = Phone;
+  readonly MoreVertical = MoreVertical;
 
   readonly emojis = EMOJIS;
   readonly filters: { key: Filter; label: string }[] = [
@@ -1200,6 +1297,8 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   draft = signal('');
   attachment = signal<{ url: string; key?: string; type: MsgType; mimeType: string; filename: string; size: number } | null>(null);
+  /** Hoja de acciones del chat en móvil. */
+  threadMenu = signal(false);
   attachOpen = signal(false);
   emojiOpen = signal(false);
   lightbox = signal<string | null>(null);
@@ -1212,7 +1311,6 @@ export class InboxComponent implements OnInit, OnDestroy {
   private docInput = viewChild<ElementRef<HTMLInputElement>>('docInput');
   private audioInput = viewChild<ElementRef<HTMLInputElement>>('audioInput');
 
-  private socket: Socket | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private recordingTimer: ReturnType<typeof setInterval> | null = null;
@@ -1245,24 +1343,47 @@ export class InboxComponent implements OnInit, OnDestroy {
     return groups;
   });
 
+  constructor() {
+    // Con un chat abierto en el móvil, el hilo ocupa la pantalla entera: el
+    // shell esconde su cabecera y su barra de pestañas mientras dure.
+    effect(() => this.chrome.immersive.set(!!this.selectedId()));
+    // Un push que llega con la app en segundo plano puede adelantarse al
+    // websocket (o llegar con él dormido): al volver, se refresca la lista.
+    effect(() => {
+      if (this.push.lastPush() > 0) this.onPushReceived();
+    });
+  }
+
   ngOnInit() {
     this.loadAccounts();
     this.loadConversations();
     // El aviso de derivación enlaza a /inbox?c=<id>: abre ese chat al entrar.
     const deepLink = this.route.snapshot.queryParamMap.get('c');
     if (deepLink) this.openById(deepLink);
-    this.connectWs();
+    // El enlace puede cambiar sin recargar el componente (al tocar una
+    // notificación con la app ya abierta en la bandeja).
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      const id = params.get('c');
+      if (id && id !== this.selectedId()) this.openById(id);
+    });
+    this.listenRealtime();
     // Red de seguridad por si el websocket se cae.
     this.pollTimer = setInterval(() => {
-      if (!this.socket?.connected) this.loadConversations(false);
+      if (!this.realtime.connected()) this.loadConversations(false);
     }, 15_000);
   }
 
   ngOnDestroy() {
-    this.socket?.disconnect();
+    this.chrome.exitImmersive();
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.stopAllRecording();
+  }
+
+  /** Recarga tras un push: la lista siempre, el hilo abierto si lo hay. */
+  private onPushReceived() {
+    this.loadConversations(false);
+    if (this.selectedId()) this.loadMessages(false);
   }
 
   // ── Datos ──
@@ -1470,11 +1591,13 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   closeThread() { this.selectedId.set(null); }
 
-  private loadMessages() {
+  private loadMessages(showLoader = true) {
     const id = this.selectedId();
     if (!id) return;
-    this.loadingMessages.set(true);
-    this.http.get<Msg[]>(`${API}/conversations/${id}/messages?limit=50`).subscribe({
+    if (showLoader) this.loadingMessages.set(true);
+    this.http.get<Msg[]>(`${API}/conversations/${id}/messages?limit=50`, {
+      ...(showLoader ? {} : { context: silentRequest() }),
+    }).subscribe({
       next: list => {
         this.messages.set(list);
         this.loadingMessages.set(false);
@@ -1512,8 +1635,14 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   private markRead(id: string) {
-    this.http.patch<Conv>(`${API}/conversations/${id}/read`, {}).subscribe({
-      next: conv => this.upsertConv(conv),
+    this.http.patch<Conv>(`${API}/conversations/${id}/read`, {}, {
+      context: silentRequest(),
+    }).subscribe({
+      next: conv => {
+        this.upsertConv(conv);
+        // La insignia del menú vive fuera de esta pantalla.
+        this.realtime.refreshUnread();
+      },
       error: () => undefined,
     });
   }
@@ -1731,15 +1860,15 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   // ── Tiempo real ──
 
-  private connectWs() {
-    const user = this.auth.currentUser();
-    if (!user?.tenantId) return;
-    this.socket = io(`${API}/conversations`, {
-      query: { tenantId: user.tenantId },
-      transports: ['websocket'],
-    });
+  /**
+   * La bandeja no abre su propio websocket: escucha el compartido, que ya está
+   * conectado desde el shell y alimenta también la insignia del menú.
+   */
+  private listenRealtime() {
+    this.realtime.connect();
 
-    this.socket.on('message:new', (msg: Msg) => {
+    this.realtime.messageNew$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw => {
+      const msg = raw as unknown as Msg;
       if (msg.conversationId === this.selectedId()) {
         this.upsertMessage(msg);
         this.scrollToBottom();
@@ -1747,13 +1876,16 @@ export class InboxComponent implements OnInit, OnDestroy {
       }
     });
 
-    this.socket.on('message:updated', (msg: Msg) => {
+    this.realtime.messageUpdated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw => {
+      const msg = raw as unknown as Msg;
       if (msg.conversationId === this.selectedId()) this.upsertMessage(msg);
     });
 
-    this.socket.on('conversation:updated', (conv: Conv) => this.upsertConv(conv));
+    this.realtime.conversationUpdated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw =>
+      this.upsertConv(raw as unknown as Conv),
+    );
 
-    this.socket.on('conversation:typing', (p: { conversationId: string; typing: boolean }) => {
+    this.realtime.typing$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p => {
       if (p.conversationId === this.selectedId()) this.typing.set(p.typing);
     });
   }

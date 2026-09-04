@@ -62,7 +62,7 @@ interface Registration {
           <span style="font-size:13px;color:var(--color-text-muted)">Regístrate en un evento para ver a tus asistentes aquí.</span>
         </div>
       } @else {
-        <div class="table-wrap card">
+        <div class="table-wrap table-cards card">
           <table>
             <thead>
               <tr>
@@ -83,7 +83,7 @@ interface Registration {
                       <span class="attendee-contact">{{ r.email }}{{ r.phone ? ' · ' + r.phone : '' }}</span>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Evento">
                     <div class="event-info">
                       <span>{{ r.eventTitle ?? '—' }}</span>
                       @if (r.eventDate) {
@@ -91,9 +91,9 @@ interface Registration {
                       }
                     </div>
                   </td>
-                  <td><code class="ticket-code">{{ r.ticketCode }}</code></td>
-                  <td class="center-cell">{{ r.partySize }}</td>
-                  <td class="center-cell">
+                  <td data-label="Ticket"><code class="ticket-code">{{ r.ticketCode }}</code></td>
+                  <td class="center-cell" data-label="Personas">{{ r.partySize }}</td>
+                  <td class="center-cell" data-label="Check-in">
                     @if (r.checkedIn) {
                       <span class="badge-success">Ingresó</span>
                     } @else {
@@ -289,7 +289,10 @@ interface Registration {
       .filter-bar { padding: 12px 16px; }
       .filter-select { max-width: none; }
       .filter-count { margin-left: 0; width: 100%; }
-      table { min-width: 640px; }
+      /* La tabla pasa a tarjetas (.table-cards), así que la fila de acciones
+         se separa del resto con una línea en vez de ir pegada al último dato. */
+      .actions-cell { padding-top: 12px; margin-top: 6px; border-top: 1px solid var(--color-border); }
+      .attendee-info, .event-info { align-items: flex-start; }
       .modal-card { width: calc(100% - 24px); }
       .modal-header, .modal-body, .modal-footer { padding-left: 18px; padding-right: 18px; }
       .channel-selector { flex-wrap: wrap; }

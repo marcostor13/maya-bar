@@ -297,7 +297,7 @@ function blankForm(stage: string): LeadForm {
         </div>
       } @else {
         <!-- ── Lista ── -->
-        <div class="table-wrap card">
+        <div class="table-wrap table-cards card">
           <table>
             <thead>
               <tr>
@@ -312,11 +312,11 @@ function blankForm(stage: string): LeadForm {
                     <strong>{{ lead.title }}</strong>
                     <span class="prio-inline" [attr.data-p]="lead.priority">{{ priorityLabel(lead.priority) }}</span>
                   </td>
-                  <td>{{ customerName(lead) }}</td>
-                  <td><span class="badge" [style.background]="stageColor(lead.stage) + '1A'" [style.color]="stageColor(lead.stage)">{{ stageLabel(lead.stage) }}</span></td>
-                  <td>{{ money(lead.value) }}</td>
-                  <td>{{ ownerName(lead) }}</td>
-                  <td>
+                  <td data-label="Cliente">{{ customerName(lead) }}</td>
+                  <td data-label="Etapa"><span class="badge" [style.background]="stageColor(lead.stage) + '1A'" [style.color]="stageColor(lead.stage)">{{ stageLabel(lead.stage) }}</span></td>
+                  <td data-label="Valor">{{ money(lead.value) }}</td>
+                  <td data-label="Responsable">{{ ownerName(lead) }}</td>
+                  <td data-label="Próximo paso">
                     @if (lead.nextActionAt) {
                       <span [class.overdue-text]="isOverdue(lead.nextActionAt)">
                         {{ lead.nextActionTitle }} · {{ shortDate(lead.nextActionAt) }}
@@ -738,6 +738,13 @@ function blankForm(stage: string): LeadForm {
     .option span { font-size: 11.5px; color: var(--color-text-muted); }
     .picked { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 6px 8px 6px 12px; background: var(--color-brand-light); color: var(--color-brand); border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; }
     .chip-x { display: inline-flex; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; }
+
+    @media (max-width: 768px) {
+      /* Cada oportunidad es una tarjeta (.table-cards): la flecha de "abrir"
+         no aporta nada ahí, la fila entera ya es pulsable. */
+      .table-cards td.right { display: none; }
+      .table-cards .empty-row { text-align: center; }
+    }
 
     @media (max-width: 720px) {
       .page { padding: 24px 16px; }

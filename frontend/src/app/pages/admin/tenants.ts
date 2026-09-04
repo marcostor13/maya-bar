@@ -124,7 +124,7 @@ const API = environment.apiUrl;
           <button class="btn btn-primary" (click)="openForm(null)">Crear empresa</button>
         </div>
       } @else {
-        <div class="table-card card">
+        <div class="table-card table-cards card">
           <table>
             <thead>
               <tr>
@@ -144,13 +144,13 @@ const API = environment.apiUrl;
                     <div class="tenant-name">{{ t.name }}</div>
                     <div class="tenant-slug">{{ t.slug }}</div>
                   </td>
-                  <td class="td-muted">{{ t.email }}</td>
-                  <td class="td-muted">{{ t.ruc || '—' }}</td>
-                  <td>
+                  <td class="td-muted" data-label="Email">{{ t.email }}</td>
+                  <td class="td-muted" data-label="RUC">{{ t.ruc || '—' }}</td>
+                  <td data-label="Plan">
                     <span class="badge" [class]="'badge-plan-' + t.plan">{{ t.plan }}</span>
                   </td>
-                  <td class="td-muted">{{ t.trialEndsAt ? (t.trialEndsAt | date:'dd/MM/yyyy') : '—' }}</td>
-                  <td>
+                  <td class="td-muted" data-label="Trial hasta">{{ t.trialEndsAt ? (t.trialEndsAt | date:'dd/MM/yyyy') : '—' }}</td>
+                  <td data-label="Estado">
                     <span class="badge" [class.badge-active]="t.isActive" [class.badge-inactive]="!t.isActive">
                       {{ t.isActive ? 'Activo' : 'Inactivo' }}
                     </span>
@@ -270,7 +270,8 @@ const API = environment.apiUrl;
       .page { padding: 16px 12px; }
       .page-header h1 { font-size: 22px; }
       .modal { padding: 20px; }
-      table { min-width: 640px; }
+      /* Ya no hace falta arrastrar la tabla: cada empresa es una tarjeta. */
+      .row-actions { width: 100%; padding-top: 12px; margin-top: 6px; border-top: 1px solid var(--color-border); }
       th, td { font-size: 12px; padding: 8px 10px; }
     }
   `],

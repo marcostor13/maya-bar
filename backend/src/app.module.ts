@@ -30,6 +30,7 @@ import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates
 import { ContactImportModule } from './contact-import/contact-import.module';
 import { FormsModule } from './forms/forms.module';
 import { RolesModule } from './roles/roles.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { RolesModule } from './roles/roles.module';
     LeadsModule,
     FormsModule,
     RolesModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [AppService],

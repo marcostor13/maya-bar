@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { ConversationsService } from './conversations.service';
+import { PushService } from '../push/push.service';
 import { Conversation } from './conversation.schema';
 import { Message } from './message.schema';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -80,6 +81,7 @@ describe('ConversationsService — contacto del CRM', () => {
         { provide: ConversationsGateway, useValue: gateway },
         { provide: HandoffService, useValue: {} },
         { provide: LeadsService, useValue: leads },
+        { provide: PushService, useValue: { sendToTenant: jest.fn() } },
       ],
     }).compile();
 
