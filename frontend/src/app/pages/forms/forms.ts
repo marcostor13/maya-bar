@@ -1346,7 +1346,7 @@ export class FormsComponent implements OnInit {
       .catch(function () { alert('No se pudo enviar. Inténtalo de nuevo.'); });
   });
 })();
-<\/script>`;
+</script>`;
   }
 
   private curlSnippet(f: ContactForm): string {

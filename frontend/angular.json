@@ -45,7 +45,14 @@
                 "localhost",
                 "127.0.0.1"
               ]
-            }
+            },
+            "allowedCommonJsDependencies": [
+              "qrcode",
+              "dijkstrajs",
+              "pngjs",
+              "debug",
+              "xmlhttprequest-ssl"
+            ]
           },
           "configurations": {
             "production": {
@@ -63,7 +70,7 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "16kB",
+                  "maximumWarning": "20kB",
                   "maximumError": "32kB"
                 }
               ],

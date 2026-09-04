@@ -8,32 +8,17 @@ import { roleGuard } from './auth/role.guard';
 import { moduleGuard, homeFor } from './auth/module.guard';
 import { PermissionsService } from './auth/permissions.service';
 import { AuthService } from './auth/auth.service';
-import { LoginComponent } from './pages/login/login';
-import { RegisterComponent } from './pages/register/register';
-import { OnboardingComponent } from './pages/onboarding/onboarding';
 import { ShellComponent } from './layout/shell/shell';
-import { DashboardComponent } from './pages/dashboard/dashboard';
-import { LocalsComponent } from './pages/locals/locals';
-import { AdminTenantsComponent } from './pages/admin/tenants';
-import { ChangePasswordComponent } from './pages/change-password/change-password';
-import { UsersComponent } from './pages/users/users';
-import { EventsComponent } from './pages/events/events';
-import { EventDetailComponent } from './pages/events/event-detail';
-import { PublicEventComponent } from './pages/public-event/public-event';
-import { CustomersComponent } from './pages/customers/customers';
-import { CampaignsComponent } from './pages/campaigns/campaigns';
-import { WhatsappTemplatesComponent } from './pages/whatsapp-templates/whatsapp-templates';
-import { SettingsComponent } from './pages/settings/settings';
-import { ListsComponent } from './pages/lists/lists';
-import { FormsComponent } from './pages/forms/forms';
-import { ImpulsadorPanelComponent } from './pages/impulsador-panel/impulsador-panel';
-import { VisitsComponent } from './pages/visits/visits';
-import { MisAsistentesComponent } from './pages/mis-asistentes/mis-asistentes';
-import { AiAgentsComponent } from './pages/ai-agents/ai-agents';
-import { InboxComponent } from './pages/inbox/inbox';
-import { LeadsComponent } from './pages/leads/leads';
-import { LandingComponent } from './pages/landing/landing';
 
+/**
+ * Todas las páginas se cargan bajo demanda (`loadComponent`). Importarlas
+ * arriba metía la aplicación entera —diseñador de invitaciones, editor de
+ * campañas, bandeja…— en el bundle inicial, que es justo lo que descarga un
+ * móvil con datos antes de ver el login.
+ *
+ * El Shell sí va estático: es el marco de todas las pantallas privadas y
+ * cargarlo aparte solo añadiría una espera antes de pintar el menú.
+ */
 const homeRedirectGuard = async () => {
   const auth = inject(AuthService);
   const permissions = inject(PermissionsService);
@@ -54,12 +39,35 @@ const homeRedirectGuard = async () => {
 export const routes: Routes = [
   // Landing pública. Es la única ruta que se prerenderiza (ver
   // `app.routes.server.ts`), por eso vive fuera del Shell y no lleva guards.
-  { path: '', pathMatch: 'full', component: LandingComponent },
-  { path: 'login', component: LoginComponent },
-  { path: 'register', component: RegisterComponent },
-  { path: 'change-password', component: ChangePasswordComponent, canActivate: [authGuard] },
-  { path: 'onboarding', component: OnboardingComponent, canActivate: [authGuard] },
-  { path: 'e/:slug', component: PublicEventComponent },
+  {
+    path: '',
+    pathMatch: 'full',
+    loadComponent: () => import('./pages/landing/landing').then(m => m.LandingComponent),
+  },
+  {
+    path: 'login',
+    loadComponent: () => import('./pages/login/login').then(m => m.LoginComponent),
+  },
+  {
+    path: 'register',
+    loadComponent: () => import('./pages/register/register').then(m => m.RegisterComponent),
+  },
+  {
+    path: 'change-password',
+    loadComponent: () =>
+      import('./pages/change-password/change-password').then(m => m.ChangePasswordComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'onboarding',
+    loadComponent: () => import('./pages/onboarding/onboarding').then(m => m.OnboardingComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'e/:slug',
+    loadComponent: () =>
+      import('./pages/public-event/public-event').then(m => m.PublicEventComponent),
+  },
   {
     path: '',
     component: ShellComponent,
@@ -67,95 +75,106 @@ export const routes: Routes = [
     children: [
       {
         path: 'dashboard',
-        component: DashboardComponent,
+        loadComponent: () => import('./pages/dashboard/dashboard').then(m => m.DashboardComponent),
         canActivate: [moduleGuard('dashboard')],
       },
       {
         path: 'impulsador',
-        component: ImpulsadorPanelComponent,
+        loadComponent: () =>
+          import('./pages/impulsador-panel/impulsador-panel').then(m => m.ImpulsadorPanelComponent),
         canActivate: [moduleGuard('impulsador-panel')],
       },
       {
         path: 'locals',
-        component: LocalsComponent,
+        loadComponent: () => import('./pages/locals/locals').then(m => m.LocalsComponent),
         canActivate: [moduleGuard('locals')],
       },
       {
         path: 'events',
-        component: EventsComponent,
+        loadComponent: () => import('./pages/events/events').then(m => m.EventsComponent),
         canActivate: [moduleGuard('events')],
       },
       {
         path: 'events/:id',
-        component: EventDetailComponent,
+        loadComponent: () =>
+          import('./pages/events/event-detail').then(m => m.EventDetailComponent),
         canActivate: [moduleGuard('events')],
       },
       {
         path: 'customers',
-        component: CustomersComponent,
+        loadComponent: () => import('./pages/customers/customers').then(m => m.CustomersComponent),
         canActivate: [moduleGuard('customers')],
       },
       {
         path: 'leads',
-        component: LeadsComponent,
+        loadComponent: () => import('./pages/leads/leads').then(m => m.LeadsComponent),
         canActivate: [moduleGuard('leads')],
       },
       {
         path: 'campaigns',
-        component: CampaignsComponent,
+        loadComponent: () => import('./pages/campaigns/campaigns').then(m => m.CampaignsComponent),
         canActivate: [moduleGuard('campaigns')],
       },
       {
         path: 'plantillas',
-        component: WhatsappTemplatesComponent,
+        loadComponent: () =>
+          import('./pages/whatsapp-templates/whatsapp-templates').then(m => m.WhatsappTemplatesComponent),
         canActivate: [moduleGuard('templates')],
       },
       {
         path: 'ai-agents',
-        component: AiAgentsComponent,
+        loadComponent: () => import('./pages/ai-agents/ai-agents').then(m => m.AiAgentsComponent),
         canActivate: [moduleGuard('ai-agents')],
       },
       {
         path: 'inbox',
-        component: InboxComponent,
+        loadComponent: () => import('./pages/inbox/inbox').then(m => m.InboxComponent),
         canActivate: [moduleGuard('inbox')],
       },
       {
         path: 'lists',
-        component: ListsComponent,
+        loadComponent: () => import('./pages/lists/lists').then(m => m.ListsComponent),
         canActivate: [moduleGuard('lists')],
       },
       {
         path: 'forms',
-        component: FormsComponent,
+        loadComponent: () => import('./pages/forms/forms').then(m => m.FormsComponent),
         canActivate: [moduleGuard('forms')],
       },
       {
         path: 'visitas',
-        component: VisitsComponent,
+        loadComponent: () => import('./pages/visits/visits').then(m => m.VisitsComponent),
         canActivate: [moduleGuard('visits')],
       },
       {
         path: 'mis-asistentes',
-        component: MisAsistentesComponent,
+        loadComponent: () =>
+          import('./pages/mis-asistentes/mis-asistentes').then(m => m.MisAsistentesComponent),
         canActivate: [moduleGuard('my-guests')],
       },
       {
         path: 'settings',
-        component: SettingsComponent,
+        loadComponent: () => import('./pages/settings/settings').then(m => m.SettingsComponent),
         canActivate: [moduleGuard('settings')],
       },
       {
         path: 'users',
-        component: UsersComponent,
+        loadComponent: () => import('./pages/users/users').then(m => m.UsersComponent),
         canActivate: [moduleGuard('users')],
       },
       {
         path: 'admin/tenants',
-        component: AdminTenantsComponent,
+        loadComponent: () => import('./pages/admin/tenants').then(m => m.AdminTenantsComponent),
         canActivate: [roleGuard('SUPERADMIN')],
       },
-      { path: 'inicio', pathMatch: 'full', canActivate: [homeRedirectGuard], component: DashboardComponent },
+      // Nunca llega a pintarse: el guard siempre redirige a la primera pantalla
+      // que le toque al rol. El componente está solo porque la ruta lo exige.
+      {
+        path: 'inicio',
+        pathMatch: 'full',
+        canActivate: [homeRedirectGuard],
+        loadComponent: () => import('./pages/dashboard/dashboard').then(m => m.DashboardComponent),
+      },
     ],
   },
 ];
