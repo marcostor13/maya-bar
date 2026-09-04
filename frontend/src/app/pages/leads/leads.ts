@@ -618,7 +618,7 @@ function blankForm(stage: string): LeadForm {
     .kpi-action.alert { border-color: rgba(239,68,68,.4); }
     .kpi-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: var(--radius-pill); flex-shrink: 0; }
     .kpi-value { display: block; font-family: var(--font-heading); font-size: 20px; font-weight: 700; line-height: 1.2; }
-    .kpi-label { display: block; font-size: 11.5px; color: var(--color-text-muted); margin-top: 2px; }
+    .kpi-label { display: block; font-size: 12.5px; color: var(--color-text-muted); margin-top: 2px; }
 
     /* Toolbar */
     .toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 18px; flex-wrap: wrap; }

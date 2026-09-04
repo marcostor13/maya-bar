@@ -121,3 +121,35 @@ se ve la app instalada. Los iconos se regeneran desde el logo con:
 cd frontend
 python3 scripts/generate-icons.py   # requiere Pillow
 ```
+
+---
+
+# Clasificación de conversaciones
+
+Desde el chat se puede etiquetar al contacto y mandarlo al embudo sin salir de
+la bandeja. La hoja **Clasificar** vive en la cabecera del hilo (escritorio) y
+en la hoja de acciones (móvil).
+
+| Método | Ruta | Para qué |
+| --- | --- | --- |
+| `GET` | `/conversations/tags` | Etiquetas ya usadas en el tenant, para sugerirlas. |
+| `PATCH` | `/conversations/:id/tags` | Fija las etiquetas del contacto del chat. |
+| `POST` | `/conversations/:id/lead` | Crea la oportunidad enlazada a la conversación. |
+
+Decisiones que conviene no deshacer sin querer:
+
+- **Clasificar crea el contacto si no existía.** Etiquetar tiene que funcionar
+  de un toque; obligar a rellenar antes la ficha completa mataba el flujo.
+  Lo resuelve `ensureCustomer`, que comparte con "Guardar contacto" la forma de
+  deducir nombre y teléfono según el canal.
+- **Las etiquetas se reemplazan, no se fusionan.** La pantalla es una lista de
+  interruptores: quitar una etiqueta tiene que quitarla de verdad. Tope de 12
+  por contacto.
+- **No se duplica la oportunidad.** Si el contacto ya tiene una abierta se
+  devuelve esa (`created: false`); si las anteriores están ganadas o perdidas,
+  se crea una nueva.
+- **La lista de chats trae las etiquetas** en una sola consulta para toda la
+  página (`tagsByCustomer`), no una por conversación: clasificar no sirve de
+  nada si no se ve la clasificación al elegir a quién atender.
+- `GET /conversations/tags` se declara **antes** que `GET /conversations/:id`,
+  o Nest resolvería `tags` como un id.

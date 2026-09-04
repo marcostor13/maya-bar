@@ -1,11 +1,18 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsIn,
   IsNumber,
   IsOptional,
   IsString,
+  MaxLength,
+  Min,
 } from 'class-validator';
+import {
+  LEAD_PRIORITIES,
+  LEAD_STAGE_KEYS,
+} from '../../leads/lead-stages.catalog';
 // `import type`: MessageType se usa en una firma decorada y el build corre con
 // isolatedModules + emitDecoratorMetadata (TS1272).
 import type { MessageType } from '../message.schema';
@@ -110,4 +117,34 @@ export class SaveContactDto {
   @IsOptional()
   @IsNumber()
   leadValue?: number;
+}
+
+/** Clasificación rápida del chat: las etiquetas de su contacto. */
+export class SetTagsDto {
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  tags: string[];
+}
+
+/** Envío de la conversación al embudo de seguimiento. */
+export class SendToPipelineDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  title?: string;
+
+  @IsOptional()
+  @IsIn(LEAD_STAGE_KEYS)
+  stage?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  value?: number;
+
+  @IsOptional()
+  @IsIn(LEAD_PRIORITIES)
+  priority?: string;
 }

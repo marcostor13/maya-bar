@@ -420,6 +420,11 @@ body {
   .card {
     padding: 16px;
   }
+  /* Las insignias del kit son el texto más pequeño que se repite en todas las
+     pantallas; en un teléfono 12px se queda corto. */
+  .badge {
+    font-size: 12.5px;
+  }
   /* En móvil una tarjeta no "levita" al pasar el dedo: el hover del ratón
      dejaba la tarjeta desplazada tras cada toque. */
   .card:hover {

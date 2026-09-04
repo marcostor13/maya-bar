@@ -7,7 +7,7 @@ import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
-  UserPlus, ContactRound, Target, MoreVertical, CheckCheck as ReadIcon,
+  UserPlus, ContactRound, Target, MoreVertical, Tag, CheckCheck as ReadIcon,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -24,6 +24,13 @@ const LEAD_STAGE_LABELS: Record<string, string> = {
   new: 'Nuevo', contacted: 'Contactado', qualified: 'Calificado',
   proposal: 'Propuesta', negotiation: 'Negociación', won: 'Ganado', lost: 'Perdido',
 };
+
+/** Etapas en las que tiene sentido dar de alta algo desde un chat: las
+ *  cerradas (ganado/perdido) no se eligen al crear. */
+const PIPELINE_STAGES = ['new', 'contacted', 'qualified', 'proposal', 'negotiation'] as const;
+
+/** Sugerencias de partida cuando el tenant todavía no tiene etiquetas propias. */
+const SUGGESTED_TAGS = ['Interesado', 'Cotización', 'Reserva', 'VIP', 'Frecuente', 'No interesado'];
 
 type MsgType =
   | 'text' | 'image' | 'video' | 'audio' | 'voice'
@@ -67,6 +74,8 @@ interface Conv {
   escalatedAt?: string;
   escalationReason?: string;
   escalationNotifiedTo?: string[];
+  /** Etiquetas del contacto vinculado; las adjunta el backend al listar. */
+  tags?: string[];
 }
 
 /** Cuenta conectada (WhatsApp o Instagram) por la que entran las conversaciones. */
@@ -226,6 +235,12 @@ const EMOJIS = [
                       </span>
                     }
                     @if (c.status === 'closed') { <span class="tag tag-closed">Cerrado</span> }
+                    @for (t of (c.tags ?? []).slice(0, 2); track t) {
+                      <span class="tag tag-crm">{{ t }}</span>
+                    }
+                    @if ((c.tags?.length ?? 0) > 2) {
+                      <span class="tag tag-crm">+{{ c.tags!.length - 2 }}</span>
+                    }
                   </div>
                 </div>
               </button>
@@ -271,6 +286,10 @@ const EMOJIS = [
                   {{ selected()!.autoReply ? 'Agente IA' : 'Manual' }}
                 </span>
               </label>
+              <button class="btn btn-sm btn-secondary" (click)="openClassify()" title="Clasificar y enviar a seguimiento">
+                <lucide-icon [img]="Tag" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                <span>Clasificar</span>
+              </button>
               @if (selected()!.customerId) {
                 <button class="saved-chip" (click)="openContactModal()" title="Ver y editar el contacto guardado">
                   <lucide-icon [img]="ContactRound" [size]="13" [strokeWidth]="2.5"></lucide-icon>
@@ -318,6 +337,16 @@ const EMOJIS = [
                   />
                   <span class="ai-track"><span class="ai-knob"></span></span>
                 </label>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); openClassify()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="Tag" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    Clasificar
+                    <small>Etiquetas y envío a seguimiento</small>
+                  </span>
+                </button>
 
                 <button class="sheet-row" (click)="threadMenu.set(false); openContactModal()">
                   <span class="sheet-row-icon">
@@ -506,7 +535,7 @@ const EMOJIS = [
                 }
               </div>
 
-              <button class="btn-icon btn-ghost" (click)="emojiOpen.set(!emojiOpen())" title="Emojis" aria-label="Emojis">
+              <button class="btn-icon btn-ghost emoji-btn" (click)="emojiOpen.set(!emojiOpen())" title="Emojis" aria-label="Emojis">
                 <lucide-icon [img]="Smile" [size]="20" [strokeWidth]="2.2"></lucide-icon>
               </button>
 
@@ -540,6 +569,84 @@ const EMOJIS = [
         }
       </section>
     </div>
+
+    <!-- ══ Clasificar: etiquetas y envío al embudo ══ -->
+    @if (classifyOpen()) {
+      <div class="overlay sheet-overlay" (click)="closeClassify()" role="dialog" aria-modal="true">
+        <div class="bottom-sheet classify-sheet" (click)="$event.stopPropagation()">
+          <div class="sheet-grip" aria-hidden="true"></div>
+          <span class="sheet-title">Clasificar a {{ displayName(selected()!) }}</span>
+
+          <div class="cls-body">
+            <span class="cls-label">Etiquetas</span>
+            <div class="cls-tags">
+              @for (t of tagOptions(); track t) {
+                <button
+                  class="cls-tag"
+                  [class.on]="draftTags().includes(t)"
+                  (click)="toggleTag(t)"
+                >
+                  @if (draftTags().includes(t)) {
+                    <lucide-icon [img]="Check" [size]="13" [strokeWidth]="3"></lucide-icon>
+                  }
+                  {{ t }}
+                </button>
+              }
+              @if (tagOptions().length === 0) {
+                <span class="cls-empty">Escribe la primera etiqueta abajo.</span>
+              }
+            </div>
+            <div class="cls-new">
+              <input
+                class="input"
+                [(ngModel)]="newTag"
+                placeholder="Nueva etiqueta"
+                maxlength="40"
+                (keydown.enter)="addTag()"
+                aria-label="Nueva etiqueta"
+              />
+              <button class="btn btn-sm btn-secondary" [disabled]="!newTag.trim()" (click)="addTag()">
+                Añadir
+              </button>
+            </div>
+
+            <span class="cls-label">Seguimiento</span>
+            @if (openLead(); as lead) {
+              <div class="cls-lead">
+                <div class="cls-lead-info">
+                  <strong>{{ lead.title }}</strong>
+                  <span class="cls-lead-stage">{{ stageLabel(lead.stage) }}</span>
+                </div>
+                <button class="btn btn-sm btn-ghost" (click)="goToLeads()">
+                  <lucide-icon [img]="Target" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                  Ver
+                </button>
+              </div>
+            } @else {
+              <p class="cls-hint">Crea la oportunidad enlazada a este chat para no perderle el rastro.</p>
+              <div class="cls-stage">
+                <select class="select" [(ngModel)]="pipelineStage" aria-label="Etapa del embudo">
+                  @for (st of stages; track st) {
+                    <option [value]="st">{{ stageLabel(st) }}</option>
+                  }
+                </select>
+                <button class="btn btn-primary" [disabled]="savingClassify()" (click)="sendToPipeline()">
+                  <lucide-icon [img]="Target" [size]="15" [strokeWidth]="2.5"></lucide-icon>
+                  Enviar a seguimiento
+                </button>
+              </div>
+            }
+          </div>
+
+          <div class="cls-actions">
+            <button class="btn btn-secondary" (click)="closeClassify()">Cancelar</button>
+            <button class="btn btn-primary" [disabled]="savingClassify()" (click)="saveTags()">
+              {{ savingClassify() ? 'Guardando…' : 'Guardar etiquetas' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
 
     @if (lightbox(); as url) {
       <div class="overlay" (click)="lightbox.set(null)">
@@ -637,6 +744,15 @@ const EMOJIS = [
       background: var(--color-white);
     }
 
+    /*
+     * min-width: 0 en los dos items NO es decorativo: sin él un item de grid
+     * usa min-width: auto y se niega a encoger por debajo del ancho mínimo de
+     * su contenido. Con una cuenta de nombre largo o una URL sin espacios, el
+     * panel se estiraba a ~690px dentro de una pantalla de 360 y la bandeja
+     * salía con scroll horizontal, cortada por la derecha.
+     */
+    .chat-list, .thread { min-width: 0; }
+
     /* ── Lista ── */
     .chat-list {
       display: flex;
@@ -671,13 +787,15 @@ const EMOJIS = [
     }
     .search-input { padding-left: 40px; width: 100%; }
 
-    .account-select { width: 100%; }
+    /* Un <select> reclama el ancho de su opción más larga ("Restaurante Bar
+       Maya Miraflores · +51 999 111 222 (12 sin leer)"). Se le pone tope. */
+    .account-select { width: 100%; min-width: 0; max-width: 100%; }
 
     .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 
     .channel-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-pill);
-      background: var(--color-bg-app); border: 1px solid var(--color-border); }
-    .channel-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center;
+      background: var(--color-bg-app); border: 1px solid var(--color-border); min-width: 0; }
+    .channel-tab { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center;
       gap: 5px; padding: 6px 12px; border: none; background: none; cursor: pointer;
       border-radius: var(--radius-pill); font-size: 12.5px; font-weight: 600;
       color: var(--color-text-muted); transition: all .18s; white-space: nowrap; }
@@ -686,7 +804,6 @@ const EMOJIS = [
       box-shadow: var(--shadow-sm); }
     .tab-badge { background: var(--color-brand); color: #fff; border-radius: var(--radius-pill);
       font-size: 10px; font-weight: 700; padding: 1px 6px; min-width: 16px; }
-    .account-select { width: 100%; }
     .chip {
       border: 1px solid var(--color-border);
       background: var(--color-white);
@@ -779,6 +896,7 @@ const EMOJIS = [
     .tag-ai { background: rgba(139, 92, 246, 0.12); color: var(--color-ai); }
     .tag-manual { background: rgba(16, 185, 129, 0.12); color: var(--color-success); }
     .tag-handoff { background: rgba(245, 158, 11, 0.14); color: #B45309; }
+    .tag-crm { background: var(--color-brand-light); color: var(--color-brand); }
     .tag-closed { background: var(--color-bg-light); color: var(--color-text-muted); }
 
     /* ── Hilo ── */
@@ -798,7 +916,7 @@ const EMOJIS = [
     .thread-empty p { margin: 0; font-size: 13.5px; max-width: 420px; line-height: 1.6; }
 
     .thread-head {
-      display: flex; align-items: center; gap: 12px;
+      display: flex; align-items: center; gap: 12px; min-width: 0;
       padding: 14px 24px;
       background: var(--color-white);
       border-bottom: 1px solid var(--color-border);
@@ -818,6 +936,58 @@ const EMOJIS = [
     /* ── Hoja de acciones del chat (móvil) ──
        Las piezas comunes (.sheet-grip, .sheet-row*, la animación) viven en
        styles.scss: las comparten también el menú "Más" y las notificaciones. */
+    /* ── Hoja de clasificación ── */
+    .classify-sheet { gap: 0; max-height: 88dvh; }
+    .cls-body { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 8px; }
+    .cls-label {
+      font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--color-text-muted); margin-top: 6px;
+    }
+    .cls-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+    .cls-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 8px 14px; min-height: 38px;
+      border: 1px solid var(--color-border); background: var(--color-white);
+      border-radius: var(--radius-pill);
+      font-family: var(--font-base); font-size: 13.5px; font-weight: 600;
+      color: var(--color-text-muted); cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+    .cls-tag.on {
+      background: var(--color-brand-light); border-color: transparent;
+      color: var(--color-brand);
+    }
+    .cls-empty { font-size: 13px; color: var(--color-text-muted); }
+    .cls-new { display: flex; gap: 8px; align-items: center; }
+    .cls-new .input { flex: 1; min-width: 0; }
+    .cls-new .btn { flex-shrink: 0; }
+    .cls-hint { margin: 0; font-size: 13px; color: var(--color-text-muted); line-height: 1.5; }
+    .cls-stage { display: flex; gap: 8px; align-items: center; }
+    .cls-stage .select { flex: 1; min-width: 0; }
+    .cls-stage .btn { flex-shrink: 0; gap: 6px; }
+    .cls-lead {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px 14px; border-radius: var(--radius-md);
+      background: var(--color-bg-light);
+    }
+    .cls-lead-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .cls-lead-info strong {
+      font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cls-lead-stage { font-size: 11.5px; font-weight: 600; color: var(--color-text-muted); }
+    .cls-actions {
+      display: flex; gap: 10px; padding: 12px 12px 0;
+      border-top: 1px solid var(--color-border); margin-top: 8px;
+    }
+    .cls-actions .btn { flex: 1; }
+
+    @media (max-width: 640px) {
+      /* En el teléfono los botones de la hoja son objetivos táctiles. */
+      .cls-actions .btn, .cls-stage .btn { min-height: 46px; }
+      .cls-stage { flex-direction: column; align-items: stretch; }
+      .cls-stage .btn { width: 100%; justify-content: center; }
+    }
+
     .overlay.sheet-overlay { align-items: flex-end; }
     /* El interruptor reutiliza el pill del escritorio, pero su estado
        "encendido" cuelga de .sheet-row.on, no de .ai-switch.on. */
@@ -948,7 +1118,10 @@ const EMOJIS = [
 
     .bubble-text {
       margin: 0; font-size: 14px; line-height: 1.55;
-      color: var(--color-text-main); white-space: pre-wrap; word-break: break-word;
+      color: var(--color-text-main); white-space: pre-wrap;
+      /* anywhere y no break-word: es lo que parte de verdad una URL larga
+         sin espacios en todos los navegadores. */
+      overflow-wrap: anywhere;
     }
 
     .meta {
@@ -1174,6 +1347,34 @@ const EMOJIS = [
       .chat-item, .back-btn, .thread-more { min-height: 44px; }
       /* Los mensajes son lo único seleccionable del hilo. */
       .bubble { user-select: text; -webkit-user-select: text; }
+
+      /* ── Tipografía del móvil ──
+         Los tamaños del escritorio (12,5px de vista previa, 14px de mensaje)
+         se leen bien en una columna de 360px a 60cm de distancia, no en un
+         teléfono en la mano. Aquí se sube lo que de verdad se lee: el nombre
+         de quien escribe, la vista previa y el texto del mensaje. */
+      .chat-name { font-size: 16px; }
+      .chat-preview { font-size: 14.5px; line-height: 1.35; }
+      .chat-time, .chat-account { font-size: 12px; }
+      .tag { font-size: 11.5px; padding: 3px 9px; }
+      .unread { font-size: 12px; min-width: 22px; height: 22px; }
+      .list-empty { font-size: 14.5px; }
+
+      .thread-name { font-size: 16.5px; }
+      .thread-sub { font-size: 13px; }
+      .bubble-text { font-size: 16px; line-height: 1.5; }
+      .meta { font-size: 11.5px; }
+      .day-sep { font-size: 12.5px; }
+      .doc-name { font-size: 14.5px; }
+      .doc-meta small { font-size: 12px; }
+      .agent-label { font-size: 11px; }
+      .bubble { max-width: 88%; }
+
+      /* El compositor: sin el botón de emojis el campo respira y el
+         placeholder deja de partirse en dos líneas. */
+      .emoji-btn { display: none; }
+      .composer-row { gap: 6px; }
+      .composer-input { min-height: 48px; }
     }
   `],
 })
@@ -1218,6 +1419,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Target = Target;
   readonly Phone = Phone;
   readonly MoreVertical = MoreVertical;
+  readonly Tag = Tag;
 
   readonly emojis = EMOJIS;
   readonly filters: { key: Filter; label: string }[] = [
@@ -1463,6 +1665,110 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.accountId.set(id);
     this.closeThread();
     this.loadConversations();
+  }
+
+  // ── Clasificación: etiquetas y envío al embudo ──
+  classifyOpen = signal(false);
+  savingClassify = signal(false);
+  /** Etiquetas ya usadas en el tenant, para no reinventar variantes. */
+  knownTags = signal<string[]>([]);
+  /** Selección en curso; no se guarda hasta pulsar "Guardar". */
+  draftTags = signal<string[]>([]);
+  openLead = signal<{ _id: string; title: string; stage: string } | null>(null);
+  newTag = '';
+  pipelineStage: string = PIPELINE_STAGES[0];
+  readonly stages = PIPELINE_STAGES;
+
+  /** Lo conocido del tenant, más lo ya elegido, más las sugerencias de partida. */
+  tagOptions = computed(() => {
+    const known = this.knownTags();
+    const base = known.length ? known : SUGGESTED_TAGS;
+    return [...new Set([...this.draftTags(), ...base])];
+  });
+
+  openClassify() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.newTag = '';
+    this.pipelineStage = PIPELINE_STAGES[0];
+    this.draftTags.set([...(conv.tags ?? [])]);
+    this.openLead.set(null);
+    this.classifyOpen.set(true);
+
+    this.http.get<string[]>(`${API}/conversations/tags`, { context: silentRequest() })
+      .subscribe({ next: t => this.knownTags.set(t ?? []), error: () => undefined });
+
+    // El chat puede tener ya una oportunidad abierta: entonces no se ofrece crear otra.
+    if (conv.customerId) {
+      this.http.get<{ leads: { _id: string; title: string; stage: string; status?: string }[] }>(
+        `${API}/conversations/${conv._id}/contact`, { context: silentRequest() },
+      ).subscribe({
+        next: card => {
+          const abierta = (card.leads ?? []).find(l => l.status !== 'won' && l.status !== 'lost');
+          this.openLead.set(abierta ?? null);
+        },
+        error: () => undefined,
+      });
+    }
+  }
+
+  closeClassify() { this.classifyOpen.set(false); }
+
+  toggleTag(tag: string) {
+    this.draftTags.update(list =>
+      list.includes(tag) ? list.filter(t => t !== tag) : [...list, tag],
+    );
+  }
+
+  addTag() {
+    const tag = this.newTag.trim();
+    if (!tag) return;
+    if (!this.draftTags().includes(tag)) this.draftTags.update(l => [...l, tag]);
+    this.newTag = '';
+  }
+
+  saveTags() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.savingClassify.set(true);
+    this.http.patch<{ conversation: Conv }>(`${API}/conversations/${conv._id}/tags`, {
+      tags: this.draftTags(),
+    }).subscribe({
+      next: res => {
+        this.savingClassify.set(false);
+        // El backend devuelve la conversación ya enlazada al contacto; las
+        // etiquetas se reflejan al vuelo en la lista sin recargarla entera.
+        this.upsertConv({ ...res.conversation, tags: this.draftTags() });
+        this.classifyOpen.set(false);
+        this.toast.success('Clasificación guardada');
+      },
+      error: err => {
+        this.savingClassify.set(false);
+        this.toast.error(err.error?.message || 'No se pudo guardar la clasificación');
+      },
+    });
+  }
+
+  sendToPipeline() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.savingClassify.set(true);
+    this.http.post<{ conversation: Conv; lead: { _id: string; title: string; stage: string }; created: boolean }>(
+      `${API}/conversations/${conv._id}/lead`, { stage: this.pipelineStage },
+    ).subscribe({
+      next: res => {
+        this.savingClassify.set(false);
+        this.openLead.set(res.lead);
+        this.upsertConv({ ...res.conversation, tags: this.draftTags() });
+        this.toast.success(
+          res.created ? 'Enviado a Seguimiento' : 'Este cliente ya tenía una oportunidad abierta',
+        );
+      },
+      error: err => {
+        this.savingClassify.set(false);
+        this.toast.error(err.error?.message || 'No se pudo enviar a seguimiento');
+      },
+    });
   }
 
   // ── Contacto del CRM ──

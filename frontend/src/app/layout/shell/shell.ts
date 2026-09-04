@@ -543,7 +543,7 @@ const TAB_PRIORITY: Record<string, string[]> = {
         color: var(--color-text-muted);
         text-decoration: none;
         font-family: var(--font-base);
-        font-size: 10.5px;
+        font-size: 11.5px;
         font-weight: 600;
         cursor: pointer;
         padding: 6px 2px;

@@ -2,7 +2,7 @@
 
 Se ejecuta a mano cuando cambia el logo:
     python3 scripts/generate-icons.py
-Los PNG resultantes se versionan en public/icons/.
+Los PNG resultantes se versionan en public/icons/, y el favicon en public/.
 """
 from PIL import Image
 import os
@@ -82,6 +82,23 @@ for size in (192, 512):
 
 # Apple no aplica máscara ni transparencia: fondo blanco sólido.
 square(180, 0.14, WHITE).convert('RGB').save(os.path.join(OUT, 'apple-touch-icon.png'))
+
+# Favicon de la pestaña. Multi-resolución en un solo .ico: el navegador elige.
+# A 16px el aire sobra —la marca se convertiría en una mancha—, así que el
+# padding baja según el tamaño.
+# Fondo transparente y no blanco: la marca se apoya sobre el color de la
+# pestaña (clara u oscura) en vez de flotar dentro de un recuadro blanco.
+PAD_BY_SIZE = {16: 0.02, 32: 0.05, 48: 0.07, 64: 0.08}
+frames = [
+    tinted(n, PAD_BY_SIZE[n], BRAND, (0, 0, 0, 0)).convert('RGBA')
+    for n in sorted(PAD_BY_SIZE)
+]
+frames[-1].save(
+    os.path.join(ROOT, 'public', 'favicon.ico'),
+    format='ICO',
+    sizes=[(n, n) for n in sorted(PAD_BY_SIZE)],
+    append_images=frames[:-1],
+)
 # Badge monocromo para la notificación en Android (se pinta como silueta).
 tinted(96, 0.1, WHITE, (0, 0, 0, 0)).save(os.path.join(OUT, 'badge-96.png'))
 

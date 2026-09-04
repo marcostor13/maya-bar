@@ -64,6 +64,7 @@ describe('ConversationsService — contacto del CRM', () => {
       create: jest.fn().mockResolvedValue({ _id: new Types.ObjectId() }),
       findCustomer: jest.fn().mockResolvedValue(makeCustomer()),
       findByCustomer: jest.fn().mockResolvedValue([]),
+      customerTags: jest.fn().mockResolvedValue(['VIP', 'Mayorista']),
     };
     gateway = { emitConversation: jest.fn(), emitMessage: jest.fn() };
 
@@ -187,5 +188,163 @@ describe('ConversationsService — contacto del CRM', () => {
       tenantId,
     );
     expect(card.leads).toHaveLength(1);
+  });
+});
+
+describe('ConversationsService — clasificación y seguimiento', () => {
+  let service: ConversationsService;
+  let convModel: any;
+  let leads: any;
+  let gateway: any;
+
+  const build = async (conv: any, customer: any, openLeads: any[] = []) => {
+    jest.clearAllMocks();
+    convModel = { findOne: jest.fn().mockReturnValue(buildQuery(conv)) };
+    leads = {
+      upsertCustomer: jest.fn().mockResolvedValue(customer),
+      create: jest
+        .fn()
+        .mockResolvedValue({ _id: new Types.ObjectId(), stage: 'new' }),
+      findCustomer: jest.fn().mockResolvedValue(customer),
+      findByCustomer: jest.fn().mockResolvedValue(openLeads),
+      customerTags: jest.fn().mockResolvedValue(['VIP']),
+    };
+    gateway = { emitConversation: jest.fn(), emitMessage: jest.fn() };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ConversationsService,
+        { provide: getModelToken(Conversation.name), useValue: convModel },
+        { provide: getModelToken(Message.name), useValue: {} },
+        { provide: WhatsAppService, useValue: {} },
+        { provide: InstagramService, useValue: {} },
+        { provide: WhatsAppAccountsService, useValue: {} },
+        { provide: InstagramAccountsService, useValue: {} },
+        { provide: AiAgentsService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ConversationsGateway, useValue: gateway },
+        { provide: HandoffService, useValue: {} },
+        { provide: LeadsService, useValue: leads },
+        { provide: PushService, useValue: { sendToTenant: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get<ConversationsService>(ConversationsService);
+  };
+
+  it('crea el contacto al clasificar un chat que aún no lo tenía', async () => {
+    const conv = makeConv({ customerId: undefined });
+    const customer = makeCustomer({ tags: [] });
+    await build(conv, customer);
+
+    const res = await service.setTags(
+      String(convOid),
+      tenantId,
+      userId,
+      'TENANT_ADMIN',
+      ['VIP'],
+    );
+
+    expect(leads.upsertCustomer).toHaveBeenCalled();
+    expect(res.customer.tags).toEqual(['VIP']);
+    // El chat queda enlazado al contacto recién creado.
+    expect(conv.customerId).toBe(customerOid);
+    expect(gateway.emitConversation).toHaveBeenCalled();
+  });
+
+  it('reemplaza las etiquetas en vez de acumularlas, y quita duplicados y vacíos', async () => {
+    const customer = makeCustomer({ tags: ['Antigua'] });
+    await build(makeConv({ customerId: customerOid }), customer);
+
+    const res = await service.setTags(
+      String(convOid),
+      tenantId,
+      userId,
+      'TENANT_ADMIN',
+      ['VIP', ' VIP ', '  ', 'Mayorista'],
+    );
+
+    expect(res.customer.tags).toEqual(['VIP', 'Mayorista']);
+  });
+
+  it('no deja pasar más etiquetas de las que caben en la ficha', async () => {
+    const customer = makeCustomer();
+    await build(makeConv({ customerId: customerOid }), customer);
+
+    const muchas = Array.from({ length: 20 }, (_, i) => `t${i}`);
+    const res = await service.setTags(
+      String(convOid),
+      tenantId,
+      userId,
+      'TENANT_ADMIN',
+      muchas,
+    );
+
+    expect(res.customer.tags).toHaveLength(12);
+  });
+
+  it('manda el chat a seguimiento creando la oportunidad enlazada', async () => {
+    const conv = makeConv({ customerId: undefined });
+    await build(conv, makeCustomer());
+
+    const res = await service.sendToPipeline(
+      String(convOid),
+      tenantId,
+      userId,
+      'TENANT_ADMIN',
+      { stage: 'qualified' },
+    );
+
+    expect(res.created).toBe(true);
+    expect(leads.create).toHaveBeenCalledWith(
+      tenantId,
+      userId,
+      'TENANT_ADMIN',
+      expect.objectContaining({
+        customerId: String(customerOid),
+        stage: 'qualified',
+        conversationId: String(convOid),
+        source: 'whatsapp',
+      }),
+    );
+  });
+
+  it('no duplica la oportunidad si el contacto ya tiene una abierta', async () => {
+    const abierta = {
+      _id: new Types.ObjectId(),
+      status: 'open',
+      stage: 'contacted',
+    };
+    await build(makeConv({ customerId: customerOid }), makeCustomer(), [
+      abierta,
+    ]);
+
+    const res = await service.sendToPipeline(
+      String(convOid),
+      tenantId,
+      userId,
+      'TENANT_ADMIN',
+      {},
+    );
+
+    expect(res.created).toBe(false);
+    expect(res.lead).toBe(abierta);
+    expect(leads.create).not.toHaveBeenCalled();
+  });
+
+  it('vuelve a crear si las anteriores están cerradas (ganada o perdida)', async () => {
+    const cerrada = { _id: new Types.ObjectId(), status: 'won', stage: 'won' };
+    await build(makeConv({ customerId: customerOid }), makeCustomer(), [
+      cerrada,
+    ]);
+
+    const res = await service.sendToPipeline(
+      String(convOid),
+      tenantId,
+      userId,
+      'TENANT_ADMIN',
+      {},
+    );
+
+    expect(res.created).toBe(true);
+    expect(leads.create).toHaveBeenCalled();
   });
 });

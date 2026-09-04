@@ -89,3 +89,41 @@ completa con `align-items: flex-end`, tarjeta al 100% de ancho con radio solo
 arriba, `padding-bottom` que suma `env(safe-area-inset-bottom)` y entrada con
 `--transition-spring`. Recuerda el "grip" (`.sheet-grip`) para que se lea como
 una hoja arrastrable.
+
+## 9. Desbordamiento horizontal en móvil
+
+Un panel que se estira más que la pantalla es el fallo de maquetación más
+frecuente aquí, y casi nunca lo causa el elemento ancho: lo causa su
+contenedor, que **no puede encoger**.
+
+Un item de grid o de flex usa `min-width: auto`, que le impide bajar del ancho
+mínimo de su contenido. Basta un `<select>` con una opción larga, un nombre de
+cuenta o una URL sin espacios para estirar toda la columna. En la bandeja el
+panel de chats llegó a medir 691px dentro de una pantalla de 360.
+
+```scss
+.inbox { display: grid; grid-template-columns: 360px 1fr; }
+.chat-list, .thread { min-width: 0; }   // sin esto, no encogen
+```
+
+Reglas que evitan la recaída:
+
+- `min-width: 0` en **todo** item de grid/flex que contenga texto variable.
+- `overflow-wrap: anywhere` en el texto que venga del cliente (URLs, tokens).
+  `word-break: break-word` no es fiable entre navegadores.
+- `max-width: 100%` y `min-width: 0` en `<select>`: reclama el ancho de su
+  opción más larga.
+- Tiras de filtros: `overflow-x: auto` en el contenedor y `flex: 0 0 auto` en
+  los chips, con márgenes negativos para que sangren hasta el borde.
+
+Cómo comprobarlo sin abrir el navegador a mano: recorrer el DOM comparando
+`getBoundingClientRect().right` contra `document.documentElement.clientWidth`
+a 320, 360 y 390px, **con datos hostiles** (nombres largos, URLs, archivos con
+nombre kilométrico). Con datos de ejemplo cortos el fallo no aparece.
+
+### Tamaño de letra en el teléfono
+
+Los tamaños pensados para una columna de escritorio se quedan cortos en la
+mano: en la bandeja el texto del mensaje estaba a 14px y la vista previa a
+12,5px. En móvil suben a 16px y 14,5px dentro del `@media`, sin tocar el
+escritorio. Como referencia, iOS usa ~17px de cuerpo y Material 14–16sp.

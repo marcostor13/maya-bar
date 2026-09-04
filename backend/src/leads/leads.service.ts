@@ -791,6 +791,44 @@ export class LeadsService {
       .exec();
   }
 
+  /**
+   * Etiquetas ya usadas en los contactos del tenant. La bandeja las ofrece al
+   * clasificar un chat para que el equipo reutilice las suyas en vez de
+   * inventar una variante nueva de la misma ("VIP", "vip", "V.I.P.").
+   */
+  async customerTags(tenantId: string): Promise<string[]> {
+    const tags = await this.customerModel.distinct('tags', {
+      tenantId: new Types.ObjectId(tenantId),
+    });
+    return tags
+      .filter((t) => typeof t === 'string' && t.trim())
+      .sort((a, b) => a.localeCompare(b, 'es'));
+  }
+
+  /**
+   * Etiquetas de varios contactos de una sola consulta, indexadas por id.
+   * La usa la bandeja para pintar la clasificación en la lista de chats sin
+   * hacer una consulta por conversación.
+   */
+  async tagsByCustomer(
+    tenantId: string,
+    customerIds: string[],
+  ): Promise<Map<string, string[]>> {
+    const ids = customerIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (ids.length === 0) return new Map();
+
+    const rows = await this.customerModel
+      .find(
+        { _id: { $in: ids }, tenantId: new Types.ObjectId(tenantId) },
+        { tags: 1 },
+      )
+      .lean()
+      .exec();
+    return new Map(rows.map((r) => [String(r._id), r.tags ?? []]));
+  }
+
   /** Oportunidades de un contacto, para mostrarlas en su ficha o en el chat. */
   async findByCustomer(customerId: string, tenantId: string): Promise<Lead[]> {
     if (!Types.ObjectId.isValid(customerId)) return [];

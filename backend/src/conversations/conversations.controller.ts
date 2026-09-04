@@ -20,6 +20,8 @@ import {
   AutoReplyDto,
   StatusDto,
   SaveContactDto,
+  SetTagsDto,
+  SendToPipelineDto,
 } from './dto/conversation.dto';
 
 @Controller('conversations')
@@ -51,6 +53,13 @@ export class ConversationsController {
   accounts(@Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.listAccounts(req.user.tenantId);
+  }
+
+  /** Etiquetas ya usadas en el tenant, para sugerirlas al clasificar. */
+  @Get('tags')
+  tags(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.availableTags(req.user.tenantId);
   }
 
   @Get('unread-count')
@@ -100,6 +109,40 @@ export class ConversationsController {
   ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.saveContact(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
+  /** Clasifica el chat: fija las etiquetas de su contacto (lo crea si hace falta). */
+  @Patch(':id/tags')
+  setTags(
+    @Param('id') id: string,
+    @Body() dto: SetTagsDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.setTags(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto.tags,
+    );
+  }
+
+  /** Manda el chat al embudo: crea la oportunidad enlazada a la conversación. */
+  @Post(':id/lead')
+  sendToPipeline(
+    @Param('id') id: string,
+    @Body() dto: SendToPipelineDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.sendToPipeline(
       id,
       req.user.tenantId,
       req.user.userId,

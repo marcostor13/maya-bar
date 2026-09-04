@@ -41,21 +41,28 @@ app.get('/healthz', (_req, res) => {
 });
 
 /**
- * El service worker y el manifest NO pueden heredar el `maxAge: '1y'` de los
- * assets hasheados: el navegador se quedaría con la versión del despliegue
- * anterior y las notificaciones push dejarían de actualizarse. Se sirven antes
- * que el `express.static` general, con revalidación en cada carga.
+ * Archivos de nombre fijo que NO pueden heredar el `maxAge: '1y'` de los assets
+ * hasheados: como la URL nunca cambia, el navegador se quedaría con la versión
+ * del despliegue anterior. Al service worker y al manifest les costaría dejar
+ * de recibir notificaciones; al favicon y a los iconos, seguir mostrando el
+ * icono viejo durante un año. Se sirven antes que el `express.static` general,
+ * revalidando en cada carga.
  */
-app.get(['/sw.js', '/manifest.webmanifest'], (req, res, next) => {
-  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
-  if (req.path === '/sw.js') {
-    // Permite que el SW controle toda la app aunque se sirva desde /sw.js.
-    res.setHeader('Service-Worker-Allowed', '/');
-  }
-  res.sendFile(join(browserDistFolder, req.path), (err) =>
-    err ? next() : undefined,
-  );
-});
+app.get(
+  ['/sw.js', '/manifest.webmanifest', '/favicon.ico', '/icons/:file'],
+  (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+    if (req.path === '/sw.js') {
+      // Permite que el SW controle toda la app aunque se sirva desde /sw.js.
+      res.setHeader('Service-Worker-Allowed', '/');
+    }
+    // `root` en vez de join(): Express rechaza por sí mismo cualquier ruta que
+    // intente escaparse del directorio servido.
+    res.sendFile(req.path, { root: browserDistFolder }, (err) =>
+      err ? next() : undefined,
+    );
+  },
+);
 
 app.use(
   express.static(browserDistFolder, {

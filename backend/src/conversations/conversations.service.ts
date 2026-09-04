@@ -8,7 +8,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
 import { Message, MessageType, MessageStatus } from './message.schema';
-import { SendMessageDto, SaveContactDto } from './dto/conversation.dto';
+import {
+  SendMessageDto,
+  SaveContactDto,
+  SendToPipelineDto,
+} from './dto/conversation.dto';
 import {
   WhatsAppService,
   WaConfig,
@@ -32,6 +36,8 @@ import { Lead } from '../leads/lead.schema';
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 50;
+/** Tope de etiquetas por contacto: la ficha deja de ser legible más allá. */
+const MAX_TAGS = 12;
 
 /** Cuenta conectada tal como la consume el selector de la bandeja de entrada. */
 export interface InboxAccount {
@@ -221,11 +227,37 @@ export class ConversationsService {
         { lastMessagePreview: rx },
       ];
     }
-    return this.convModel
+    const convs = await this.convModel
       .find(query)
       .sort({ lastMessageAt: -1 })
       .limit(200)
       .exec();
+    return this.withCustomerTags(tenantId, convs);
+  }
+
+  /**
+   * Adjunta a cada conversación las etiquetas de su contacto.
+   *
+   * Clasificar no sirve de nada si no se ve la clasificación, y la bandeja es
+   * justo donde se decide a quién atender. Va en UNA consulta para toda la
+   * página, no una por chat.
+   */
+  private async withCustomerTags(
+    tenantId: string,
+    convs: Conversation[],
+  ): Promise<(Conversation & { tags?: string[] })[]> {
+    const ids = convs
+      .map((c) => c.customerId)
+      .filter((id): id is Types.ObjectId => !!id);
+    if (ids.length === 0) return convs;
+
+    const byId = await this.leads.tagsByCustomer(tenantId, ids.map(String));
+    return convs.map((c) => {
+      const tags = c.customerId ? byId.get(String(c.customerId)) : undefined;
+      if (!tags?.length) return c;
+      // `toObject` para poder añadir un campo que no está en el esquema.
+      return { ...c.toObject(), tags } as Conversation & { tags: string[] };
+    });
   }
 
   async getConversation(id: string, tenantId: string): Promise<Conversation> {
@@ -358,21 +390,10 @@ export class ConversationsService {
     dto: SaveContactDto,
   ): Promise<{ conversation: Conversation; customer: Customer; lead?: Lead }> {
     const conv = await this.getConversation(id, tenantId);
-    // En WhatsApp el identificador del chat ya es el teléfono; en Instagram no
-    // hay número, así que solo se guarda lo que escriba quien atiende.
-    const phone =
-      dto.phone?.trim() ||
-      (conv.channel === 'whatsapp' ? conv.contact : undefined);
-    const name =
-      dto.name?.trim() ||
-      conv.contactName?.trim() ||
-      (phone ? `+${conv.contact}` : conv.contact);
-
-    const customer = await this.leads.upsertCustomer(tenantId, userId, role, {
-      name,
+    const customer = await this.ensureCustomer(conv, tenantId, userId, role, {
+      name: dto.name,
       email: dto.email,
-      phone,
-      source: conv.channel,
+      phone: dto.phone,
     });
 
     // Lo que escribe quien atiende manda sobre lo que trae el canal.
@@ -403,6 +424,119 @@ export class ConversationsService {
     }
 
     return { conversation: conv, customer, lead };
+  }
+
+  /**
+   * Contacto del CRM para esta conversación, creándolo si aún no existía.
+   *
+   * Clasificar un chat tiene que funcionar de un toque aunque nadie lo haya
+   * guardado antes como contacto: aquí es donde se resuelve el nombre y el
+   * teléfono a partir de lo que trae el canal.
+   */
+  private async ensureCustomer(
+    conv: Conversation,
+    tenantId: string,
+    userId: string,
+    role: string,
+    data: { name?: string; email?: string; phone?: string } = {},
+  ): Promise<Customer> {
+    // En WhatsApp el identificador del chat ya es el teléfono; en Instagram no
+    // hay número, así que solo se guarda lo que escriba quien atiende.
+    const phone =
+      data.phone?.trim() ||
+      (conv.channel === 'whatsapp' ? conv.contact : undefined);
+    const name =
+      data.name?.trim() ||
+      conv.contactName?.trim() ||
+      (phone ? `+${conv.contact}` : conv.contact);
+
+    return this.leads.upsertCustomer(tenantId, userId, role, {
+      name,
+      email: data.email,
+      phone,
+      source: conv.channel,
+    });
+  }
+
+  /** Etiquetas ya usadas en el tenant, para sugerirlas al clasificar. */
+  async availableTags(tenantId: string): Promise<string[]> {
+    return this.leads.customerTags(tenantId);
+  }
+
+  /**
+   * Clasifica la conversación: fija las etiquetas de su contacto.
+   *
+   * Reemplaza en vez de fusionar porque la pantalla es una lista de
+   * interruptores — quitar una etiqueta tiene que quitarla de verdad.
+   */
+  async setTags(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    tags: string[],
+  ): Promise<{ conversation: Conversation; customer: Customer }> {
+    const conv = await this.getConversation(id, tenantId);
+    const customer = await this.ensureCustomer(conv, tenantId, userId, role);
+
+    const clean = [...new Set(tags.map((t) => t.trim()).filter(Boolean))].slice(
+      0,
+      MAX_TAGS,
+    );
+    customer.tags = clean;
+    await customer.save();
+
+    if (!conv.customerId) {
+      conv.customerId = customer._id;
+      await conv.save();
+      this.gateway.emitConversation(tenantId, conv);
+    }
+    return { conversation: conv, customer };
+  }
+
+  /**
+   * Manda la conversación a seguimiento: crea la oportunidad enlazada al chat.
+   *
+   * Si ya hay una abierta no se duplica —el equipo acabaría con dos fichas del
+   * mismo cliente—: se devuelve la que ya existe.
+   */
+  async sendToPipeline(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: SendToPipelineDto,
+  ): Promise<{
+    conversation: Conversation;
+    customer: Customer;
+    lead: Lead;
+    created: boolean;
+  }> {
+    const conv = await this.getConversation(id, tenantId);
+    const customer = await this.ensureCustomer(conv, tenantId, userId, role);
+
+    if (!conv.customerId) {
+      conv.customerId = customer._id;
+      await conv.save();
+      this.gateway.emitConversation(tenantId, conv);
+    }
+
+    const open = (
+      await this.leads.findByCustomer(String(customer._id), tenantId)
+    ).find((l) => l.status === 'open');
+    if (open)
+      return { conversation: conv, customer, lead: open, created: false };
+
+    const lead = await this.leads.create(tenantId, userId, role, {
+      customerId: String(customer._id),
+      title: dto.title?.trim() || `Seguimiento de ${customer.name}`,
+      stage: dto.stage,
+      value: dto.value,
+      priority: dto.priority,
+      source: conv.channel,
+      conversationId: String(conv._id),
+    });
+    return { conversation: conv, customer, lead, created: true };
   }
 
   /** Contacto vinculado a la conversación y sus oportunidades abiertas. */
