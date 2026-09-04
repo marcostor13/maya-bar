@@ -49,10 +49,16 @@ export class CampaignsApiService {
     return this.http.get<CampaignEstimate>(`${this.base}/campaigns/${id}/estimate`);
   }
 
-  /** Conteo de destinatarios del segmento. Sin tags → todos los clientes. */
-  previewCount(tags?: string[]): Observable<{ count: number }> {
+  /**
+   * Conteo de destinatarios del segmento. Sin tags → todos los clientes.
+   * `blocked` son los que quedan fuera por estar en la lista de no contactar.
+   */
+  previewCount(tags?: string[]): Observable<{ count: number; blocked: number }> {
     const params = tags && tags.length ? { tags: tags.join(',') } : undefined;
-    return this.http.get<{ count: number }>(`${this.base}/campaigns/preview`, { params });
+    return this.http.get<{ count: number; blocked: number }>(
+      `${this.base}/campaigns/preview`,
+      { params },
+    );
   }
 
   // ── IA ───────────────────────────────────────────────────────────────────

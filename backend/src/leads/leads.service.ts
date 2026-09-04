@@ -806,14 +806,14 @@ export class LeadsService {
   }
 
   /**
-   * Etiquetas de varios contactos de una sola consulta, indexadas por id.
-   * La usa la bandeja para pintar la clasificación en la lista de chats sin
-   * hacer una consulta por conversación.
+   * Datos de varios contactos de una sola consulta, indexados por id. La usa
+   * la bandeja para pintar la clasificación y el estado de "no contactar" en
+   * la lista de chats sin hacer una consulta por conversación.
    */
-  async tagsByCustomer(
+  async contactInfoByCustomer(
     tenantId: string,
     customerIds: string[],
-  ): Promise<Map<string, string[]>> {
+  ): Promise<Map<string, { tags: string[]; phone?: string; email?: string }>> {
     const ids = customerIds
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
@@ -822,11 +822,20 @@ export class LeadsService {
     const rows = await this.customerModel
       .find(
         { _id: { $in: ids }, tenantId: new Types.ObjectId(tenantId) },
-        { tags: 1 },
+        { tags: 1, phone: 1, email: 1 },
       )
       .lean()
       .exec();
-    return new Map(rows.map((r) => [String(r._id), r.tags ?? []]));
+    return new Map(
+      rows.map((r) => [
+        String(r._id),
+        {
+          tags: r.tags ?? [],
+          phone: r.phone,
+          email: r.email,
+        },
+      ]),
+    );
   }
 
   /** Oportunidades de un contacto, para mostrarlas en su ficha o en el chat. */

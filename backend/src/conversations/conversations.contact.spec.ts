@@ -3,6 +3,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { ConversationsService } from './conversations.service';
 import { PushService } from '../push/push.service';
+import { SuppressionService } from '../suppression/suppression.service';
 import { Conversation } from './conversation.schema';
 import { Message } from './message.schema';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -64,7 +65,7 @@ describe('ConversationsService — contacto del CRM', () => {
       create: jest.fn().mockResolvedValue({ _id: new Types.ObjectId() }),
       findCustomer: jest.fn().mockResolvedValue(makeCustomer()),
       findByCustomer: jest.fn().mockResolvedValue([]),
-      customerTags: jest.fn().mockResolvedValue(['VIP', 'Mayorista']),
+      contactInfoByCustomer: jest.fn().mockResolvedValue(new Map()),
     };
     gateway = { emitConversation: jest.fn(), emitMessage: jest.fn() };
 
@@ -83,6 +84,20 @@ describe('ConversationsService — contacto del CRM', () => {
         { provide: HandoffService, useValue: {} },
         { provide: LeadsService, useValue: leads },
         { provide: PushService, useValue: { sendToTenant: jest.fn() } },
+        {
+          provide: SuppressionService,
+          useValue: {
+            isSuppressed: jest.fn().mockResolvedValue(false),
+            setFor: jest.fn().mockResolvedValue({
+              phones: new Set(),
+              emails: new Set(),
+              empty: true,
+            }),
+            matches: jest.fn().mockReturnValue(false),
+            add: jest.fn(),
+            removeByContact: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -207,7 +222,7 @@ describe('ConversationsService — clasificación y seguimiento', () => {
         .mockResolvedValue({ _id: new Types.ObjectId(), stage: 'new' }),
       findCustomer: jest.fn().mockResolvedValue(customer),
       findByCustomer: jest.fn().mockResolvedValue(openLeads),
-      customerTags: jest.fn().mockResolvedValue(['VIP']),
+      contactInfoByCustomer: jest.fn().mockResolvedValue(new Map()),
     };
     gateway = { emitConversation: jest.fn(), emitMessage: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
@@ -225,6 +240,20 @@ describe('ConversationsService — clasificación y seguimiento', () => {
         { provide: HandoffService, useValue: {} },
         { provide: LeadsService, useValue: leads },
         { provide: PushService, useValue: { sendToTenant: jest.fn() } },
+        {
+          provide: SuppressionService,
+          useValue: {
+            isSuppressed: jest.fn().mockResolvedValue(false),
+            setFor: jest.fn().mockResolvedValue({
+              phones: new Set(),
+              emails: new Set(),
+              empty: true,
+            }),
+            matches: jest.fn().mockReturnValue(false),
+            add: jest.fn(),
+            removeByContact: jest.fn(),
+          },
+        },
       ],
     }).compile();
     service = module.get<ConversationsService>(ConversationsService);

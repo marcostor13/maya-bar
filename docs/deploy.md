@@ -34,6 +34,9 @@ existen, alinea dominios, puertos, `watch_paths` y variables de entorno con el
 disparador de despliegues sea GitHub Actions (con el webhook de la GitHub App
 activo habría dos despliegues por cada push).
 
+La lista de no contactar (`docs/no-contactar.md`) no necesita configuración:
+crea sus índices sola al arrancar.
+
 Las notificaciones push necesitan además `VAPID_PUBLIC_KEY`,
 `VAPID_PRIVATE_KEY` y (opcional) `VAPID_SUBJECT` en el backend — ver
 [docs/notificaciones-push.md](notificaciones-push.md). Sin ellas el backend

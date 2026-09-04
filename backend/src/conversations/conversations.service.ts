@@ -30,6 +30,7 @@ import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
 import { LeadsService } from '../leads/leads.service';
 import { PushService } from '../push/push.service';
+import { SuppressionService } from '../suppression/suppression.service';
 import { Customer } from '../customers/customer.schema';
 import { Lead } from '../leads/lead.schema';
 
@@ -129,6 +130,7 @@ export class ConversationsService {
     private handoff: HandoffService,
     private leads: LeadsService,
     private push: PushService,
+    private suppression: SuppressionService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -232,32 +234,101 @@ export class ConversationsService {
       .sort({ lastMessageAt: -1 })
       .limit(200)
       .exec();
-    return this.withCustomerTags(tenantId, convs);
+    return this.withCrmInfo(tenantId, convs);
   }
 
   /**
-   * Adjunta a cada conversación las etiquetas de su contacto.
+   * Adjunta a cada conversación lo que hace falta para decidir a quién atender:
+   * las etiquetas de su contacto y si pidió no recibir comunicaciones.
    *
-   * Clasificar no sirve de nada si no se ve la clasificación, y la bandeja es
-   * justo donde se decide a quién atender. Va en UNA consulta para toda la
-   * página, no una por chat.
+   * Dos consultas para toda la página, no dos por chat.
    */
-  private async withCustomerTags(
+  private async withCrmInfo(
     tenantId: string,
     convs: Conversation[],
-  ): Promise<(Conversation & { tags?: string[] })[]> {
+  ): Promise<(Conversation & { tags?: string[]; doNotContact?: boolean })[]> {
     const ids = convs
       .map((c) => c.customerId)
       .filter((id): id is Types.ObjectId => !!id);
-    if (ids.length === 0) return convs;
 
-    const byId = await this.leads.tagsByCustomer(tenantId, ids.map(String));
+    const [byId, blocked] = await Promise.all([
+      ids.length
+        ? this.leads.contactInfoByCustomer(tenantId, ids.map(String))
+        : Promise.resolve(
+            new Map<
+              string,
+              { tags: string[]; phone?: string; email?: string }
+            >(),
+          ),
+      this.suppression.setFor(tenantId),
+    ]);
+    if (ids.length === 0 && blocked.empty) return convs;
+
     return convs.map((c) => {
-      const tags = c.customerId ? byId.get(String(c.customerId)) : undefined;
-      if (!tags?.length) return c;
-      // `toObject` para poder añadir un campo que no está en el esquema.
-      return { ...c.toObject(), tags } as Conversation & { tags: string[] };
+      const info = c.customerId ? byId.get(String(c.customerId)) : undefined;
+      // La baja se comprueba por el identificador del chat (el teléfono, en
+      // WhatsApp) y también por los datos del contacto vinculado.
+      const noContactar = this.suppression.matches(blocked, {
+        phone: c.channel === 'whatsapp' ? c.contact : info?.phone,
+        email: info?.email,
+      });
+      if (!info?.tags?.length && !noContactar) return c;
+      // `toObject` para poder añadir campos que no están en el esquema.
+      return {
+        ...c.toObject(),
+        ...(info?.tags?.length ? { tags: info.tags } : {}),
+        ...(noContactar ? { doNotContact: true } : {}),
+      } as Conversation & { tags?: string[]; doNotContact?: boolean };
     });
+  }
+
+  /**
+   * Da de baja (o reactiva) al contacto de esta conversación.
+   *
+   * Trabaja sobre el dato de contacto y no sobre la ficha del CRM: así la baja
+   * sobrevive a que el contacto se borre o se vuelva a importar.
+   */
+  async setDoNotContact(
+    id: string,
+    tenantId: string,
+    userId: string,
+    blocked: boolean,
+    reason?: string,
+  ): Promise<{ conversation: Conversation; doNotContact: boolean }> {
+    const conv = await this.getConversation(id, tenantId);
+    const customer = conv.customerId
+      ? await this.leads.findCustomer(String(conv.customerId), tenantId)
+      : null;
+    const contact = {
+      phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
+      email: customer?.email,
+    };
+    if (!contact.phone && !contact.email)
+      throw new BadRequestException(
+        'Este chat no tiene teléfono ni email: guarda antes el contacto para poder darlo de baja.',
+      );
+
+    if (blocked) {
+      await this.suppression.add(tenantId, {
+        ...contact,
+        name: customer?.name ?? conv.contactName,
+        reason,
+        source: 'inbox',
+        userId,
+        conversationId: String(conv._id),
+      });
+      // El agente no puede seguir hablándole a quien acaba de pedir que no.
+      if (conv.autoReply) {
+        conv.autoReply = false;
+        conv.takenOverAt = new Date();
+        await conv.save();
+      }
+    } else {
+      await this.suppression.removeByContact(tenantId, contact);
+    }
+
+    this.gateway.emitConversation(tenantId, conv);
+    return { conversation: conv, doNotContact: blocked };
   }
 
   async getConversation(id: string, tenantId: string): Promise<Conversation> {
@@ -794,7 +865,30 @@ export class ConversationsService {
     }
 
     if (!conv.autoReply || conv.status === 'closed') return;
+    // Quien pidió no recibir comunicaciones no recibe respuestas automáticas.
+    // Puede seguir escribiendo y una persona puede contestarle a mano: lo que
+    // se corta es que un bot le siga hablando.
+    if (await this.isSuppressedContact(conv)) {
+      this.logger.log(
+        `Conversación ${String(conv._id)}: contacto en la lista de no contactar, el agente no responde.`,
+      );
+      return;
+    }
     await this.runAgent(conv, msg, params.resolveAgent, params.typing);
+  }
+
+  /** ¿El contacto de esta conversación pidió no recibir comunicaciones? */
+  private async isSuppressedContact(conv: Conversation): Promise<boolean> {
+    const customer = conv.customerId
+      ? await this.leads.findCustomer(
+          String(conv.customerId),
+          String(conv.tenantId),
+        )
+      : null;
+    return this.suppression.isSuppressed(String(conv.tenantId), {
+      phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
+      email: customer?.email,
+    });
   }
 
   /** Genera y envía la respuesta del agente publicado para esta cuenta. */

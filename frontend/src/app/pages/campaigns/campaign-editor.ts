@@ -564,6 +564,8 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   saving = signal(false);
   formError = signal('');
   previewCount = signal<number | null>(null);
+  /** Cuántos quedan fuera por estar en la lista de no contactar. */
+  previewBlocked = signal(0);
   templatesLoading = signal(false);
   selectedTemplate = signal<WaTemplate | null>(null);
   emailMode = signal<'manual' | 'ai'>('manual');
@@ -595,8 +597,14 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   previewLabel = computed(() => {
     const n = this.previewCount();
     if (n === null) return '';
-    if (n === 0) return 'Sin clientes en este segmento';
-    return `${n} cliente${n !== 1 ? 's' : ''} recibirán esta campaña`;
+    // Los excluidos se dicen en voz alta: si desaparecen sin explicación, el
+    // número no cuadra con la lista y nadie se fía de él.
+    const blocked = this.previewBlocked();
+    const aparte = blocked > 0
+      ? ` · ${blocked} fuera por no contactar`
+      : '';
+    if (n === 0) return `Sin clientes en este segmento${aparte}`;
+    return `${n} cliente${n !== 1 ? 's' : ''} recibirán esta campaña${aparte}`;
   });
 
   templateVarCount = computed(() => {
@@ -807,9 +815,15 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
 
   private fetchPreview() {
     if (this.form.targeting === 'all') {
-      this.api.previewCount().subscribe({ next: (r) => this.previewCount.set(r.count), error: () => {} });
+      this.api.previewCount().subscribe({
+        next: (r) => { this.previewCount.set(r.count); this.previewBlocked.set(r.blocked ?? 0); },
+        error: () => {},
+      });
     } else if (this.form.targeting === 'tags') {
-      this.api.previewCount(this.form.recipientTags).subscribe({ next: (r) => this.previewCount.set(r.count), error: () => {} });
+      this.api.previewCount(this.form.recipientTags).subscribe({
+        next: (r) => { this.previewCount.set(r.count); this.previewBlocked.set(r.blocked ?? 0); },
+        error: () => {},
+      });
     } else {
       const total = this.availableLists()
         .filter(l => this.form.listIds.includes(l._id))

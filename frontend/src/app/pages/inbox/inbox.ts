@@ -7,7 +7,8 @@ import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
-  UserPlus, ContactRound, Target, MoreVertical, Tag, CheckCheck as ReadIcon,
+  UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
+  CheckCheck as ReadIcon,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -76,6 +77,8 @@ interface Conv {
   escalationNotifiedTo?: string[];
   /** Etiquetas del contacto vinculado; las adjunta el backend al listar. */
   tags?: string[];
+  /** Pidió no recibir comunicaciones: fuera de campañas y sin agente IA. */
+  doNotContact?: boolean;
 }
 
 /** Cuenta conectada (WhatsApp o Instagram) por la que entran las conversaciones. */
@@ -235,6 +238,12 @@ const EMOJIS = [
                       </span>
                     }
                     @if (c.status === 'closed') { <span class="tag tag-closed">Cerrado</span> }
+                    @if (c.doNotContact) {
+                      <span class="tag tag-blocked">
+                        <lucide-icon [img]="BanIcon" [size]="11" [strokeWidth]="2.6"></lucide-icon>
+                        No contactar
+                      </span>
+                    }
                     @for (t of (c.tags ?? []).slice(0, 2); track t) {
                       <span class="tag tag-crm">{{ t }}</span>
                     }
@@ -369,6 +378,16 @@ const EMOJIS = [
                   <span class="sheet-row-text">Eliminar conversación</span>
                 </button>
               </div>
+            </div>
+          }
+
+          @if (selected()!.doNotContact) {
+            <div class="blocked-banner">
+              <lucide-icon [img]="BanIcon" [size]="15" [strokeWidth]="2.4"></lucide-icon>
+              <span>
+                Pidió no recibir comunicaciones: queda fuera de las campañas y el agente IA
+                no le responde. Puedes escribirle a mano si hace falta.
+              </span>
             </div>
           }
 
@@ -636,6 +655,29 @@ const EMOJIS = [
                 </button>
               </div>
             }
+
+            <span class="cls-label">Comunicaciones</span>
+            <label class="cls-block" [class.on]="blockedContact()">
+              <span class="cls-block-icon">
+                <lucide-icon [img]="BanIcon" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+              </span>
+              <span class="cls-block-text">
+                No contactar
+                <small>
+                  {{ blockedContact()
+                    ? 'Fuera de campañas y sin respuestas automáticas.'
+                    : 'Márcalo si pidió dejar de recibir mensajes.' }}
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                [checked]="blockedContact()"
+                [disabled]="savingBlock()"
+                (change)="toggleDoNotContact($event)"
+                aria-label="No contactar"
+              />
+              <span class="ai-track"><span class="ai-knob"></span></span>
+            </label>
           </div>
 
           <div class="cls-actions">
@@ -897,6 +939,7 @@ const EMOJIS = [
     .tag-manual { background: rgba(16, 185, 129, 0.12); color: var(--color-success); }
     .tag-handoff { background: rgba(245, 158, 11, 0.14); color: #B45309; }
     .tag-crm { background: var(--color-brand-light); color: var(--color-brand); }
+    .tag-blocked { background: #FEF2F2; color: var(--color-error); }
     .tag-closed { background: var(--color-bg-light); color: var(--color-text-muted); }
 
     /* ── Hilo ── */
@@ -958,6 +1001,35 @@ const EMOJIS = [
       color: var(--color-brand);
     }
     .cls-empty { font-size: 13px; color: var(--color-text-muted); }
+    .cls-block {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 14px; border-radius: var(--radius-md);
+      background: var(--color-bg-light); cursor: pointer; position: relative;
+    }
+    .cls-block.on { background: #FEF2F2; }
+    .cls-block-icon {
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%;
+      background: var(--color-white); color: var(--color-text-muted);
+    }
+    .cls-block.on .cls-block-icon { color: var(--color-error); }
+    .cls-block-text {
+      flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+      font-size: 14px; font-weight: 600;
+    }
+    .cls-block-text small { font-size: 11.5px; font-weight: 500; color: var(--color-text-muted); }
+    .cls-block input[type='checkbox'] { position: absolute; opacity: 0; width: 0; height: 0; }
+    .cls-block.on .ai-track { background: var(--color-error); }
+    .cls-block.on .ai-knob { transform: translateX(14px); }
+
+    .blocked-banner {
+      display: flex; align-items: flex-start; gap: 9px;
+      margin: 0 20px 10px; padding: 10px 14px;
+      background: #FEF2F2; border: 1px solid #FCA5A5;
+      border-radius: var(--radius-md);
+      font-size: 12.5px; line-height: 1.5; color: var(--color-error);
+    }
+    .blocked-banner lucide-icon { flex-shrink: 0; margin-top: 1px; }
     .cls-new { display: flex; gap: 8px; align-items: center; }
     .cls-new .input { flex: 1; min-width: 0; }
     .cls-new .btn { flex-shrink: 0; }
@@ -1328,6 +1400,7 @@ const EMOJIS = [
       .composer { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
       /* La cabecera de la lista se compacta: en el teléfono la mitad de la
          pantalla no puede ser filtros. El título ya lo pinta la propia página. */
+      .blocked-banner { margin: 0 14px 8px; }
       .list-head { padding: 14px 16px 10px; gap: 10px; }
       .list-title h1 { font-size: 18px; }
       .filters {
@@ -1420,6 +1493,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Phone = Phone;
   readonly MoreVertical = MoreVertical;
   readonly Tag = Tag;
+  readonly BanIcon = BanIcon;
 
   readonly emojis = EMOJIS;
   readonly filters: { key: Filter; label: string }[] = [
@@ -1686,9 +1760,45 @@ export class InboxComponent implements OnInit, OnDestroy {
     return [...new Set([...this.draftTags(), ...base])];
   });
 
+  savingBlock = signal(false);
+  /** Estado en curso del interruptor; parte de lo que trae la lista. */
+  blockedContact = signal(false);
+
+  /**
+   * El alta/baja se aplica al instante, sin esperar a "Guardar": es una
+   * petición explícita del cliente y dejarla a medias sería peor que no tenerla.
+   */
+  toggleDoNotContact(event: Event) {
+    const conv = this.selected();
+    if (!conv) return;
+    const blocked = (event.target as HTMLInputElement).checked;
+    this.savingBlock.set(true);
+    this.http.patch<{ conversation: Conv; doNotContact: boolean }>(
+      `${API}/conversations/${conv._id}/do-not-contact`, { blocked },
+    ).subscribe({
+      next: res => {
+        this.savingBlock.set(false);
+        this.blockedContact.set(res.doNotContact);
+        this.upsertConv({ ...conv, ...res.conversation, doNotContact: res.doNotContact });
+        this.toast.success(
+          res.doNotContact
+            ? 'Ya no recibirá campañas ni respuestas automáticas'
+            : 'Vuelve a recibir comunicaciones',
+        );
+      },
+      error: err => {
+        this.savingBlock.set(false);
+        // Se revierte el interruptor: el estado que se ve tiene que ser el real.
+        this.blockedContact.set(!blocked);
+        this.toast.error(err.error?.message || 'No se pudo actualizar la lista');
+      },
+    });
+  }
+
   openClassify() {
     const conv = this.selected();
     if (!conv) return;
+    this.blockedContact.set(!!conv.doNotContact);
     this.newTag = '';
     this.pipelineStage = PIPELINE_STAGES[0];
     this.draftTags.set([...(conv.tags ?? [])]);

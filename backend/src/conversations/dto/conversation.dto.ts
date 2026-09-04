@@ -148,3 +148,14 @@ export class SendToPipelineDto {
   @IsIn(LEAD_PRIORITIES)
   priority?: string;
 }
+
+/** Alta/baja del contacto del chat en la lista de no contactar. */
+export class DoNotContactDto {
+  @IsBoolean()
+  blocked: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
+}

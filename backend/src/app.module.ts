@@ -31,6 +31,7 @@ import { ContactImportModule } from './contact-import/contact-import.module';
 import { FormsModule } from './forms/forms.module';
 import { RolesModule } from './roles/roles.module';
 import { PushModule } from './push/push.module';
+import { SuppressionModule } from './suppression/suppression.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { PushModule } from './push/push.module';
     FormsModule,
     RolesModule,
     PushModule,
+    SuppressionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

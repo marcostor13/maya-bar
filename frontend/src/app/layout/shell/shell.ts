@@ -10,7 +10,7 @@ import { PushCenterComponent } from '../../shared/push-center';
 import {
   LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight,
   Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, X, MessagesSquare,
-  LayoutTemplate, FileText, Target, LayoutGrid, type LucideIconData,
+  LayoutTemplate, FileText, Target, LayoutGrid, BanIcon, type LucideIconData,
 } from 'lucide-angular';
 
 /** Una entrada del menú. La misma alimenta el lateral, la barra inferior y la hoja "Más". */
@@ -775,6 +775,7 @@ export class ShellComponent {
       { key: 'templates', label: 'Plantillas', icon: LayoutTemplate, route: '/plantillas' },
       { key: 'ai-agents', label: 'Agentes IA', short: 'Agentes', icon: Bot, route: '/ai-agents' },
       { key: 'inbox', label: 'Conversaciones', short: 'Chats', icon: MessagesSquare, route: '/inbox' },
+      { key: 'suppression', label: 'No contactar', short: 'Bajas', icon: BanIcon, route: '/no-contactar' },
     ]);
     const management = keep([
       { key: 'users', label: 'Usuarios', icon: Users, route: '/users' },

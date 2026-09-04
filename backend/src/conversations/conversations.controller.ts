@@ -22,6 +22,7 @@ import {
   SaveContactDto,
   SetTagsDto,
   SendToPipelineDto,
+  DoNotContactDto,
 } from './dto/conversation.dto';
 
 @Controller('conversations')
@@ -131,6 +132,26 @@ export class ConversationsController {
       req.user.userId,
       req.user.role,
       dto.tags,
+    );
+  }
+
+  /**
+   * Da de baja (o reactiva) al contacto en la lista de no contactar. Deja de
+   * entrar en campañas y el agente IA deja de responderle.
+   */
+  @Patch(':id/do-not-contact')
+  doNotContact(
+    @Param('id') id: string,
+    @Body() dto: DoNotContactDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.setDoNotContact(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      dto.blocked,
+      dto.reason,
     );
   }
 

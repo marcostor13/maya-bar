@@ -132,6 +132,12 @@ export const routes: Routes = [
         canActivate: [moduleGuard('inbox')],
       },
       {
+        path: 'no-contactar',
+        loadComponent: () =>
+          import('./pages/suppression/suppression').then(m => m.SuppressionComponent),
+        canActivate: [moduleGuard('suppression')],
+      },
+      {
         path: 'lists',
         loadComponent: () => import('./pages/lists/lists').then(m => m.ListsComponent),
         canActivate: [moduleGuard('lists')],
