@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConversationsController } from './conversations.controller';
 import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { InstagramWebhookController } from './instagram-webhook.controller';
+import { MessengerWebhookController } from './messenger-webhook.controller';
 import { ConversationsService } from './conversations.service';
 import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
@@ -13,6 +14,8 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramModule } from '../instagram/instagram.module';
 import { InstagramAccountsModule } from '../instagram-accounts/instagram-accounts.module';
+import { MessengerModule } from '../messenger/messenger.module';
+import { MessengerAccountsModule } from '../messenger-accounts/messenger-accounts.module';
 import { AiAgentsModule } from '../ai-agents/ai-agents.module';
 import { UploadModule } from '../upload/upload.module';
 import { LeadsModule } from '../leads/leads.module';
@@ -28,6 +31,8 @@ import { LeadsModule } from '../leads/leads.module';
     WhatsAppAccountsModule,
     InstagramModule,
     InstagramAccountsModule,
+    MessengerModule,
+    MessengerAccountsModule,
     AiAgentsModule,
     UploadModule,
     LeadsModule,
@@ -36,6 +41,7 @@ import { LeadsModule } from '../leads/leads.module';
     ConversationsController,
     WhatsAppWebhookController,
     InstagramWebhookController,
+    MessengerWebhookController,
   ],
   providers: [ConversationsService, ConversationsGateway, HandoffService],
   exports: [ConversationsService],

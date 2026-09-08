@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-export type ConversationChannel = 'whatsapp' | 'instagram';
+export type ConversationChannel = 'whatsapp' | 'instagram' | 'messenger';
 
 @Schema({ timestamps: true })
 export class Conversation extends Document {
@@ -10,12 +10,12 @@ export class Conversation extends Document {
 
   @Prop({
     required: true,
-    enum: ['whatsapp', 'instagram'],
+    enum: ['whatsapp', 'instagram', 'messenger'],
     default: 'whatsapp',
   })
   channel: ConversationChannel;
 
-  /** Cuenta (WhatsAppAccount o InstagramAccount) por la que entra/sale el chat. */
+  /** Cuenta (WhatsApp, Instagram o Messenger) por la que entra/sale el chat. */
   @Prop({ type: Types.ObjectId, required: true, index: true })
   accountId: Types.ObjectId;
 
@@ -23,7 +23,7 @@ export class Conversation extends Document {
   @Prop({ type: Types.ObjectId, ref: 'AiAgent' })
   agentId?: Types.ObjectId;
 
-  /** Identificador del cliente: número normalizado (WA) o IGSID (Instagram). */
+  /** Identificador del cliente: número normalizado (WA), IGSID (Instagram) o PSID (Messenger). */
   @Prop({ required: true, index: true })
   contact: string;
 

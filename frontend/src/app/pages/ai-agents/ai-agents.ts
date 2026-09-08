@@ -7,7 +7,7 @@ import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Instagram, Settings, PhoneForwarded,
+  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 
@@ -28,6 +28,14 @@ interface IgAccount {
   active: boolean;
 }
 
+interface MsAccount {
+  _id: string;
+  label: string;
+  pageName?: string;
+  username?: string;
+  active: boolean;
+}
+
 interface Agent {
   _id: string;
   name: string;
@@ -43,6 +51,7 @@ interface Agent {
   topK: number;
   accountIds: string[];
   instagramAccountIds: string[];
+  messengerAccountIds: string[];
   handoffEnabled: boolean;
   handoffNumbers: string[];
   handoffAccountId?: string;
@@ -78,7 +87,7 @@ function blankAgent(): Agent {
     _id: '', name: '', description: '', systemPrompt: 'Eres un asistente amable y servicial. Responde de forma clara y breve.',
     provider: 'auto', aiModel: '', temperature: 0.4, maxTokens: 800, greeting: '',
     fallbackMessage: 'Lo siento, no tengo esa información en este momento.',
-    ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [],
+    ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [], messengerAccountIds: [],
     handoffEnabled: false, handoffNumbers: [], handoffAccountId: '', handoffInstructions: '',
     handoffMessage: 'Te comunico con una persona del equipo, en un momento te escriben por acá.',
     handoffTemplateName: '', handoffTemplateLang: 'es',
@@ -95,7 +104,7 @@ function blankAgent(): Agent {
       <div class="page-header">
         <div>
           <h1>Agentes IA</h1>
-          <p class="page-sub">Crea asistentes que responden por WhatsApp e Instagram con tu conocimiento (RAG)</p>
+          <p class="page-sub">Crea asistentes que responden por WhatsApp, Instagram y Messenger con tu conocimiento (RAG)</p>
         </div>
         <div class="header-actions">
           <button class="btn btn-primary" (click)="openNew()">
@@ -137,7 +146,10 @@ function blankAgent(): Agent {
                 @if (a.instagramAccountIds.length > 0) {
                   <span class="meta-pill"><lucide-icon [img]="Instagram" [size]="13"></lucide-icon> {{ a.instagramAccountIds.length }} Instagram</span>
                 }
-                @if (a.accountIds.length === 0 && a.instagramAccountIds.length === 0) {
+                @if (a.messengerAccountIds.length > 0) {
+                  <span class="meta-pill"><lucide-icon [img]="Facebook" [size]="13"></lucide-icon> {{ a.messengerAccountIds.length }} Messenger</span>
+                }
+                @if (a.accountIds.length === 0 && a.instagramAccountIds.length === 0 && a.messengerAccountIds.length === 0) {
                   <span class="meta-pill">Sin canales</span>
                 }
                 @if (a.ragEnabled) {
@@ -234,7 +246,7 @@ function blankAgent(): Agent {
             <!-- CANALES -->
             @if (section() === 'channels') {
               <p class="field-hint" style="margin-bottom:16px">
-                Las cuentas de WhatsApp e Instagram se conectan desde <strong>Configuración</strong> y quedan disponibles para todos los agentes (y para campañas). Acá solo elegís por cuáles responde este agente.
+                Las cuentas de WhatsApp, Instagram y Messenger se conectan desde <strong>Configuración</strong> y quedan disponibles para todos los agentes (y para campañas). Acá solo elegís por cuáles responde este agente.
               </p>
 
               <p class="channel-group-title">
@@ -286,6 +298,34 @@ function blankAgent(): Agent {
                     <div class="account-info">
                       <span class="account-label">{{ acc.label }}</span>
                       <span class="account-sub">{{ acc.username ? '@' + acc.username : 'Instagram Messaging' }}</span>
+                    </div>
+                    @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }
+                  </label>
+                }
+                <a class="btn btn-sm btn-ghost" style="margin-top:8px" routerLink="/settings">
+                  <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Gestionar cuentas en Configuración
+                </a>
+              }
+
+              <p class="channel-group-title" style="margin-top:24px">
+                <lucide-icon [img]="Facebook" [size]="14"></lucide-icon> Messenger
+              </p>
+              @if (msAccounts().length === 0) {
+                <div class="inline-empty">
+                  <lucide-icon [img]="Facebook" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
+                  <p>No hay páginas de Facebook configuradas.</p>
+                  <a class="btn btn-sm btn-secondary" routerLink="/settings">
+                    <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Ir a Configuración
+                  </a>
+                </div>
+              } @else {
+                <p class="field-hint" style="margin-bottom:12px">Selecciona por qué páginas de Facebook responderá este agente.</p>
+                @for (acc of msAccounts(); track acc._id) {
+                  <label class="account-row" [class.selected]="form.messengerAccountIds.includes(acc._id)">
+                    <input type="checkbox" [checked]="form.messengerAccountIds.includes(acc._id)" (change)="toggleMsAccount(acc._id)" />
+                    <div class="account-info">
+                      <span class="account-label">{{ acc.label }}</span>
+                      <span class="account-sub">{{ acc.username ? '@' + acc.username : (acc.pageName || 'Messenger') }}</span>
                     </div>
                     @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }
                   </label>
@@ -721,7 +761,7 @@ export class AiAgentsComponent implements OnInit {
   readonly Sparkles = Sparkles; readonly BookOpen = BookOpen; readonly Phone = Phone;
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
-  readonly Instagram = Instagram; readonly Settings = Settings;
+  readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Settings = Settings;
   readonly PhoneForwarded = PhoneForwarded;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
@@ -736,6 +776,7 @@ export class AiAgentsComponent implements OnInit {
   agents = signal<Agent[]>([]);
   accounts = signal<WaAccount[]>([]);
   igAccounts = signal<IgAccount[]>([]);
+  msAccounts = signal<MsAccount[]>([]);
   loading = signal(true);
 
   // editor
@@ -771,6 +812,7 @@ export class AiAgentsComponent implements OnInit {
     this.load();
     this.loadAccounts();
     this.loadIgAccounts();
+    this.loadMsAccounts();
   }
 
   load() {
@@ -796,6 +838,13 @@ export class AiAgentsComponent implements OnInit {
     });
   }
 
+  loadMsAccounts() {
+    this.http.get<MsAccount[]>(`${API}/messenger-accounts`).subscribe({
+      next: a => this.msAccounts.set(a),
+      error: () => {},
+    });
+  }
+
   // ---- Editor ----
   openNew() {
     this.form = blankAgent();
@@ -813,6 +862,7 @@ export class AiAgentsComponent implements OnInit {
       ...base, ...a,
       accountIds: [...(a.accountIds || [])],
       instagramAccountIds: [...(a.instagramAccountIds || [])],
+      messengerAccountIds: [...(a.messengerAccountIds || [])],
       // Los agentes creados antes de la derivación no traen estos campos.
       handoffNumbers: [...(a.handoffNumbers || [])],
       handoffAccountId: a.handoffAccountId || '',
@@ -862,6 +912,13 @@ export class AiAgentsComponent implements OnInit {
       ? this.form.instagramAccountIds.filter(x => x !== id)
       : [...this.form.instagramAccountIds, id];
     this.form = { ...this.form, instagramAccountIds: ids };
+  }
+
+  toggleMsAccount(id: string) {
+    const ids = this.form.messengerAccountIds.includes(id)
+      ? this.form.messengerAccountIds.filter(x => x !== id)
+      : [...this.form.messengerAccountIds, id];
+    this.form = { ...this.form, messengerAccountIds: ids };
   }
 
   save() {

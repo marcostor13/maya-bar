@@ -56,6 +56,13 @@ export class AiAgent extends Document {
   })
   instagramAccountIds: Types.ObjectId[];
 
+  // Páginas de Facebook (Messenger) por las que responde
+  @Prop({
+    type: [{ type: Types.ObjectId, ref: 'MessengerAccount' }],
+    default: [],
+  })
+  messengerAccountIds: Types.ObjectId[];
+
   // ------------------------------------------------------------------
   // Escalamiento a un agente humano
   // ------------------------------------------------------------------

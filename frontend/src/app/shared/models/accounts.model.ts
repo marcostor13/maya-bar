@@ -1,4 +1,4 @@
-/** Modelos de la feature de configuración: cuentas WhatsApp / Instagram, plantillas y keys de IA. */
+/** Modelos de la feature de configuración: cuentas WhatsApp / Instagram / Messenger, plantillas y keys de IA. */
 
 /** Configuración del tenant (GET/PUT /settings): límite diario de WhatsApp y API keys de IA. */
 export interface TenantSettings {
@@ -77,6 +77,28 @@ export type IgAccountPayload = Omit<IgAccount, '_id'>;
 export interface IgStatus {
   connected: boolean;
   username?: string;
+  error?: string;
+}
+
+// ── Messenger (Páginas de Facebook) ───────────────────────────────────────
+
+export interface MsAccount {
+  _id: string;
+  label: string;
+  username?: string;
+  pageId?: string;
+  pageName?: string;
+  pageAccessToken?: string;
+  tokenExpiresAt?: string;
+  active: boolean;
+  isDefault?: boolean;
+}
+
+export type MsAccountPayload = Omit<MsAccount, '_id'>;
+
+export interface MsStatus {
+  connected: boolean;
+  name?: string;
   error?: string;
 }
 
@@ -219,6 +241,13 @@ export function blankWaAccount(): WaAccount {
 export function blankIgAccount(): IgAccount {
   return {
     _id: '', label: '', username: '', igBusinessAccountId: '', pageId: '',
+    pageAccessToken: '', active: true,
+  };
+}
+
+export function blankMsAccount(): MsAccount {
+  return {
+    _id: '', label: '', username: '', pageId: '', pageName: '',
     pageAccessToken: '', active: true,
   };
 }

@@ -8,11 +8,12 @@ import { AccountsApiService } from '../../core/api/accounts-api.service';
 import { TenantSettings } from '../../shared/models/accounts.model';
 import { WhatsappSettingsComponent } from './whatsapp-settings';
 import { InstagramSettingsComponent } from './instagram-settings';
+import { MessengerSettingsComponent } from './messenger-settings';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, WhatsappSettingsComponent, InstagramSettingsComponent],
+  imports: [FormsModule, LucideAngularModule, WhatsappSettingsComponent, InstagramSettingsComponent, MessengerSettingsComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -27,6 +28,9 @@ import { InstagramSettingsComponent } from './instagram-settings';
 
       <!-- Instagram Accounts Card -->
       <app-instagram-settings />
+
+      <!-- Messenger Accounts Card -->
+      <app-messenger-settings />
 
       <!-- IA / Agentes Card -->
       <div class="section-card">

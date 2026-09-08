@@ -8,8 +8,10 @@ import { Conversation } from './conversation.schema';
 import { Message } from './message.schema';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { InstagramService } from '../instagram/instagram.service';
+import { MessengerService } from '../messenger/messenger.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { InstagramAccountsService } from '../instagram-accounts/instagram-accounts.service';
+import { MessengerAccountsService } from '../messenger-accounts/messenger-accounts.service';
 import { AiAgentsService } from '../ai-agents/ai-agents.service';
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
@@ -76,8 +78,10 @@ describe('ConversationsService — contacto del CRM', () => {
         { provide: getModelToken(Message.name), useValue: {} },
         { provide: WhatsAppService, useValue: {} },
         { provide: InstagramService, useValue: {} },
+        { provide: MessengerService, useValue: {} },
         { provide: WhatsAppAccountsService, useValue: {} },
         { provide: InstagramAccountsService, useValue: {} },
+        { provide: MessengerAccountsService, useValue: {} },
         { provide: AiAgentsService, useValue: {} },
         { provide: UploadService, useValue: {} },
         { provide: ConversationsGateway, useValue: gateway },
@@ -232,8 +236,10 @@ describe('ConversationsService — clasificación y seguimiento', () => {
         { provide: getModelToken(Message.name), useValue: {} },
         { provide: WhatsAppService, useValue: {} },
         { provide: InstagramService, useValue: {} },
+        { provide: MessengerService, useValue: {} },
         { provide: WhatsAppAccountsService, useValue: {} },
         { provide: InstagramAccountsService, useValue: {} },
+        { provide: MessengerAccountsService, useValue: {} },
         { provide: AiAgentsService, useValue: {} },
         { provide: UploadService, useValue: {} },
         { provide: ConversationsGateway, useValue: gateway },

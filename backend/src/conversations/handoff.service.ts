@@ -64,9 +64,9 @@ export class HandoffService {
   ): string {
     const who = conv.contactName?.trim() || 'Cliente';
     const from =
-      conv.channel === 'instagram'
-        ? `Instagram · ${conv.contact}`
-        : `+${conv.contact}`;
+      conv.channel === 'whatsapp'
+        ? `+${conv.contact}`
+        : `${conv.channel === 'messenger' ? 'Messenger' : 'Instagram'} · ${conv.contact}`;
     const link = this.conversationLink(conv);
     return [
       '🔔 *Un chat necesita atención humana*',

@@ -106,6 +106,9 @@ export class AiAgentsService {
       instagramAccountIds: (dto.instagramAccountIds ?? []).map(
         (a) => new Types.ObjectId(a),
       ),
+      messengerAccountIds: (dto.messengerAccountIds ?? []).map(
+        (a) => new Types.ObjectId(a),
+      ),
       handoffNumbers: normalizePhones(dto.handoffNumbers),
       handoffAccountId: dto.handoffAccountId
         ? new Types.ObjectId(dto.handoffAccountId)
@@ -121,6 +124,10 @@ export class AiAgentsService {
       patch.accountIds = dto.accountIds.map((a) => new Types.ObjectId(a));
     if (dto.instagramAccountIds)
       patch.instagramAccountIds = dto.instagramAccountIds.map(
+        (a) => new Types.ObjectId(a),
+      );
+    if (dto.messengerAccountIds)
+      patch.messengerAccountIds = dto.messengerAccountIds.map(
         (a) => new Types.ObjectId(a),
       );
     if (dto.handoffNumbers)
@@ -466,6 +473,17 @@ export class AiAgentsService {
       .findOne({
         published: true,
         instagramAccountIds: new Types.ObjectId(accountId),
+      })
+      .exec();
+  }
+
+  async findPublishedByMessengerAccount(
+    accountId: string,
+  ): Promise<AiAgent | null> {
+    return this.agentModel
+      .findOne({
+        published: true,
+        messengerAccountIds: new Types.ObjectId(accountId),
       })
       .exec();
   }

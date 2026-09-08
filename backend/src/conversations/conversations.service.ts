@@ -19,10 +19,13 @@ import {
   WaMediaType,
 } from '../whatsapp/whatsapp.service';
 import { InstagramService, IgConfig } from '../instagram/instagram.service';
+import { MessengerService, MsConfig } from '../messenger/messenger.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { InstagramAccountsService } from '../instagram-accounts/instagram-accounts.service';
+import { MessengerAccountsService } from '../messenger-accounts/messenger-accounts.service';
 import { WhatsAppAccount } from '../whatsapp-accounts/whatsapp-account.schema';
 import { InstagramAccount } from '../instagram-accounts/instagram-account.schema';
+import { MessengerAccount } from '../messenger-accounts/messenger-account.schema';
 import { AiAgentsService } from '../ai-agents/ai-agents.service';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { UploadService } from '../upload/upload.service';
@@ -63,7 +66,7 @@ interface AiHistoryTurn {
 export interface InboundMedia {
   /** Cloud API: id de media a resolver contra Graph. */
   cloudMediaId?: string;
-  /** WAHA / Instagram: URL directa de descarga. */
+  /** WAHA / Instagram / Messenger: URL directa de descarga. */
   downloadUrl?: string;
   mimeType?: string;
   filename?: string;
@@ -85,6 +88,13 @@ export interface InboundMessage {
   /** true cuando el mensaje lo envió el negocio desde su propio móvil. */
   fromMe?: boolean;
 }
+
+/** Nombre del canal tal como se muestra en avisos y notificaciones. */
+const CHANNEL_LABEL: Record<ConversationChannel, string> = {
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  messenger: 'Messenger',
+};
 
 const PREVIEW_BY_TYPE: Record<MessageType, string> = {
   text: 'Mensaje',
@@ -122,8 +132,10 @@ export class ConversationsService {
     @InjectModel(Message.name) private msgModel: Model<Message>,
     private wa: WhatsAppService,
     private ig: InstagramService,
+    private ms: MessengerService,
     private waAccounts: WhatsAppAccountsService,
     private igAccounts: InstagramAccountsService,
+    private msAccounts: MessengerAccountsService,
     private agents: AiAgentsService,
     private uploads: UploadService,
     private gateway: ConversationsGateway,
@@ -138,13 +150,14 @@ export class ConversationsService {
   // ------------------------------------------------------------------
 
   /**
-   * Cuentas conectadas del tenant (WhatsApp + Instagram) por las que puede
-   * entrar una conversación. Sirve para el selector de cuenta de la bandeja.
+   * Cuentas conectadas del tenant (WhatsApp + Instagram + Messenger) por las que
+   * puede entrar una conversación. Sirve para el selector de cuenta de la bandeja.
    */
   async listAccounts(tenantId: string): Promise<InboxAccount[]> {
-    const [wa, ig, counts] = await Promise.all([
+    const [wa, ig, ms, counts] = await Promise.all([
       this.waAccounts.findAll(tenantId),
       this.igAccounts.findAll(tenantId),
+      this.msAccounts.findAll(tenantId),
       this.countsByAccount(tenantId),
     ]);
 
@@ -167,6 +180,15 @@ export class ConversationsService {
         detail: a.username ? `@${a.username}` : 'Instagram DM',
         active: a.active,
         isDefault: false,
+        ...withCounts(String(a._id)),
+      })),
+      ...ms.map((a) => ({
+        _id: String(a._id),
+        channel: 'messenger' as const,
+        label: a.label,
+        detail: a.pageName || 'Messenger',
+        active: a.active,
+        isDefault: !!a.isDefault,
         ...withCounts(String(a._id)),
       })),
     ];
@@ -398,6 +420,10 @@ export class ConversationsService {
           externalId: last?.externalId,
         });
       }
+    } else if (conv.channel === 'messenger') {
+      const account = await this.msAccounts.findById(String(conv.accountId));
+      if (account)
+        await this.ms.markSeen(this.msAccounts.toConfig(account), conv.contact);
     }
     this.gateway.emitConversation(tenantId, conv);
     return conv;
@@ -477,6 +503,11 @@ export class ConversationsService {
         ...(customer.customFields ?? {}),
         instagramId: conv.contact,
       };
+    if (conv.channel === 'messenger')
+      customer.customFields = {
+        ...(customer.customFields ?? {}),
+        messengerId: conv.contact,
+      };
     await customer.save();
 
     conv.customerId = customer._id;
@@ -511,8 +542,8 @@ export class ConversationsService {
     role: string,
     data: { name?: string; email?: string; phone?: string } = {},
   ): Promise<Customer> {
-    // En WhatsApp el identificador del chat ya es el teléfono; en Instagram no
-    // hay número, así que solo se guarda lo que escriba quien atiende.
+    // En WhatsApp el identificador del chat ya es el teléfono; en Instagram y
+    // Messenger no hay número, así que solo se guarda lo que escriba quien atiende.
     const phone =
       data.phone?.trim() ||
       (conv.channel === 'whatsapp' ? conv.contact : undefined);
@@ -715,6 +746,21 @@ export class ConversationsService {
       );
     }
 
+    if (conv.channel === 'messenger') {
+      const msAccount = await this.msAccounts.findById(String(conv.accountId));
+      if (!msAccount) throw new Error('La cuenta de Messenger ya no existe');
+      if (!msAccount.active)
+        throw new Error('La cuenta de Messenger está inactiva');
+      const msConfig: MsConfig = this.msAccounts.toConfig(msAccount);
+      return this.ms.sendMessage(
+        conv.contact,
+        body,
+        msConfig,
+        msg.mediaUrl,
+        mediaType,
+      );
+    }
+
     const igAccount = await this.igAccounts.findById(String(conv.accountId));
     if (!igAccount) throw new Error('La cuenta de Instagram ya no existe');
     const igConfig: IgConfig = this.igAccounts.toConfig(igAccount);
@@ -772,6 +818,53 @@ export class ConversationsService {
       resolveAgent: () =>
         this.agents.findPublishedByInstagramAccount(String(account._id)),
     });
+  }
+
+  async handleMessengerInbound(
+    account: MessengerAccount,
+    inbound: InboundMessage,
+  ) {
+    const config = this.msAccounts.toConfig(account);
+    await this.ingest({
+      channel: 'messenger',
+      tenantId: String(account.tenantId),
+      accountId: String(account._id),
+      inbound: await this.withMessengerProfile(
+        String(account._id),
+        inbound,
+        config,
+      ),
+      downloadMedia: (media) => this.downloadPublicMedia(media),
+      resolveAgent: () =>
+        this.agents.findPublishedByMessengerAccount(String(account._id)),
+      typing: (on: boolean) => this.ms.setTyping(config, inbound.contact, on),
+    });
+  }
+
+  /**
+   * El webhook de Messenger solo trae el PSID: el nombre se pide aparte para que
+   * la bandeja no muestre un id interno. Solo se consulta la primera vez —
+   * pedirlo en cada mensaje sería una llamada extra a Meta por mensaje.
+   * Si Meta no lo da, la conversación sigue con el PSID.
+   */
+  private async withMessengerProfile(
+    accountId: string,
+    inbound: InboundMessage,
+    config: MsConfig,
+  ): Promise<InboundMessage> {
+    if (inbound.contactName || inbound.fromMe) return inbound;
+    const known = await this.convModel
+      .findOne({
+        channel: 'messenger',
+        accountId: new Types.ObjectId(accountId),
+        contact: inbound.contact,
+      })
+      .select('contactName')
+      .exec();
+    if (known?.contactName) return inbound;
+
+    const profile = await this.ms.fetchContactProfile(inbound.contact, config);
+    return profile.name ? { ...inbound, contactName: profile.name } : inbound;
   }
 
   /** Actualiza el estado de un mensaje saliente a partir del ack del proveedor. */
@@ -1003,7 +1096,7 @@ export class ConversationsService {
       tenantId,
       {
         title: '🔔 Un chat necesita atención',
-        body: `${conv.contactName?.trim() || `+${conv.contact}`}${reason ? ` · ${reason}` : ''}`,
+        body: `${this.displayContact(conv)}${reason ? ` · ${reason}` : ''}`,
         url: `/inbox?c=${String(conv._id)}`,
         tag: `handoff-${String(conv._id)}`,
         conversationId: String(conv._id),
@@ -1023,10 +1116,8 @@ export class ConversationsService {
    * se abre justo esa conversación (`/inbox?c=<id>`).
    */
   private async notifyInbound(conv: Conversation, msg: Message) {
-    const who =
-      conv.contactName?.trim() ||
-      (conv.channel === 'instagram' ? conv.contact : `+${conv.contact}`);
-    const channel = conv.channel === 'instagram' ? 'Instagram' : 'WhatsApp';
+    const who = this.displayContact(conv);
+    const channel = CHANNEL_LABEL[conv.channel];
     await this.push.sendToTenant(
       String(conv.tenantId),
       {
@@ -1037,6 +1128,14 @@ export class ConversationsService {
         conversationId: String(conv._id),
       },
       { moduleKey: 'inbox' },
+    );
+  }
+
+  /** Cómo se nombra al contacto fuera de la bandeja: su nombre o el id del canal. */
+  private displayContact(conv: Conversation): string {
+    return (
+      conv.contactName?.trim() ||
+      (conv.channel === 'whatsapp' ? `+${conv.contact}` : conv.contact)
     );
   }
 

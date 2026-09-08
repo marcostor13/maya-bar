@@ -6,7 +6,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
-  Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
+  Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon,
 } from 'lucide-angular';
@@ -57,9 +57,18 @@ interface Msg {
   at: string;
 }
 
+type Channel = 'whatsapp' | 'instagram' | 'messenger';
+
+/** Canales soportados en el orden en que se muestran en las pestañas. */
+const CHANNELS: { key: Channel; label: string }[] = [
+  { key: 'whatsapp', label: 'WhatsApp' },
+  { key: 'instagram', label: 'Instagram' },
+  { key: 'messenger', label: 'Messenger' },
+];
+
 interface Conv {
   _id: string;
-  channel: 'whatsapp' | 'instagram';
+  channel: Channel;
   accountId: string;
   contact: string;
   contactName?: string;
@@ -81,10 +90,10 @@ interface Conv {
   doNotContact?: boolean;
 }
 
-/** Cuenta conectada (WhatsApp o Instagram) por la que entran las conversaciones. */
+/** Cuenta conectada (WhatsApp, Instagram o Messenger) por la que entran las conversaciones. */
 interface InboxAccount {
   _id: string;
-  channel: 'whatsapp' | 'instagram';
+  channel: Channel;
   label: string;
   detail: string;
   active: boolean;
@@ -129,7 +138,7 @@ const EMOJIS = [
             />
           </div>
           @if (accounts().length > 0) {
-            @if (hasBothChannels()) {
+            @if (hasMultipleChannels()) {
               <div class="channel-tabs" role="group" aria-label="Canal">
                 @for (c of channelTabs(); track c.key) {
                   <button
@@ -200,6 +209,8 @@ const EMOJIS = [
                   <span class="channel-dot">
                     @if (c.channel === 'instagram') {
                       <lucide-icon [img]="Instagram" [size]="10" [strokeWidth]="2.6"></lucide-icon>
+                    } @else if (c.channel === 'messenger') {
+                      <lucide-icon [img]="Facebook" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     } @else {
                       <lucide-icon [img]="Phone" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     }
@@ -275,7 +286,7 @@ const EMOJIS = [
             <div class="thread-who">
               <span class="thread-name">{{ displayName(selected()!) }}</span>
               <span class="thread-sub">
-                {{ selected()!.channel === 'instagram' ? 'Instagram DM' : '+' + selected()!.contact }}
+                {{ contactHandle(selected()!) }}
                 @if (accountName(selected()!)) { <span class="thread-account">· vía {{ accountName(selected()!) }}</span> }
                 @if (typing()) { <em class="typing">· el agente está escribiendo…</em> }
               </span>
@@ -892,6 +903,7 @@ const EMOJIS = [
       color: var(--color-white);
     }
     .avatar[data-channel="instagram"] { background: linear-gradient(135deg, #F58529, #DD2A7B); }
+    .avatar[data-channel="messenger"] { background: linear-gradient(135deg, #0866FF, #A033FF); }
 
     .channel-dot {
       position: absolute; right: -2px; bottom: -2px;
@@ -1483,6 +1495,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Download = Download;
   readonly MapPin = MapPin;
   readonly Instagram = Instagram;
+  readonly Facebook = Facebook;
   readonly RefreshCw = RefreshCw;
   readonly Smile = Smile;
   readonly UserRound = UserRound;
@@ -1507,12 +1520,12 @@ export class InboxComponent implements OnInit, OnDestroy {
   accounts = signal<InboxAccount[]>([]);
   accountId = signal('');
   /** '' = todos los canales. Filtra el selector y la propia consulta. */
-  channel = signal<'' | 'whatsapp' | 'instagram'>('');
+  channel = signal<'' | Channel>('');
 
-  hasBothChannels = computed(() => {
-    const ch = new Set(this.accounts().map(a => a.channel));
-    return ch.has('whatsapp') && ch.has('instagram');
-  });
+  /** Solo tiene sentido mostrar las pestañas si hay cuentas de más de un canal. */
+  hasMultipleChannels = computed(
+    () => new Set(this.accounts().map(a => a.channel)).size > 1,
+  );
 
   /** Cuentas del canal elegido; con '' se devuelven todas. */
   private accountsInChannel = computed(() => {
@@ -1523,14 +1536,10 @@ export class InboxComponent implements OnInit, OnDestroy {
   /** Agrupadas por canal para los `optgroup` del selector. */
   accountGroups = computed(() => {
     const groups: { channel: string; label: string; accounts: InboxAccount[] }[] = [];
-    for (const ch of ['whatsapp', 'instagram'] as const) {
-      const list = this.accountsInChannel().filter(a => a.channel === ch);
+    for (const ch of CHANNELS) {
+      const list = this.accountsInChannel().filter(a => a.channel === ch.key);
       if (list.length) {
-        groups.push({
-          channel: ch,
-          label: ch === 'whatsapp' ? 'WhatsApp' : 'Instagram',
-          accounts: list,
-        });
+        groups.push({ channel: ch.key, label: ch.label, accounts: list });
       }
     }
     return groups;
@@ -1540,20 +1549,20 @@ export class InboxComponent implements OnInit, OnDestroy {
     const sum = (list: InboxAccount[], k: 'total' | 'unread') =>
       list.reduce((n, a) => n + (a[k] ?? 0), 0);
     const all = this.accounts();
-    const wa = all.filter(a => a.channel === 'whatsapp');
-    const ig = all.filter(a => a.channel === 'instagram');
     return [
       { key: '' as const, label: 'Todo', total: sum(all, 'total'), unread: sum(all, 'unread') },
-      { key: 'whatsapp' as const, label: 'WhatsApp', total: sum(wa, 'total'), unread: sum(wa, 'unread') },
-      { key: 'instagram' as const, label: 'Instagram', total: sum(ig, 'total'), unread: sum(ig, 'unread') },
+      // Solo los canales que el tenant tiene conectados: una pestaña vacía no aporta.
+      ...CHANNELS.filter(c => all.some(a => a.channel === c.key)).map(c => {
+        const list = all.filter(a => a.channel === c.key);
+        return { key: c.key, label: c.label, total: sum(list, 'total'), unread: sum(list, 'unread') };
+      }),
     ];
   });
 
   channelLabel = computed(() => {
     const ch = this.channel();
-    if (ch === 'whatsapp') return ' de WhatsApp';
-    if (ch === 'instagram') return ' de Instagram';
-    return '';
+    const found = CHANNELS.find(c => c.key === ch);
+    return found ? ` de ${found.label}` : '';
   });
 
   totalForChannel = computed(() =>
@@ -1724,7 +1733,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   setFilter(f: Filter) { this.filter.set(f); }
 
   /** Cambia el canal; si la cuenta elegida no pertenece a él, se vuelve a "todas". */
-  setChannel(ch: '' | 'whatsapp' | 'instagram') {
+  setChannel(ch: '' | Channel) {
     if (this.channel() === ch) return;
     this.channel.set(ch);
     const current = this.accounts().find(a => a._id === this.accountId());
@@ -2337,7 +2346,13 @@ export class InboxComponent implements OnInit, OnDestroy {
   // ── Formato ──
 
   displayName(c: Conv) {
-    return c.contactName?.trim() || (c.channel === 'instagram' ? 'Instagram DM' : `+${c.contact}`);
+    return c.contactName?.trim() || this.contactHandle(c);
+  }
+
+  /** Identificador visible del contacto: el teléfono en WhatsApp, el canal en el resto. */
+  contactHandle(c: Conv) {
+    if (c.channel === 'whatsapp') return `+${c.contact}`;
+    return c.channel === 'messenger' ? 'Messenger' : 'Instagram DM';
   }
 
   initials(c: Conv) {

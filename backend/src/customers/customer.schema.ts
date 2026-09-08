@@ -44,6 +44,7 @@ export class Customer extends Document {
       'api',
       'whatsapp',
       'instagram',
+      'messenger',
     ],
     default: 'manual',
   })

@@ -65,6 +65,11 @@ export class CreateAiAgentDto {
   instagramAccountIds?: string[];
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  messengerAccountIds?: string[];
+
+  @IsOptional()
   @IsBoolean()
   handoffEnabled?: boolean;
 

@@ -22,6 +22,7 @@ import { VisitsModule } from './visits/visits.module';
 import { ImpulsadorModule } from './impulsador/impulsador.module';
 import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramAccountsModule } from './instagram-accounts/instagram-accounts.module';
+import { MessengerAccountsModule } from './messenger-accounts/messenger-accounts.module';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { LeadsModule } from './leads/leads.module';
@@ -65,6 +66,7 @@ import { SuppressionModule } from './suppression/suppression.module';
     ImpulsadorModule,
     WhatsAppAccountsModule,
     InstagramAccountsModule,
+    MessengerAccountsModule,
     AiAgentsModule,
     ConversationsModule,
     LeadsModule,
