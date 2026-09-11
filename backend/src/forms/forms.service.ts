@@ -21,6 +21,7 @@ import { SettingsService } from '../settings/settings.service';
 import { MailService } from '../mail/mail.service';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
 import { NativePushService } from '../notifications/push.service';
+import { PushService } from '../push/push.service';
 
 /** Metadatos de la petición pública que sirven para trazar el origen. */
 export interface SubmitContext {
@@ -83,7 +84,8 @@ export class FormsService {
     private settings: SettingsService,
     private mail: MailService,
     private templates: WhatsAppTemplatesService,
-    private push: NativePushService,
+    private push: PushService,
+    private nativePush: NativePushService,
   ) {}
 
   // ─── CRUD interno ─────────────────────────────────────────────────────────
@@ -300,19 +302,10 @@ export class FormsService {
     // visitante ya envió sus datos y guardarlos es lo que de verdad importa.
     await this.sendAutoReplies(form, customer);
 
-    // Aviso al equipo. Mismo criterio que las respuestas automáticas: sin await
-    // y con el error tragado, el lead ya está guardado.
-    void this.push
-      .sendToTenantModule(tid, 'forms', {
-        title: 'Nuevo registro',
-        body: `${customer.name || customer.phone || customer.email || 'Alguien'} se registró en ${form.name}`,
-        data: {
-          route: '/forms',
-          formId: String(form._id),
-          customerId: String(customer._id),
-        },
-      })
-      .catch(() => undefined);
+    // Aviso al equipo por los dos canales: el service worker atiende a la PWA
+    // y FCM a la app nativa. Mismo criterio que las respuestas automáticas:
+    // sin await y con el error tragado, el lead ya está guardado.
+    this.notifyNewSubmission(tid, form, customer);
 
     return {
       ok: true,
@@ -344,6 +337,47 @@ export class FormsService {
       .exists({ formId: form._id, customerId: customer._id })
       .exec();
     return !!previous;
+  }
+
+  /**
+   * Avisa al equipo de un registro nuevo por los dos canales de push: Web Push
+   * llega a la PWA instalada desde el navegador y FCM a la app nativa, que el
+   * WebView de Android no puede recibir de otra forma. Quien tenga las dos
+   * instaladas recibe el aviso en cada dispositivo, que es lo correcto.
+   *
+   * No devuelve promesa a propósito: ninguno de los dos envíos puede retrasar
+   * ni tumbar el registro, que ya está guardado.
+   */
+  private notifyNewSubmission(
+    tenantId: Types.ObjectId | string,
+    form: ContactForm,
+    customer: Customer,
+  ): void {
+    const who = customer.name || customer.phone || customer.email || 'Alguien';
+    const title = 'Nuevo registro';
+    const body = `${who} se registró en ${form.name}`;
+    // No hay ruta de detalle de formulario: el listado es el destino válido.
+    const url = '/forms';
+
+    void this.push
+      .sendToTenant(
+        String(tenantId),
+        { title, body, url, tag: `form-${String(form._id)}` },
+        { moduleKey: 'forms' },
+      )
+      .catch(() => undefined);
+
+    void this.nativePush
+      .sendToTenantModule(tenantId, 'forms', {
+        title,
+        body,
+        data: {
+          route: url,
+          formId: String(form._id),
+          customerId: String(customer._id),
+        },
+      })
+      .catch(() => undefined);
   }
 
   /** Dispara el WhatsApp y el email de bienvenida configurados en el formulario. */

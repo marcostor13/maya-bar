@@ -11,6 +11,7 @@ import { SettingsService } from '../settings/settings.service';
 import { MailService } from '../mail/mail.service';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
 import { NativePushService } from '../notifications/push.service';
+import { PushService } from '../push/push.service';
 
 const tenantId = new Types.ObjectId();
 const formId = new Types.ObjectId();
@@ -48,7 +49,8 @@ describe('FormsService.submit', () => {
   let mockSettings: { sendWhatsAppTemplate: jest.Mock };
   let mockMail: { sendCampaign: jest.Mock };
   let mockTemplates: { resolveSendHeader: jest.Mock };
-  let mockPush: { sendToTenantModule: jest.Mock };
+  let mockPush: { sendToTenant: jest.Mock };
+  let mockNativePush: { sendToTenantModule: jest.Mock };
 
   const form = {
     _id: formId,
@@ -135,7 +137,8 @@ describe('FormsService.submit', () => {
     mockTemplates = {
       resolveSendHeader: jest.fn().mockResolvedValue(undefined),
     };
-    mockPush = { sendToTenantModule: jest.fn().mockResolvedValue(0) };
+    mockPush = { sendToTenant: jest.fn().mockResolvedValue(0) };
+    mockNativePush = { sendToTenantModule: jest.fn().mockResolvedValue(0) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -150,7 +153,8 @@ describe('FormsService.submit', () => {
         { provide: SettingsService, useValue: mockSettings },
         { provide: MailService, useValue: mockMail },
         { provide: WhatsAppTemplatesService, useValue: mockTemplates },
-        { provide: NativePushService, useValue: mockPush },
+        { provide: PushService, useValue: mockPush },
+        { provide: NativePushService, useValue: mockNativePush },
       ],
     }).compile();
 
