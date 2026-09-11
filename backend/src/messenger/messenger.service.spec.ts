@@ -104,7 +104,7 @@ describe('MessengerService', () => {
         expect.objectContaining({
           params: {
             subscribed_fields:
-              'messages,messaging_postbacks,message_echoes,messaging_seen',
+              'messages,messaging_postbacks,message_echoes,message_reads',
           },
         }),
       );
