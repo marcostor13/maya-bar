@@ -20,7 +20,7 @@ const SUBSCRIBED_FIELDS = [
   'messages',
   'messaging_postbacks',
   'message_echoes',
-  'messaging_seen',
+  'message_reads',
 ].join(',');
 
 /**

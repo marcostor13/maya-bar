@@ -28,7 +28,7 @@ Meta permite **una única URL de webhook por app** — no una distinta por pági
 1. App Dashboard → producto **Messenger** → **Webhooks**.
 2. **Callback URL**: `{PUBLIC_API_URL}/messenger/webhook`
 3. **Verify Token**: cualquier string secreto (ej. `maya-ms-2026-xyz`) — debe coincidir con la variable de entorno del paso A.4.
-4. Suscribite a los campos **`messages`**, **`messaging_postbacks`**, **`message_echoes`** y **`messaging_seen`**.
+4. Suscribite a los campos **`messages`**, **`messaging_postbacks`**, **`message_echoes`** y **`message_reads`**.
 
 ### A.4. Variables de entorno del backend
 
