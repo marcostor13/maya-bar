@@ -15,6 +15,37 @@ export interface NativePushPayload {
   data?: Record<string, string>;
 }
 
+/**
+ * Deja la clave privada en PEM, venga como venga del entorno.
+ *
+ * En `.env` se guarda en una línea con `\n` escapados, pero al pasar por
+ * docker-compose esas barras invertidas pueden llegar duplicadas (`\\n`) o
+ * entrecomilladas, y `cert()` responde con un escueto "Failed to parse private
+ * key". El valor almacenado era correcto: lo que lo rompía era el transporte.
+ */
+export function normalizePrivateKey(raw: string): string {
+  let key = raw.trim();
+  // Comillas que algunos gestores de secretos añaden al guardar o al inyectar.
+  if (/^(".*"|'.*')$/s.test(key)) key = key.slice(1, -1);
+  // Primero las barras duplicadas; si no, el reemplazo siguiente dejaría una
+  // barra suelta dentro del PEM y seguiría sin parsear.
+  key = key.replace(/\\\\n/g, '\\n').replace(/\\n/g, '\n');
+  // Algunos entornos escapan además el guion de las cabeceras BEGIN/END.
+  key = key.replace(/\\-/g, '-');
+  return key.endsWith('\n') ? key : `${key}\n`;
+}
+
+/** Describe la forma de un secreto para los logs, sin revelar su contenido. */
+export function describeKeyShape(raw: string): string {
+  return [
+    `${raw.length} chars`,
+    `${(raw.match(/\\n/g) || []).length} "\\n" literales`,
+    `${(raw.match(/\n/g) || []).length} saltos reales`,
+    `empieza por ${JSON.stringify(raw.slice(0, 5))}`,
+    `termina en ${JSON.stringify(raw.slice(-5))}`,
+  ].join(', ');
+}
+
 /** Errores de FCM que significan "este token ya no sirve, bórralo". */
 const DEAD_TOKEN_CODES = new Set([
   'messaging/registration-token-not-registered',
@@ -55,8 +86,7 @@ export class NativePushService implements OnModuleInit {
       return;
     }
 
-    // En .env la clave va en una línea con "\n" escapados.
-    const privateKey = rawKey.replace(/\\n/g, '\n');
+    const privateKey = normalizePrivateKey(rawKey);
 
     try {
       this.app =
@@ -67,8 +97,12 @@ export class NativePushService implements OnModuleInit {
         );
       this.logger.log(`Push activado para el proyecto ${projectId}`);
     } catch (err) {
+      // La forma de la clave (nunca su contenido) es lo único que permite
+      // distinguir un secreto mal pegado de uno que el despliegue ha destrozado
+      // al inyectarlo. Sin esto solo queda "Failed to parse private key".
       this.logger.error(
-        `No se pudo inicializar Firebase: ${(err as Error).message}`,
+        `No se pudo inicializar Firebase: ${(err as Error).message}. ` +
+          `Forma de la clave recibida: ${describeKeyShape(rawKey)}`,
       );
     }
   }
