@@ -8,7 +8,7 @@ import { DeviceToken } from './device-token.schema';
 import { User } from '../users/user.schema';
 import { RolesService } from '../roles/roles.service';
 
-export interface PushPayload {
+export interface NativePushPayload {
   title: string;
   body: string;
   /** Datos de navegación. `route` es la ruta del frontend a abrir al tocar. */
@@ -30,8 +30,8 @@ const DEAD_TOKEN_CODES = new Set([
  * funcionando en entornos donde el push no esté dado de alta.
  */
 @Injectable()
-export class PushService implements OnModuleInit {
-  private readonly logger = new Logger(PushService.name);
+export class NativePushService implements OnModuleInit {
+  private readonly logger = new Logger(NativePushService.name);
   private app: App | null = null;
 
   constructor(
@@ -67,7 +67,9 @@ export class PushService implements OnModuleInit {
         );
       this.logger.log(`Push activado para el proyecto ${projectId}`);
     } catch (err) {
-      this.logger.error(`No se pudo inicializar Firebase: ${(err as Error).message}`);
+      this.logger.error(
+        `No se pudo inicializar Firebase: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -107,7 +109,10 @@ export class PushService implements OnModuleInit {
    * Envía a todos los dispositivos de un usuario. Nunca lanza: una push que
    * falla no debe tumbar la operación de negocio que la disparó.
    */
-  async sendToUser(userId: string | Types.ObjectId, payload: PushPayload): Promise<number> {
+  async sendToUser(
+    userId: string | Types.ObjectId,
+    payload: NativePushPayload,
+  ): Promise<number> {
     if (!this.app) return 0;
 
     const devices = await this.deviceTokens
@@ -125,12 +130,14 @@ export class PushService implements OnModuleInit {
   /** Envía a varios usuarios de una vez (por ejemplo, todo un equipo). */
   async sendToUsers(
     userIds: (string | Types.ObjectId)[],
-    payload: PushPayload,
+    payload: NativePushPayload,
   ): Promise<number> {
     if (!this.app || !userIds.length) return 0;
 
     const devices = await this.deviceTokens
-      .find({ userId: { $in: userIds.map((id) => new Types.ObjectId(id.toString())) } })
+      .find({
+        userId: { $in: userIds.map((id) => new Types.ObjectId(id.toString())) },
+      })
       .select('token')
       .lean();
     if (!devices.length) return 0;
@@ -149,7 +156,7 @@ export class PushService implements OnModuleInit {
   async sendToTenantModule(
     tenantId: string | Types.ObjectId,
     moduleKey: string,
-    payload: PushPayload,
+    payload: NativePushPayload,
     opts?: { excludeUserId?: string },
   ): Promise<number> {
     if (!this.app) return 0;
@@ -192,7 +199,10 @@ export class PushService implements OnModuleInit {
     return this.send(tokens, payload);
   }
 
-  private async send(tokens: string[], payload: PushPayload): Promise<number> {
+  private async send(
+    tokens: string[],
+    payload: NativePushPayload,
+  ): Promise<number> {
     if (!this.app) return 0;
 
     try {

@@ -34,6 +34,14 @@ existen, alinea dominios, puertos, `watch_paths` y variables de entorno con el
 disparador de despliegues sea GitHub Actions (con el webhook de la GitHub App
 activo habría dos despliegues por cada push).
 
+La lista de no contactar (`docs/no-contactar.md`) no necesita configuración:
+crea sus índices sola al arrancar.
+
+Las notificaciones push necesitan además `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY` y (opcional) `VAPID_SUBJECT` en el backend — ver
+[docs/notificaciones-push.md](notificaciones-push.md). Sin ellas el backend
+arranca igual y las notificaciones quedan desactivadas.
+
 ```bash
 npm run coolify:list      # proyectos, servidores, GitHub Apps y aplicaciones
 npm run provision:check   # dry-run
@@ -54,6 +62,19 @@ npm run provision         # aplica; imprime los UUID para los secrets
    a que el deployment termine, fallando el job si el build falla.
 
 `workflow_dispatch` permite lanzar `all | backend | frontend` a mano.
+
+**Los dos despliegues van en serie, no en paralelo.** Coolify construye ambas
+imágenes en el mismo servidor y lanzarlas a la vez lo tumba: el 2026-09-04 los
+dos contenedores de build murieron con 100 ms de diferencia (`exit 255`, sin
+una sola línea de salida) mientras coincidían dos `npm ci` y un `nest build`.
+Por eso `deploy-frontend` declara `needs: deploy-backend` aunque no dependan
+entre sí, y usa `!cancelled()` para desplegarse igual si el backend no cambió o
+si su despliegue falló — para entonces el servidor ya está libre. El precio es
+que un push que toca las dos partes tarda la suma de ambos, no el máximo.
+
+Si un despliegue vuelve a morir con `exit 255` y sin salida del build, el
+problema está en el servidor, no en el código: mira memoria libre, `dmesg -T |
+grep -i oom` y `docker system df` antes de tocar nada del repositorio.
 
 ### Secrets requeridos en GitHub
 

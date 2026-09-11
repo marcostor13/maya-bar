@@ -208,9 +208,9 @@ describe('WhatsAppTemplatesService', () => {
     it('sube el archivo de la cabecera multimedia y usa el handle', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        arrayBuffer: async () => new ArrayBuffer(8),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
         headers: { get: () => 'image/png' },
-      }) as unknown as typeof fetch;
+      });
       graph.post
         .mockResolvedValueOnce({ id: 'upload:1' }) // sesión de subida
         .mockResolvedValueOnce({ id: 'meta-1' }); // creación de la plantilla
@@ -271,7 +271,9 @@ describe('WhatsAppTemplatesService', () => {
       const json = graph.post.mock.calls[0][1].json as {
         components: { type: string; buttons?: unknown[] }[];
       };
-      const buttons = json.components.find((c) => c.type === 'BUTTONS')!.buttons;
+      const buttons = json.components.find(
+        (c) => c.type === 'BUTTONS',
+      )!.buttons;
       expect(buttons).toEqual([
         { type: 'QUICK_REPLY', text: 'Quiero saber más' },
         {
@@ -411,9 +413,9 @@ describe('WhatsAppTemplatesService', () => {
         graph.post.mockClear();
         global.fetch = jest.fn().mockResolvedValue({
           ok: true,
-          arrayBuffer: async () => new ArrayBuffer(4),
+          arrayBuffer: () => new ArrayBuffer(4),
           headers: { get: () => mime },
-        }) as unknown as typeof fetch;
+        });
         graph.post
           .mockResolvedValueOnce({ id: 'upload:1' })
           .mockResolvedValueOnce({ id: 'meta-1' });
@@ -442,9 +444,9 @@ describe('WhatsAppTemplatesService', () => {
     it('rechaza un tipo que Meta no admite en esa cabecera', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        arrayBuffer: async () => new ArrayBuffer(4),
+        arrayBuffer: () => new ArrayBuffer(4),
         headers: { get: () => 'image/webp' },
-      }) as unknown as typeof fetch;
+      });
       graph.post.mockResolvedValueOnce({ id: 'upload:1' });
 
       await expect(
@@ -471,15 +473,18 @@ describe('WhatsAppTemplatesService', () => {
       const json = graph.post.mock.calls[0][1].json as {
         components: Record<string, unknown>[];
       };
-      expect(json.components[0]).toEqual({ type: 'HEADER', format: 'LOCATION' });
+      expect(json.components[0]).toEqual({
+        type: 'HEADER',
+        format: 'LOCATION',
+      });
     });
 
     it('guarda la URL del archivo para la vista previa', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        arrayBuffer: async () => new ArrayBuffer(4),
+        arrayBuffer: () => new ArrayBuffer(4),
         headers: { get: () => 'image/png' },
-      }) as unknown as typeof fetch;
+      });
       graph.post
         .mockResolvedValueOnce({ id: 'upload:1' })
         .mockResolvedValueOnce({ id: 'meta-1' });

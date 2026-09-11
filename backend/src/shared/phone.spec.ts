@@ -52,7 +52,12 @@ describe('normalizePhone', () => {
   });
 
   it('distintas escrituras del mismo número colapsan en una sola', () => {
-    const variants = ['999888777', '+51999888777', '51 999 888 777', '(+51) 999-888-777'];
+    const variants = [
+      '999888777',
+      '+51999888777',
+      '51 999 888 777',
+      '(+51) 999-888-777',
+    ];
     const normalized = new Set(variants.map((v) => formatPhone(v)));
     expect(normalized.size).toBe(1);
     expect([...normalized][0]).toBe('+51 999 888 777');

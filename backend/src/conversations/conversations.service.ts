@@ -8,26 +8,41 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
 import { Message, MessageType, MessageStatus } from './message.schema';
-import { SendMessageDto } from './dto/conversation.dto';
+import {
+  SendMessageDto,
+  SaveContactDto,
+  SendToPipelineDto,
+} from './dto/conversation.dto';
 import {
   WhatsAppService,
   WaConfig,
   WaMediaType,
 } from '../whatsapp/whatsapp.service';
 import { InstagramService, IgConfig } from '../instagram/instagram.service';
+import { MessengerService, MsConfig } from '../messenger/messenger.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { InstagramAccountsService } from '../instagram-accounts/instagram-accounts.service';
+import { MessengerAccountsService } from '../messenger-accounts/messenger-accounts.service';
 import { WhatsAppAccount } from '../whatsapp-accounts/whatsapp-account.schema';
 import { InstagramAccount } from '../instagram-accounts/instagram-account.schema';
+import { MessengerAccount } from '../messenger-accounts/messenger-account.schema';
 import { AiAgentsService } from '../ai-agents/ai-agents.service';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
-import { PushService } from '../notifications/push.service';
+import { HandoffService } from './handoff.service';
+import { LeadsService } from '../leads/leads.service';
+import { PushService } from '../push/push.service';
+import { NativePushService } from '../notifications/push.service';
+import { SuppressionService } from '../suppression/suppression.service';
+import { Customer } from '../customers/customer.schema';
+import { Lead } from '../leads/lead.schema';
 
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
 const DEFAULT_PAGE_SIZE = 50;
+/** Tope de etiquetas por contacto: la ficha deja de ser legible más allá. */
+const MAX_TAGS = 12;
 
 /** Cuenta conectada tal como la consume el selector de la bandeja de entrada. */
 export interface InboxAccount {
@@ -52,7 +67,7 @@ interface AiHistoryTurn {
 export interface InboundMedia {
   /** Cloud API: id de media a resolver contra Graph. */
   cloudMediaId?: string;
-  /** WAHA / Instagram: URL directa de descarga. */
+  /** WAHA / Instagram / Messenger: URL directa de descarga. */
   downloadUrl?: string;
   mimeType?: string;
   filename?: string;
@@ -74,6 +89,13 @@ export interface InboundMessage {
   /** true cuando el mensaje lo envió el negocio desde su propio móvil. */
   fromMe?: boolean;
 }
+
+/** Nombre del canal tal como se muestra en avisos y notificaciones. */
+const CHANNEL_LABEL: Record<ConversationChannel, string> = {
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  messenger: 'Messenger',
+};
 
 const PREVIEW_BY_TYPE: Record<MessageType, string> = {
   text: 'Mensaje',
@@ -125,12 +147,18 @@ export class ConversationsService {
     @InjectModel(Message.name) private msgModel: Model<Message>,
     private wa: WhatsAppService,
     private ig: InstagramService,
+    private ms: MessengerService,
     private waAccounts: WhatsAppAccountsService,
     private igAccounts: InstagramAccountsService,
+    private msAccounts: MessengerAccountsService,
     private agents: AiAgentsService,
     private uploads: UploadService,
     private gateway: ConversationsGateway,
+    private handoff: HandoffService,
+    private leads: LeadsService,
     private push: PushService,
+    private nativePush: NativePushService,
+    private suppression: SuppressionService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -138,18 +166,18 @@ export class ConversationsService {
   // ------------------------------------------------------------------
 
   /**
-   * Cuentas conectadas del tenant (WhatsApp + Instagram) por las que puede
-   * entrar una conversación. Sirve para el selector de cuenta de la bandeja.
+   * Cuentas conectadas del tenant (WhatsApp + Instagram + Messenger) por las que
+   * puede entrar una conversación. Sirve para el selector de cuenta de la bandeja.
    */
   async listAccounts(tenantId: string): Promise<InboxAccount[]> {
-    const [wa, ig, counts] = await Promise.all([
+    const [wa, ig, ms, counts] = await Promise.all([
       this.waAccounts.findAll(tenantId),
       this.igAccounts.findAll(tenantId),
+      this.msAccounts.findAll(tenantId),
       this.countsByAccount(tenantId),
     ]);
 
-    const withCounts = (id: string) =>
-      counts[id] ?? { total: 0, unread: 0 };
+    const withCounts = (id: string) => counts[id] ?? { total: 0, unread: 0 };
 
     return [
       ...wa.map((a) => ({
@@ -168,6 +196,15 @@ export class ConversationsService {
         detail: a.username ? `@${a.username}` : 'Instagram DM',
         active: a.active,
         isDefault: false,
+        ...withCounts(String(a._id)),
+      })),
+      ...ms.map((a) => ({
+        _id: String(a._id),
+        channel: 'messenger' as const,
+        label: a.label,
+        detail: a.pageName || 'Messenger',
+        active: a.active,
+        isDefault: !!a.isDefault,
         ...withCounts(String(a._id)),
       })),
     ];
@@ -230,11 +267,106 @@ export class ConversationsService {
         { lastMessagePreview: rx },
       ];
     }
-    return this.convModel
+    const convs = await this.convModel
       .find(query)
       .sort({ lastMessageAt: -1 })
       .limit(200)
       .exec();
+    return this.withCrmInfo(tenantId, convs);
+  }
+
+  /**
+   * Adjunta a cada conversación lo que hace falta para decidir a quién atender:
+   * las etiquetas de su contacto y si pidió no recibir comunicaciones.
+   *
+   * Dos consultas para toda la página, no dos por chat.
+   */
+  private async withCrmInfo(
+    tenantId: string,
+    convs: Conversation[],
+  ): Promise<(Conversation & { tags?: string[]; doNotContact?: boolean })[]> {
+    const ids = convs
+      .map((c) => c.customerId)
+      .filter((id): id is Types.ObjectId => !!id);
+
+    const [byId, blocked] = await Promise.all([
+      ids.length
+        ? this.leads.contactInfoByCustomer(tenantId, ids.map(String))
+        : Promise.resolve(
+            new Map<
+              string,
+              { tags: string[]; phone?: string; email?: string }
+            >(),
+          ),
+      this.suppression.setFor(tenantId),
+    ]);
+    if (ids.length === 0 && blocked.empty) return convs;
+
+    return convs.map((c) => {
+      const info = c.customerId ? byId.get(String(c.customerId)) : undefined;
+      // La baja se comprueba por el identificador del chat (el teléfono, en
+      // WhatsApp) y también por los datos del contacto vinculado.
+      const noContactar = this.suppression.matches(blocked, {
+        phone: c.channel === 'whatsapp' ? c.contact : info?.phone,
+        email: info?.email,
+      });
+      if (!info?.tags?.length && !noContactar) return c;
+      // `toObject` para poder añadir campos que no están en el esquema.
+      return {
+        ...c.toObject(),
+        ...(info?.tags?.length ? { tags: info.tags } : {}),
+        ...(noContactar ? { doNotContact: true } : {}),
+      } as Conversation & { tags?: string[]; doNotContact?: boolean };
+    });
+  }
+
+  /**
+   * Da de baja (o reactiva) al contacto de esta conversación.
+   *
+   * Trabaja sobre el dato de contacto y no sobre la ficha del CRM: así la baja
+   * sobrevive a que el contacto se borre o se vuelva a importar.
+   */
+  async setDoNotContact(
+    id: string,
+    tenantId: string,
+    userId: string,
+    blocked: boolean,
+    reason?: string,
+  ): Promise<{ conversation: Conversation; doNotContact: boolean }> {
+    const conv = await this.getConversation(id, tenantId);
+    const customer = conv.customerId
+      ? await this.leads.findCustomer(String(conv.customerId), tenantId)
+      : null;
+    const contact = {
+      phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
+      email: customer?.email,
+    };
+    if (!contact.phone && !contact.email)
+      throw new BadRequestException(
+        'Este chat no tiene teléfono ni email: guarda antes el contacto para poder darlo de baja.',
+      );
+
+    if (blocked) {
+      await this.suppression.add(tenantId, {
+        ...contact,
+        name: customer?.name ?? conv.contactName,
+        reason,
+        source: 'inbox',
+        userId,
+        conversationId: String(conv._id),
+      });
+      // El agente no puede seguir hablándole a quien acaba de pedir que no.
+      if (conv.autoReply) {
+        conv.autoReply = false;
+        conv.takenOverAt = new Date();
+        await conv.save();
+      }
+    } else {
+      await this.suppression.removeByContact(tenantId, contact);
+    }
+
+    this.gateway.emitConversation(tenantId, conv);
+    return { conversation: conv, doNotContact: blocked };
   }
 
   async getConversation(id: string, tenantId: string): Promise<Conversation> {
@@ -304,6 +436,10 @@ export class ConversationsService {
           externalId: last?.externalId,
         });
       }
+    } else if (conv.channel === 'messenger') {
+      const account = await this.msAccounts.findById(String(conv.accountId));
+      if (account)
+        await this.ms.markSeen(this.msAccounts.toConfig(account), conv.contact);
     }
     this.gateway.emitConversation(tenantId, conv);
     return conv;
@@ -318,6 +454,12 @@ export class ConversationsService {
   ) {
     const conv = await this.getConversation(id, tenantId);
     conv.autoReply = enabled;
+    // Reactivar el agente cierra la derivación: ya nadie tiene que entrar a atenderla.
+    if (enabled) {
+      conv.escalated = false;
+      conv.escalationReason = undefined;
+      conv.escalatedAt = undefined;
+    }
     conv.takenOverBy = enabled
       ? undefined
       : userId
@@ -342,6 +484,195 @@ export class ConversationsService {
     await this.msgModel.deleteMany({ conversationId: conv._id }).exec();
     await this.convModel.deleteOne({ _id: conv._id }).exec();
     return { deleted: true };
+  }
+
+  // ------------------------------------------------------------------
+  // Ficha del contacto (CRM)
+  // ------------------------------------------------------------------
+
+  /**
+   * Guarda a quien escribe como contacto del CRM y lo vincula a la
+   * conversación. Si ya existe alguien con ese teléfono o email se reutiliza,
+   * para que la misma persona no se duplique por escribir desde dos canales.
+   */
+  async saveContact(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: SaveContactDto,
+  ): Promise<{ conversation: Conversation; customer: Customer; lead?: Lead }> {
+    const conv = await this.getConversation(id, tenantId);
+    const customer = await this.ensureCustomer(conv, tenantId, userId, role, {
+      name: dto.name,
+      email: dto.email,
+      phone: dto.phone,
+    });
+
+    // Lo que escribe quien atiende manda sobre lo que trae el canal.
+    if (dto.name?.trim()) customer.name = dto.name.trim();
+    if (dto.tags?.length)
+      customer.tags = [...new Set([...customer.tags, ...dto.tags])];
+    if (dto.notes !== undefined) customer.notes = dto.notes;
+    if (conv.channel === 'instagram')
+      customer.customFields = {
+        ...(customer.customFields ?? {}),
+        instagramId: conv.contact,
+      };
+    if (conv.channel === 'messenger')
+      customer.customFields = {
+        ...(customer.customFields ?? {}),
+        messengerId: conv.contact,
+      };
+    await customer.save();
+
+    conv.customerId = customer._id;
+    await conv.save();
+    this.gateway.emitConversation(tenantId, conv);
+
+    let lead: Lead | undefined;
+    if (dto.createLead) {
+      lead = await this.leads.create(tenantId, userId, role, {
+        customerId: String(customer._id),
+        title: dto.leadTitle?.trim() || `Seguimiento de ${customer.name}`,
+        value: dto.leadValue,
+        source: conv.channel,
+        conversationId: String(conv._id),
+      });
+    }
+
+    return { conversation: conv, customer, lead };
+  }
+
+  /**
+   * Contacto del CRM para esta conversación, creándolo si aún no existía.
+   *
+   * Clasificar un chat tiene que funcionar de un toque aunque nadie lo haya
+   * guardado antes como contacto: aquí es donde se resuelve el nombre y el
+   * teléfono a partir de lo que trae el canal.
+   */
+  private async ensureCustomer(
+    conv: Conversation,
+    tenantId: string,
+    userId: string,
+    role: string,
+    data: { name?: string; email?: string; phone?: string } = {},
+  ): Promise<Customer> {
+    // En WhatsApp el identificador del chat ya es el teléfono; en Instagram y
+    // Messenger no hay número, así que solo se guarda lo que escriba quien atiende.
+    const phone =
+      data.phone?.trim() ||
+      (conv.channel === 'whatsapp' ? conv.contact : undefined);
+    const name =
+      data.name?.trim() ||
+      conv.contactName?.trim() ||
+      (phone ? `+${conv.contact}` : conv.contact);
+
+    return this.leads.upsertCustomer(tenantId, userId, role, {
+      name,
+      email: data.email,
+      phone,
+      source: conv.channel,
+    });
+  }
+
+  /** Etiquetas ya usadas en el tenant, para sugerirlas al clasificar. */
+  async availableTags(tenantId: string): Promise<string[]> {
+    return this.leads.customerTags(tenantId);
+  }
+
+  /**
+   * Clasifica la conversación: fija las etiquetas de su contacto.
+   *
+   * Reemplaza en vez de fusionar porque la pantalla es una lista de
+   * interruptores — quitar una etiqueta tiene que quitarla de verdad.
+   */
+  async setTags(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    tags: string[],
+  ): Promise<{ conversation: Conversation; customer: Customer }> {
+    const conv = await this.getConversation(id, tenantId);
+    const customer = await this.ensureCustomer(conv, tenantId, userId, role);
+
+    const clean = [...new Set(tags.map((t) => t.trim()).filter(Boolean))].slice(
+      0,
+      MAX_TAGS,
+    );
+    customer.tags = clean;
+    await customer.save();
+
+    if (!conv.customerId) {
+      conv.customerId = customer._id;
+      await conv.save();
+      this.gateway.emitConversation(tenantId, conv);
+    }
+    return { conversation: conv, customer };
+  }
+
+  /**
+   * Manda la conversación a seguimiento: crea la oportunidad enlazada al chat.
+   *
+   * Si ya hay una abierta no se duplica —el equipo acabaría con dos fichas del
+   * mismo cliente—: se devuelve la que ya existe.
+   */
+  async sendToPipeline(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: SendToPipelineDto,
+  ): Promise<{
+    conversation: Conversation;
+    customer: Customer;
+    lead: Lead;
+    created: boolean;
+  }> {
+    const conv = await this.getConversation(id, tenantId);
+    const customer = await this.ensureCustomer(conv, tenantId, userId, role);
+
+    if (!conv.customerId) {
+      conv.customerId = customer._id;
+      await conv.save();
+      this.gateway.emitConversation(tenantId, conv);
+    }
+
+    const open = (
+      await this.leads.findByCustomer(String(customer._id), tenantId)
+    ).find((l) => l.status === 'open');
+    if (open)
+      return { conversation: conv, customer, lead: open, created: false };
+
+    const lead = await this.leads.create(tenantId, userId, role, {
+      customerId: String(customer._id),
+      title: dto.title?.trim() || `Seguimiento de ${customer.name}`,
+      stage: dto.stage,
+      value: dto.value,
+      priority: dto.priority,
+      source: conv.channel,
+      conversationId: String(conv._id),
+    });
+    return { conversation: conv, customer, lead, created: true };
+  }
+
+  /** Contacto vinculado a la conversación y sus oportunidades abiertas. */
+  async crmCard(
+    id: string,
+    tenantId: string,
+  ): Promise<{ customer: Customer | null; leads: Lead[] }> {
+    const conv = await this.getConversation(id, tenantId);
+    if (!conv.customerId) return { customer: null, leads: [] };
+    const customer = await this.leads.findCustomer(
+      String(conv.customerId),
+      tenantId,
+    );
+    if (!customer) return { customer: null, leads: [] };
+    return {
+      customer,
+      leads: await this.leads.findByCustomer(String(customer._id), tenantId),
+    };
   }
 
   // ------------------------------------------------------------------
@@ -431,6 +762,21 @@ export class ConversationsService {
       );
     }
 
+    if (conv.channel === 'messenger') {
+      const msAccount = await this.msAccounts.findById(String(conv.accountId));
+      if (!msAccount) throw new Error('La cuenta de Messenger ya no existe');
+      if (!msAccount.active)
+        throw new Error('La cuenta de Messenger está inactiva');
+      const msConfig: MsConfig = this.msAccounts.toConfig(msAccount);
+      return this.ms.sendMessage(
+        conv.contact,
+        body,
+        msConfig,
+        msg.mediaUrl,
+        mediaType,
+      );
+    }
+
     const igAccount = await this.igAccounts.findById(String(conv.accountId));
     if (!igAccount) throw new Error('La cuenta de Instagram ya no existe');
     const igConfig: IgConfig = this.igAccounts.toConfig(igAccount);
@@ -488,6 +834,53 @@ export class ConversationsService {
       resolveAgent: () =>
         this.agents.findPublishedByInstagramAccount(String(account._id)),
     });
+  }
+
+  async handleMessengerInbound(
+    account: MessengerAccount,
+    inbound: InboundMessage,
+  ) {
+    const config = this.msAccounts.toConfig(account);
+    await this.ingest({
+      channel: 'messenger',
+      tenantId: String(account.tenantId),
+      accountId: String(account._id),
+      inbound: await this.withMessengerProfile(
+        String(account._id),
+        inbound,
+        config,
+      ),
+      downloadMedia: (media) => this.downloadPublicMedia(media),
+      resolveAgent: () =>
+        this.agents.findPublishedByMessengerAccount(String(account._id)),
+      typing: (on: boolean) => this.ms.setTyping(config, inbound.contact, on),
+    });
+  }
+
+  /**
+   * El webhook de Messenger solo trae el PSID: el nombre se pide aparte para que
+   * la bandeja no muestre un id interno. Solo se consulta la primera vez —
+   * pedirlo en cada mensaje sería una llamada extra a Meta por mensaje.
+   * Si Meta no lo da, la conversación sigue con el PSID.
+   */
+  private async withMessengerProfile(
+    accountId: string,
+    inbound: InboundMessage,
+    config: MsConfig,
+  ): Promise<InboundMessage> {
+    if (inbound.contactName || inbound.fromMe) return inbound;
+    const known = await this.convModel
+      .findOne({
+        channel: 'messenger',
+        accountId: new Types.ObjectId(accountId),
+        contact: inbound.contact,
+      })
+      .select('contactName')
+      .exec();
+    if (known?.contactName) return inbound;
+
+    const profile = await this.ms.fetchContactProfile(inbound.contact, config);
+    return profile.name ? { ...inbound, contactName: profile.name } : inbound;
   }
 
   /** Actualiza el estado de un mensaje saliente a partir del ack del proveedor. */
@@ -565,11 +958,14 @@ export class ConversationsService {
     if (!isEcho) conv.unreadCount += 1;
     await this.touchConversation(conv, msg);
     this.gateway.emitMessage(tenantId, msg);
-
-    // El websocket solo llega a quien tenga la bandeja abierta; la push es lo
-    // que avisa con la app cerrada. Solo para mensajes de cliente: los ecos son
-    // del propio negocio.
-    if (!isEcho) void this.notifyInbound(conv, msg);
+    // Aviso a los móviles del equipo por los dos canales: el service worker
+    // atiende a la PWA y FCM a la app nativa. Van sin `await`: el push nunca
+    // debe retrasar ni romper la recepción del mensaje. Los ecos no avisan,
+    // son mensajes del propio negocio.
+    if (!isEcho) {
+      void this.notifyInbound(conv, msg);
+      void this.notifyInboundNative(conv, msg);
+    }
 
     if (isEcho) {
       // Contestaron desde el móvil: el agente se aparta para no pisar a la persona.
@@ -583,35 +979,62 @@ export class ConversationsService {
     }
 
     if (!conv.autoReply || conv.status === 'closed') return;
+    // Quien pidió no recibir comunicaciones no recibe respuestas automáticas.
+    // Puede seguir escribiendo y una persona puede contestarle a mano: lo que
+    // se corta es que un bot le siga hablando.
+    if (await this.isSuppressedContact(conv)) {
+      this.logger.log(
+        `Conversación ${String(conv._id)}: contacto en la lista de no contactar, el agente no responde.`,
+      );
+      return;
+    }
     await this.runAgent(conv, msg, params.resolveAgent, params.typing);
   }
 
   /**
-   * Notifica un mensaje entrante a quien tenga acceso a la bandeja. Se llama
-   * sin `await`: una push que falle no puede romper la recepción del mensaje.
+   * Avisa del mensaje entrante por el canal nativo (FCM) a quien tenga acceso
+   * a la bandeja. El canal del navegador (Web Push) lo dispara aparte
+   * `notifyInboundMessage`; un mismo usuario con la PWA y la app instaladas
+   * recibe el aviso en cada dispositivo, que es lo correcto.
+   *
+   * Se llama sin `await`: una push que falle no puede romper la recepción.
    */
-  private async notifyInbound(conv: Conversation, msg: Message): Promise<void> {
+  private async notifyInboundNative(
+    conv: Conversation,
+    msg: Message,
+  ): Promise<void> {
     try {
-      const who = conv.contactName?.trim() || conv.contact;
-      await this.push.sendToTenantModule(conv.tenantId, 'inbox', {
-        title: who,
-        body: this.pushPreview(msg),
+      await this.nativePush.sendToTenantModule(conv.tenantId, 'inbox', {
+        // Mismo texto y mismo destino que la notificación web: quien tenga los
+        // dos canales debe ver el mismo aviso, no dos redacciones distintas.
+        title: `${this.displayContact(conv)} · ${CHANNEL_LABEL[conv.channel]}`,
+        body:
+          this.previewOf(msg) || PUSH_HINT_BY_TYPE[msg.type] || 'Nuevo mensaje',
         data: {
-          route: '/inbox',
+          route: `/inbox?c=${String(conv._id)}`,
           conversationId: String(conv._id),
           channel: conv.channel,
         },
       });
     } catch (err) {
-      this.logger.warn(`No se pudo notificar el mensaje entrante: ${(err as Error).message}`);
+      this.logger.warn(
+        `No se pudo notificar el mensaje entrante: ${(err as Error).message}`,
+      );
     }
   }
 
-  /** Resumen corto para la bandeja de notificaciones del sistema. */
-  private pushPreview(msg: Message): string {
-    const text = (msg.text ?? '').trim();
-    if (text) return text.length > 120 ? `${text.slice(0, 117)}…` : text;
-    return PUSH_HINT_BY_TYPE[msg.type] ?? 'Nuevo mensaje';
+  /** ¿El contacto de esta conversación pidió no recibir comunicaciones? */
+  private async isSuppressedContact(conv: Conversation): Promise<boolean> {
+    const customer = conv.customerId
+      ? await this.leads.findCustomer(
+          String(conv.customerId),
+          String(conv.tenantId),
+        )
+      : null;
+    return this.suppression.isSuppressed(String(conv.tenantId), {
+      phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
+      email: customer?.email,
+    });
   }
 
   /** Genera y envía la respuesta del agente publicado para esta cuenta. */
@@ -640,7 +1063,7 @@ export class ConversationsService {
     }
 
     try {
-      const { reply, filesToSend } = await this.agents.generateAnswer(
+      const { reply, filesToSend, handoff } = await this.agents.generateAnswer(
         agent,
         userMessage,
         history,
@@ -649,8 +1072,10 @@ export class ConversationsService {
       conv.agentId = agent._id;
       await conv.save();
 
-      if (reply) {
-        await this.sendFromAgent(conv, { type: 'text', text: reply });
+      // Al derivar siempre se le dice algo al cliente, aunque la IA no escribiera.
+      const text = reply || (handoff ? agent.handoffMessage : '');
+      if (text) {
+        await this.sendFromAgent(conv, { type: 'text', text });
       }
       for (const file of filesToSend) {
         await this.sendFromAgent(conv, {
@@ -660,6 +1085,10 @@ export class ConversationsService {
           mimeType: file.contentType,
           filename: file.name,
         });
+      }
+
+      if (handoff) {
+        await this.escalateToHuman(conv, agent, handoff.reason, userMessage);
       }
     } catch (err) {
       this.logger.error(
@@ -671,6 +1100,112 @@ export class ConversationsService {
         this.gateway.emitTyping(tenantId, String(conv._id), false);
       }
     }
+  }
+
+  /**
+   * Deriva la conversación a una persona: avisa por WhatsApp a los números
+   * configurados en el agente, apaga la respuesta automática y deja constancia
+   * en el hilo. Un fallo al avisar no impide apagar el agente — si nadie
+   * responde el chat, el cliente no puede quedar hablando con un bot mudo.
+   */
+  private async escalateToHuman(
+    conv: Conversation,
+    agent: AiAgent,
+    reason: string | undefined,
+    lastCustomerMessage: string,
+  ) {
+    const tenantId = String(conv.tenantId);
+    // El aviso puede fallar entero (cuenta caída, WhatsApp sin responder); el
+    // chat se deriva igual, porque dejarlo con el agente encendido es peor.
+    const { notified, error } = await this.handoff
+      .notify(conv, agent, reason, lastCustomerMessage)
+      .catch((err: unknown) => ({
+        notified: [] as string[],
+        error: String(err),
+      }));
+
+    conv.autoReply = false;
+    conv.escalated = true;
+    conv.escalatedAt = new Date();
+    conv.escalationReason = reason;
+    conv.escalationNotifiedTo = notified;
+    conv.takenOverBy = undefined;
+    conv.takenOverAt = new Date();
+    await conv.save();
+
+    const detail = reason ? ` Motivo: ${reason}.` : '';
+    const who = notified.length
+      ? `Se avisó por WhatsApp a ${notified.map((n) => `+${n}`).join(', ')}.`
+      : `No se pudo avisar a nadie por WhatsApp${error ? ` (${error})` : ''}.`;
+    await this.systemNote(
+      conv,
+      `🔔 El agente IA derivó la conversación a una persona.${detail} ${who} El agente quedó apagado en este chat.`,
+    );
+
+    this.gateway.emitConversation(tenantId, conv);
+    // Además del WhatsApp a los números del agente, se avisa al móvil de todo
+    // el equipo con acceso a la bandeja: una derivación no puede pasar de largo.
+    void this.push.sendToTenant(
+      tenantId,
+      {
+        title: '🔔 Un chat necesita atención',
+        body: `${this.displayContact(conv)}${reason ? ` · ${reason}` : ''}`,
+        url: `/inbox?c=${String(conv._id)}`,
+        tag: `handoff-${String(conv._id)}`,
+        conversationId: String(conv._id),
+      },
+      { moduleKey: 'inbox' },
+    );
+    if (error)
+      this.logger.warn(
+        `Derivación de ${String(conv._id)} con avisos fallidos: ${error}`,
+      );
+  }
+
+  /**
+   * Notificación push a los móviles del equipo por un mensaje entrante.
+   *
+   * Solo la reciben los usuarios cuyo rol tenga el módulo `inbox`, y al tocarla
+   * se abre justo esa conversación (`/inbox?c=<id>`).
+   */
+  private async notifyInbound(conv: Conversation, msg: Message) {
+    const who = this.displayContact(conv);
+    const channel = CHANNEL_LABEL[conv.channel];
+    await this.push.sendToTenant(
+      String(conv.tenantId),
+      {
+        title: `${who} · ${channel}`,
+        body: this.previewOf(msg) || 'Nuevo mensaje',
+        url: `/inbox?c=${String(conv._id)}`,
+        tag: `conversation-${String(conv._id)}`,
+        conversationId: String(conv._id),
+      },
+      { moduleKey: 'inbox' },
+    );
+  }
+
+  /** Cómo se nombra al contacto fuera de la bandeja: su nombre o el id del canal. */
+  private displayContact(conv: Conversation): string {
+    return (
+      conv.contactName?.trim() ||
+      (conv.channel === 'whatsapp' ? `+${conv.contact}` : conv.contact)
+    );
+  }
+
+  /** Nota interna en el hilo: se ve en la bandeja, no se envía al cliente. */
+  private async systemNote(conv: Conversation, text: string) {
+    const msg = await this.msgModel.create({
+      tenantId: conv.tenantId,
+      conversationId: conv._id,
+      direction: 'out',
+      author: 'system',
+      type: 'text',
+      text,
+      status: 'sent',
+      at: new Date(),
+    });
+    this.gateway.emitMessage(String(conv.tenantId), msg);
+    return msg;
   }
 
   /** Persiste y entrega un mensaje originado por el agente IA. */

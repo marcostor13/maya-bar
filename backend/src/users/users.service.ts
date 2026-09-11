@@ -14,10 +14,7 @@ import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { RolesService } from '../roles/roles.service';
-import {
-  DeletionImpact,
-  USER_REFERENCES,
-} from './user-references';
+import { DeletionImpact, USER_REFERENCES } from './user-references';
 
 /**
  * Roles del sistema. Ya no es la lista definitiva: una empresa puede crear los
@@ -207,7 +204,10 @@ export class UsersService implements OnModuleInit {
    * Acepta los roles del sistema y los que la empresa haya creado. El respaldo
    * cubre el caso de que la colección de roles todavía no exista.
    */
-  private async assertRoleAllowed(tenantId: string, role: string): Promise<void> {
+  private async assertRoleAllowed(
+    tenantId: string,
+    role: string,
+  ): Promise<void> {
     let permitidos: string[] = CREATABLE_ROLES;
     try {
       const configurados = await this.roles.assignableKeys(tenantId);
@@ -237,7 +237,7 @@ export class UsersService implements OnModuleInit {
   /** Cuenta lo que este usuario tiene asociado, para enseñarlo antes de borrar. */
   async deletionImpact(id: string, tenantId: string): Promise<DeletionImpact> {
     const user = await this.requireTenantUser(id, tenantId);
-    const uid = user._id as Types.ObjectId;
+    const uid = user._id;
     const db = this.userModel.db;
 
     const counts = await Promise.all(
@@ -285,10 +285,10 @@ export class UsersService implements OnModuleInit {
         throw new BadRequestException(
           'No se puede reasignar el contenido al mismo usuario que se elimina',
         );
-      destination = target._id as Types.ObjectId;
+      destination = target._id;
     }
 
-    const uid = user._id as Types.ObjectId;
+    const uid = user._id;
     const db = this.userModel.db;
     let reassigned = 0;
 
@@ -298,7 +298,9 @@ export class UsersService implements OnModuleInit {
         ? { $set: { [ref.field]: destination } }
         : { $unset: { [ref.field]: '' } };
       try {
-        const res = await db.collection(ref.collection).updateMany(filter, update);
+        const res = await db
+          .collection(ref.collection)
+          .updateMany(filter, update);
         reassigned += res.modifiedCount;
       } catch (err) {
         // Reasignar contactos puede chocar con los índices únicos si el destino
@@ -333,14 +335,14 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
-  private async requireTenantUser(
-    id: string,
-    tenantId: string,
-  ): Promise<User> {
+  private async requireTenantUser(id: string, tenantId: string): Promise<User> {
     if (!Types.ObjectId.isValid(id))
       throw new NotFoundException('Usuario no encontrado');
     const user = await this.userModel
-      .findOne({ _id: new Types.ObjectId(id), tenantId: new Types.ObjectId(tenantId) })
+      .findOne({
+        _id: new Types.ObjectId(id),
+        tenantId: new Types.ObjectId(tenantId),
+      })
       .exec();
     if (!user) throw new NotFoundException('Usuario no encontrado');
     return user;
@@ -424,9 +426,7 @@ export class UsersService implements OnModuleInit {
    * contraseña es correcta, así que no sirve para averiguar qué emails existen.
    */
   async findOneByEmailAnyStatus(email: string): Promise<User | null> {
-    return this.userModel
-      .findOne({ email: this.normalizeEmail(email) })
-      .exec();
+    return this.userModel.findOne({ email: this.normalizeEmail(email) }).exec();
   }
 
   async findById(id: string): Promise<User | null> {

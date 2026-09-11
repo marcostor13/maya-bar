@@ -8,6 +8,8 @@
  * Cloud API de Meta. Por eso guardar el número formateado es seguro.
  */
 
+import { toText } from './to-text';
+
 /** País que se asume cuando el número llega sin prefijo internacional. */
 export const DEFAULT_COUNTRY_CODE = '51';
 
@@ -17,6 +19,8 @@ export const DEFAULT_COUNTRY_CODE = '51';
  * América y los países europeos con presencia real; para el resto se asume un
  * prefijo de dos dígitos, que solo afecta a dónde cae un espacio.
  */
+// La tabla se lee por bloques de longitud de prefijo.
+// prettier-ignore
 const COUNTRY_CODES = [
   // Tres dígitos
   '297', '298', '299',
@@ -62,7 +66,7 @@ export interface NormalizedPhone {
  */
 export function normalizePhone(raw: unknown): NormalizedPhone | undefined {
   if (raw === null || raw === undefined) return undefined;
-  const text = String(raw).trim();
+  const text = toText(raw).trim();
   if (!text) return undefined;
 
   const hasPlus = text.startsWith('+');
@@ -85,7 +89,8 @@ export function normalizePhone(raw: unknown): NormalizedPhone | undefined {
     }
   }
 
-  if (digits.length < MIN_DIGITS || digits.length > MAX_DIGITS) return undefined;
+  if (digits.length < MIN_DIGITS || digits.length > MAX_DIGITS)
+    return undefined;
 
   const code = countryCodeOf(digits);
   const national = digits.slice(code.length);
@@ -115,7 +120,8 @@ function countryCodeOf(digits: string): string {
 function groupDigits(national: string): string {
   if (!national) return '';
   const groups: string[] = [];
-  for (let i = 0; i < national.length; i += 3) groups.push(national.slice(i, i + 3));
+  for (let i = 0; i < national.length; i += 3)
+    groups.push(national.slice(i, i + 3));
   if (groups.length > 1 && groups[groups.length - 1].length === 1) {
     const last = groups.pop()!;
     groups[groups.length - 1] += last;

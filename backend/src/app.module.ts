@@ -22,13 +22,17 @@ import { VisitsModule } from './visits/visits.module';
 import { ImpulsadorModule } from './impulsador/impulsador.module';
 import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramAccountsModule } from './instagram-accounts/instagram-accounts.module';
+import { MessengerAccountsModule } from './messenger-accounts/messenger-accounts.module';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { LeadsModule } from './leads/leads.module';
 import { SharedModule } from './shared/shared.module';
 import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates.module';
 import { ContactImportModule } from './contact-import/contact-import.module';
 import { FormsModule } from './forms/forms.module';
 import { RolesModule } from './roles/roles.module';
+import { PushModule } from './push/push.module';
+import { SuppressionModule } from './suppression/suppression.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
@@ -63,10 +67,14 @@ import { NotificationsModule } from './notifications/notifications.module';
     ImpulsadorModule,
     WhatsAppAccountsModule,
     InstagramAccountsModule,
+    MessengerAccountsModule,
     AiAgentsModule,
     ConversationsModule,
+    LeadsModule,
     FormsModule,
     RolesModule,
+    PushModule,
+    SuppressionModule,
     NotificationsModule,
   ],
   controllers: [AppController],

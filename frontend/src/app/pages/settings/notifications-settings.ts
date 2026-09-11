@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { LucideAngularModule, Bell, BellOff, CheckCircle2 } from 'lucide-angular';
 import { PlatformService } from '../../core/platform.service';
-import { PushService } from '../../core/push.service';
+import { NativePushService } from '../../core/push.service';
 import { ToastService } from '../../shared/toast';
 
 /**
@@ -70,7 +70,7 @@ import { ToastService } from '../../shared/toast';
 })
 export class NotificationsSettingsComponent {
   platform = inject(PlatformService);
-  private push = inject(PushService);
+  private push = inject(NativePushService);
   private toast = inject(ToastService);
 
   readonly Bell = Bell;

@@ -99,12 +99,14 @@ const API = environment.apiUrl;
   `,
   styles: [`
     .cp-wrap {
-      min-height: 100vh;
+      /* dvh y no vh: con la barra del navegador visible, 100vh se pasa de
+         largo en el móvil y deja el formulario cortado por abajo. */
+      min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
       background: var(--color-bg-light);
-      padding: 24px;
+      padding: calc(24px + env(safe-area-inset-top, 0px)) 24px calc(24px + env(safe-area-inset-bottom, 0px));
     }
 
     .cp-card {

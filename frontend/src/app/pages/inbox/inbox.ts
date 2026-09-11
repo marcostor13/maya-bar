@@ -1,18 +1,37 @@
-import { Component, OnInit, OnDestroy, inject, signal, computed, ElementRef, viewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, DestroyRef, effect, inject, signal, computed, ElementRef, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
-import { io, Socket } from 'socket.io-client';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
-  Download, MapPin, Instagram, RefreshCw, Smile, UserRound, Phone, CheckCheck as ReadIcon,
+  Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
+  UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
+  CheckCheck as ReadIcon,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
-import { AuthService } from '../../auth/auth.service';
+import { AppChromeService } from '../../shared/app-chrome';
+import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
+import { PushService } from '../../shared/push.service';
+import { silentRequest } from '../../shared/loader';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
+
+/** Etapas del embudo, para nombrar las oportunidades del contacto en el chat. */
+const LEAD_STAGE_LABELS: Record<string, string> = {
+  new: 'Nuevo', contacted: 'Contactado', qualified: 'Calificado',
+  proposal: 'Propuesta', negotiation: 'Negociación', won: 'Ganado', lost: 'Perdido',
+};
+
+/** Etapas en las que tiene sentido dar de alta algo desde un chat: las
+ *  cerradas (ganado/perdido) no se eligen al crear. */
+const PIPELINE_STAGES = ['new', 'contacted', 'qualified', 'proposal', 'negotiation'] as const;
+
+/** Sugerencias de partida cuando el tenant todavía no tiene etiquetas propias. */
+const SUGGESTED_TAGS = ['Interesado', 'Cotización', 'Reserva', 'VIP', 'Frecuente', 'No interesado'];
 
 type MsgType =
   | 'text' | 'image' | 'video' | 'audio' | 'voice'
@@ -38,9 +57,18 @@ interface Msg {
   at: string;
 }
 
+type Channel = 'whatsapp' | 'instagram' | 'messenger';
+
+/** Canales soportados en el orden en que se muestran en las pestañas. */
+const CHANNELS: { key: Channel; label: string }[] = [
+  { key: 'whatsapp', label: 'WhatsApp' },
+  { key: 'instagram', label: 'Instagram' },
+  { key: 'messenger', label: 'Messenger' },
+];
+
 interface Conv {
   _id: string;
-  channel: 'whatsapp' | 'instagram';
+  channel: Channel;
   accountId: string;
   contact: string;
   contactName?: string;
@@ -51,12 +79,21 @@ interface Conv {
   unreadCount: number;
   autoReply: boolean;
   status: 'open' | 'closed';
+  customerId?: string;
+  escalated?: boolean;
+  escalatedAt?: string;
+  escalationReason?: string;
+  escalationNotifiedTo?: string[];
+  /** Etiquetas del contacto vinculado; las adjunta el backend al listar. */
+  tags?: string[];
+  /** Pidió no recibir comunicaciones: fuera de campañas y sin agente IA. */
+  doNotContact?: boolean;
 }
 
-/** Cuenta conectada (WhatsApp o Instagram) por la que entran las conversaciones. */
+/** Cuenta conectada (WhatsApp, Instagram o Messenger) por la que entran las conversaciones. */
 interface InboxAccount {
   _id: string;
-  channel: 'whatsapp' | 'instagram';
+  channel: Channel;
   label: string;
   detail: string;
   active: boolean;
@@ -101,7 +138,7 @@ const EMOJIS = [
             />
           </div>
           @if (accounts().length > 0) {
-            @if (hasBothChannels()) {
+            @if (hasMultipleChannels()) {
               <div class="channel-tabs" role="group" aria-label="Canal">
                 @for (c of channelTabs(); track c.key) {
                   <button
@@ -172,6 +209,8 @@ const EMOJIS = [
                   <span class="channel-dot">
                     @if (c.channel === 'instagram') {
                       <lucide-icon [img]="Instagram" [size]="10" [strokeWidth]="2.6"></lucide-icon>
+                    } @else if (c.channel === 'messenger') {
+                      <lucide-icon [img]="Facebook" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     } @else {
                       <lucide-icon [img]="Phone" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     }
@@ -204,7 +243,24 @@ const EMOJIS = [
                         <lucide-icon [img]="UserRound" [size]="11" [strokeWidth]="2.4"></lucide-icon> Manual
                       </span>
                     }
+                    @if (c.escalated) {
+                      <span class="tag tag-handoff">
+                        <lucide-icon [img]="PhoneForwarded" [size]="11" [strokeWidth]="2.4"></lucide-icon> Derivado
+                      </span>
+                    }
                     @if (c.status === 'closed') { <span class="tag tag-closed">Cerrado</span> }
+                    @if (c.doNotContact) {
+                      <span class="tag tag-blocked">
+                        <lucide-icon [img]="BanIcon" [size]="11" [strokeWidth]="2.6"></lucide-icon>
+                        No contactar
+                      </span>
+                    }
+                    @for (t of (c.tags ?? []).slice(0, 2); track t) {
+                      <span class="tag tag-crm">{{ t }}</span>
+                    }
+                    @if ((c.tags?.length ?? 0) > 2) {
+                      <span class="tag tag-crm">+{{ c.tags!.length - 2 }}</span>
+                    }
                   </div>
                 </div>
               </button>
@@ -230,7 +286,7 @@ const EMOJIS = [
             <div class="thread-who">
               <span class="thread-name">{{ displayName(selected()!) }}</span>
               <span class="thread-sub">
-                {{ selected()!.channel === 'instagram' ? 'Instagram DM' : '+' + selected()!.contact }}
+                {{ contactHandle(selected()!) }}
                 @if (accountName(selected()!)) { <span class="thread-account">· vía {{ accountName(selected()!) }}</span> }
                 @if (typing()) { <em class="typing">· el agente está escribiendo…</em> }
               </span>
@@ -250,6 +306,21 @@ const EMOJIS = [
                   {{ selected()!.autoReply ? 'Agente IA' : 'Manual' }}
                 </span>
               </label>
+              <button class="btn btn-sm btn-secondary" (click)="openClassify()" title="Clasificar y enviar a seguimiento">
+                <lucide-icon [img]="Tag" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                <span>Clasificar</span>
+              </button>
+              @if (selected()!.customerId) {
+                <button class="saved-chip" (click)="openContactModal()" title="Ver y editar el contacto guardado">
+                  <lucide-icon [img]="ContactRound" [size]="13" [strokeWidth]="2.5"></lucide-icon>
+                  Contacto guardado
+                </button>
+              } @else {
+                <button class="btn btn-sm btn-secondary" (click)="openContactModal()">
+                  <lucide-icon [img]="UserPlus" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                  Guardar contacto
+                </button>
+              }
               <button class="btn-icon btn-ghost" (click)="toggleStatus()" [title]="selected()!.status === 'closed' ? 'Reabrir chat' : 'Cerrar chat'" aria-label="Cambiar estado">
                 <lucide-icon [img]="selected()!.status === 'closed' ? RefreshCw : Check" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
@@ -257,9 +328,94 @@ const EMOJIS = [
                 <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
             </div>
+
+            <!-- En el móvil no caben cinco controles: van a una hoja de acciones. -->
+            <button class="btn-icon btn-ghost thread-more" (click)="threadMenu.set(true)" aria-label="Acciones del chat">
+              <lucide-icon [img]="MoreVertical" [size]="20" [strokeWidth]="2.2"></lucide-icon>
+            </button>
           </header>
 
-          @if (!selected()!.autoReply) {
+          @if (threadMenu()) {
+            <div class="overlay sheet-overlay" (click)="threadMenu.set(false)">
+              <div class="bottom-sheet" (click)="$event.stopPropagation()">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <span class="sheet-title">{{ displayName(selected()!) }}</span>
+
+                <label class="sheet-row" [class.on]="selected()!.autoReply">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="selected()!.autoReply ? Bot : UserRound" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    {{ selected()!.autoReply ? 'Responde el agente IA' : 'Respondes tú' }}
+                    <small>{{ selected()!.autoReply ? 'Tócalo para tomar el control' : 'Tócalo para devolvérselo al agente' }}</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    [checked]="selected()!.autoReply"
+                    (change)="toggleAutoReply($event)"
+                    aria-label="Respuesta automática del agente"
+                  />
+                  <span class="ai-track"><span class="ai-knob"></span></span>
+                </label>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); openClassify()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="Tag" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    Clasificar
+                    <small>Etiquetas y envío a seguimiento</small>
+                  </span>
+                </button>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); openContactModal()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="selected()!.customerId ? ContactRound : UserPlus" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">{{ selected()!.customerId ? 'Ver contacto guardado' : 'Guardar contacto' }}</span>
+                </button>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); toggleStatus()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="selected()!.status === 'closed' ? RefreshCw : Check" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">{{ selected()!.status === 'closed' ? 'Reabrir conversación' : 'Cerrar conversación' }}</span>
+                </button>
+
+                <button class="sheet-row danger" (click)="threadMenu.set(false); deleteConversation()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">Eliminar conversación</span>
+                </button>
+              </div>
+            </div>
+          }
+
+          @if (selected()!.doNotContact) {
+            <div class="blocked-banner">
+              <lucide-icon [img]="BanIcon" [size]="15" [strokeWidth]="2.4"></lucide-icon>
+              <span>
+                Pidió no recibir comunicaciones: queda fuera de las campañas y el agente IA
+                no le responde. Puedes escribirle a mano si hace falta.
+              </span>
+            </div>
+          }
+
+          @if (selected()!.escalated) {
+            <div class="handoff-banner">
+              <lucide-icon [img]="PhoneForwarded" [size]="14" [strokeWidth]="2.4"></lucide-icon>
+              <span>
+                El agente IA derivó este chat a una persona{{ selected()!.escalationReason ? ': ' + selected()!.escalationReason : '' }}.
+                @if (selected()!.escalationNotifiedTo?.length) {
+                  Se avisó por WhatsApp a {{ notifiedList(selected()!) }}.
+                } @else {
+                  No se pudo avisar por WhatsApp a nadie.
+                }
+                Continúa tú la conversación; al reactivar el agente se cierra la derivación.
+              </span>
+            </div>
+          } @else if (!selected()!.autoReply) {
             <div class="manual-banner">
               <lucide-icon [img]="UserRound" [size]="14" [strokeWidth]="2.4"></lucide-icon>
               Estás respondiendo manualmente. El agente IA no contestará este chat hasta que lo reactives.
@@ -274,6 +430,12 @@ const EMOJIS = [
             @for (group of groupedMessages(); track group.day) {
               <div class="day-sep"><span>{{ group.day }}</span></div>
               @for (m of group.items; track m._id) {
+                @if (m.author === 'system') {
+                  <div class="system-note">
+                    <lucide-icon [img]="PhoneForwarded" [size]="13" [strokeWidth]="2.4"></lucide-icon>
+                    <span>{{ m.text }}</span>
+                  </div>
+                } @else {
                 <div class="row" [class.out]="m.direction === 'out'">
                   <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'">
                     @if (m.author === 'agent') {
@@ -343,6 +505,7 @@ const EMOJIS = [
                     }
                   </div>
                 </div>
+                }
               }
             }
           </div>
@@ -402,7 +565,7 @@ const EMOJIS = [
                 }
               </div>
 
-              <button class="btn-icon btn-ghost" (click)="emojiOpen.set(!emojiOpen())" title="Emojis" aria-label="Emojis">
+              <button class="btn-icon btn-ghost emoji-btn" (click)="emojiOpen.set(!emojiOpen())" title="Emojis" aria-label="Emojis">
                 <lucide-icon [img]="Smile" [size]="20" [strokeWidth]="2.2"></lucide-icon>
               </button>
 
@@ -437,9 +600,190 @@ const EMOJIS = [
       </section>
     </div>
 
+    <!-- ══ Clasificar: etiquetas y envío al embudo ══ -->
+    @if (classifyOpen()) {
+      <div class="overlay sheet-overlay" (click)="closeClassify()" role="dialog" aria-modal="true">
+        <div class="bottom-sheet classify-sheet" (click)="$event.stopPropagation()">
+          <div class="sheet-grip" aria-hidden="true"></div>
+          <span class="sheet-title">Clasificar a {{ displayName(selected()!) }}</span>
+
+          <div class="cls-body">
+            <span class="cls-label">Etiquetas</span>
+            <div class="cls-tags">
+              @for (t of tagOptions(); track t) {
+                <button
+                  class="cls-tag"
+                  [class.on]="draftTags().includes(t)"
+                  (click)="toggleTag(t)"
+                >
+                  @if (draftTags().includes(t)) {
+                    <lucide-icon [img]="Check" [size]="13" [strokeWidth]="3"></lucide-icon>
+                  }
+                  {{ t }}
+                </button>
+              }
+              @if (tagOptions().length === 0) {
+                <span class="cls-empty">Escribe la primera etiqueta abajo.</span>
+              }
+            </div>
+            <div class="cls-new">
+              <input
+                class="input"
+                [(ngModel)]="newTag"
+                placeholder="Nueva etiqueta"
+                maxlength="40"
+                (keydown.enter)="addTag()"
+                aria-label="Nueva etiqueta"
+              />
+              <button class="btn btn-sm btn-secondary" [disabled]="!newTag.trim()" (click)="addTag()">
+                Añadir
+              </button>
+            </div>
+
+            <span class="cls-label">Seguimiento</span>
+            @if (openLead(); as lead) {
+              <div class="cls-lead">
+                <div class="cls-lead-info">
+                  <strong>{{ lead.title }}</strong>
+                  <span class="cls-lead-stage">{{ stageLabel(lead.stage) }}</span>
+                </div>
+                <button class="btn btn-sm btn-ghost" (click)="goToLeads()">
+                  <lucide-icon [img]="Target" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                  Ver
+                </button>
+              </div>
+            } @else {
+              <p class="cls-hint">Crea la oportunidad enlazada a este chat para no perderle el rastro.</p>
+              <div class="cls-stage">
+                <select class="select" [(ngModel)]="pipelineStage" aria-label="Etapa del embudo">
+                  @for (st of stages; track st) {
+                    <option [value]="st">{{ stageLabel(st) }}</option>
+                  }
+                </select>
+                <button class="btn btn-primary" [disabled]="savingClassify()" (click)="sendToPipeline()">
+                  <lucide-icon [img]="Target" [size]="15" [strokeWidth]="2.5"></lucide-icon>
+                  Enviar a seguimiento
+                </button>
+              </div>
+            }
+
+            <span class="cls-label">Comunicaciones</span>
+            <label class="cls-block" [class.on]="blockedContact()">
+              <span class="cls-block-icon">
+                <lucide-icon [img]="BanIcon" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+              </span>
+              <span class="cls-block-text">
+                No contactar
+                <small>
+                  {{ blockedContact()
+                    ? 'Fuera de campañas y sin respuestas automáticas.'
+                    : 'Márcalo si pidió dejar de recibir mensajes.' }}
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                [checked]="blockedContact()"
+                [disabled]="savingBlock()"
+                (change)="toggleDoNotContact($event)"
+                aria-label="No contactar"
+              />
+              <span class="ai-track"><span class="ai-knob"></span></span>
+            </label>
+          </div>
+
+          <div class="cls-actions">
+            <button class="btn btn-secondary" (click)="closeClassify()">Cancelar</button>
+            <button class="btn btn-primary" [disabled]="savingClassify()" (click)="saveTags()">
+              {{ savingClassify() ? 'Guardando…' : 'Guardar etiquetas' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (lightbox(); as url) {
       <div class="overlay" (click)="lightbox.set(null)">
         <img class="lightbox-img" [src]="url" alt="Imagen ampliada" (click)="$event.stopPropagation()" />
+      </div>
+    }
+
+    <!-- ══ Guardar contacto en el CRM ══ -->
+    @if (contactModal()) {
+      <div class="overlay" (click)="closeContactModal()" role="dialog" aria-modal="true">
+        <div class="contact-modal card" (click)="$event.stopPropagation()">
+          <div class="cm-head">
+            <div>
+              <h2>{{ selected()?.customerId ? 'Contacto guardado' : 'Guardar contacto' }}</h2>
+              <p class="cm-sub">Se guarda en Clientes y queda vinculado a esta conversación.</p>
+            </div>
+            <button class="btn-icon btn-ghost" (click)="closeContactModal()" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.4"></lucide-icon>
+            </button>
+          </div>
+
+          <div class="cm-body">
+            <div class="cm-field">
+              <label class="cm-label">Nombre *</label>
+              <input class="input" [(ngModel)]="contactForm.name" placeholder="Nombre del cliente" />
+            </div>
+            <div class="cm-row">
+              <div class="cm-field">
+                <label class="cm-label">Teléfono</label>
+                <input class="input" [(ngModel)]="contactForm.phone" placeholder="51999888777" />
+              </div>
+              <div class="cm-field">
+                <label class="cm-label">Email</label>
+                <input class="input" [(ngModel)]="contactForm.email" placeholder="cliente@correo.com" />
+              </div>
+            </div>
+            <div class="cm-field">
+              <label class="cm-label">Etiquetas</label>
+              <input class="input" [(ngModel)]="contactForm.tags" placeholder="VIP, corporativo (separadas por comas)" />
+            </div>
+            <div class="cm-field">
+              <label class="cm-label">Notas</label>
+              <textarea class="textarea" [(ngModel)]="contactForm.notes" rows="2" placeholder="Lo que convenga recordar de este cliente…"></textarea>
+            </div>
+
+            @if (!selected()?.customerId) {
+              <label class="cm-check">
+                <input type="checkbox" [(ngModel)]="contactForm.createLead" />
+                <span>
+                  <strong>Crear oportunidad de seguimiento</strong>
+                  <small>Aparece en el embudo para no perderle el rastro.</small>
+                </span>
+              </label>
+              @if (contactForm.createLead) {
+                <div class="cm-field">
+                  <label class="cm-label">Título de la oportunidad</label>
+                  <input class="input" [(ngModel)]="contactForm.leadTitle" placeholder="Seguimiento del cliente" />
+                </div>
+              }
+            }
+
+            @if (crmLeads().length > 0) {
+              <div class="cm-leads">
+                <span class="cm-label">Oportunidades de este cliente</span>
+                @for (l of crmLeads(); track l._id) {
+                  <div class="cm-lead">
+                    <strong>{{ l.title }}</strong>
+                    <span class="cm-lead-stage">{{ stageLabel(l.stage) }}</span>
+                  </div>
+                }
+                <button class="btn btn-sm btn-ghost" (click)="goToLeads()">
+                  <lucide-icon [img]="Target" [size]="14" [strokeWidth]="2.5"></lucide-icon> Ver en Seguimiento
+                </button>
+              </div>
+            }
+          </div>
+
+          <div class="cm-actions">
+            <button class="btn btn-secondary" (click)="closeContactModal()">Cancelar</button>
+            <button class="btn btn-primary" [disabled]="savingContact()" (click)="saveContact()">
+              {{ savingContact() ? 'Guardando…' : (selected()?.customerId ? 'Actualizar contacto' : 'Guardar contacto') }}
+            </button>
+          </div>
+        </div>
       </div>
     }
   `,
@@ -452,6 +796,15 @@ const EMOJIS = [
       height: 100%;
       background: var(--color-white);
     }
+
+    /*
+     * min-width: 0 en los dos items NO es decorativo: sin él un item de grid
+     * usa min-width: auto y se niega a encoger por debajo del ancho mínimo de
+     * su contenido. Con una cuenta de nombre largo o una URL sin espacios, el
+     * panel se estiraba a ~690px dentro de una pantalla de 360 y la bandeja
+     * salía con scroll horizontal, cortada por la derecha.
+     */
+    .chat-list, .thread { min-width: 0; }
 
     /* ── Lista ── */
     .chat-list {
@@ -487,13 +840,15 @@ const EMOJIS = [
     }
     .search-input { padding-left: 40px; width: 100%; }
 
-    .account-select { width: 100%; }
+    /* Un <select> reclama el ancho de su opción más larga ("Restaurante Bar
+       Maya Miraflores · +51 999 111 222 (12 sin leer)"). Se le pone tope. */
+    .account-select { width: 100%; min-width: 0; max-width: 100%; }
 
     .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 
     .channel-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-pill);
-      background: var(--color-bg-app); border: 1px solid var(--color-border); }
-    .channel-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center;
+      background: var(--color-bg-app); border: 1px solid var(--color-border); min-width: 0; }
+    .channel-tab { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center;
       gap: 5px; padding: 6px 12px; border: none; background: none; cursor: pointer;
       border-radius: var(--radius-pill); font-size: 12.5px; font-weight: 600;
       color: var(--color-text-muted); transition: all .18s; white-space: nowrap; }
@@ -502,7 +857,6 @@ const EMOJIS = [
       box-shadow: var(--shadow-sm); }
     .tab-badge { background: var(--color-brand); color: #fff; border-radius: var(--radius-pill);
       font-size: 10px; font-weight: 700; padding: 1px 6px; min-width: 16px; }
-    .account-select { width: 100%; }
     .chip {
       border: 1px solid var(--color-border);
       background: var(--color-white);
@@ -549,6 +903,7 @@ const EMOJIS = [
       color: var(--color-white);
     }
     .avatar[data-channel="instagram"] { background: linear-gradient(135deg, #F58529, #DD2A7B); }
+    .avatar[data-channel="messenger"] { background: linear-gradient(135deg, #0866FF, #A033FF); }
 
     .channel-dot {
       position: absolute; right: -2px; bottom: -2px;
@@ -594,6 +949,9 @@ const EMOJIS = [
     }
     .tag-ai { background: rgba(139, 92, 246, 0.12); color: var(--color-ai); }
     .tag-manual { background: rgba(16, 185, 129, 0.12); color: var(--color-success); }
+    .tag-handoff { background: rgba(245, 158, 11, 0.14); color: #B45309; }
+    .tag-crm { background: var(--color-brand-light); color: var(--color-brand); }
+    .tag-blocked { background: #FEF2F2; color: var(--color-error); }
     .tag-closed { background: var(--color-bg-light); color: var(--color-text-muted); }
 
     /* ── Hilo ── */
@@ -613,16 +971,113 @@ const EMOJIS = [
     .thread-empty p { margin: 0; font-size: 13.5px; max-width: 420px; line-height: 1.6; }
 
     .thread-head {
-      display: flex; align-items: center; gap: 12px;
+      display: flex; align-items: center; gap: 12px; min-width: 0;
       padding: 14px 24px;
       background: var(--color-white);
       border-bottom: 1px solid var(--color-border);
       flex-shrink: 0;
     }
-    .back-btn { display: none; }
+    .back-btn, .thread-more { display: none; }
     .thread-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-    .thread-name { font-weight: 600; font-size: 15px; color: var(--color-text-main); }
-    .thread-sub { font-size: 12px; color: var(--color-text-muted); }
+    .thread-name {
+      font-weight: 600; font-size: 15px; color: var(--color-text-main);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .thread-sub {
+      font-size: 12px; color: var(--color-text-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── Hoja de acciones del chat (móvil) ──
+       Las piezas comunes (.sheet-grip, .sheet-row*, la animación) viven en
+       styles.scss: las comparten también el menú "Más" y las notificaciones. */
+    /* ── Hoja de clasificación ── */
+    .classify-sheet { gap: 0; max-height: 88dvh; }
+    .cls-body { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 8px; }
+    .cls-label {
+      font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--color-text-muted); margin-top: 6px;
+    }
+    .cls-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+    .cls-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 8px 14px; min-height: 38px;
+      border: 1px solid var(--color-border); background: var(--color-white);
+      border-radius: var(--radius-pill);
+      font-family: var(--font-base); font-size: 13.5px; font-weight: 600;
+      color: var(--color-text-muted); cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+    .cls-tag.on {
+      background: var(--color-brand-light); border-color: transparent;
+      color: var(--color-brand);
+    }
+    .cls-empty { font-size: 13px; color: var(--color-text-muted); }
+    .cls-block {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 14px; border-radius: var(--radius-md);
+      background: var(--color-bg-light); cursor: pointer; position: relative;
+    }
+    .cls-block.on { background: #FEF2F2; }
+    .cls-block-icon {
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%;
+      background: var(--color-white); color: var(--color-text-muted);
+    }
+    .cls-block.on .cls-block-icon { color: var(--color-error); }
+    .cls-block-text {
+      flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+      font-size: 14px; font-weight: 600;
+    }
+    .cls-block-text small { font-size: 11.5px; font-weight: 500; color: var(--color-text-muted); }
+    .cls-block input[type='checkbox'] { position: absolute; opacity: 0; width: 0; height: 0; }
+    .cls-block.on .ai-track { background: var(--color-error); }
+    .cls-block.on .ai-knob { transform: translateX(14px); }
+
+    .blocked-banner {
+      display: flex; align-items: flex-start; gap: 9px;
+      margin: 0 20px 10px; padding: 10px 14px;
+      background: #FEF2F2; border: 1px solid #FCA5A5;
+      border-radius: var(--radius-md);
+      font-size: 12.5px; line-height: 1.5; color: var(--color-error);
+    }
+    .blocked-banner lucide-icon { flex-shrink: 0; margin-top: 1px; }
+    .cls-new { display: flex; gap: 8px; align-items: center; }
+    .cls-new .input { flex: 1; min-width: 0; }
+    .cls-new .btn { flex-shrink: 0; }
+    .cls-hint { margin: 0; font-size: 13px; color: var(--color-text-muted); line-height: 1.5; }
+    .cls-stage { display: flex; gap: 8px; align-items: center; }
+    .cls-stage .select { flex: 1; min-width: 0; }
+    .cls-stage .btn { flex-shrink: 0; gap: 6px; }
+    .cls-lead {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px 14px; border-radius: var(--radius-md);
+      background: var(--color-bg-light);
+    }
+    .cls-lead-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .cls-lead-info strong {
+      font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cls-lead-stage { font-size: 11.5px; font-weight: 600; color: var(--color-text-muted); }
+    .cls-actions {
+      display: flex; gap: 10px; padding: 12px 12px 0;
+      border-top: 1px solid var(--color-border); margin-top: 8px;
+    }
+    .cls-actions .btn { flex: 1; }
+
+    @media (max-width: 640px) {
+      /* En el teléfono los botones de la hoja son objetivos táctiles. */
+      .cls-actions .btn, .cls-stage .btn { min-height: 46px; }
+      .cls-stage { flex-direction: column; align-items: stretch; }
+      .cls-stage .btn { width: 100%; justify-content: center; }
+    }
+
+    .overlay.sheet-overlay { align-items: flex-end; }
+    /* El interruptor reutiliza el pill del escritorio, pero su estado
+       "encendido" cuelga de .sheet-row.on, no de .ai-switch.on. */
+    .sheet-row.on .ai-track { background: var(--color-ai); }
+    .sheet-row.on .ai-knob { transform: translateX(14px); }
+
     .typing { color: var(--color-ai); font-style: normal; }
 
     .thread-actions { display: flex; align-items: center; gap: 8px; }
@@ -661,6 +1116,28 @@ const EMOJIS = [
     .ai-switch.on .ai-label { color: var(--color-ai); }
 
     .btn-icon.danger:hover { color: var(--color-error); }
+
+    .handoff-banner {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 9px 24px;
+      background: rgba(245, 158, 11, 0.10);
+      color: #92400E;
+      font-size: 12.5px; font-weight: 500; line-height: 1.5;
+      border-bottom: 1px solid rgba(245, 158, 11, 0.22);
+    }
+    .handoff-banner lucide-icon { flex-shrink: 0; margin-top: 2px; }
+
+    .system-note {
+      display: flex; align-items: center; gap: 6px;
+      align-self: center; max-width: min(560px, 86%);
+      margin: 4px auto;
+      padding: 7px 14px;
+      background: rgba(245, 158, 11, 0.12);
+      color: #92400E;
+      border-radius: var(--radius-pill);
+      font-size: 11.5px; font-weight: 500; line-height: 1.45; text-align: center;
+    }
+    .system-note lucide-icon { flex-shrink: 0; }
 
     .manual-banner {
       display: flex; align-items: center; gap: 8px;
@@ -725,7 +1202,10 @@ const EMOJIS = [
 
     .bubble-text {
       margin: 0; font-size: 14px; line-height: 1.55;
-      color: var(--color-text-main); white-space: pre-wrap; word-break: break-word;
+      color: var(--color-text-main); white-space: pre-wrap;
+      /* anywhere y no break-word: es lo que parte de verdad una URL larga
+         sin espacios en todos los navegadores. */
+      overflow-wrap: anywhere;
     }
 
     .meta {
@@ -878,35 +1358,121 @@ const EMOJIS = [
       display: flex; align-items: center; justify-content: center;
       z-index: 100;
     }
+    .saved-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border: 1px solid rgba(16,185,129,.35);
+      background: rgba(16,185,129,.10); color: #047857;
+      border-radius: var(--radius-pill); font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all var(--transition-fast);
+    }
+    .saved-chip:hover { background: rgba(16,185,129,.18); }
+
+    .contact-modal {
+      width: calc(100% - 48px); max-width: 480px;
+      max-height: calc(100vh - 80px);
+      display: flex; flex-direction: column; padding: 0;
+    }
+    .cm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 28px 8px; }
+    .cm-head h2 { margin: 0 0 3px; font-family: var(--font-heading); font-size: 19px; }
+    .cm-sub { margin: 0; font-size: 12.5px; color: var(--color-text-muted); }
+    .cm-body { flex: 1; overflow-y: auto; padding: 12px 28px 16px; display: flex; flex-direction: column; gap: 13px; }
+    .cm-field { display: flex; flex-direction: column; gap: 6px; }
+    .cm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .cm-label { font-size: 12px; font-weight: 600; }
+    .cm-check { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: var(--color-bg-light); border-radius: var(--radius-md); cursor: pointer; }
+    .cm-check span { display: flex; flex-direction: column; }
+    .cm-check small { font-size: 11.5px; color: var(--color-text-muted); }
+    .cm-leads { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--color-bg-light); border-radius: var(--radius-md); }
+    .cm-lead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+    .cm-lead-stage { font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
+    .cm-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 24px; border-top: 1px solid var(--color-border); }
+    @media (max-width: 520px) { .cm-row { grid-template-columns: 1fr; } }
+
     .lightbox-img {
       max-width: calc(100vw - 64px); max-height: calc(100vh - 64px);
       border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
     }
 
-    /* ── Móvil ── */
-    @media (max-width: 900px) {
+    /* ── Móvil ──
+       El corte es 968px, el mismo del shell: al abrir un chat la app entra en
+       modo inmersivo (sin cabecera ni barra de pestañas) y el hilo ocupa la
+       pantalla entera, como cualquier app de mensajería. */
+    @media (max-width: 968px) {
       .inbox { grid-template-columns: 1fr; }
       .thread { display: none; }
       .inbox.thread-open .chat-list { display: none; }
       .inbox.thread-open .thread { display: flex; }
       .back-btn { display: flex; }
-      .thread-head { padding: 12px 14px; }
-      .thread-actions .ai-label { display: none; }
-      .ai-switch { padding: 6px 8px; }
+      .thread-head { padding: 12px 14px; gap: 10px; }
+      /* Los controles del chat se mueven a la hoja de acciones. */
+      .thread-actions { display: none; }
+      .thread-more { display: flex; }
       .messages { padding: 14px 14px 6px; }
       .bubble { max-width: 84%; }
-      .composer { padding: 10px 12px; }
-      .list-head { padding: 16px 16px 10px; }
-      .chat-item { padding: 12px 16px; }
+      .composer { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+      /* La cabecera de la lista se compacta: en el teléfono la mitad de la
+         pantalla no puede ser filtros. El título ya lo pinta la propia página. */
+      .blocked-banner { margin: 0 14px 8px; }
+      .list-head { padding: 14px 16px 10px; gap: 10px; }
+      .list-title h1 { font-size: 18px; }
+      .filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        margin: 0 -16px;
+        padding: 0 16px 2px;
+      }
+      .filters::-webkit-scrollbar { display: none; }
+      .chip { flex: 0 0 auto; }
+      .chat-item { padding: 14px 16px; }
       .media-img, .media-video { width: 240px; }
+      /* En el hilo solo caben las acciones esenciales: el resto vive en el
+         panel del contacto, al que se llega desde la cabecera. */
+      .chat-item, .back-btn, .thread-more { min-height: 44px; }
+      /* Los mensajes son lo único seleccionable del hilo. */
+      .bubble { user-select: text; -webkit-user-select: text; }
+
+      /* ── Tipografía del móvil ──
+         Los tamaños del escritorio (12,5px de vista previa, 14px de mensaje)
+         se leen bien en una columna de 360px a 60cm de distancia, no en un
+         teléfono en la mano. Aquí se sube lo que de verdad se lee: el nombre
+         de quien escribe, la vista previa y el texto del mensaje. */
+      .chat-name { font-size: 16px; }
+      .chat-preview { font-size: 14.5px; line-height: 1.35; }
+      .chat-time, .chat-account { font-size: 12px; }
+      .tag { font-size: 11.5px; padding: 3px 9px; }
+      .unread { font-size: 12px; min-width: 22px; height: 22px; }
+      .list-empty { font-size: 14.5px; }
+
+      .thread-name { font-size: 16.5px; }
+      .thread-sub { font-size: 13px; }
+      .bubble-text { font-size: 16px; line-height: 1.5; }
+      .meta { font-size: 11.5px; }
+      .day-sep { font-size: 12.5px; }
+      .doc-name { font-size: 14.5px; }
+      .doc-meta small { font-size: 12px; }
+      .agent-label { font-size: 11px; }
+      .bubble { max-width: 88%; }
+
+      /* El compositor: sin el botón de emojis el campo respira y el
+         placeholder deja de partirse en dos líneas. */
+      .emoji-btn { display: none; }
+      .composer-row { gap: 6px; }
+      .composer-input { min-height: 48px; }
     }
   `],
 })
 export class InboxComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
-  private auth = inject(AuthService);
+  private realtime = inject(ConversationsRealtimeService);
+  private chrome = inject(AppChromeService);
+  private push = inject(PushService);
+  private destroyRef = inject(DestroyRef);
 
   readonly MessagesSquare = MessagesSquare;
   readonly Send = Send;
@@ -929,10 +1495,18 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Download = Download;
   readonly MapPin = MapPin;
   readonly Instagram = Instagram;
+  readonly Facebook = Facebook;
   readonly RefreshCw = RefreshCw;
   readonly Smile = Smile;
   readonly UserRound = UserRound;
+  readonly PhoneForwarded = PhoneForwarded;
+  readonly UserPlus = UserPlus;
+  readonly ContactRound = ContactRound;
+  readonly Target = Target;
   readonly Phone = Phone;
+  readonly MoreVertical = MoreVertical;
+  readonly Tag = Tag;
+  readonly BanIcon = BanIcon;
 
   readonly emojis = EMOJIS;
   readonly filters: { key: Filter; label: string }[] = [
@@ -946,12 +1520,12 @@ export class InboxComponent implements OnInit, OnDestroy {
   accounts = signal<InboxAccount[]>([]);
   accountId = signal('');
   /** '' = todos los canales. Filtra el selector y la propia consulta. */
-  channel = signal<'' | 'whatsapp' | 'instagram'>('');
+  channel = signal<'' | Channel>('');
 
-  hasBothChannels = computed(() => {
-    const ch = new Set(this.accounts().map(a => a.channel));
-    return ch.has('whatsapp') && ch.has('instagram');
-  });
+  /** Solo tiene sentido mostrar las pestañas si hay cuentas de más de un canal. */
+  hasMultipleChannels = computed(
+    () => new Set(this.accounts().map(a => a.channel)).size > 1,
+  );
 
   /** Cuentas del canal elegido; con '' se devuelven todas. */
   private accountsInChannel = computed(() => {
@@ -962,14 +1536,10 @@ export class InboxComponent implements OnInit, OnDestroy {
   /** Agrupadas por canal para los `optgroup` del selector. */
   accountGroups = computed(() => {
     const groups: { channel: string; label: string; accounts: InboxAccount[] }[] = [];
-    for (const ch of ['whatsapp', 'instagram'] as const) {
-      const list = this.accountsInChannel().filter(a => a.channel === ch);
+    for (const ch of CHANNELS) {
+      const list = this.accountsInChannel().filter(a => a.channel === ch.key);
       if (list.length) {
-        groups.push({
-          channel: ch,
-          label: ch === 'whatsapp' ? 'WhatsApp' : 'Instagram',
-          accounts: list,
-        });
+        groups.push({ channel: ch.key, label: ch.label, accounts: list });
       }
     }
     return groups;
@@ -979,20 +1549,20 @@ export class InboxComponent implements OnInit, OnDestroy {
     const sum = (list: InboxAccount[], k: 'total' | 'unread') =>
       list.reduce((n, a) => n + (a[k] ?? 0), 0);
     const all = this.accounts();
-    const wa = all.filter(a => a.channel === 'whatsapp');
-    const ig = all.filter(a => a.channel === 'instagram');
     return [
       { key: '' as const, label: 'Todo', total: sum(all, 'total'), unread: sum(all, 'unread') },
-      { key: 'whatsapp' as const, label: 'WhatsApp', total: sum(wa, 'total'), unread: sum(wa, 'unread') },
-      { key: 'instagram' as const, label: 'Instagram', total: sum(ig, 'total'), unread: sum(ig, 'unread') },
+      // Solo los canales que el tenant tiene conectados: una pestaña vacía no aporta.
+      ...CHANNELS.filter(c => all.some(a => a.channel === c.key)).map(c => {
+        const list = all.filter(a => a.channel === c.key);
+        return { key: c.key, label: c.label, total: sum(list, 'total'), unread: sum(list, 'unread') };
+      }),
     ];
   });
 
   channelLabel = computed(() => {
     const ch = this.channel();
-    if (ch === 'whatsapp') return ' de WhatsApp';
-    if (ch === 'instagram') return ' de Instagram';
-    return '';
+    const found = CHANNELS.find(c => c.key === ch);
+    return found ? ` de ${found.label}` : '';
   });
 
   totalForChannel = computed(() =>
@@ -1012,6 +1582,8 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   draft = signal('');
   attachment = signal<{ url: string; key?: string; type: MsgType; mimeType: string; filename: string; size: number } | null>(null);
+  /** Hoja de acciones del chat en móvil. */
+  threadMenu = signal(false);
   attachOpen = signal(false);
   emojiOpen = signal(false);
   lightbox = signal<string | null>(null);
@@ -1024,7 +1596,6 @@ export class InboxComponent implements OnInit, OnDestroy {
   private docInput = viewChild<ElementRef<HTMLInputElement>>('docInput');
   private audioInput = viewChild<ElementRef<HTMLInputElement>>('audioInput');
 
-  private socket: Socket | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private recordingTimer: ReturnType<typeof setInterval> | null = null;
@@ -1057,21 +1628,47 @@ export class InboxComponent implements OnInit, OnDestroy {
     return groups;
   });
 
+  constructor() {
+    // Con un chat abierto en el móvil, el hilo ocupa la pantalla entera: el
+    // shell esconde su cabecera y su barra de pestañas mientras dure.
+    effect(() => this.chrome.immersive.set(!!this.selectedId()));
+    // Un push que llega con la app en segundo plano puede adelantarse al
+    // websocket (o llegar con él dormido): al volver, se refresca la lista.
+    effect(() => {
+      if (this.push.lastPush() > 0) this.onPushReceived();
+    });
+  }
+
   ngOnInit() {
     this.loadAccounts();
     this.loadConversations();
-    this.connectWs();
+    // El aviso de derivación enlaza a /inbox?c=<id>: abre ese chat al entrar.
+    const deepLink = this.route.snapshot.queryParamMap.get('c');
+    if (deepLink) this.openById(deepLink);
+    // El enlace puede cambiar sin recargar el componente (al tocar una
+    // notificación con la app ya abierta en la bandeja).
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      const id = params.get('c');
+      if (id && id !== this.selectedId()) this.openById(id);
+    });
+    this.listenRealtime();
     // Red de seguridad por si el websocket se cae.
     this.pollTimer = setInterval(() => {
-      if (!this.socket?.connected) this.loadConversations(false);
+      if (!this.realtime.connected()) this.loadConversations(false);
     }, 15_000);
   }
 
   ngOnDestroy() {
-    this.socket?.disconnect();
+    this.chrome.exitImmersive();
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.stopAllRecording();
+  }
+
+  /** Recarga tras un push: la lista siempre, el hilo abierto si lo hay. */
+  private onPushReceived() {
+    this.loadConversations(false);
+    if (this.selectedId()) this.loadMessages(false);
   }
 
   // ── Datos ──
@@ -1111,6 +1708,22 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   reload() { this.loadAccounts(); this.loadConversations(); if (this.selectedId()) this.loadMessages(); }
 
+  /** Abre un chat por id aunque todavía no esté en la lista cargada (deep link). */
+  private openById(id: string) {
+    this.selectedId.set(id);
+    this.loadMessages();
+    this.http.get<Conv>(`${API}/conversations/${id}`).subscribe({
+      next: conv => {
+        this.upsertConv(conv);
+        if (conv.unreadCount > 0) this.markRead(conv._id);
+      },
+      error: () => {
+        this.selectedId.set(null);
+        this.toast.error('No se encontró la conversación');
+      },
+    });
+  }
+
   onSearch(value: string) {
     this.search.set(value);
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -1120,7 +1733,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   setFilter(f: Filter) { this.filter.set(f); }
 
   /** Cambia el canal; si la cuenta elegida no pertenece a él, se vuelve a "todas". */
-  setChannel(ch: '' | 'whatsapp' | 'instagram') {
+  setChannel(ch: '' | Channel) {
     if (this.channel() === ch) return;
     this.channel.set(ch);
     const current = this.accounts().find(a => a._id === this.accountId());
@@ -1135,6 +1748,254 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.accountId.set(id);
     this.closeThread();
     this.loadConversations();
+  }
+
+  // ── Clasificación: etiquetas y envío al embudo ──
+  classifyOpen = signal(false);
+  savingClassify = signal(false);
+  /** Etiquetas ya usadas en el tenant, para no reinventar variantes. */
+  knownTags = signal<string[]>([]);
+  /** Selección en curso; no se guarda hasta pulsar "Guardar". */
+  draftTags = signal<string[]>([]);
+  openLead = signal<{ _id: string; title: string; stage: string } | null>(null);
+  newTag = '';
+  pipelineStage: string = PIPELINE_STAGES[0];
+  readonly stages = PIPELINE_STAGES;
+
+  /** Lo conocido del tenant, más lo ya elegido, más las sugerencias de partida. */
+  tagOptions = computed(() => {
+    const known = this.knownTags();
+    const base = known.length ? known : SUGGESTED_TAGS;
+    return [...new Set([...this.draftTags(), ...base])];
+  });
+
+  savingBlock = signal(false);
+  /** Estado en curso del interruptor; parte de lo que trae la lista. */
+  blockedContact = signal(false);
+
+  /**
+   * El alta/baja se aplica al instante, sin esperar a "Guardar": es una
+   * petición explícita del cliente y dejarla a medias sería peor que no tenerla.
+   */
+  toggleDoNotContact(event: Event) {
+    const conv = this.selected();
+    if (!conv) return;
+    const blocked = (event.target as HTMLInputElement).checked;
+    this.savingBlock.set(true);
+    this.http.patch<{ conversation: Conv; doNotContact: boolean }>(
+      `${API}/conversations/${conv._id}/do-not-contact`, { blocked },
+    ).subscribe({
+      next: res => {
+        this.savingBlock.set(false);
+        this.blockedContact.set(res.doNotContact);
+        this.upsertConv({ ...conv, ...res.conversation, doNotContact: res.doNotContact });
+        this.toast.success(
+          res.doNotContact
+            ? 'Ya no recibirá campañas ni respuestas automáticas'
+            : 'Vuelve a recibir comunicaciones',
+        );
+      },
+      error: err => {
+        this.savingBlock.set(false);
+        // Se revierte el interruptor: el estado que se ve tiene que ser el real.
+        this.blockedContact.set(!blocked);
+        this.toast.error(err.error?.message || 'No se pudo actualizar la lista');
+      },
+    });
+  }
+
+  openClassify() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.blockedContact.set(!!conv.doNotContact);
+    this.newTag = '';
+    this.pipelineStage = PIPELINE_STAGES[0];
+    this.draftTags.set([...(conv.tags ?? [])]);
+    this.openLead.set(null);
+    this.classifyOpen.set(true);
+
+    this.http.get<string[]>(`${API}/conversations/tags`, { context: silentRequest() })
+      .subscribe({ next: t => this.knownTags.set(t ?? []), error: () => undefined });
+
+    // El chat puede tener ya una oportunidad abierta: entonces no se ofrece crear otra.
+    if (conv.customerId) {
+      this.http.get<{ leads: { _id: string; title: string; stage: string; status?: string }[] }>(
+        `${API}/conversations/${conv._id}/contact`, { context: silentRequest() },
+      ).subscribe({
+        next: card => {
+          const abierta = (card.leads ?? []).find(l => l.status !== 'won' && l.status !== 'lost');
+          this.openLead.set(abierta ?? null);
+        },
+        error: () => undefined,
+      });
+    }
+  }
+
+  closeClassify() { this.classifyOpen.set(false); }
+
+  toggleTag(tag: string) {
+    this.draftTags.update(list =>
+      list.includes(tag) ? list.filter(t => t !== tag) : [...list, tag],
+    );
+  }
+
+  addTag() {
+    const tag = this.newTag.trim();
+    if (!tag) return;
+    if (!this.draftTags().includes(tag)) this.draftTags.update(l => [...l, tag]);
+    this.newTag = '';
+  }
+
+  saveTags() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.savingClassify.set(true);
+    this.http.patch<{ conversation: Conv }>(`${API}/conversations/${conv._id}/tags`, {
+      tags: this.draftTags(),
+    }).subscribe({
+      next: res => {
+        this.savingClassify.set(false);
+        // El backend devuelve la conversación ya enlazada al contacto; las
+        // etiquetas se reflejan al vuelo en la lista sin recargarla entera.
+        this.upsertConv({ ...res.conversation, tags: this.draftTags() });
+        this.classifyOpen.set(false);
+        this.toast.success('Clasificación guardada');
+      },
+      error: err => {
+        this.savingClassify.set(false);
+        this.toast.error(err.error?.message || 'No se pudo guardar la clasificación');
+      },
+    });
+  }
+
+  sendToPipeline() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.savingClassify.set(true);
+    this.http.post<{ conversation: Conv; lead: { _id: string; title: string; stage: string }; created: boolean }>(
+      `${API}/conversations/${conv._id}/lead`, { stage: this.pipelineStage },
+    ).subscribe({
+      next: res => {
+        this.savingClassify.set(false);
+        this.openLead.set(res.lead);
+        this.upsertConv({ ...res.conversation, tags: this.draftTags() });
+        this.toast.success(
+          res.created ? 'Enviado a Seguimiento' : 'Este cliente ya tenía una oportunidad abierta',
+        );
+      },
+      error: err => {
+        this.savingClassify.set(false);
+        this.toast.error(err.error?.message || 'No se pudo enviar a seguimiento');
+      },
+    });
+  }
+
+  // ── Contacto del CRM ──
+  contactModal = signal(false);
+  savingContact = signal(false);
+  crmLeads = signal<{ _id: string; title: string; stage: string }[]>([]);
+  contactForm = {
+    name: '', phone: '', email: '', tags: '', notes: '',
+    createLead: false, leadTitle: '',
+  };
+
+  /** Etiqueta legible de la etapa del embudo (el backend guarda la clave). */
+  stageLabel(key: string): string {
+    return LEAD_STAGE_LABELS[key] ?? key;
+  }
+
+  openContactModal() {
+    const conv = this.selected();
+    if (!conv) return;
+    this.crmLeads.set([]);
+    this.contactForm = {
+      name: conv.contactName ?? '',
+      // En WhatsApp el identificador del chat ya es el número del cliente.
+      phone: conv.channel === 'whatsapp' ? conv.contact : '',
+      email: '', tags: '', notes: '',
+      createLead: false, leadTitle: '',
+    };
+    this.contactModal.set(true);
+    if (conv.customerId) this.loadCrmCard(conv._id);
+  }
+
+  closeContactModal() { this.contactModal.set(false); }
+
+  /** Trae el contacto ya vinculado para poder revisarlo y completarlo. */
+  private loadCrmCard(convId: string) {
+    this.http
+      .get<{ customer: { name: string; phone?: string; email?: string; tags?: string[]; notes?: string } | null; leads: { _id: string; title: string; stage: string }[] }>(
+        `${API}/conversations/${convId}/contact`,
+      )
+      .subscribe({
+        next: card => {
+          this.crmLeads.set(card.leads ?? []);
+          if (card.customer) {
+            this.contactForm = {
+              ...this.contactForm,
+              name: card.customer.name,
+              phone: card.customer.phone ?? this.contactForm.phone,
+              email: card.customer.email ?? '',
+              tags: (card.customer.tags ?? []).join(', '),
+              notes: card.customer.notes ?? '',
+            };
+          }
+        },
+        error: () => {},
+      });
+  }
+
+  saveContact() {
+    const conv = this.selected();
+    if (!conv) return;
+    if (!this.contactForm.name.trim()) {
+      this.toast.error('El nombre es obligatorio');
+      return;
+    }
+    this.savingContact.set(true);
+    const body = {
+      name: this.contactForm.name.trim(),
+      phone: this.contactForm.phone.trim() || undefined,
+      email: this.contactForm.email.trim() || undefined,
+      tags: this.contactForm.tags
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean),
+      notes: this.contactForm.notes.trim() || undefined,
+      createLead: this.contactForm.createLead,
+      leadTitle: this.contactForm.leadTitle.trim() || undefined,
+    };
+    this.http
+      .post<{ conversation: Conv; customer: { name: string }; lead?: { _id: string } }>(
+        `${API}/conversations/${conv._id}/contact`,
+        body,
+      )
+      .subscribe({
+        next: res => {
+          this.upsertConv(res.conversation);
+          this.savingContact.set(false);
+          this.contactModal.set(false);
+          this.toast.success(
+            res.lead
+              ? 'Contacto guardado y oportunidad creada'
+              : 'Contacto guardado en Clientes',
+          );
+        },
+        error: err => {
+          this.toast.error(err.error?.message || 'No se pudo guardar el contacto');
+          this.savingContact.set(false);
+        },
+      });
+  }
+
+  goToLeads() {
+    this.contactModal.set(false);
+    void this.router.navigate(['/leads']);
+  }
+
+  /** Números del equipo a los que se les avisó la derivación. */
+  notifiedList(c: Conv): string {
+    return (c.escalationNotifiedTo ?? []).map(n => `+${n}`).join(', ');
   }
 
   /** Etiqueta de la cuenta por la que entra la conversación. */
@@ -1155,11 +2016,13 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   closeThread() { this.selectedId.set(null); }
 
-  private loadMessages() {
+  private loadMessages(showLoader = true) {
     const id = this.selectedId();
     if (!id) return;
-    this.loadingMessages.set(true);
-    this.http.get<Msg[]>(`${API}/conversations/${id}/messages?limit=50`).subscribe({
+    if (showLoader) this.loadingMessages.set(true);
+    this.http.get<Msg[]>(`${API}/conversations/${id}/messages?limit=50`, {
+      ...(showLoader ? {} : { context: silentRequest() }),
+    }).subscribe({
       next: list => {
         this.messages.set(list);
         this.loadingMessages.set(false);
@@ -1197,8 +2060,14 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   private markRead(id: string) {
-    this.http.patch<Conv>(`${API}/conversations/${id}/read`, {}).subscribe({
-      next: conv => this.upsertConv(conv),
+    this.http.patch<Conv>(`${API}/conversations/${id}/read`, {}, {
+      context: silentRequest(),
+    }).subscribe({
+      next: conv => {
+        this.upsertConv(conv);
+        // La insignia del menú vive fuera de esta pantalla.
+        this.realtime.refreshUnread();
+      },
       error: () => undefined,
     });
   }
@@ -1416,15 +2285,15 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   // ── Tiempo real ──
 
-  private connectWs() {
-    const user = this.auth.currentUser();
-    if (!user?.tenantId) return;
-    this.socket = io(`${API}/conversations`, {
-      query: { tenantId: user.tenantId },
-      transports: ['websocket'],
-    });
+  /**
+   * La bandeja no abre su propio websocket: escucha el compartido, que ya está
+   * conectado desde el shell y alimenta también la insignia del menú.
+   */
+  private listenRealtime() {
+    this.realtime.connect();
 
-    this.socket.on('message:new', (msg: Msg) => {
+    this.realtime.messageNew$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw => {
+      const msg = raw as unknown as Msg;
       if (msg.conversationId === this.selectedId()) {
         this.upsertMessage(msg);
         this.scrollToBottom();
@@ -1432,13 +2301,16 @@ export class InboxComponent implements OnInit, OnDestroy {
       }
     });
 
-    this.socket.on('message:updated', (msg: Msg) => {
+    this.realtime.messageUpdated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw => {
+      const msg = raw as unknown as Msg;
       if (msg.conversationId === this.selectedId()) this.upsertMessage(msg);
     });
 
-    this.socket.on('conversation:updated', (conv: Conv) => this.upsertConv(conv));
+    this.realtime.conversationUpdated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw =>
+      this.upsertConv(raw as unknown as Conv),
+    );
 
-    this.socket.on('conversation:typing', (p: { conversationId: string; typing: boolean }) => {
+    this.realtime.typing$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p => {
       if (p.conversationId === this.selectedId()) this.typing.set(p.typing);
     });
   }
@@ -1474,7 +2346,13 @@ export class InboxComponent implements OnInit, OnDestroy {
   // ── Formato ──
 
   displayName(c: Conv) {
-    return c.contactName?.trim() || (c.channel === 'instagram' ? 'Instagram DM' : `+${c.contact}`);
+    return c.contactName?.trim() || this.contactHandle(c);
+  }
+
+  /** Identificador visible del contacto: el teléfono en WhatsApp, el canal en el resto. */
+  contactHandle(c: Conv) {
+    if (c.channel === 'whatsapp') return `+${c.contact}`;
+    return c.channel === 'messenger' ? 'Messenger' : 'Instagram DM';
   }
 
   initials(c: Conv) {

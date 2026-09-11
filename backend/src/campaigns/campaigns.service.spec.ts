@@ -13,6 +13,7 @@ import { Customer } from '../customers/customer.schema';
 import { MailService } from '../mail/mail.service';
 import { SettingsService } from '../settings/settings.service';
 import { ListsService } from '../lists/lists.service';
+import { SuppressionService } from '../suppression/suppression.service';
 import { AiService } from '../ai/ai.service';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -104,6 +105,12 @@ describe('CampaignsService', () => {
   };
   const mockLists = { resolveCustomers: jest.fn() };
   const mockAi = { chat: jest.fn(), parseJson: jest.fn() };
+  // Por defecto no hay nadie de baja: cada prueba que lo necesite lo cambia.
+  const mockSuppression = {
+    filterAllowed: jest.fn(),
+    setFor: jest.fn(),
+    matches: jest.fn(),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -116,6 +123,10 @@ describe('CampaignsService', () => {
     mockSettings.sendWhatsApp.mockResolvedValue(undefined);
     mockSettings.sendWhatsAppTemplate.mockResolvedValue(undefined);
     mockLists.resolveCustomers.mockResolvedValue([]);
+    mockSuppression.filterAllowed.mockImplementation(
+      (_t: string, people: unknown[]) =>
+        Promise.resolve({ allowed: people, blocked: 0 }),
+    );
 
     // Sin cabecera variable: es el caso por defecto de una plantilla de texto.
     const mockTemplates = {
@@ -132,6 +143,7 @@ describe('CampaignsService', () => {
         { provide: SettingsService, useValue: mockSettings },
         { provide: ListsService, useValue: mockLists },
         { provide: AiService, useValue: mockAi },
+        { provide: SuppressionService, useValue: mockSuppression },
       ],
     }).compile();
 
@@ -277,26 +289,138 @@ describe('CampaignsService', () => {
 
   // ─── previewCount ───────────────────────────────────────────────────────────
 
+  describe('lista de no contactar', () => {
+    /**
+     * Lo que de verdad importa: da igual cómo se segmente la campaña, quien
+     * pidió no recibir comunicaciones no puede acabar recibiéndolas. Se prueba
+     * con las tres formas de segmentar porque el filtro está en el punto por
+     * donde pasan todas.
+     */
+    const bloqueada = { name: 'Harta', phone: '+51 999 888 777' };
+    const permitida = { name: 'Ana', phone: '+51 911 222 333' };
+
+    const soloPermitida = () =>
+      mockSuppression.filterAllowed.mockResolvedValue({
+        allowed: [permitida],
+        blocked: 1,
+      });
+
+    it.each([
+      ['todos', { targeting: 'all', listIds: [], recipientTags: [] }],
+      ['etiquetas', { targeting: 'tags', listIds: [], recipientTags: ['vip'] }],
+    ])('la excluye segmentando por %s', async (_caso, targeting) => {
+      soloPermitida();
+      stubCustomers([bloqueada, permitida]);
+      const campaign = {
+        ...targeting,
+        _id: 'k1',
+        tenantId: { toString: () => tenantId },
+        type: 'whatsapp',
+        waProvider: 'cloudapi',
+        body: 'Promo',
+        status: 'draft',
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      stubFindById(campaign);
+
+      await service.send('k1', tenantId);
+
+      const destinatarios = mockSettings.sendWhatsApp.mock.calls.map(
+        (c) => c[0],
+      );
+      expect(destinatarios).not.toContain(bloqueada.phone);
+      expect(campaign.recipientCount).toBe(1);
+    });
+
+    it('la excluye también cuando la audiencia viene de una lista', async () => {
+      soloPermitida();
+      mockLists.resolveCustomers.mockResolvedValue([bloqueada, permitida]);
+      const campaign = {
+        _id: 'k2',
+        tenantId: { toString: () => tenantId },
+        targeting: 'lists',
+        listIds: [{ toString: () => 'l1' }],
+        recipientTags: [],
+        type: 'whatsapp',
+        waProvider: 'cloudapi',
+        body: 'Promo',
+        status: 'draft',
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      stubFindById(campaign);
+
+      await service.send('k2', tenantId);
+
+      expect(mockSuppression.filterAllowed).toHaveBeenCalledWith(tenantId, [
+        bloqueada,
+        permitida,
+      ]);
+      expect(campaign.recipientCount).toBe(1);
+    });
+
+    it('tampoco le llega el email de la campaña', async () => {
+      const bloqueadaMail = { name: 'Harta', email: 'harta@mail.com' };
+      const permitidaMail = { name: 'Ana', email: 'ana@mail.com' };
+      mockSuppression.filterAllowed.mockResolvedValue({
+        allowed: [permitidaMail],
+        blocked: 1,
+      });
+      stubCustomers([bloqueadaMail, permitidaMail]);
+      const campaign = {
+        _id: 'k3',
+        tenantId: { toString: () => tenantId },
+        targeting: 'all',
+        listIds: [],
+        recipientTags: [],
+        type: 'email',
+        subject: 'Promo',
+        body: 'Hola {nombre}',
+        status: 'draft',
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      stubFindById(campaign);
+
+      await service.send('k3', tenantId);
+
+      const enviados = mockMail.sendCampaign.mock.calls.map((c) => c[0].to);
+      expect(enviados).toEqual(['ana@mail.com']);
+    });
+  });
+
   describe('previewCount', () => {
     it('filters by tags with $in when tags are provided', async () => {
-      customerModel.countDocuments.mockResolvedValue(7);
+      stubCustomers([{ phone: '1' }, { phone: '2' }, { phone: '3' }]);
 
       const result = await service.previewCount(tenantId, ['vip', 'frecuente']);
 
-      expect(result).toEqual({ count: 7 });
-      const filter = customerModel.countDocuments.mock.calls[0][0];
+      expect(result).toEqual({ count: 3, blocked: 0 });
+      const filter = customerModel.find.mock.calls[0][0];
       expect(filter.tags).toEqual({ $in: ['vip', 'frecuente'] });
     });
 
     it('counts all tenant customers when no tags', async () => {
-      customerModel.countDocuments.mockResolvedValue(20);
+      stubCustomers(new Array(20).fill({ phone: '1' }));
 
       const result = await service.previewCount(tenantId, []);
 
       expect(result.count).toBe(20);
-      const filter = customerModel.countDocuments.mock.calls[0][0];
+      const filter = customerModel.find.mock.calls[0][0];
       expect(filter.tags).toBeUndefined();
       expect(filter.tenantId.toString()).toBe(tenantId);
+    });
+
+    it('descuenta del recuento a quien está en la lista de no contactar', async () => {
+      stubCustomers([{ phone: 'a' }, { phone: 'b' }, { phone: 'c' }]);
+      mockSuppression.filterAllowed.mockResolvedValue({
+        allowed: [{ phone: 'a' }],
+        blocked: 2,
+      });
+
+      // El número de la pantalla tiene que ser el que se enviará de verdad.
+      expect(await service.previewCount(tenantId, [])).toEqual({
+        count: 1,
+        blocked: 2,
+      });
     });
   });
 

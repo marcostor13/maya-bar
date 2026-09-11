@@ -4,14 +4,28 @@
   <meta charset="utf-8">
   <title>Maya CRM — CRM de ventas y marketing con WhatsApp e IA</title>
   <base href="/">
-  <!-- `viewport-fit=cover` es obligatorio: sin él las variables
-       `env(safe-area-inset-*)` valen siempre 0 y el header se mete debajo de
-       la cámara / barra de estado en la app nativa. -->
+  <!-- viewport-fit=cover es obligatorio: sin él `env(safe-area-inset-*)`
+       devuelve siempre 0. En iOS deja franjas en blanco alrededor del notch;
+       en la app nativa de Android la cabecera se mete debajo de la cámara. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM.">
-  <meta name="theme-color" content="#E11D48">
   <meta name="author" content="Maya CRM">
+
+  <!-- Instalable como app (Android / Chrome / Edge) -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <!-- Blanco a propósito: instalada, la barra de estado se funde con la
+       cabecera de la app (que es blanca) en vez de cortarla con una franja roja. -->
+  <meta name="theme-color" content="#FFFFFF">
+
+  <!-- Instalable como app (iOS / Safari: no lee el manifest) -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Maya">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 </head>

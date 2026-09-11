@@ -39,9 +39,11 @@ export function fillTokens(value: string, contact: TokenSource): string {
  * Igual que `fillTokens` pero conservando los saltos de línea, para textos
  * largos como el cuerpo de un email, donde el formato sí importa.
  */
-export function fillTokensMultiline(value: string, contact: TokenSource): string {
-  return value.replace(
-    /\{(nombre|email|telefono)\}/gi,
-    (_, key: string) => TOKENS[key.toLowerCase()](contact),
+export function fillTokensMultiline(
+  value: string,
+  contact: TokenSource,
+): string {
+  return value.replace(/\{(nombre|email|telefono)\}/gi, (_, key: string) =>
+    TOKENS[key.toLowerCase()](contact),
   );
 }

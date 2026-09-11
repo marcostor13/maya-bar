@@ -8,12 +8,17 @@ import { AccountsApiService } from '../../core/api/accounts-api.service';
 import { TenantSettings } from '../../shared/models/accounts.model';
 import { WhatsappSettingsComponent } from './whatsapp-settings';
 import { InstagramSettingsComponent } from './instagram-settings';
+import { MessengerSettingsComponent } from './messenger-settings';
 import { NotificationsSettingsComponent } from './notifications-settings';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, WhatsappSettingsComponent, InstagramSettingsComponent, NotificationsSettingsComponent],
+  imports: [
+    FormsModule, LucideAngularModule, WhatsappSettingsComponent,
+    InstagramSettingsComponent, MessengerSettingsComponent,
+    NotificationsSettingsComponent,
+  ],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -31,6 +36,9 @@ import { NotificationsSettingsComponent } from './notifications-settings';
 
       <!-- Instagram Accounts Card -->
       <app-instagram-settings />
+
+      <!-- Messenger Accounts Card -->
+      <app-messenger-settings />
 
       <!-- IA / Agentes Card -->
       <div class="section-card">
@@ -113,7 +121,7 @@ import { NotificationsSettingsComponent } from './notifications-settings';
     .fields-grid { display: flex; flex-direction: column; gap: 20px; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .label { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
-    .field-hint { font-size: 12px; color: var(--color-text-muted); }
+    .field-hint { font-size: 12.5px; color: var(--color-text-muted); line-height: 1.5; }
 
     .input-wrap { position: relative; display: flex; }
     .input-wrap .input { padding-right: 44px; flex: 1; }

@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import ExcelJS from 'exceljs';
+import { toText } from '../shared/to-text';
 
 /** Tabla normalizada: cabeceras + filas como objetos columna→valor. */
 export interface ParsedTable {
@@ -25,7 +26,7 @@ const MAX_DEPTH = 2;
  * de línea dentro del campo, comillas escapadas ("") y BOM de Excel.
  */
 export function parseCsv(text: string, delimiter?: string): ParsedTable {
-  const clean = text.replace(/^﻿/, '');
+  const clean = text.replace(/^\uFEFF/, '');
   const sep = delimiter ?? detectDelimiter(clean);
 
   const records: string[][] = [];
@@ -126,7 +127,7 @@ function cellToString(value: unknown): string {
     if (obj.hyperlink) return obj.hyperlink;
     return '';
   }
-  return String(value);
+  return toText(value);
 }
 
 /** Primera fila = cabeceras; el resto, objetos. Descarta filas vacías. */
@@ -342,14 +343,14 @@ function unwrapExtended(value: unknown): unknown {
         return wrapped('$uuid');
       case '$regularExpression': {
         const re = wrapped('$regularExpression');
-        return isPlainRecord(re) ? String(re['pattern'] ?? '') : re;
+        return isPlainRecord(re) ? toText(re['pattern'] ?? '') : re;
       }
     }
   }
 
   if (keys.includes('$binary')) {
     const bin = wrapped('$binary');
-    if (isPlainRecord(bin)) return String(bin['base64'] ?? '');
+    if (isPlainRecord(bin)) return toText(bin['base64'] ?? '');
     return bin;
   }
 
@@ -373,5 +374,5 @@ function valueToText(value: unknown): string {
       return '';
     }
   }
-  return String(value).trim();
+  return toText(value).trim();
 }

@@ -57,8 +57,8 @@ describe('DTOs de conversaciones bajo el ValidationPipe global', () => {
   });
 
   it('rechaza un estado inválido', async () => {
-    await expect(run({ status: 'archivado' }, StatusDto)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      run({ status: 'archivado' }, StatusDto),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -6,6 +6,9 @@ import {
   IgAccount,
   IgAccountPayload,
   IgStatus,
+  MsAccount,
+  MsAccountPayload,
+  MsStatus,
   TenantSettings,
   TokenRefreshResult,
   WaAccount,
@@ -23,7 +26,7 @@ import {
   WebhookResult,
 } from '../../shared/models/accounts.model';
 
-/** Capa de datos de configuración (cuentas WhatsApp/Instagram, plantillas, keys de IA). Los componentes no usan HttpClient directamente. */
+/** Capa de datos de configuración (cuentas WhatsApp/Instagram/Messenger, plantillas, keys de IA). Los componentes no usan HttpClient directamente. */
 @Injectable({ providedIn: 'root' })
 export class AccountsApiService {
   private http = inject(HttpClient);
@@ -142,6 +145,46 @@ export class AccountsApiService {
   /** URL + verify token del webhook de Instagram, tal como los resuelve el servidor. */
   getIgWebhookConfig(): Observable<WebhookConfig> {
     return this.http.get<WebhookConfig>(`${this.base}/instagram-accounts/webhook-url`);
+  }
+
+  // ── Cuentas Messenger (Páginas de Facebook) ──────────────────────────────
+
+  getMsAccounts(): Observable<MsAccount[]> {
+    return this.http.get<MsAccount[]>(`${this.base}/messenger-accounts`);
+  }
+
+  createMsAccount(body: MsAccountPayload): Observable<MsAccount> {
+    return this.http.post<MsAccount>(`${this.base}/messenger-accounts`, body);
+  }
+
+  updateMsAccount(id: string, body: MsAccountPayload): Observable<MsAccount> {
+    return this.http.patch<MsAccount>(`${this.base}/messenger-accounts/${id}`, body);
+  }
+
+  deleteMsAccount(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/messenger-accounts/${id}`);
+  }
+
+  getMsStatus(id: string): Observable<MsStatus> {
+    return this.http.get<MsStatus>(`${this.base}/messenger-accounts/${id}/status`);
+  }
+
+  startMsOauth(): Observable<{ url: string }> {
+    return this.http.get<{ url: string }>(`${this.base}/messenger-accounts/oauth/start`);
+  }
+
+  subscribeMsWebhook(id: string): Observable<WebhookResult> {
+    return this.http.post<WebhookResult>(`${this.base}/messenger-accounts/${id}/subscribe`, {});
+  }
+
+  /** URL del webhook de Messenger de la app (única para todas las páginas). */
+  msWebhookUrl(): string {
+    return `${this.base}/messenger/webhook`;
+  }
+
+  /** URL + verify token del webhook de Messenger, tal como los resuelve el servidor. */
+  getMsWebhookConfig(): Observable<WebhookConfig> {
+    return this.http.get<WebhookConfig>(`${this.base}/messenger-accounts/webhook-url`);
   }
 
   // ── Plantillas WhatsApp (Cloud API, por cuenta) ──────────────────────────

@@ -20,7 +20,7 @@ import { fillTokens, fillTokensMultiline } from '../shared/contact-tokens';
 import { SettingsService } from '../settings/settings.service';
 import { MailService } from '../mail/mail.service';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
-import { PushService } from '../notifications/push.service';
+import { NativePushService } from '../notifications/push.service';
 
 /** Metadatos de la petición pública que sirven para trazar el origen. */
 export interface SubmitContext {
@@ -83,7 +83,7 @@ export class FormsService {
     private settings: SettingsService,
     private mail: MailService,
     private templates: WhatsAppTemplatesService,
-    private push: PushService,
+    private push: NativePushService,
   ) {}
 
   // ─── CRUD interno ─────────────────────────────────────────────────────────
@@ -306,7 +306,11 @@ export class FormsService {
       .sendToTenantModule(tid, 'forms', {
         title: 'Nuevo registro',
         body: `${customer.name || customer.phone || customer.email || 'Alguien'} se registró en ${form.name}`,
-        data: { route: '/forms', formId: String(form._id), customerId: String(customer._id) },
+        data: {
+          route: '/forms',
+          formId: String(form._id),
+          customerId: String(customer._id),
+        },
       })
       .catch(() => undefined);
 

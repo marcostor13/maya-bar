@@ -91,10 +91,11 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
   api:         { label: 'API',         cls: 'badge-warning' },
   whatsapp:    { label: 'WhatsApp',    cls: 'badge-success' },
   instagram:   { label: 'Instagram',   cls: 'badge-info'    },
+  messenger:   { label: 'Messenger',   cls: 'badge-info'    },
 };
 
 /** Orden de los chips del filtro por origen. */
-const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongodb', 'api', 'whatsapp', 'instagram'];
+const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongodb', 'api', 'whatsapp', 'instagram', 'messenger'];
 
 /** Una columna de la tabla: fija del modelo o descubierta en `customFields`. */
 interface ColumnDef {

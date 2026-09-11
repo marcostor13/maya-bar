@@ -37,3 +37,93 @@ La plataforma abandona los bordes duros. Todo es suave y táctil:
 ## 7. Animaciones
 - **Sutiles y Fluidas:** Curvas `cubic-bezier(0.4, 0, 0.2, 1)`.
 - **Interacciones:** Al hacer hover, las tarjetas se elevan muy sutilmente (`transform: translateY(-4px)`) y la sombra se expande. Botones se escalan ligeramente (`transform: scale(1.02)`).
+
+## 8. App Shell móvil (PWA)
+
+La plataforma se instala en el teléfono y se comporta como una app nativa. El
+`ShellComponent` (`frontend/src/app/layout/shell/shell.ts`) monta tres piezas:
+
+- **Cabecera fija** (`.mobile-topbar`): alto `--app-header-h` (56px) más
+  `env(safe-area-inset-top)` para el notch. Muestra el logo arriba del todo y,
+  en cuanto el contenido se desplaza 24px, lo cruza con el título de la pantalla
+  — así no se repite el `<h1>` que ya pinta cada página. A la derecha van la
+  campana de notificaciones (`<app-push-center>`) y el avatar, que abre "Más".
+- **Barra inferior** (`.tabbar`): cuatro destinos según el rol
+  (`TAB_PRIORITY`) más el botón **Más**. Alto `--app-tabbar-h` (62px) más
+  `env(safe-area-inset-bottom)`. Lleva insignia de no leídos en Conversaciones,
+  alimentada por `ConversationsRealtimeService`.
+- **Hoja "Más"** (bottom sheet): el menú completo agrupado, el perfil y salir.
+
+Reglas que se aplican solas y no hay que repetir en cada página:
+
+- `.shell` usa `100dvh` (no `100vh`): con `vh` la barra inferior queda fuera de
+  pantalla cuando el navegador móvil contrae su propia barra.
+- El contenido reserva el alto de cabecera y barra inferior con `padding`, y
+  lleva `overscroll-behavior-y: contain` para que el scroll no dispare el
+  "tirar para recargar" del navegador.
+- **Modo inmersivo**: `AppChromeService.immersive` esconde cabecera y barra
+  inferior. Lo activa la bandeja de entrada al abrir un chat, para que el hilo
+  ocupe la pantalla entera como cualquier app de mensajería.
+
+### Áreas seguras
+
+`--safe-top` / `--safe-bottom` (en `styles.scss`) envuelven
+`env(safe-area-inset-*)`. Fuera de un dispositivo con muescas valen `0`, así
+que se pueden sumar siempre. Toda pantalla a pantalla completa fuera del shell
+(login, registro, onboarding, cambio de contraseña) las suma a su `padding`.
+
+### Tablas → tarjetas
+
+En móvil una tabla no se arrastra de lado: se convierte en tarjetas. Añade
+`.table-cards` al contenedor y `data-label="Columna"` a cada `<td>`; el `<td>`
+sin `data-label` ocupa la fila entera sin etiqueta (título de la tarjeta o fila
+de botones). La regla vive en `styles.scss` y usa `!important` a propósito:
+Angular encapsula los estilos de componente añadiendo un atributo a cada
+selector, así que una `.mi-celda` de una página gana en especificidad a
+cualquier selector razonable de la hoja global.
+
+### Hojas inferiores (bottom sheets)
+
+Patrón de la campana de notificaciones y del menú "Más": `.overlay` a pantalla
+completa con `align-items: flex-end`, tarjeta al 100% de ancho con radio solo
+arriba, `padding-bottom` que suma `env(safe-area-inset-bottom)` y entrada con
+`--transition-spring`. Recuerda el "grip" (`.sheet-grip`) para que se lea como
+una hoja arrastrable.
+
+## 9. Desbordamiento horizontal en móvil
+
+Un panel que se estira más que la pantalla es el fallo de maquetación más
+frecuente aquí, y casi nunca lo causa el elemento ancho: lo causa su
+contenedor, que **no puede encoger**.
+
+Un item de grid o de flex usa `min-width: auto`, que le impide bajar del ancho
+mínimo de su contenido. Basta un `<select>` con una opción larga, un nombre de
+cuenta o una URL sin espacios para estirar toda la columna. En la bandeja el
+panel de chats llegó a medir 691px dentro de una pantalla de 360.
+
+```scss
+.inbox { display: grid; grid-template-columns: 360px 1fr; }
+.chat-list, .thread { min-width: 0; }   // sin esto, no encogen
+```
+
+Reglas que evitan la recaída:
+
+- `min-width: 0` en **todo** item de grid/flex que contenga texto variable.
+- `overflow-wrap: anywhere` en el texto que venga del cliente (URLs, tokens).
+  `word-break: break-word` no es fiable entre navegadores.
+- `max-width: 100%` y `min-width: 0` en `<select>`: reclama el ancho de su
+  opción más larga.
+- Tiras de filtros: `overflow-x: auto` en el contenedor y `flex: 0 0 auto` en
+  los chips, con márgenes negativos para que sangren hasta el borde.
+
+Cómo comprobarlo sin abrir el navegador a mano: recorrer el DOM comparando
+`getBoundingClientRect().right` contra `document.documentElement.clientWidth`
+a 320, 360 y 390px, **con datos hostiles** (nombres largos, URLs, archivos con
+nombre kilométrico). Con datos de ejemplo cortos el fallo no aparece.
+
+### Tamaño de letra en el teléfono
+
+Los tamaños pensados para una columna de escritorio se quedan cortos en la
+mano: en la bandeja el texto del mensaje estaba a 14px y la vista previa a
+12,5px. En móvil suben a 16px y 14,5px dentro del `@media`, sin tocar el
+escritorio. Como referencia, iOS usa ~17px de cuerpo y Material 14–16sp.

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthReq } from '../auth/permissions';
-import { PushService } from './push.service';
+import { NativePushService } from './push.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 
 /**
@@ -21,7 +21,7 @@ import { RegisterDeviceDto } from './dto/register-device.dto';
 @Controller('devices')
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {
-  constructor(private push: PushService) {}
+  constructor(private push: NativePushService) {}
 
   /** Le dice al frontend si merece la pena pedir el permiso al usuario. */
   @Get('status')

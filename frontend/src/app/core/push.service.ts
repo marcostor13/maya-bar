@@ -7,7 +7,7 @@ import { PlatformService } from './platform.service';
 import { ToastService } from '../shared/toast';
 import { environment } from '../../environments/environment';
 
-export type PushPermission = 'unsupported' | 'prompt' | 'granted' | 'denied';
+export type NativePushPermission = 'unsupported' | 'prompt' | 'granted' | 'denied';
 
 /**
  * Notificaciones push nativas (FCM).
@@ -17,7 +17,7 @@ export type PushPermission = 'unsupported' | 'prompt' | 'granted' | 'denied';
  * darlo de baja o el siguiente dueño del móvil recibiría avisos ajenos.
  */
 @Injectable({ providedIn: 'root' })
-export class PushService {
+export class NativePushService {
   private platform = inject(PlatformService);
   private http = inject(HttpClient);
   private router = inject(Router);
@@ -28,7 +28,7 @@ export class PushService {
   /** Token FCM actual, necesario para la baja. */
   private token = signal<string | null>(null);
 
-  permission = signal<PushPermission>(this.platform.isNative ? 'prompt' : 'unsupported');
+  permission = signal<NativePushPermission>(this.platform.isNative ? 'prompt' : 'unsupported');
   readonly registered = signal(false);
 
   private listenersReady = false;
@@ -155,7 +155,7 @@ export class PushService {
     }
   }
 
-  private mapPermission(state: string): PushPermission {
+  private mapPermission(state: string): NativePushPermission {
     if (state === 'granted') return 'granted';
     if (state === 'denied') return 'denied';
     return 'prompt';

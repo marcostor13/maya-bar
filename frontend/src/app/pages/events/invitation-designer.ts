@@ -735,7 +735,7 @@ function rgbaOpacity(rgba: string): number {
 
             <!-- Background -->
             @if (bg().type === 'image' && bg().url) {
-              <img class="canvas-bg" [src]="bg().url"
+              <img class="canvas-bg" [src]="bg().url" alt=""
                 [style.object-fit]="bg().backgroundSize || 'cover'"
                 [style.object-position]="'center center'" />
             } @else if (bg().type === 'video' && bg().url) {
@@ -786,7 +786,8 @@ function rgbaOpacity(rgba: string): number {
                 }
 
                 @if (el.type === 'image' && el.imageUrl) {
-                  <img class="el-img" [src]="el.imageUrl" [style.height.px]="el.imageHeight || 80" />
+                  <img class="el-img" [src]="el.imageUrl" alt="Imagen de la invitación"
+                    [style.height.px]="el.imageHeight || 80" />
                 }
 
                 @if (el.type === 'button') {
@@ -1401,20 +1402,6 @@ function rgbaOpacity(rgba: string): number {
     .mt-12 { margin-top: 12px; }
     .mt-8 { margin-top: 8px; }
 
-    .d-textarea {
-      width: 100%;
-      border: 1px solid var(--color-border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 13px;
-      font-family: inherit;
-      resize: none;
-      outline: none;
-      transition: border-color 0.2s;
-      box-sizing: border-box;
-      color: var(--color-text-main);
-      background: var(--color-bg-app);
-    }
     .d-textarea:focus { border-color: var(--color-brand); background: #fff; }
 
     .bg-thumbs {
@@ -1436,21 +1423,7 @@ function rgbaOpacity(rgba: string): number {
       align-items: center;
       justify-content: center;
     }
-    .bg-thumb:hover { border-color: var(--color-brand); }
     .bg-thumb.selected { border-color: var(--color-brand); outline: 2px solid rgba(var(--color-brand-rgb, 225,29,72), 0.3); }
-    .bg-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background-color: #fff;
-      background-image:
-        linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
-        linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
-        linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
-      background-size: 12px 12px;
-      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
-    }
     .bg-thumb span { font-size: 9px; color: #fff; position: absolute; bottom: 2px; left: 0; right: 0; text-align: center; background: rgba(0,0,0,0.5); }
     .bg-thumb-color {
       width: 100%;
@@ -1462,60 +1435,90 @@ function rgbaOpacity(rgba: string): number {
     }
     .bg-thumb-video { background: #1e2030; }
 
-    .d-btn-primary {
+    /* Base común de los botones del diseñador. Las variantes de abajo solo
+       declaran lo que las diferencia. */
+    .d-btn-primary, .d-btn-outline, .d-btn-ghost, .d-btn-danger,
+    .d-btn-sm, .d-btn-save, .d-btn-center {
       display: flex;
       align-items: center;
+      gap: 6px;
+      border: none;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .d-btn-primary {
       justify-content: center;
       gap: 8px;
       padding: 10px 16px;
       background: linear-gradient(135deg, #a855f7, #7c3aed);
       color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 13px;
       font-weight: 700;
-      cursor: pointer;
       transition: all 0.2s;
       width: 100%;
     }
-    .d-btn-primary:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
-    .d-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .d-btn-outline {
-      display: flex;
-      align-items: center;
       justify-content: center;
       gap: 8px;
       padding: 8px 14px;
       background: none;
       color: var(--color-text-main);
       border: 1px solid var(--color-border);
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
       transition: all 0.2s;
       width: 100%;
     }
-    .d-btn-outline:hover:not(:disabled) { border-color: var(--color-brand); color: var(--color-brand); }
-    .d-btn-outline:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .d-btn-ghost {
-      display: flex;
-      align-items: center;
       justify-content: center;
-      gap: 6px;
       padding: 8px 14px;
       background: none;
       color: var(--color-text-muted);
-      border: none;
       border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
       transition: all 0.2s;
     }
-    .d-btn-ghost:hover { background: var(--color-bg-app); color: var(--color-text-main); }
+
+    .d-btn-danger {
+      justify-content: center;
+      padding: 8px 14px;
+      background: #fee2e2;
+      color: var(--color-error);
+      border: 1px solid #fca5a5;
+      margin: 4px 16px 16px;
+    }
+
+    .d-btn-sm {
+      padding: 6px 14px;
+      background: var(--color-bg-app);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      color: var(--color-text-main);
+    }
+
+    .d-btn-save {
+      padding: 8px 18px;
+      background: var(--color-brand);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .d-btn-center {
+      justify-content: center;
+      padding: 6px 12px;
+      background: var(--color-bg-app);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      font-size: 12px;
+      color: var(--color-text-muted);
+      width: 100%;
+    }
+    .d-btn-primary:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+
+    .d-btn-outline:disabled { opacity: 0.4; cursor: not-allowed; }
+
 
     .d-btn-xs {
       padding: 3px 8px;
@@ -1529,43 +1532,9 @@ function rgbaOpacity(rgba: string): number {
       transition: all 0.15s;
       white-space: nowrap;
     }
-    .d-btn-xs:hover { border-color: var(--color-brand); color: var(--color-brand); }
     .d-btn-xs.danger:hover { border-color: var(--color-error); color: var(--color-error); }
 
-    .d-btn-center {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 6px 12px;
-      background: var(--color-bg-app);
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      color: var(--color-text-muted);
-      transition: all 0.15s;
-      width: 100%;
-    }
-    .d-btn-center:hover { color: var(--color-brand); border-color: var(--color-brand); }
 
-    .d-btn-danger {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 8px 14px;
-      background: #fee2e2;
-      color: var(--color-error);
-      border: 1px solid #fca5a5;
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-      margin: 4px 16px 16px;
-    }
     .d-btn-danger:hover { background: #fecaca; }
 
     .d-empty {
@@ -1591,12 +1560,12 @@ function rgbaOpacity(rgba: string): number {
       position: relative;
       box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
     }
-    .media-thumb-sm img {
+    /* Tablero de ajedrez detrás de las miniaturas: sin él, una imagen blanca o
+       transparente se confunde con el fondo del panel. */
+    .media-thumb-sm img, .bg-thumb img {
       width: 100%;
-      height: 64px;
       object-fit: cover;
       display: block;
-      /* Checkerboard para que imágenes blancas/transparentes se distingan */
       background-color: #fff;
       background-image:
         linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
@@ -1606,6 +1575,9 @@ function rgbaOpacity(rgba: string): number {
       background-size: 12px 12px;
       background-position: 0 0, 0 6px, 6px -6px, -6px 0;
     }
+
+    .media-thumb-sm img { height: 64px; }
+    .bg-thumb img { height: 100%; }
     .media-thumb-actions {
       display: flex;
       gap: 4px;
@@ -1638,20 +1610,30 @@ function rgbaOpacity(rgba: string): number {
       padding: 12px;
       margin-top: 8px;
     }
-    .d-input {
+    .d-input, .d-textarea {
       width: 100%;
+      box-sizing: border-box;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
-      padding: 7px 10px;
-      font-size: 13px;
       font-family: inherit;
+      font-size: 13px;
+      color: var(--color-text-main);
       outline: none;
       transition: border-color 0.2s;
-      box-sizing: border-box;
-      color: var(--color-text-main);
+    }
+
+    .d-input {
+      border-radius: 8px;
+      padding: 7px 10px;
       background: #fff;
     }
-    .d-input:focus { border-color: var(--color-brand); }
+
+    .d-textarea {
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: var(--color-bg-app);
+      resize: none;
+    }
+    .bg-thumb:hover, .d-input:focus { border-color: var(--color-brand); }
     select.d-input { cursor: pointer; }
 
     .flex { display: flex; }
@@ -1686,21 +1668,6 @@ function rgbaOpacity(rgba: string): number {
       background: #fff;
       border-bottom: 1px solid var(--color-border);
     }
-    .d-btn-sm {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
-      background: var(--color-bg-app);
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      color: var(--color-text-main);
-      transition: all 0.15s;
-    }
-    .d-btn-sm:hover { border-color: var(--color-brand); color: var(--color-brand); }
     .d-btn-sm-cta { background: var(--color-brand-light); color: var(--color-brand); border-color: rgba(225,29,72,0.3); }
     .d-btn-sm-cta:hover { background: var(--color-brand); color: #fff; }
     .d-toolbar-sep { width: 1px; height: 20px; background: var(--color-border); }
@@ -1709,22 +1676,8 @@ function rgbaOpacity(rgba: string): number {
       font-size: 12px;
       color: var(--color-text-muted);
     }
-    .d-btn-save {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 18px;
-      background: var(--color-brand);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
     .d-btn-save:hover:not(:disabled) { opacity: 0.9; }
-    .d-btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+    .d-btn-primary:disabled, .d-btn-save:disabled { cursor: not-allowed; opacity: 0.5; }
 
     .d-stage {
       flex: 1;
@@ -2036,7 +1989,7 @@ function rgbaOpacity(rgba: string): number {
       border-radius: 6px;
       transition: all 0.15s;
     }
-    .d-close-btn:hover { background: var(--color-bg-app); color: var(--color-text-main); }
+    .d-btn-ghost:hover, .d-close-btn:hover { background: var(--color-bg-app); color: var(--color-text-main); }
 
     .d-props {
       padding: 12px 16px;
@@ -2084,7 +2037,6 @@ function rgbaOpacity(rgba: string): number {
     }
     .color-val { font-size: 12px; color: var(--color-text-muted); font-family: monospace; }
 
-    .align-btns { display: flex; gap: 4px; }
     .align-btn {
       width: 36px;
       height: 32px;
@@ -2098,8 +2050,6 @@ function rgbaOpacity(rgba: string): number {
       color: var(--color-text-muted);
       transition: all 0.15s;
     }
-    .align-btn:hover { border-color: var(--color-brand); color: var(--color-brand); }
-    .align-btn.active { background: var(--color-brand); color: #fff; border-color: var(--color-brand); }
 
     .d-divider { height: 1px; background: var(--color-border); margin: 0 16px; }
 
@@ -2138,10 +2088,7 @@ function rgbaOpacity(rgba: string): number {
     }
     .btn-hint-box lucide-icon { flex-shrink: 0; margin-top: 1px; }
 
-    .d-seg-btns {
-      display: flex;
-      gap: 4px;
-    }
+    .align-btns, .d-seg-btns { display: flex; gap: 4px; }
     .d-seg-btn {
       flex: 1;
       padding: 6px 8px;
@@ -2154,8 +2101,8 @@ function rgbaOpacity(rgba: string): number {
       cursor: pointer;
       transition: all 0.15s;
     }
-    .d-seg-btn.active { background: var(--color-brand); border-color: var(--color-brand); color: #fff; }
-    .d-seg-btn:hover:not(.active) { border-color: var(--color-brand); color: var(--color-brand); }
+    .align-btn.active, .d-seg-btn.active { background: var(--color-brand); border-color: var(--color-brand); color: #fff; }
+    .d-btn-outline:hover:not(:disabled), .d-btn-xs:hover, .d-btn-center:hover, .d-btn-sm:hover, .align-btn:hover, .d-seg-btn:hover:not(.active) { border-color: var(--color-brand); color: var(--color-brand); }
 
     .d-toggle-row {
       display: flex;
@@ -2567,7 +2514,7 @@ export class InvitationDesignerComponent implements OnInit {
   private readonly SNAP_THRESHOLD = 3;
 
   private snapX(rawLeft: number, elWidth: number): { left: number; guideX: number | null } {
-    const candidates: Array<{ snapLeft: number; guide: number }> = [
+    const candidates: { snapLeft: number; guide: number }[] = [
       { snapLeft: 0,                    guide: 0     },
       { snapLeft: 100 - elWidth,        guide: 100   },
       { snapLeft: 50 - elWidth / 2,     guide: 50    },
@@ -2583,7 +2530,7 @@ export class InvitationDesignerComponent implements OnInit {
   }
 
   private snapY(rawTop: number): { top: number; guideY: number | null } {
-    const candidates: Array<{ snapTop: number; guide: number }> = [
+    const candidates: { snapTop: number; guide: number }[] = [
       { snapTop: 0,     guide: 0     },
       { snapTop: 50,    guide: 50    },
       { snapTop: 33.33, guide: 33.33 },

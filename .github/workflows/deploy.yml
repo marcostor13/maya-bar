@@ -94,9 +94,18 @@ jobs:
           COOLIFY_BACKEND_UUID: ${{ secrets.COOLIFY_BACKEND_UUID }}
         run: node scripts/deploy.js backend
 
+  # El frontend espera al backend A PROPÓSITO, aunque no dependan entre sí:
+  # Coolify construye ambas imágenes en el mismo servidor y lanzarlas a la vez
+  # lo tumba. El 2026-09-04 los dos contenedores de build murieron con 100 ms de
+  # diferencia (exit 255, sin una sola línea de salida) mientras coincidían dos
+  # `npm ci` y un `nest build`: el host se quedó sin recursos, no falló el código.
+  #
+  # `!cancelled()` en vez del salto por defecto: si el backend no cambió (job
+  # omitido) o su despliegue falló, el frontend debe desplegarse igual — para
+  # entonces el servidor ya está libre, que es lo único que importa aquí.
   deploy-frontend:
-    needs: [changes, ci]
-    if: needs.changes.outputs.frontend == 'true'
+    needs: [changes, ci, deploy-backend]
+    if: ${{ !cancelled() && needs.changes.outputs.frontend == 'true' && needs.ci.result == 'success' }}
     runs-on: ubuntu-latest
     environment: production
     steps:

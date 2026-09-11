@@ -18,6 +18,8 @@ export interface PlatformModule {
   route: string;
 }
 
+// Una línea por módulo: la tabla se lee igual que el menú lateral.
+// prettier-ignore
 const ALL_MODULES: PlatformModule[] = [
   // Operaciones
   { key: 'dashboard', label: 'Dashboard', group: 'Operaciones', route: 'dashboard' },
@@ -30,12 +32,14 @@ const ALL_MODULES: PlatformModule[] = [
 
   // Clientes
   { key: 'customers', label: 'Clientes', group: 'Clientes', route: 'customers' },
+  { key: 'leads', label: 'Seguimiento', group: 'Clientes', route: 'leads' },
   { key: 'lists', label: 'Listas', group: 'Clientes', route: 'lists' },
   { key: 'forms', label: 'Formularios', group: 'Clientes', route: 'forms' },
   { key: 'campaigns', label: 'Campañas', group: 'Clientes', route: 'campaigns' },
   { key: 'templates', label: 'Plantillas', group: 'Clientes', route: 'plantillas' },
   { key: 'ai-agents', label: 'Agentes IA', group: 'Clientes', route: 'ai-agents' },
   { key: 'inbox', label: 'Conversaciones', group: 'Clientes', route: 'inbox' },
+  { key: 'suppression', label: 'No contactar', group: 'Clientes', route: 'no-contactar' },
 
   // Mi actividad (impulsadores)
   { key: 'impulsador-panel', label: 'Mi Panel', group: 'Mi actividad', route: 'impulsador' },
@@ -92,16 +96,20 @@ export const ADMIN_LOCKED_MODULES = ['users', 'settings'];
  * Derivada de `shell.ts` (visibilidad del menú) y de los `roleGuard` de
  * `app.routes.ts`.
  */
+// Cada rol en pocas líneas, para comparar accesos de un vistazo.
+// prettier-ignore
 const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   TENANT_ADMIN: MODULE_KEYS.filter((k) => k !== 'impulsador-panel' && k !== 'my-guests'),
   MANAGER: [
     'dashboard', 'locals', 'menu', 'orders', 'kds', 'reservations', 'events',
-    'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
+    'customers', 'leads', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
+    'suppression',
     'visits',
   ],
   MARKETING: [
     'dashboard', 'events',
-    'customers', 'lists', 'forms', 'campaigns', 'ai-agents', 'inbox',
+    'customers', 'leads', 'lists', 'forms', 'campaigns', 'ai-agents', 'inbox',
+    'suppression',
   ],
   HOST: ['dashboard', 'orders', 'reservations'],
   SERVER: ['dashboard', 'orders'],
@@ -109,16 +117,17 @@ const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   BAR: ['dashboard', 'menu', 'orders', 'kds'],
   IMPULSADOR: [
     'impulsador-panel', 'visits', 'events', 'my-guests', 'inbox',
-    'customers', 'lists', 'campaigns',
+    'customers', 'leads', 'lists', 'campaigns',
   ],
 };
 
-export const DEFAULT_ROLE_MODULES: Record<string, string[]> = Object.fromEntries(
-  Object.entries(RAW_DEFAULT_ROLE_MODULES).map(([role, mods]) => [
-    role,
-    visibleModules(mods),
-  ]),
-);
+export const DEFAULT_ROLE_MODULES: Record<string, string[]> =
+  Object.fromEntries(
+    Object.entries(RAW_DEFAULT_ROLE_MODULES).map(([role, mods]) => [
+      role,
+      visibleModules(mods),
+    ]),
+  );
 
 /** Etiquetas de los roles del sistema, para la pantalla de administración. */
 export const ROLE_LABELS: Record<string, string> = {

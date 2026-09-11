@@ -4,7 +4,9 @@ import { parseCsv, parseJson, parseXlsx } from './table-parser';
 
 describe('parseCsv', () => {
   it('lee cabeceras y filas', () => {
-    const table = parseCsv('nombre,email\nMarcos,marcos@bar.com\nAna,ana@bar.com');
+    const table = parseCsv(
+      'nombre,email\nMarcos,marcos@bar.com\nAna,ana@bar.com',
+    );
     expect(table.columns).toEqual(['nombre', 'email']);
     expect(table.rows).toEqual([
       { nombre: 'Marcos', email: 'marcos@bar.com' },
@@ -13,7 +15,9 @@ describe('parseCsv', () => {
   });
 
   it('respeta comas y saltos de línea dentro de comillas', () => {
-    const table = parseCsv('nombre,nota\n"Pérez, Marcos","Vino el lunes\ny pidió mesa"');
+    const table = parseCsv(
+      'nombre,nota\n"Pérez, Marcos","Vino el lunes\ny pidió mesa"',
+    );
     expect(table.rows[0]).toEqual({
       nombre: 'Pérez, Marcos',
       nota: 'Vino el lunes\ny pidió mesa',
@@ -61,9 +65,7 @@ describe('parseCsv', () => {
 });
 
 describe('parseXlsx', () => {
-  async function buildWorkbook(
-    rows: unknown[][],
-  ): Promise<Buffer> {
+  async function buildWorkbook(rows: unknown[][]): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Contactos');
     rows.forEach((row) => sheet.addRow(row));
@@ -93,9 +95,9 @@ describe('parseXlsx', () => {
   });
 
   it('rechaza un archivo que no es xlsx', async () => {
-    await expect(parseXlsx(Buffer.from('no soy un excel'))).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      parseXlsx(Buffer.from('no soy un excel')),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -135,7 +137,9 @@ describe('parseJson', () => {
   });
 
   it('resuelve la fecha en modo canónico', () => {
-    const table = parseJson('[{"alta":{"$date":{"$numberLong":"1768471200000"}}}]');
+    const table = parseJson(
+      '[{"alta":{"$date":{"$numberLong":"1768471200000"}}}]',
+    );
     expect(table.rows[0].alta).toBe(new Date(1768471200000).toISOString());
   });
 
@@ -158,7 +162,9 @@ describe('parseJson', () => {
   });
 
   it('rellena con vacío las columnas que solo trae un documento', () => {
-    const table = parseJson('[{"nombre":"Marcos"},{"nombre":"Ana","vip":true}]');
+    const table = parseJson(
+      '[{"nombre":"Marcos"},{"nombre":"Ana","vip":true}]',
+    );
     expect(table.columns).toEqual(['nombre', 'vip']);
     expect(table.rows[0].vip).toBe('');
     expect(table.rows[1].vip).toBe('true');

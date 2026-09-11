@@ -28,7 +28,10 @@ export class LocalsController {
   @Get()
   findAll(@Request() req: AuthReq) {
     if (req.user.role === 'SUPERADMIN') return this.localsService.findAll();
-    return this.localsService.findAllByTenant(req.user.tenantId, req.user.localIds);
+    return this.localsService.findAllByTenant(
+      req.user.tenantId,
+      req.user.localIds,
+    );
   }
 
   @Get(':id')

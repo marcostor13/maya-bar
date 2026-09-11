@@ -67,7 +67,7 @@ import { CampaignEditorComponent } from './campaign-editor';
             }
           </div>
         } @else {
-          <div class="table-wrap">
+          <div class="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -101,7 +101,7 @@ import { CampaignEditorComponent } from './campaign-editor';
                         }
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Canal">
                       <span class="type-badge"
                         [class.type-email]="channelOf(c) === 'email'"
                         [class.type-wa]="channelOf(c) === 'waha'"
@@ -110,7 +110,7 @@ import { CampaignEditorComponent } from './campaign-editor';
                         {{ channelLabel(c) }}
                       </span>
                     </td>
-                    <td class="audience-cell">
+                    <td class="audience-cell" data-label="Audiencia">
                       @if (c.targeting === 'lists' && c.listIds.length) {
                         <div class="audience-badges">
                           @for (lid of c.listIds.slice(0,2); track lid) {
@@ -133,7 +133,7 @@ import { CampaignEditorComponent } from './campaign-editor';
                         <span class="all-label">Todos los clientes</span>
                       }
                     </td>
-                    <td>
+                    <td data-label="Estado">
                       <span class="status-badge status-{{ c.status }}">
                         <lucide-icon [img]="statusIcon(c.status)" [size]="12"></lucide-icon>
                         {{ statusLabel(c.status) }}
@@ -145,10 +145,10 @@ import { CampaignEditorComponent } from './campaign-editor';
                         </div>
                       }
                     </td>
-                    <td style="text-align:right;font-weight:700;font-size:15px;color:var(--color-text-main)">
+                    <td data-label="Destinatarios" style="text-align:right;font-weight:700;font-size:15px;color:var(--color-text-main)">
                       {{ c.status === 'draft' ? '—' : (c.recipientCount || 0) }}
                     </td>
-                    <td class="date-cell">{{ c.sentAt ? formatDate(c.sentAt) : '—' }}</td>
+                    <td class="date-cell" data-label="Envío">{{ c.sentAt ? formatDate(c.sentAt) : '—' }}</td>
                     <td>
                       <div class="row-actions">
                         @if (c.status === 'sending') {
@@ -289,8 +289,10 @@ import { CampaignEditorComponent } from './campaign-editor';
       .status-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
       .status-tab { flex: 0 0 auto; white-space: nowrap; min-height: 40px; }
       .search-wrap { min-width: 0; width: 100%; }
-      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-      .table-wrap table { min-width: 800px; }
+      /* Cada campaña pasa a ser una tarjeta (.table-cards): los botones de
+         acción se separan abajo y ocupan el ancho, como en una app. */
+      .row-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; padding-top: 12px; margin-top: 6px; border-top: 1px solid var(--color-border); }
+      .audience-badges { justify-content: flex-end; }
     }
 
     @media (max-width: 480px) {

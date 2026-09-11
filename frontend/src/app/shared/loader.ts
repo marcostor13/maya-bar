@@ -1,6 +1,6 @@
 import { Component, computed, inject, Injectable, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpContext, HttpContextToken, HttpInterceptorFn } from '@angular/common/http';
 import { finalize } from 'rxjs/operators';
 
 @Injectable({ providedIn: 'root' })
@@ -12,7 +12,21 @@ export class LoadingService {
   decrement() { this._count.update(c => Math.max(0, c - 1)); }
 }
 
+/**
+ * Marca una petición como de fondo: no enciende la barra de progreso.
+ *
+ * Es lo que usan los sondeos periódicos (contador de no leídos, refresco de la
+ * bandeja): sin esto la barra parpadearía cada minuto sin que nadie haya pedido
+ * nada.
+ *
+ *     this.http.get(url, { context: silentRequest() })
+ */
+export const SILENT_REQUEST = new HttpContextToken<boolean>(() => false);
+
+export const silentRequest = () => new HttpContext().set(SILENT_REQUEST, true);
+
 export const loadingInterceptor: HttpInterceptorFn = (req, next) => {
+  if (req.context.get(SILENT_REQUEST)) return next(req);
   const loading = inject(LoadingService);
   loading.increment();
   return next(req).pipe(

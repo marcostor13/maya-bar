@@ -17,7 +17,12 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { assertRole, CRM_ROLES, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
+import {
+  assertRole,
+  CRM_ROLES,
+  MANAGE_ROLES,
+  type AuthReq,
+} from '../auth/permissions';
 import { ContactImportService } from './contact-import.service';
 import {
   AnalyzeMongoDto,

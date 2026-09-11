@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, createConnection } from 'mongoose';
@@ -24,6 +29,7 @@ import {
 } from './table-parser';
 import { isOwnerScoped } from '../auth/permissions';
 import { formatPhone } from '../shared/phone';
+import { toText } from '../shared/to-text';
 
 /** Cuántos documentos se leen para deducir los campos de una colección. */
 const SAMPLE_SIZE = 50;
@@ -31,6 +37,8 @@ const SAMPLE_VALUES = 3;
 const CONNECT_TIMEOUT_MS = 8000;
 
 /** Pistas por campo para sugerir el mapeo a partir del nombre de la columna. */
+// Una línea por campo: así se comparan las pistas de un vistazo.
+// prettier-ignore
 const FIELD_HINTS: Record<TargetField, string[]> = {
   name: ['name', 'nombre', 'cliente', 'contacto', 'fullname', 'nombres'],
   email: ['email', 'correo', 'e-mail', 'mail'],
@@ -79,7 +87,11 @@ export class ContactImportService {
     const name = (file.originalname ?? '').toLowerCase();
     if (name.endsWith('.xlsx') || name.endsWith('.xlsm'))
       return parseXlsx(file.buffer);
-    if (name.endsWith('.json') || name.endsWith('.ndjson') || name.endsWith('.jsonl'))
+    if (
+      name.endsWith('.json') ||
+      name.endsWith('.ndjson') ||
+      name.endsWith('.jsonl')
+    )
       return parseJson(file.buffer.toString('utf-8'));
     if (name.endsWith('.csv') || name.endsWith('.txt'))
       return parseCsv(file.buffer.toString('utf-8'));
@@ -133,7 +145,7 @@ export class ContactImportService {
         const rows = docs.map((d) => this.flatten(d));
         return this.importRows(tenantId, userId, role, rows, dto.options, {
           source: 'mongodb',
-          sourceId: source?._id as Types.ObjectId | undefined,
+          sourceId: source?._id,
         });
       });
 
@@ -170,7 +182,7 @@ export class ContactImportService {
       collection: source.collectionName,
       filter: source.filter,
       options: {
-        mapping: source.mapping as ImportOptionsDto['mapping'],
+        mapping: source.mapping,
         tags: source.tags,
         dedupeBy: 'both',
         updateExisting: true,
@@ -274,7 +286,8 @@ export class ContactImportService {
     try {
       await connection.asPromise();
       const db = connection.db;
-      if (!db) throw new BadRequestException('No se pudo abrir la base de datos');
+      if (!db)
+        throw new BadRequestException('No se pudo abrir la base de datos');
       return await work(db.collection(dto.collection));
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -312,7 +325,9 @@ export class ContactImportService {
       );
     }
 
-    if (this.config.get<string>('CONTACT_IMPORT_ALLOW_PRIVATE_HOSTS') === 'true')
+    if (
+      this.config.get<string>('CONTACT_IMPORT_ALLOW_PRIVATE_HOSTS') === 'true'
+    )
       return;
 
     for (const host of hosts) {
@@ -335,7 +350,11 @@ export class ContactImportService {
   }
 
   private isPrivateAddress(address: string): boolean {
-    if (address === '::1' || address.startsWith('fc') || address.startsWith('fd'))
+    if (
+      address === '::1' ||
+      address.startsWith('fc') ||
+      address.startsWith('fd')
+    )
       return true;
     const parts = address.split('.').map(Number);
     if (parts.length !== 4 || parts.some(Number.isNaN)) return false;
@@ -515,7 +534,10 @@ export class ContactImportService {
         phone ||
         'Sin nombre';
       const tags = [
-        ...new Set([...this.splitTags(this.pick(row, mapping.tags)), ...extraTags]),
+        ...new Set([
+          ...this.splitTags(this.pick(row, mapping.tags)),
+          ...extraTags,
+        ]),
       ];
       const notes = this.toText(this.pick(row, mapping.notes));
 
@@ -536,7 +558,9 @@ export class ContactImportService {
 
       const filter: Record<string, unknown> = {
         tenantId: tid,
-        ...(ownerScoped ? { createdBy: owner } : { createdBy: { $exists: false } }),
+        ...(ownerScoped
+          ? { createdBy: owner }
+          : { createdBy: { $exists: false } }),
       };
       // Con "both" identifica por email si lo hay y, si no, por teléfono.
       if (dedupeBy === 'email' || (dedupeBy === 'both' && email)) {
@@ -568,7 +592,7 @@ export class ContactImportService {
           },
           upsert: true,
         },
-      } as Op);
+      });
     });
 
     if (ops.length === 0) return result;
@@ -640,9 +664,10 @@ export class ContactImportService {
   private toText(value: unknown): string {
     if (value === null || value === undefined) return '';
     if (value instanceof Date) return value.toISOString();
-    if (Array.isArray(value)) return value.map((v) => this.toText(v)).join(', ');
-    if (typeof value === 'object') return String(value);
-    return String(value).trim();
+    if (Array.isArray(value))
+      return value.map((v) => this.toText(v)).join(', ');
+    if (typeof value === 'object') return toText(value);
+    return toText(value).trim();
   }
 
   private normalizeEmail(value: unknown): string | undefined {

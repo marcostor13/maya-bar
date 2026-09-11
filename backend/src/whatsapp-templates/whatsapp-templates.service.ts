@@ -23,6 +23,8 @@ interface MetaComponent {
   type: string;
   format?: string;
   text?: string;
+  /** Solo en el pie de las plantillas de autenticación. */
+  code_expiration_minutes?: number;
   example?: Record<string, unknown>;
   buttons?: Record<string, unknown>[];
   [key: string]: unknown;
@@ -112,7 +114,7 @@ export class WhatsAppTemplatesService {
     );
 
     const tid = new Types.ObjectId(tenantId);
-    const aid = account._id as Types.ObjectId;
+    const aid = account._id;
     const seen: string[] = [];
     const results: WaTemplate[] = [];
 
@@ -149,11 +151,7 @@ export class WhatsAppTemplatesService {
       tenantId,
       dto.accountId,
     );
-    const components = await this.buildComponents(
-      dto,
-      token,
-      dto.category,
-    );
+    const components = await this.buildComponents(dto, token, dto.category);
 
     const created = await this.metaRequest<{ id: string; status?: string }>(
       () =>
@@ -510,7 +508,7 @@ export class WhatsAppTemplatesService {
       footer:
         footer?.text ??
         (footer?.code_expiration_minutes
-          ? `El código caduca en ${String(footer.code_expiration_minutes)} minutos`
+          ? `El código caduca en ${footer.code_expiration_minutes} minutos`
           : undefined),
       components: components as unknown as Record<string, unknown>[],
     };

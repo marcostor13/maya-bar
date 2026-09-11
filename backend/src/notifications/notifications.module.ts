@@ -1,13 +1,13 @@
 import { Global, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { NotificationsController } from './notifications.controller';
-import { PushService } from './push.service';
+import { NativePushService } from './push.service';
 import { DeviceToken, DeviceTokenSchema } from './device-token.schema';
 import { User, UserSchema } from '../users/user.schema';
 
 /**
  * Global: cualquier servicio que quiera avisar al usuario (conversaciones,
- * formularios, campañas…) inyecta `PushService` sin tener que importar el
+ * formularios, campañas…) inyecta `NativePushService` sin tener que importar el
  * módulo y arriesgarse a una dependencia circular.
  */
 @Global()
@@ -20,7 +20,7 @@ import { User, UserSchema } from '../users/user.schema';
     ]),
   ],
   controllers: [NotificationsController],
-  providers: [PushService],
-  exports: [PushService],
+  providers: [NativePushService],
+  exports: [NativePushService],
 })
 export class NotificationsModule {}

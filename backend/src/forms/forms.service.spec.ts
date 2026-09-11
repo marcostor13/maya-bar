@@ -10,7 +10,7 @@ import { ContactList } from '../lists/contact-list.schema';
 import { SettingsService } from '../settings/settings.service';
 import { MailService } from '../mail/mail.service';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
-import { PushService } from '../notifications/push.service';
+import { NativePushService } from '../notifications/push.service';
 
 const tenantId = new Types.ObjectId();
 const formId = new Types.ObjectId();
@@ -150,7 +150,7 @@ describe('FormsService.submit', () => {
         { provide: SettingsService, useValue: mockSettings },
         { provide: MailService, useValue: mockMail },
         { provide: WhatsAppTemplatesService, useValue: mockTemplates },
-        { provide: PushService, useValue: mockPush },
+        { provide: NativePushService, useValue: mockPush },
       ],
     }).compile();
 

@@ -9,9 +9,9 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
-import { type TemplateHeader } from '../whatsapp/whatsapp.service';
 import { fillTokens } from '../shared/contact-tokens';
 import { Campaign } from './campaign.schema';
+import { SuppressionService } from '../suppression/suppression.service';
 import { Customer } from '../customers/customer.schema';
 import { MailService } from '../mail/mail.service';
 import { SettingsService } from '../settings/settings.service';
@@ -57,6 +57,7 @@ export class CampaignsService implements OnModuleInit {
     private settings: SettingsService,
     private lists: ListsService,
     private ai: AiService,
+    private suppression: SuppressionService,
   ) {}
 
   async findAll(tenantId: string): Promise<Campaign[]> {
@@ -116,16 +117,27 @@ export class CampaignsService implements OnModuleInit {
     await this.campaignModel.findByIdAndDelete(id).exec();
   }
 
+  /**
+   * Cuántos recibirían la campaña. Descuenta la lista de no contactar: si el
+   * número de la pantalla no coincide con el que se envía, nadie se fía de él.
+   */
   async previewCount(
     tenantId: string,
     tags: string[],
-  ): Promise<{ count: number }> {
+  ): Promise<{ count: number; blocked: number }> {
     const filter: Record<string, unknown> = {
       tenantId: new Types.ObjectId(tenantId),
     };
     if (tags.length > 0) filter['tags'] = { $in: tags };
-    const count = await this.customerModel.countDocuments(filter);
-    return { count };
+    const people = await this.customerModel
+      .find(filter, { phone: 1, email: 1 })
+      .lean<{ phone?: string; email?: string }[]>()
+      .exec();
+    const { allowed, blocked } = await this.suppression.filterAllowed(
+      tenantId,
+      people,
+    );
+    return { count: allowed.length, blocked };
   }
 
   async estimate(
@@ -325,7 +337,30 @@ export class CampaignsService implements OnModuleInit {
     return campaign.save();
   }
 
+  /**
+   * Audiencia de la campaña, ya SIN quien pidió no recibir comunicaciones.
+   *
+   * El descarte va aquí y no en cada rama: por aquí pasan las tres formas de
+   * segmentar (todos, listas, etiquetas), así que ninguna se lo puede saltar.
+   */
   private async resolveCustomers(
+    campaign: Campaign,
+    tenantId: string,
+  ): Promise<Customer[]> {
+    const audience = await this.resolveAudience(campaign, tenantId);
+    const { allowed, blocked } = await this.suppression.filterAllowed(
+      tenantId,
+      audience,
+    );
+    if (blocked > 0)
+      this.logger.log(
+        `Campaña ${String(campaign._id)}: ${blocked} contacto(s) en la lista de no contactar quedaron fuera.`,
+      );
+    return allowed;
+  }
+
+  /** La audiencia bruta, tal como la define la segmentación de la campaña. */
+  private async resolveAudience(
     campaign: Campaign,
     tenantId: string,
   ): Promise<Customer[]> {
@@ -456,7 +491,6 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
       .exec();
     return campaigns.reduce((sum, c) => sum + (c.recipientCount ?? 0), 0);
   }
-
 }
 
 /** Convierte el reason de una promesa rechazada a texto legible. */

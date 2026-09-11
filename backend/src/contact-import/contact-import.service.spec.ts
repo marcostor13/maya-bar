@@ -82,7 +82,9 @@ describe('ContactImportService', () => {
 
     it('sugiere el mapeo por el nombre de la columna, en español e inglés', async () => {
       const result = await service.analyzeFile(
-        csvFile('Nombre completo,Correo,Celular,Etiquetas,Observaciones\na,b,c,d,e'),
+        csvFile(
+          'Nombre completo,Correo,Celular,Etiquetas,Observaciones\na,b,c,d,e',
+        ),
       );
       expect(result.suggested).toEqual({
         name: 'Nombre completo',
@@ -144,7 +146,9 @@ describe('ContactImportService', () => {
         tenantId,
         userId,
         'TENANT_ADMIN',
-        csvFile('nombre,email,telefono\nMarcos,  MARCOS@Bar.com ,+51 (999) 888-777'),
+        csvFile(
+          'nombre,email,telefono\nMarcos,  MARCOS@Bar.com ,+51 (999) 888-777',
+        ),
         options(),
       );
       const set = opsOf()[0].updateOne.update.$set!;
@@ -157,7 +161,9 @@ describe('ContactImportService', () => {
         tenantId,
         userId,
         'TENANT_ADMIN',
-        csvFile('nombre,email,telefono\nMarcos,no-es-email,123\nAna,ana@bar.com,51999888777'),
+        csvFile(
+          'nombre,email,telefono\nMarcos,no-es-email,123\nAna,ana@bar.com,51999888777',
+        ),
         options(),
       );
       expect(result.skipped).toBe(1);
@@ -334,7 +340,9 @@ describe('ContactImportService', () => {
 
     it('bloquea la base de datos de la propia plataforma', async () => {
       config.get.mockImplementation((key: string) =>
-        key === 'MONGODB_URI' ? 'mongodb://cluster.mongodb.net/maya' : undefined,
+        key === 'MONGODB_URI'
+          ? 'mongodb://cluster.mongodb.net/maya'
+          : undefined,
       );
       await expect(
         service.analyzeMongo({

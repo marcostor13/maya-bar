@@ -19,6 +19,10 @@ import {
   SendMessageDto,
   AutoReplyDto,
   StatusDto,
+  SaveContactDto,
+  SetTagsDto,
+  SendToPipelineDto,
+  DoNotContactDto,
 } from './dto/conversation.dto';
 
 @Controller('conversations')
@@ -50,6 +54,13 @@ export class ConversationsController {
   accounts(@Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.listAccounts(req.user.tenantId);
+  }
+
+  /** Etiquetas ya usadas en el tenant, para sugerirlas al clasificar. */
+  @Get('tags')
+  tags(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.availableTags(req.user.tenantId);
   }
 
   @Get('unread-count')
@@ -88,6 +99,84 @@ export class ConversationsController {
     if (!dto.text?.trim() && !dto.mediaUrl)
       throw new BadRequestException('El mensaje está vacío');
     return this.service.sendManual(id, req.user.tenantId, req.user.userId, dto);
+  }
+
+  /** Guarda a quien escribe como contacto del CRM (y opcionalmente crea lead). */
+  @Post(':id/contact')
+  saveContact(
+    @Param('id') id: string,
+    @Body() dto: SaveContactDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.saveContact(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
+  /** Clasifica el chat: fija las etiquetas de su contacto (lo crea si hace falta). */
+  @Patch(':id/tags')
+  setTags(
+    @Param('id') id: string,
+    @Body() dto: SetTagsDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.setTags(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto.tags,
+    );
+  }
+
+  /**
+   * Da de baja (o reactiva) al contacto en la lista de no contactar. Deja de
+   * entrar en campañas y el agente IA deja de responderle.
+   */
+  @Patch(':id/do-not-contact')
+  doNotContact(
+    @Param('id') id: string,
+    @Body() dto: DoNotContactDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.setDoNotContact(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      dto.blocked,
+      dto.reason,
+    );
+  }
+
+  /** Manda el chat al embudo: crea la oportunidad enlazada a la conversación. */
+  @Post(':id/lead')
+  sendToPipeline(
+    @Param('id') id: string,
+    @Body() dto: SendToPipelineDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.sendToPipeline(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
+  /** Contacto vinculado y sus oportunidades, para el panel del chat. */
+  @Get(':id/contact')
+  crmCard(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.crmCard(id, req.user.tenantId);
   }
 
   @Patch(':id/read')

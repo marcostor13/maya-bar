@@ -7,7 +7,7 @@ import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Instagram, Settings,
+  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 
@@ -28,6 +28,14 @@ interface IgAccount {
   active: boolean;
 }
 
+interface MsAccount {
+  _id: string;
+  label: string;
+  pageName?: string;
+  username?: string;
+  active: boolean;
+}
+
 interface Agent {
   _id: string;
   name: string;
@@ -43,6 +51,14 @@ interface Agent {
   topK: number;
   accountIds: string[];
   instagramAccountIds: string[];
+  messengerAccountIds: string[];
+  handoffEnabled: boolean;
+  handoffNumbers: string[];
+  handoffAccountId?: string;
+  handoffInstructions?: string;
+  handoffMessage: string;
+  handoffTemplateName?: string;
+  handoffTemplateLang?: string;
   published: boolean;
 }
 
@@ -64,14 +80,18 @@ interface AgentFile {
   contentType?: string;
 }
 
-type Section = 'general' | 'channels' | 'knowledge' | 'files' | 'advanced';
+type Section = 'general' | 'channels' | 'knowledge' | 'files' | 'handoff' | 'advanced';
 
 function blankAgent(): Agent {
   return {
     _id: '', name: '', description: '', systemPrompt: 'Eres un asistente amable y servicial. Responde de forma clara y breve.',
     provider: 'auto', aiModel: '', temperature: 0.4, maxTokens: 800, greeting: '',
     fallbackMessage: 'Lo siento, no tengo esa información en este momento.',
-    ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [], published: false,
+    ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [], messengerAccountIds: [],
+    handoffEnabled: false, handoffNumbers: [], handoffAccountId: '', handoffInstructions: '',
+    handoffMessage: 'Te comunico con una persona del equipo, en un momento te escriben por acá.',
+    handoffTemplateName: '', handoffTemplateLang: 'es',
+    published: false,
   };
 }
 
@@ -84,7 +104,7 @@ function blankAgent(): Agent {
       <div class="page-header">
         <div>
           <h1>Agentes IA</h1>
-          <p class="page-sub">Crea asistentes que responden por WhatsApp e Instagram con tu conocimiento (RAG)</p>
+          <p class="page-sub">Crea asistentes que responden por WhatsApp, Instagram y Messenger con tu conocimiento (RAG)</p>
         </div>
         <div class="header-actions">
           <button class="btn btn-primary" (click)="openNew()">
@@ -126,7 +146,10 @@ function blankAgent(): Agent {
                 @if (a.instagramAccountIds.length > 0) {
                   <span class="meta-pill"><lucide-icon [img]="Instagram" [size]="13"></lucide-icon> {{ a.instagramAccountIds.length }} Instagram</span>
                 }
-                @if (a.accountIds.length === 0 && a.instagramAccountIds.length === 0) {
+                @if (a.messengerAccountIds.length > 0) {
+                  <span class="meta-pill"><lucide-icon [img]="Facebook" [size]="13"></lucide-icon> {{ a.messengerAccountIds.length }} Messenger</span>
+                }
+                @if (a.accountIds.length === 0 && a.instagramAccountIds.length === 0 && a.messengerAccountIds.length === 0) {
                   <span class="meta-pill">Sin canales</span>
                 }
                 @if (a.ragEnabled) {
@@ -223,7 +246,7 @@ function blankAgent(): Agent {
             <!-- CANALES -->
             @if (section() === 'channels') {
               <p class="field-hint" style="margin-bottom:16px">
-                Las cuentas de WhatsApp e Instagram se conectan desde <strong>Configuración</strong> y quedan disponibles para todos los agentes (y para campañas). Acá solo elegís por cuáles responde este agente.
+                Las cuentas de WhatsApp, Instagram y Messenger se conectan desde <strong>Configuración</strong> y quedan disponibles para todos los agentes (y para campañas). Acá solo elegís por cuáles responde este agente.
               </p>
 
               <p class="channel-group-title">
@@ -275,6 +298,34 @@ function blankAgent(): Agent {
                     <div class="account-info">
                       <span class="account-label">{{ acc.label }}</span>
                       <span class="account-sub">{{ acc.username ? '@' + acc.username : 'Instagram Messaging' }}</span>
+                    </div>
+                    @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }
+                  </label>
+                }
+                <a class="btn btn-sm btn-ghost" style="margin-top:8px" routerLink="/settings">
+                  <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Gestionar cuentas en Configuración
+                </a>
+              }
+
+              <p class="channel-group-title" style="margin-top:24px">
+                <lucide-icon [img]="Facebook" [size]="14"></lucide-icon> Messenger
+              </p>
+              @if (msAccounts().length === 0) {
+                <div class="inline-empty">
+                  <lucide-icon [img]="Facebook" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
+                  <p>No hay páginas de Facebook configuradas.</p>
+                  <a class="btn btn-sm btn-secondary" routerLink="/settings">
+                    <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Ir a Configuración
+                  </a>
+                </div>
+              } @else {
+                <p class="field-hint" style="margin-bottom:12px">Selecciona por qué páginas de Facebook responderá este agente.</p>
+                @for (acc of msAccounts(); track acc._id) {
+                  <label class="account-row" [class.selected]="form.messengerAccountIds.includes(acc._id)">
+                    <input type="checkbox" [checked]="form.messengerAccountIds.includes(acc._id)" (change)="toggleMsAccount(acc._id)" />
+                    <div class="account-info">
+                      <span class="account-label">{{ acc.label }}</span>
+                      <span class="account-sub">{{ acc.username ? '@' + acc.username : (acc.pageName || 'Messenger') }}</span>
                     </div>
                     @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }
                   </label>
@@ -392,6 +443,84 @@ function blankAgent(): Agent {
                     }
                   </div>
                 }
+              }
+            }
+
+            <!-- DERIVACIÓN A UN AGENTE HUMANO -->
+            @if (section() === 'handoff') {
+              <div class="field" style="flex-direction:row;align-items:center;justify-content:space-between">
+                <div>
+                  <label class="field-label" style="margin:0">Derivar a una persona</label>
+                  <span class="field-hint">El agente avisa por WhatsApp a tu equipo, apaga la respuesta automática y la persona termina el chat desde la bandeja.</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" [(ngModel)]="form.handoffEnabled" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              @if (form.handoffEnabled) {
+                <div class="field">
+                  <label class="field-label">Números que reciben el aviso *</label>
+                  <div class="number-add">
+                    <input class="input" [(ngModel)]="newHandoffNumber" placeholder="51999888777 (código de país, sin +)"
+                      (keydown.enter)="addHandoffNumber(); $event.preventDefault()" />
+                    <button type="button" class="btn btn-secondary" (click)="addHandoffNumber()">
+                      <lucide-icon [img]="Plus" [size]="15" [strokeWidth]="2.5"></lucide-icon> Agregar
+                    </button>
+                  </div>
+                  <span class="field-hint">Formato internacional sin “+”. Cada número recibe un WhatsApp con el motivo y el enlace al chat.</span>
+                  @if (form.handoffNumbers.length > 0) {
+                    <div class="number-list">
+                      @for (n of form.handoffNumbers; track n) {
+                        <span class="number-chip">
+                          <lucide-icon [img]="Phone" [size]="13" [strokeWidth]="2.4"></lucide-icon> +{{ n }}
+                          <button type="button" class="chip-x" (click)="removeHandoffNumber(n)" aria-label="Quitar número">
+                            <lucide-icon [img]="X" [size]="13" [strokeWidth]="2.6"></lucide-icon>
+                          </button>
+                        </span>
+                      }
+                    </div>
+                  } @else {
+                    <span class="field-hint" style="color:var(--color-error)">Sin números el agente derivará el chat, pero nadie recibirá el aviso.</span>
+                  }
+                </div>
+
+                <div class="field">
+                  <label class="field-label">Cuándo debe derivar</label>
+                  <textarea class="textarea" [(ngModel)]="form.handoffInstructions" rows="3"
+                    placeholder="Ej: el cliente pide hablar con una persona, hay un reclamo, quiere cancelar una reserva o pide un descuento especial."></textarea>
+                  <span class="field-hint">Se agrega al prompt. El agente también puede usar el token <code>{{ handoffToken }}</code> por su cuenta.</span>
+                </div>
+
+                <div class="field">
+                  <label class="field-label">Mensaje al cliente al derivar</label>
+                  <textarea class="textarea" [(ngModel)]="form.handoffMessage" rows="2"
+                    placeholder="Te comunico con una persona del equipo…"></textarea>
+                  <span class="field-hint">Se envía solo si el agente deriva sin escribir nada.</span>
+                </div>
+
+                <div class="field">
+                  <label class="field-label">Cuenta desde la que sale el aviso</label>
+                  <select class="select" [(ngModel)]="form.handoffAccountId">
+                    <option value="">Automático (la del chat o la predeterminada)</option>
+                    @for (acc of accounts(); track acc._id) {
+                      <option [value]="acc._id">{{ acc.label }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</option>
+                    }
+                  </select>
+                </div>
+
+                <div class="field-row">
+                  <div class="field">
+                    <label class="field-label">Plantilla Cloud API (opcional)</label>
+                    <input class="input" [(ngModel)]="form.handoffTemplateName" placeholder="nombre_de_la_plantilla" />
+                    <span class="field-hint">Solo Cloud API: hace falta si el número del equipo no escribió al negocio en las últimas 24 h. Debe tener 3 variables: cliente, motivo y enlace.</span>
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Idioma de la plantilla</label>
+                    <input class="input" [(ngModel)]="form.handoffTemplateLang" placeholder="es" />
+                  </div>
+                </div>
               }
             }
 
@@ -541,6 +670,14 @@ function blankAgent(): Agent {
     .token-chip { display: inline-flex; align-items: center; padding: 4px 10px; background: var(--color-brand-light); color: var(--color-brand); border: 1px solid var(--color-brand); border-radius: var(--radius-pill); font-size: 11px; font-family: monospace; font-weight: 600; cursor: pointer; transition: all var(--transition-fast); }
     .token-chip:hover { background: var(--color-brand); color: #fff; }
 
+    /* Handoff tab */
+    .number-add { display: flex; gap: 8px; align-items: center; }
+    .number-add .input { flex: 1; }
+    .number-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .number-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; background: var(--color-brand-light); color: var(--color-brand); border: 1px solid var(--color-brand); border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; }
+    .chip-x { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; transition: background var(--transition-fast); }
+    .chip-x:hover { background: rgba(0,0,0,.08); }
+
     /* Files tab */
     .file-upload-form { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px; background: var(--color-bg-app); margin-bottom: 4px; }
     .alias-code { font-family: monospace; font-size: 11px; background: var(--color-brand-light); color: var(--color-brand); padding: 2px 6px; border-radius: 4px; }
@@ -615,6 +752,7 @@ export class AiAgentsComponent implements OnInit {
   @ViewChild('promptTextarea') promptTextareaEl?: ElementRef<HTMLTextAreaElement>;
 
   readonly exampleToken = '{{SEND_FILE:alias}}';
+  readonly handoffToken = '{{HANDOFF:motivo}}';
   fileToken(alias: string) { return '{{SEND_FILE:' + alias + '}}'; }
 
   readonly Bot = Bot; readonly Plus = Plus; readonly X = X; readonly Trash2 = Trash2;
@@ -623,19 +761,22 @@ export class AiAgentsComponent implements OnInit {
   readonly Sparkles = Sparkles; readonly BookOpen = BookOpen; readonly Phone = Phone;
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
-  readonly Instagram = Instagram; readonly Settings = Settings;
+  readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Settings = Settings;
+  readonly PhoneForwarded = PhoneForwarded;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
     { key: 'general', label: 'General', icon: Bot },
     { key: 'channels', label: 'Canales', icon: Smartphone },
     { key: 'knowledge', label: 'Conocimiento', icon: BookOpen },
     { key: 'files', label: 'Archivos', icon: Paperclip },
+    { key: 'handoff', label: 'Derivación', icon: PhoneForwarded },
     { key: 'advanced', label: 'Avanzado', icon: Sparkles },
   ];
 
   agents = signal<Agent[]>([]);
   accounts = signal<WaAccount[]>([]);
   igAccounts = signal<IgAccount[]>([]);
+  msAccounts = signal<MsAccount[]>([]);
   loading = signal(true);
 
   // editor
@@ -645,6 +786,9 @@ export class AiAgentsComponent implements OnInit {
   saving = signal(false);
   docs = signal<KDoc[]>([]);
   uploading = signal(false);
+
+  // derivación a un agente humano
+  newHandoffNumber = '';
 
   // agent files
   agentFiles = signal<AgentFile[]>([]);
@@ -668,6 +812,7 @@ export class AiAgentsComponent implements OnInit {
     this.load();
     this.loadAccounts();
     this.loadIgAccounts();
+    this.loadMsAccounts();
   }
 
   load() {
@@ -693,6 +838,13 @@ export class AiAgentsComponent implements OnInit {
     });
   }
 
+  loadMsAccounts() {
+    this.http.get<MsAccount[]>(`${API}/messenger-accounts`).subscribe({
+      next: a => this.msAccounts.set(a),
+      error: () => {},
+    });
+  }
+
   // ---- Editor ----
   openNew() {
     this.form = blankAgent();
@@ -705,7 +857,19 @@ export class AiAgentsComponent implements OnInit {
   }
 
   openEdit(a: Agent) {
-    this.form = { ...a, accountIds: [...(a.accountIds || [])], instagramAccountIds: [...(a.instagramAccountIds || [])] };
+    const base = blankAgent();
+    this.form = {
+      ...base, ...a,
+      accountIds: [...(a.accountIds || [])],
+      instagramAccountIds: [...(a.instagramAccountIds || [])],
+      messengerAccountIds: [...(a.messengerAccountIds || [])],
+      // Los agentes creados antes de la derivación no traen estos campos.
+      handoffNumbers: [...(a.handoffNumbers || [])],
+      handoffAccountId: a.handoffAccountId || '',
+      handoffMessage: a.handoffMessage || base.handoffMessage,
+      handoffTemplateLang: a.handoffTemplateLang || 'es',
+    };
+    this.newHandoffNumber = '';
     this.section.set('general');
     this.docs.set([]);
     this.agentFiles.set([]);
@@ -717,6 +881,24 @@ export class AiAgentsComponent implements OnInit {
   }
 
   closeDrawer() { this.drawerOpen.set(false); }
+
+  addHandoffNumber() {
+    const digits = this.newHandoffNumber.replace(/\D/g, '');
+    if (digits.length < 8) {
+      this.toast.error('Escribe el número con código de país (ej: 51999888777)');
+      return;
+    }
+    if (this.form.handoffNumbers.includes(digits)) {
+      this.toast.error('Ese número ya está en la lista');
+      return;
+    }
+    this.form = { ...this.form, handoffNumbers: [...this.form.handoffNumbers, digits] };
+    this.newHandoffNumber = '';
+  }
+
+  removeHandoffNumber(n: string) {
+    this.form = { ...this.form, handoffNumbers: this.form.handoffNumbers.filter(x => x !== n) };
+  }
 
   toggleAccount(id: string) {
     const ids = this.form.accountIds.includes(id)
@@ -732,9 +914,21 @@ export class AiAgentsComponent implements OnInit {
     this.form = { ...this.form, instagramAccountIds: ids };
   }
 
+  toggleMsAccount(id: string) {
+    const ids = this.form.messengerAccountIds.includes(id)
+      ? this.form.messengerAccountIds.filter(x => x !== id)
+      : [...this.form.messengerAccountIds, id];
+    this.form = { ...this.form, messengerAccountIds: ids };
+  }
+
   save() {
     if (!this.form.name.trim() || !this.form.systemPrompt.trim()) {
       this.toast.error('Nombre y prompt son obligatorios');
+      return;
+    }
+    if (this.form.handoffEnabled && this.form.handoffNumbers.length === 0) {
+      this.section.set('handoff');
+      this.toast.error('Agrega al menos un número que reciba el aviso de derivación');
       return;
     }
     this.saving.set(true);

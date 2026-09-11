@@ -40,7 +40,8 @@ export class FormsController {
     @Req() req: ExpressRequest,
   ) {
     return this.formsService.submit(publicKey, body, {
-      pageUrl: typeof body?.['pageUrl'] === 'string' ? body['pageUrl'] : undefined,
+      pageUrl:
+        typeof body?.['pageUrl'] === 'string' ? body['pageUrl'] : undefined,
       referer: req.headers.referer,
       ip: req.ip,
       userAgent: req.headers['user-agent'],

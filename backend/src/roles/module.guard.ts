@@ -27,7 +27,9 @@ export function ModuleGuard(moduleKey: string): Type<CanActivate> {
     constructor(readonly roles: RolesService) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
-      const req = context.switchToHttp().getRequest<AuthReq & { method?: string }>();
+      const req = context
+        .switchToHttp()
+        .getRequest<AuthReq & { method?: string }>();
       const user = req.user;
       // Sin sesión no llega aquí: JwtAuthGuard responde antes.
       if (!user?.role) return false;
@@ -37,7 +39,8 @@ export function ModuleGuard(moduleKey: string): Type<CanActivate> {
         user.tenantId,
         user.role,
       );
-      const label = MODULES.find((m) => m.key === moduleKey)?.label ?? moduleKey;
+      const label =
+        MODULES.find((m) => m.key === moduleKey)?.label ?? moduleKey;
       if (!modules.includes(moduleKey))
         throw new ForbiddenException(`Tu rol no tiene acceso a ${label}`);
 

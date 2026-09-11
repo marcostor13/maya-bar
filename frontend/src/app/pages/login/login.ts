@@ -86,11 +86,13 @@ import { ToastService } from '../../shared/toast';
   `,
   styles: [`
     .login-page {
-      min-height: 100vh;
+      /* dvh y no vh: con la barra del navegador visible, 100vh se pasa de
+         largo en el móvil y deja el formulario cortado por abajo. */
+      min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 32px 16px;
+      padding: calc(32px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
       background: var(--color-bg-light);
     }
 
@@ -188,7 +190,7 @@ import { ToastService } from '../../shared/toast';
     .eye-btn:focus-visible { outline: 2px solid var(--color-brand); }
 
     @media (max-width: 768px) {
-      .login-page { padding: 20px 12px; }
+      .login-page { padding: calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px)); }
       .login-card { padding: 28px 24px; }
       .eye-btn { min-width: 44px; min-height: 44px; justify-content: center; right: 0; }
       .input-eye-wrap .input { padding-right: 46px; }

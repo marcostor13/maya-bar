@@ -126,11 +126,13 @@ const LOCAL_TYPES = [
   `,
   styles: [`
     .onboarding-page {
-      min-height: 100vh;
+      /* dvh y no vh: con la barra del navegador visible, 100vh se pasa de
+         largo en el móvil y deja el formulario cortado por abajo. */
+      min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 32px 16px;
+      padding: calc(32px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
       background: var(--color-bg-light);
     }
 
@@ -283,7 +285,7 @@ const LOCAL_TYPES = [
     }
 
     @media (max-width: 768px) {
-      .onboarding-page { padding: 20px 12px; }
+      .onboarding-page { padding: calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px)); }
       .onboarding-card { padding: 28px 22px; }
       .step-actions { flex-wrap: wrap; }
       .step-actions .btn { flex: 1 1 auto; }
