@@ -61,4 +61,4 @@ jobs:
       - name: Build SSR
         # Mismo comando que corre el Dockerfile, para que un fallo de build se
         # vea aquí y no a mitad del despliegue en Coolify.
-        run: node scripts/set-env.js && npx ng build --configuration production
+        run: node scripts/set-env.js && npx ng build frontend --configuration production

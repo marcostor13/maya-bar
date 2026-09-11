@@ -20,7 +20,7 @@ COPY package*.json ./
 # lo fuerza; sin esto el build falla con "could not determine executable to run".
 RUN npm ci --include=dev
 COPY . .
-RUN node scripts/set-env.js && npx ng build --configuration production
+RUN node scripts/set-env.js && npx ng build frontend --configuration production
 
 FROM node:22-alpine AS production
 WORKDIR /app

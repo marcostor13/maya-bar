@@ -319,6 +319,9 @@ describe('CampaignsService', () => {
         waProvider: 'cloudapi',
         body: 'Promo',
         status: 'draft',
+        // El servicio lo sobrescribe al enviar; va declarado para que el tipo
+        // del literal lo incluya y el test pueda comprobarlo.
+        recipientCount: 0,
         save: jest.fn().mockResolvedValue(undefined),
       };
       stubFindById(campaign);
@@ -345,6 +348,7 @@ describe('CampaignsService', () => {
         waProvider: 'cloudapi',
         body: 'Promo',
         status: 'draft',
+        recipientCount: 0,
         save: jest.fn().mockResolvedValue(undefined),
       };
       stubFindById(campaign);
