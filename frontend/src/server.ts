@@ -64,6 +64,26 @@ app.get(
   },
 );
 
+/**
+ * Landing prerenderizada. `app.routes.server.ts` la declara como
+ * `RenderMode.Prerender` y el build la escribe en `browser/index.html`
+ * (`prerendered-routes.json` lista `/`), pero en el contenedor el motor de
+ * Angular devolvía para `/` el caparazón de cliente: 13 KB sin `<h1>` ni
+ * `ng-server-context`, mientras `/index.html` sí servía los 121 KB
+ * prerenderizados. Fuera del contenedor no se reproduce, así que en vez de
+ * depender del motor se entrega el archivo directamente, que es justo lo que
+ * `Prerender` significa. Sin esto la landing no es indexable.
+ *
+ * No lleva el `maxAge: '1y'` del `express.static` de abajo: la URL es fija y
+ * el contenido cambia en cada despliegue.
+ */
+app.get('/', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+  res.sendFile('index.html', { root: browserDistFolder }, (err) =>
+    err ? next() : undefined,
+  );
+});
+
 app.use(
   express.static(browserDistFolder, {
     maxAge: '1y',
