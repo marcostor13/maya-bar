@@ -29,6 +29,7 @@ import { WhatsAppTemplatesModule } from './whatsapp-templates/whatsapp-templates
 import { ContactImportModule } from './contact-import/contact-import.module';
 import { FormsModule } from './forms/forms.module';
 import { RolesModule } from './roles/roles.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { RolesModule } from './roles/roles.module';
     ConversationsModule,
     FormsModule,
     RolesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

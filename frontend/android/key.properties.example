@@ -1,0 +1,18 @@
+# Copia este archivo a `key.properties` (gitignored) para poder firmar la
+# release. Sin él, `assembleRelease` genera un APK sin firmar.
+#
+# Generar el almacén de claves (UNA sola vez — si se pierde, Play Store ya no
+# acepta actualizaciones de la app y hay que publicarla como una nueva):
+#
+#   keytool -genkeypair -v \
+#     -keystore maya-release.keystore \
+#     -alias maya \
+#     -keyalg RSA -keysize 2048 -validity 10000
+#
+# Guarda el .keystore y su contraseña fuera del repositorio y con copia de
+# seguridad. `storeFile` es relativo a la carpeta `android/`.
+
+storeFile=maya-release.keystore
+storePassword=
+keyAlias=maya
+keyPassword=

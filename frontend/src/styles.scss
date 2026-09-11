@@ -42,6 +42,30 @@
   /* Animations */
   --transition-fast: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-smooth: 400ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Safe areas — notch, cámara, barra de estado y barra de gestos.
+     Requieren `viewport-fit=cover` en index.html. Fuera de la app nativa
+     valen 0px, así que usarlas no altera el diseño web. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Alto de la barra de pestañas inferior. El Shell marca <html> con
+     `has-bottom-nav` cuando la pinta, para que los elementos flotantes que
+     viven fuera del Shell (toasts) no queden debajo. */
+  --bottom-nav-height: 0px;
+}
+
+html.has-bottom-nav {
+  --bottom-nav-height: 60px;
+}
+
+/* En escritorio manda el menú lateral y la barra no se pinta. */
+@media (min-width: 969px) {
+  html.has-bottom-nav {
+    --bottom-nav-height: 0px;
+  }
 }
 
 /* Base Styles */
@@ -280,4 +304,69 @@ html, body {
   .card {
     padding: 16px;
   }
+}
+
+/* ==========================================================================
+   APP NATIVA (Capacitor)
+   `.is-native` lo pone `NativeAppService` sobre <html>. Estas reglas solo
+   aplican dentro del WebView; el sitio web no se ve afectado.
+   ========================================================================== */
+
+html.is-native,
+html.is-native body {
+  /* Sin rebote elástico ni pull-to-refresh: delatan que es una web.
+     No se toca `overflow`: las páginas fuera del Shell (login, onboarding)
+     dependen del scroll del body. */
+  overscroll-behavior: none;
+}
+
+html.is-native body {
+  /* Selección de texto solo donde tiene sentido — el resto debe sentirse
+     como una superficie nativa (sin lupa ni menú contextual al mantener). */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html.is-native input,
+html.is-native textarea,
+html.is-native .input,
+html.is-native .select,
+html.is-native .textarea,
+html.is-native .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+html.is-native * {
+  /* Quita el flash gris al tocar y el retardo de 300ms. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.is-native .btn,
+html.is-native .btn-icon,
+html.is-native .nav-item,
+html.is-native a,
+html.is-native button {
+  touch-action: manipulation;
+}
+
+/* En nativo cualquier input por debajo de 16px provoca zoom forzado,
+   independientemente del ancho de pantalla. */
+html.is-native .input,
+html.is-native .select,
+html.is-native .textarea,
+html.is-native .input-search,
+html.is-native input,
+html.is-native textarea {
+  font-size: 16px;
+}
+
+/* Utilidades de safe area para páginas con acciones fijas abajo. */
+.safe-bottom {
+  padding-bottom: calc(16px + var(--safe-bottom));
+}
+
+.safe-top {
+  padding-top: calc(16px + var(--safe-top));
 }

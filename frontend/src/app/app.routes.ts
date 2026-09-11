@@ -6,6 +6,7 @@ import { authGuard } from './auth/auth.guard';
 // y por eso queda fuera de la matriz configurable.
 import { roleGuard } from './auth/role.guard';
 import { moduleGuard, homeFor } from './auth/module.guard';
+import { rootEntryGuard } from './core/root-entry.guard';
 import { PermissionsService } from './auth/permissions.service';
 import { AuthService } from './auth/auth.service';
 import { LoginComponent } from './pages/login/login';
@@ -52,8 +53,15 @@ const homeRedirectGuard = async () => {
 // en el backend las reactiva.
 export const routes: Routes = [
   // Landing pública. Es la única ruta que se prerenderiza (ver
-  // `app.routes.server.ts`), por eso vive fuera del Shell y no lleva guards.
-  { path: '', pathMatch: 'full', component: LandingComponent },
+  // `app.routes.server.ts`), por eso vive fuera del Shell.
+  // `rootEntryGuard` solo actúa dentro de la app nativa, donde `/` es el punto
+  // de arranque del WebView y debe llevar a la aplicación, no a la landing.
+  {
+    path: '',
+    pathMatch: 'full',
+    component: LandingComponent,
+    canActivate: [rootEntryGuard],
+  },
   { path: 'login', component: LoginComponent },
   { path: 'register', component: RegisterComponent },
   { path: 'change-password', component: ChangePasswordComponent, canActivate: [authGuard] },
@@ -66,86 +74,103 @@ export const routes: Routes = [
     children: [
       {
         path: 'dashboard',
+        data: { title: 'Dashboard' },
         component: DashboardComponent,
         canActivate: [moduleGuard('dashboard')],
       },
       {
         path: 'impulsador',
+        data: { title: 'Mi Panel' },
         component: ImpulsadorPanelComponent,
         canActivate: [moduleGuard('impulsador-panel')],
       },
       {
         path: 'locals',
+        data: { title: 'Mis Locales' },
         component: LocalsComponent,
         canActivate: [moduleGuard('locals')],
       },
       {
         path: 'events',
+        data: { title: 'Eventos' },
         component: EventsComponent,
         canActivate: [moduleGuard('events')],
       },
       {
         path: 'events/:id',
+        data: { title: 'Evento' },
         component: EventDetailComponent,
         canActivate: [moduleGuard('events')],
       },
       {
         path: 'customers',
+        data: { title: 'Clientes' },
         component: CustomersComponent,
         canActivate: [moduleGuard('customers')],
       },
       {
         path: 'campaigns',
+        data: { title: 'Campañas' },
         component: CampaignsComponent,
         canActivate: [moduleGuard('campaigns')],
       },
       {
         path: 'plantillas',
+        data: { title: 'Plantillas' },
         component: WhatsappTemplatesComponent,
         canActivate: [moduleGuard('templates')],
       },
       {
         path: 'ai-agents',
+        data: { title: 'Agentes IA' },
         component: AiAgentsComponent,
         canActivate: [moduleGuard('ai-agents')],
       },
       {
         path: 'inbox',
+        data: { title: 'Conversaciones' },
         component: InboxComponent,
         canActivate: [moduleGuard('inbox')],
       },
       {
         path: 'lists',
+        data: { title: 'Listas' },
         component: ListsComponent,
         canActivate: [moduleGuard('lists')],
       },
       {
         path: 'forms',
+        data: { title: 'Formularios' },
         component: FormsComponent,
         canActivate: [moduleGuard('forms')],
       },
       {
         path: 'visitas',
+        data: { title: 'Visitas' },
         component: VisitsComponent,
         canActivate: [moduleGuard('visits')],
       },
       {
         path: 'mis-asistentes',
+        data: { title: 'Mis Asistentes' },
         component: MisAsistentesComponent,
         canActivate: [moduleGuard('my-guests')],
       },
       {
         path: 'settings',
+        data: { title: 'Configuración' },
         component: SettingsComponent,
         canActivate: [moduleGuard('settings')],
       },
       {
         path: 'users',
+        data: { title: 'Usuarios' },
         component: UsersComponent,
         canActivate: [moduleGuard('users')],
       },
       {
         path: 'admin/tenants',
+        data: { title: 'Empresas' },
         component: AdminTenantsComponent,
         canActivate: [roleGuard('SUPERADMIN')],
       },

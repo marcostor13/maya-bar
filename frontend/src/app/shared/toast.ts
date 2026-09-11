@@ -72,8 +72,8 @@ export class ToastService {
   styles: [`
     .toast-container {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
+      bottom: calc(24px + var(--safe-bottom) + var(--bottom-nav-height));
+      right: calc(24px + var(--safe-right));
       z-index: 1000;
       display: flex;
       flex-direction: column;
@@ -99,9 +99,9 @@ export class ToastService {
 
     @media (max-width: 480px) {
       .toast-container {
-        left: 12px;
-        right: 12px;
-        bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        left: calc(12px + var(--safe-left));
+        right: calc(12px + var(--safe-right));
+        bottom: calc(12px + var(--safe-bottom) + var(--bottom-nav-height));
       }
 
       .toast {

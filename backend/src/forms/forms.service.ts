@@ -20,6 +20,7 @@ import { fillTokens, fillTokensMultiline } from '../shared/contact-tokens';
 import { SettingsService } from '../settings/settings.service';
 import { MailService } from '../mail/mail.service';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
+import { PushService } from '../notifications/push.service';
 
 /** Metadatos de la petición pública que sirven para trazar el origen. */
 export interface SubmitContext {
@@ -82,6 +83,7 @@ export class FormsService {
     private settings: SettingsService,
     private mail: MailService,
     private templates: WhatsAppTemplatesService,
+    private push: PushService,
   ) {}
 
   // ─── CRUD interno ─────────────────────────────────────────────────────────
@@ -297,6 +299,16 @@ export class FormsService {
     // Las respuestas automáticas no bloquean ni pueden tumbar el registro: el
     // visitante ya envió sus datos y guardarlos es lo que de verdad importa.
     await this.sendAutoReplies(form, customer);
+
+    // Aviso al equipo. Mismo criterio que las respuestas automáticas: sin await
+    // y con el error tragado, el lead ya está guardado.
+    void this.push
+      .sendToTenantModule(tid, 'forms', {
+        title: 'Nuevo registro',
+        body: `${customer.name || customer.phone || customer.email || 'Alguien'} se registró en ${form.name}`,
+        data: { route: '/forms', formId: String(form._id), customerId: String(customer._id) },
+      })
+      .catch(() => undefined);
 
     return {
       ok: true,

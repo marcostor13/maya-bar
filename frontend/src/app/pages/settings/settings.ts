@@ -8,11 +8,12 @@ import { AccountsApiService } from '../../core/api/accounts-api.service';
 import { TenantSettings } from '../../shared/models/accounts.model';
 import { WhatsappSettingsComponent } from './whatsapp-settings';
 import { InstagramSettingsComponent } from './instagram-settings';
+import { NotificationsSettingsComponent } from './notifications-settings';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, WhatsappSettingsComponent, InstagramSettingsComponent],
+  imports: [FormsModule, LucideAngularModule, WhatsappSettingsComponent, InstagramSettingsComponent, NotificationsSettingsComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -21,6 +22,9 @@ import { InstagramSettingsComponent } from './instagram-settings';
           <p class="page-subtitle">Integraciones y ajustes de la plataforma</p>
         </div>
       </div>
+
+      <!-- Notificaciones push (solo visible dentro de la app nativa) -->
+      <app-notifications-settings />
 
       <!-- WhatsApp Accounts Card -->
       <app-whatsapp-settings (defaultProviderChange)="onWaProviderChange($event)" />

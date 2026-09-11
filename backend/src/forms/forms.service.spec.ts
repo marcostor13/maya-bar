@@ -10,6 +10,7 @@ import { ContactList } from '../lists/contact-list.schema';
 import { SettingsService } from '../settings/settings.service';
 import { MailService } from '../mail/mail.service';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
+import { PushService } from '../notifications/push.service';
 
 const tenantId = new Types.ObjectId();
 const formId = new Types.ObjectId();
@@ -47,6 +48,7 @@ describe('FormsService.submit', () => {
   let mockSettings: { sendWhatsAppTemplate: jest.Mock };
   let mockMail: { sendCampaign: jest.Mock };
   let mockTemplates: { resolveSendHeader: jest.Mock };
+  let mockPush: { sendToTenantModule: jest.Mock };
 
   const form = {
     _id: formId,
@@ -133,6 +135,7 @@ describe('FormsService.submit', () => {
     mockTemplates = {
       resolveSendHeader: jest.fn().mockResolvedValue(undefined),
     };
+    mockPush = { sendToTenantModule: jest.fn().mockResolvedValue(0) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -147,6 +150,7 @@ describe('FormsService.submit', () => {
         { provide: SettingsService, useValue: mockSettings },
         { provide: MailService, useValue: mockMail },
         { provide: WhatsAppTemplatesService, useValue: mockTemplates },
+        { provide: PushService, useValue: mockPush },
       ],
     }).compile();
 

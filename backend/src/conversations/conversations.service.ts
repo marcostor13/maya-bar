@@ -23,6 +23,7 @@ import { AiAgentsService } from '../ai-agents/ai-agents.service';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
+import { PushService } from '../notifications/push.service';
 
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
@@ -101,6 +102,20 @@ const AI_HINT_BY_TYPE: Record<MessageType, string> = {
   unsupported: '[El cliente envió un mensaje que no se pudo interpretar]',
 };
 
+/** Lo mismo, pero redactado para la notificación del sistema. */
+const PUSH_HINT_BY_TYPE: Record<MessageType, string> = {
+  text: 'Nuevo mensaje',
+  image: '📷 Foto',
+  video: '🎥 Video',
+  audio: '🎧 Audio',
+  voice: '🎤 Nota de voz',
+  document: '📄 Documento',
+  sticker: 'Sticker',
+  location: '📍 Ubicación',
+  contact: '👤 Contacto',
+  unsupported: 'Nuevo mensaje',
+};
+
 @Injectable()
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
@@ -115,6 +130,7 @@ export class ConversationsService {
     private agents: AiAgentsService,
     private uploads: UploadService,
     private gateway: ConversationsGateway,
+    private push: PushService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -550,6 +566,11 @@ export class ConversationsService {
     await this.touchConversation(conv, msg);
     this.gateway.emitMessage(tenantId, msg);
 
+    // El websocket solo llega a quien tenga la bandeja abierta; la push es lo
+    // que avisa con la app cerrada. Solo para mensajes de cliente: los ecos son
+    // del propio negocio.
+    if (!isEcho) void this.notifyInbound(conv, msg);
+
     if (isEcho) {
       // Contestaron desde el móvil: el agente se aparta para no pisar a la persona.
       if (conv.autoReply) {
@@ -563,6 +584,34 @@ export class ConversationsService {
 
     if (!conv.autoReply || conv.status === 'closed') return;
     await this.runAgent(conv, msg, params.resolveAgent, params.typing);
+  }
+
+  /**
+   * Notifica un mensaje entrante a quien tenga acceso a la bandeja. Se llama
+   * sin `await`: una push que falle no puede romper la recepción del mensaje.
+   */
+  private async notifyInbound(conv: Conversation, msg: Message): Promise<void> {
+    try {
+      const who = conv.contactName?.trim() || conv.contact;
+      await this.push.sendToTenantModule(conv.tenantId, 'inbox', {
+        title: who,
+        body: this.pushPreview(msg),
+        data: {
+          route: '/inbox',
+          conversationId: String(conv._id),
+          channel: conv.channel,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`No se pudo notificar el mensaje entrante: ${(err as Error).message}`);
+    }
+  }
+
+  /** Resumen corto para la bandeja de notificaciones del sistema. */
+  private pushPreview(msg: Message): string {
+    const text = (msg.text ?? '').trim();
+    if (text) return text.length > 120 ? `${text.slice(0, 117)}…` : text;
+    return PUSH_HINT_BY_TYPE[msg.type] ?? 'Nuevo mensaje';
   }
 
   /** Genera y envía la respuesta del agente publicado para esta cuenta. */

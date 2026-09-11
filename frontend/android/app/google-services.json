@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "897252158776",
+    "project_id": "maya-crm-ca1b6",
+    "storage_bucket": "maya-crm-ca1b6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:897252158776:android:a048208b24978eccb565cd",
+        "android_client_info": {
+          "package_name": "site.mayacrm.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBRfmC6eY6ZNauQbH_fa-xlbB7VGFmdpu8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

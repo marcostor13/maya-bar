@@ -43,20 +43,31 @@ async function bootstrap() {
 
   const corsOrigins = configService.get<string>('CORS_ORIGINS');
   const frontendUrl = configService.get<string>('FRONTEND_URL');
+
+  // La app nativa (Capacitor) no manda el dominio del sitio como origen: con
+  // `androidScheme: 'https'` el WebView se identifica como `https://localhost`.
+  // Se añaden SIEMPRE, también cuando CORS_ORIGINS está fijado, o la app
+  // arranca pero ninguna petición pasa.
+  const nativeAppOrigins = ['https://localhost', 'capacitor://localhost'];
+
+  const configuredOrigins = corsOrigins
+    ? corsOrigins
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : frontendUrl
+      ? [
+          frontendUrl,
+          'http://localhost:4200',
+          'https://mayacrm.site',
+          'https://www.mayacrm.site',
+        ]
+      : null;
+
   app.enableCors({
-    origin: corsOrigins
-      ? corsOrigins
-          .split(',')
-          .map((o) => o.trim())
-          .filter(Boolean)
-      : frontendUrl
-        ? [
-            frontendUrl,
-            'http://localhost:4200',
-            'https://mayacrm.site',
-            'https://www.mayacrm.site',
-          ]
-        : true,
+    origin: configuredOrigins
+      ? [...new Set([...configuredOrigins, ...nativeAppOrigins])]
+      : true,
     credentials: true,
   });
   const port = configService.get<number>('PORT') || 3000;

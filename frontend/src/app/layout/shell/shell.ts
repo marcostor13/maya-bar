@@ -1,22 +1,39 @@
-import { Component, inject, signal, computed } from '@angular/core';
-import { NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { Component, inject, signal, computed, effect, DestroyRef } from '@angular/core';
+import { DOCUMENT, Location } from '@angular/common';
+import { ActivatedRoute, NavigationEnd, NavigationStart, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { AuthService } from '../../auth/auth.service';
 import { PermissionsService } from '../../auth/permissions.service';
+import { BackButtonService } from '../../core/back-button.service';
+import { NativeAppService } from '../../core/native-app.service';
+import { PushService } from '../../core/push.service';
+import { BottomTabsComponent, tabsFor } from './bottom-tabs';
 import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight, Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, Menu, X, MessagesSquare, LayoutTemplate, FileText } from 'lucide-angular';
 
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, LucideAngularModule],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, LucideAngularModule, BottomTabsComponent],
   template: `
-    <div class="shell">
+    <div class="shell" [class.has-tabs]="hasTabs()">
       <header class="mobile-topbar">
-        <button class="mobile-menu-btn" (click)="mobileOpen.set(true)" aria-label="Abrir menú">
-          <lucide-icon [img]="Menu" [size]="22" [strokeWidth]="2.5"></lucide-icon>
-        </button>
-        <img src="/logo.png" alt="BAR" class="mobile-logo-img" />
-        <div class="mobile-topbar-spacer"></div>
+        <div class="mobile-topbar-inner">
+          @if (showBack()) {
+            <button class="topbar-btn" (click)="goBack()" aria-label="Volver">
+              <lucide-icon [img]="ChevronLeft" [size]="22" [strokeWidth]="2.5"></lucide-icon>
+            </button>
+          } @else if (!hasTabs()) {
+            <button class="topbar-btn" (click)="mobileOpen.set(true)" aria-label="Abrir menú">
+              <lucide-icon [img]="Menu" [size]="22" [strokeWidth]="2.5"></lucide-icon>
+            </button>
+          }
+          @if (pageTitle()) {
+            <h1 class="topbar-title">{{ pageTitle() }}</h1>
+          } @else {
+            <img src="/logo.png" alt="Maya" class="mobile-logo-img" />
+          }
+          <div class="mobile-topbar-spacer"></div>
+        </div>
       </header>
 
       @if (mobileOpen()) {
@@ -217,6 +234,10 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
       <main class="main-content">
         <router-outlet />
       </main>
+
+      @if (hasTabs()) {
+        <app-bottom-tabs [tabs]="tabs()" (more)="mobileOpen.set(true)" />
+      }
     </div>
   `,
   styles: [`
@@ -233,14 +254,18 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
     .desktop-only { display: flex; }
     .mobile-only { display: none; }
 
-    /* ── Mobile top bar ── */
+    /* ── Mobile top bar ──
+       El alto NO puede ser fijo: con box-sizing border-box el padding de
+       safe-area se comía los 60px y el logo acababa debajo de la cámara.
+       La barra se extiende bajo el área de estado y la pinta con su propio
+       fondo, que es lo que espera Android en modo edge-to-edge. */
     .mobile-topbar {
       display: none;
       align-items: center;
       gap: 12px;
-      height: var(--mobile-topbar-height);
-      padding: 0 16px;
-      padding-top: env(safe-area-inset-top, 0);
+      height: auto;
+      min-height: calc(var(--mobile-topbar-height) + var(--safe-top));
+      padding: var(--safe-top) calc(16px + var(--safe-right)) 0 calc(16px + var(--safe-left));
       background: var(--color-white);
       border-bottom: 1px solid var(--color-border);
       position: sticky;
@@ -249,7 +274,17 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
       flex-shrink: 0;
     }
 
-    .mobile-menu-btn {
+    /* El contenido real de la barra ocupa su alto nominal, por debajo del
+       área segura. */
+    .mobile-topbar-inner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      height: var(--mobile-topbar-height);
+    }
+
+    .topbar-btn {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -261,6 +296,25 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
       background: var(--color-bg-app);
       color: var(--color-text-main);
       cursor: pointer;
+    }
+
+    .topbar-btn:active {
+      background: var(--color-border);
+    }
+
+    /* Título contextual: sustituye al logo dentro de la app, que es lo que se
+       espera de una barra superior nativa. */
+    .topbar-title {
+      margin: 0;
+      font-family: var(--font-heading);
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--color-text-main);
+      letter-spacing: -0.01em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
     }
 
     .mobile-logo-img {
@@ -279,7 +333,9 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
 
     .shell {
       display: flex;
-      height: 100vh;
+      /* dvh y no vh: en Android la barra de gestos y el teclado cambian el
+         viewport, y vh deja un hueco muerto al final. */
+      height: 100dvh;
       overflow: hidden;
       background-color: var(--color-bg-app);
     }
@@ -520,8 +576,13 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
     .main-content {
       flex: 1;
       overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
       background: var(--color-bg-app);
       min-width: 0;
+      /* Barra de gestos de Android: sin esto el último bloque de cada página
+         queda tapado. */
+      padding-bottom: var(--safe-bottom);
     }
 
     /* ── Mobile layout (≤968px) ── */
@@ -548,7 +609,11 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
         max-width: 300px;
         transform: translateX(-100%);
         box-shadow: var(--shadow-lg);
-        padding-top: env(safe-area-inset-top, 0);
+        /* El drawer cubre toda la pantalla, incluidas las áreas del sistema:
+           su cabecera y su pie se separan del notch y de la barra de gestos. */
+        padding-top: var(--safe-top);
+        padding-bottom: var(--safe-bottom);
+        padding-left: var(--safe-left);
       }
 
       .sidebar.collapsed {
@@ -590,12 +655,25 @@ import { LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, 
         width: 100%;
       }
 
+      /* Con la barra de pestañas el hueco inferior ya lo reserva la propia
+         barra: dejarlo también aquí duplicaría el margen. */
+      .shell.has-tabs .main-content {
+        padding-bottom: 0;
+      }
+
       .nav-item, .logout-btn {
         min-height: 44px;
       }
 
-      .mobile-menu-btn {
+      .topbar-btn {
         min-height: 44px;
+      }
+    }
+
+    /* En escritorio manda el menú lateral: la barra de pestañas se oculta. */
+    @media (min-width: 969px) {
+      app-bottom-tabs {
+        display: none;
       }
     }
   `],
@@ -604,6 +682,12 @@ export class ShellComponent {
   private auth = inject(AuthService);
   private permissions = inject(PermissionsService);
   private router = inject(Router);
+  private activatedRoute = inject(ActivatedRoute);
+  private location = inject(Location);
+  private document = inject(DOCUMENT);
+  private backButton = inject(BackButtonService);
+  private native = inject(NativeAppService);
+  private push = inject(PushService);
 
   // Icons
   readonly Building2 = Building2;
@@ -631,15 +715,73 @@ export class ShellComponent {
   mobileOpen = signal(false);
   user = this.auth.currentUser;
 
+  /** Título de la ruta activa (`data.title`), para la barra superior móvil. */
+  pageTitle = signal('');
+  private currentPath = signal('');
+
   constructor() {
     // El menú no puede pintarse antes de saber qué módulos tiene el usuario.
     void this.permissions.load();
+
+    // Si el permiso ya estaba concedido, vuelve a registrar el token: FCM lo
+    // rota y el guardado en el servidor puede haber caducado.
+    void this.push.init();
     this.router.events.pipe(filter(e => e instanceof NavigationStart)).subscribe(() => {
       this.mobileOpen.set(false);
     });
+
+    this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
+      this.pageTitle.set(this.titleOfActiveRoute());
+      this.currentPath.set(this.router.url.split('?')[0].split('#')[0]);
+    });
+    this.pageTitle.set(this.titleOfActiveRoute());
+    this.currentPath.set(this.router.url.split('?')[0].split('#')[0]);
+
+    // El botón físico de atrás cierra el drawer antes de navegar.
+    const unregister = this.backButton.register(() => {
+      if (!this.mobileOpen()) return false;
+      this.mobileOpen.set(false);
+      return true;
+    });
+
+    // `--bottom-nav-height` la leen componentes fuera del Shell (los toasts)
+    // para no quedar tapados por la barra de pestañas.
+    const root = this.document.documentElement;
+    const stop = effect(() => root.classList.toggle('has-bottom-nav', this.hasTabs()));
+
+    inject(DestroyRef).onDestroy(() => {
+      unregister();
+      stop.destroy();
+      root.classList.remove('has-bottom-nav');
+    });
+  }
+
+  private titleOfActiveRoute(): string {
+    let route = this.activatedRoute.root;
+    while (route.firstChild) route = route.firstChild;
+    return (route.snapshot.data?.['title'] as string | undefined) ?? '';
   }
 
   private role = computed(() => this.user()?.role ?? '');
+
+  /** Pestañas disponibles; vacías para SUPERADMIN y en escritorio se ocultan. */
+  tabs = computed(() => tabsFor(this.role(), this.permissions));
+
+  /** Con una sola pestaña la barra no aporta nada: se queda el menú lateral. */
+  hasTabs = computed(() => this.tabs().length >= 2);
+
+  /**
+   * La flecha de volver aparece en las pantallas que no son raíz de pestaña
+   * (por ejemplo el detalle de un evento o Configuración, que vive en "Más").
+   */
+  showBack = computed(() =>
+    this.hasTabs() && !this.tabs().some((t) => t.route === this.currentPath()),
+  );
+
+  goBack() {
+    void this.native.tap();
+    this.location.back();
+  }
 
   /**
    * La visibilidad ya no depende del rol sino de los módulos que la empresa le
@@ -684,8 +826,12 @@ export class ShellComponent {
     return src.substring(0, 2).toUpperCase();
   }
 
-  logout() {
+  async logout() {
+    // La baja del dispositivo va ANTES de borrar el token de sesión: el
+    // endpoint está autenticado. Si no, el siguiente usuario de este móvil
+    // recibiría las notificaciones del anterior.
+    await this.push.disable();
     this.auth.logout();
-    this.router.navigate(['/login']);
+    void this.router.navigate(['/login']);
   }
 }
