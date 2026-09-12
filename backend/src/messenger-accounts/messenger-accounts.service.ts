@@ -200,7 +200,7 @@ export class MessengerAccountsService {
     try {
       await this.ms.sendMessage(
         recipientId.trim(),
-        '✅ Mensaje de prueba desde MAYA Platform',
+        '✅ Mensaje de prueba desde Maya CRM',
         config,
       );
       return { success: true };

@@ -54,7 +54,10 @@ export class AiService {
   }
 
   async chat(prompt: string, options: AiOptions = {}): Promise<string> {
-    const { provider = 'auto', maxTokens = 1024 } = options;
+    const provider = options.provider ?? 'auto';
+    // `??` y no un default de desestructuración: los agentes viejos guardan
+    // `maxTokens: null` y OpenAI rechaza el body con un null ahí.
+    const maxTokens = options.maxTokens ?? 1024;
     const messages: ChatMessage[] = [{ role: 'user', content: prompt }];
 
     if (provider === 'deepseek' || (provider === 'auto' && this.deepseekKey)) {
@@ -75,7 +78,7 @@ export class AiService {
       return this.chatProvider.chat({
         provider: 'claude',
         apiKey: this.claudeKey,
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5',
         maxTokens,
         messages,
         errorLabel: 'Claude',
@@ -121,7 +124,9 @@ export class AiService {
     messages: ChatMessage[],
     options: AiOptions = {},
   ): Promise<string> {
-    const { provider = 'auto', maxTokens = 1024, temperature = 0.4 } = options;
+    const provider = options.provider ?? 'auto';
+    const maxTokens = options.maxTokens ?? 1024;
+    const temperature = options.temperature ?? 0.4;
     // trata cadena vacía como "usar el modelo por defecto"
     const model = options.model?.trim() || undefined;
     const keys = this.resolveKeys(options.apiKeys);
@@ -135,6 +140,17 @@ export class AiService {
       temperature,
       messages,
     });
+  }
+
+  /** Modelos que la API key del tenant puede usar hoy en ese proveedor. */
+  async listModels(
+    provider: 'deepseek' | 'claude' | 'openai' | 'gemini',
+    apiKeys?: AiApiKeys,
+  ): Promise<string[]> {
+    const keys = this.resolveKeys(apiKeys);
+    const key = keys[provider];
+    if (!key) throw new BadRequestException(`No hay API key de ${provider}`);
+    return this.chatProvider.listModels(provider, key);
   }
 
   parseJson<T>(text: string): T {

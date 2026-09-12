@@ -80,7 +80,7 @@ export interface DesignMusic {
 
 export interface EmailDesign {
   subject: string;          // asunto ('' = default; admite {eventTitle})
-  headerImageUrl: string;   // imagen de cabecera ('' = logo MAYA)
+  headerImageUrl: string;   // imagen de cabecera ('' = logo de Maya CRM)
   bannerImageUrl: string;   // banner opcional bajo la cabecera
   title: string;            // encabezado principal
   intro: string;            // párrafo de introducción (admite {name} {eventTitle})
@@ -162,7 +162,7 @@ const DEFAULT_EMAIL: EmailDesign = {
   textColor: '#111827',
   ticketLabel: 'Tu Código de Acceso',
   footerNote: 'Presenta este código al llegar para tu check-in.',
-  footerText: '© 2026 MAYA Platform. Gestionado por BAR.',
+  footerText: '© 2026 Maya CRM. Gestionado por BAR.',
   showTicket: true,
 };
 
@@ -491,7 +491,7 @@ function rgbaOpacity(rgba: string): number {
               <input class="d-input" type="text"
                 [value]="emailDesign().subject"
                 (input)="updateEmail('subject', $any($event.target).value)"
-                placeholder="Confirmación: {eventTitle} - MAYA" />
+                placeholder="Confirmación: {eventTitle} - Maya CRM" />
             </div>
             <div class="d-prop">
               <label>Título</label>
@@ -514,7 +514,7 @@ function rgbaOpacity(rgba: string): number {
               <select class="d-input"
                 [value]="emailDesign().headerImageUrl"
                 (change)="updateEmail('headerImageUrl', $any($event.target).value)">
-                <option value="">— Logo MAYA por defecto —</option>
+                <option value="">— Logo de Maya CRM por defecto —</option>
                 @for (f of imageFiles(); track f.url) {
                   <option [value]="f.url">{{ f.name }}</option>
                 }
@@ -707,7 +707,7 @@ function rgbaOpacity(rgba: string): number {
                     @if (emailDesign().headerImageUrl) {
                       <img [src]="emailDesign().headerImageUrl" alt="" class="ep-header-img" />
                     } @else {
-                      <span class="ep-logo">MAYA</span>
+                      <span class="ep-logo">MAYA CRM</span>
                     }
                   </div>
                   @if (emailDesign().bannerImageUrl) {

@@ -126,7 +126,7 @@ export class SettingsService {
     try {
       await this.wa.sendMessage(
         formattedPhone,
-        '✅ Mensaje de prueba desde MAYA Platform',
+        '✅ Mensaje de prueba desde Maya CRM',
         config,
       );
       return {

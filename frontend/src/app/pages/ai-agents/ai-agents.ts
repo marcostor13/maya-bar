@@ -62,6 +62,13 @@ interface Agent {
   published: boolean;
 }
 
+interface ModelOption {
+  id: string;
+  label: string;
+  note?: string;
+  recommended?: boolean;
+}
+
 interface KDoc {
   _id: string;
   filename: string;
@@ -528,7 +535,7 @@ function blankAgent(): Agent {
             @if (section() === 'advanced') {
               <div class="field">
                 <label class="field-label">Proveedor de IA</label>
-                <select class="select" [(ngModel)]="form.provider">
+                <select class="select" [(ngModel)]="form.provider" (ngModelChange)="onProviderChange($event)">
                   <option value="auto">Automático</option>
                   <option value="openai">OpenAI</option>
                   <option value="claude">Claude (Anthropic)</option>
@@ -537,8 +544,30 @@ function blankAgent(): Agent {
                 </select>
               </div>
               <div class="field">
-                <label class="field-label">Modelo (opcional)</label>
-                <input class="input" [(ngModel)]="form.aiModel" placeholder="Dejar vacío para el predeterminado" />
+                <label class="field-label">Modelo</label>
+                @if (form.provider === 'auto') {
+                  <p class="field-hint">Elige un proveedor para ver sus modelos. En automático se usa el primero que tenga API key configurada, con su modelo predeterminado.</p>
+                } @else if (modelsLoading()) {
+                  <p class="field-hint">Consultando los modelos disponibles…</p>
+                } @else {
+                  <select class="select" [(ngModel)]="form.aiModel" (ngModelChange)="onModelChange($event)">
+                    <option value="">Predeterminado del proveedor</option>
+                    @for (m of models(); track m.id) {
+                      <option [value]="m.id">{{ m.label }}{{ m.recommended ? ' — recomendado' : '' }}</option>
+                    }
+                    <option value="__custom">Otro (escribir el id)…</option>
+                  </select>
+                  @if (customModel()) {
+                    <input class="input" style="margin-top: 10px;" [(ngModel)]="form.aiModel"
+                           placeholder="Id exacto del modelo, ej. gpt-5-mini" />
+                  }
+                  @if (selectedModelNote(); as note) {
+                    <p class="field-hint">{{ note }}</p>
+                  }
+                  @if (modelsSource() === 'catalog') {
+                    <p class="field-hint">No se pudo consultar el listado del proveedor (falta la API key o no responde): se muestran los modelos sugeridos.</p>
+                  }
+                }
               </div>
               <div class="field-row">
                 <div class="field">
@@ -796,6 +825,12 @@ export class AiAgentsComponent implements OnInit {
   newFileAlias = '';
   newFileName = '';
 
+  // modelos disponibles del proveedor elegido (Avanzado)
+  models = signal<ModelOption[]>([]);
+  modelsSource = signal<'live' | 'catalog'>('catalog');
+  modelsLoading = signal(false);
+  customModel = signal(false);
+
   // playground
   playgroundAgent = signal<Agent | null>(null);
   chat = signal<{ role: 'user' | 'assistant'; content: string }[]>([]);
@@ -821,6 +856,48 @@ export class AiAgentsComponent implements OnInit {
       next: a => { this.agents.set(a); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
+  }
+
+  /** Al cambiar de proveedor el modelo elegido deja de ser válido. */
+  onProviderChange(provider: string) {
+    this.form.aiModel = '';
+    this.customModel.set(false);
+    this.loadModels(provider);
+  }
+
+  onModelChange(value: string) {
+    if (value === '__custom') {
+      this.customModel.set(true);
+      this.form.aiModel = '';
+    } else {
+      this.customModel.set(false);
+    }
+  }
+
+  /** Nota del modelo elegido (para qué sirve / cuánto cuesta). */
+  selectedModelNote(): string | null {
+    return this.models().find(m => m.id === this.form.aiModel)?.note ?? null;
+  }
+
+  /** Pregunta al backend qué modelos admite hoy la API key del tenant. */
+  loadModels(provider: string) {
+    if (!provider || provider === 'auto') { this.models.set([]); return; }
+    this.modelsLoading.set(true);
+    this.http
+      .get<{ source: 'live' | 'catalog'; models: ModelOption[] }>(
+        `${API}/ai-agents/models`, { params: { provider } },
+      )
+      .subscribe({
+        next: r => {
+          this.models.set(r.models);
+          this.modelsSource.set(r.source);
+          this.modelsLoading.set(false);
+          // un modelo guardado que el proveedor ya no sirve se edita a mano
+          const current = this.form.aiModel;
+          this.customModel.set(!!current && !r.models.some(m => m.id === current));
+        },
+        error: () => { this.models.set([]); this.modelsLoading.set(false); },
+      });
   }
 
   /** Cuentas conectadas en Configuración — acá solo se seleccionan (lectura). */
@@ -853,6 +930,8 @@ export class AiAgentsComponent implements OnInit {
     this.newFileAlias = '';
     this.newFileName = '';
     this.section.set('general');
+    this.models.set([]);
+    this.customModel.set(false);
     this.drawerOpen.set(true);
   }
 
@@ -876,6 +955,7 @@ export class AiAgentsComponent implements OnInit {
     this.newFileAlias = '';
     this.newFileName = '';
     this.drawerOpen.set(true);
+    this.loadModels(this.form.provider);
     this.loadDocs(a._id);
     this.loadFiles(a._id);
   }

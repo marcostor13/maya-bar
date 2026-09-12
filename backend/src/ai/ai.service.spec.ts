@@ -57,7 +57,7 @@ describe('AiService', () => {
       expect(mockProvider.chat).toHaveBeenCalledWith({
         provider: 'claude',
         apiKey: 'ck',
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5',
         maxTokens: 300,
         messages: [{ role: 'user', content: 'hola' }],
         errorLabel: 'Claude',

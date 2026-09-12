@@ -28,7 +28,7 @@ export class SeoService {
   apply(cfg: SeoConfig): void {
     const url = `${cfg.siteUrl.replace(/\/$/, '')}${cfg.path}`;
     const image = cfg.image ? `${cfg.siteUrl.replace(/\/$/, '')}${cfg.image}` : undefined;
-    const siteName = cfg.siteName ?? 'Maya';
+    const siteName = cfg.siteName ?? 'Maya CRM';
 
     this.title.setTitle(cfg.title);
 

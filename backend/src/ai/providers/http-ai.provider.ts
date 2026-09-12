@@ -5,6 +5,21 @@ import {
   AiProviderId,
 } from './ai-provider.interface';
 
+/** Si el agente no trae un tope (o llega en null desde la base), este se usa. */
+const DEFAULT_MAX_TOKENS = 1024;
+
+/**
+ * Modelos de razonamiento de OpenAI: rechazan `temperature` distinto de 1 con
+ * `Unsupported value: 'temperature'`, así que el parámetro no se envía.
+ */
+const OPENAI_FIXED_TEMPERATURE = /^(gpt-5|o\d)/i;
+
+/** Respuesta del endpoint de modelos: `data` en OpenAI/DeepSeek/Anthropic, `models` en Gemini. */
+interface ModelListResponse {
+  data?: { id?: string }[];
+  models?: { name?: string; supportedGenerationMethods?: string[] }[];
+}
+
 /** Etiquetas por defecto de los mensajes de error (idénticas al código original). */
 const DEFAULT_ERROR_LABELS: Record<AiProviderId, string> = {
   deepseek: 'deepseek',
@@ -26,6 +41,63 @@ export class HttpAiProvider implements AiChatProvider {
     return this.callOpenAiCompatible(req);
   }
 
+  /**
+   * Lista los modelos que el proveedor sirve para esa API key. Cada uno expone
+   * su propio endpoint; se devuelve solo el id, que es lo que guarda el agente.
+   */
+  async listModels(provider: AiProviderId, apiKey: string): Promise<string[]> {
+    if (!apiKey) return [];
+
+    if (provider === 'claude') {
+      const data = await this.getJson(
+        'https://api.anthropic.com/v1/models?limit=100',
+        { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        'Claude',
+      );
+      return this.ids(data.data);
+    }
+
+    if (provider === 'gemini') {
+      const data = await this.getJson(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=200`,
+        {},
+        'Gemini',
+      );
+      return (data.models ?? [])
+        .filter((m) =>
+          (m.supportedGenerationMethods ?? []).includes('generateContent'),
+        )
+        .map((m) => (m.name ?? '').replace(/^models\//, ''))
+        .filter(Boolean);
+    }
+
+    const url =
+      provider === 'deepseek'
+        ? 'https://api.deepseek.com/models'
+        : 'https://api.openai.com/v1/models';
+    const data = await this.getJson(
+      url,
+      { Authorization: `Bearer ${apiKey}` },
+      this.errorLabel({ provider } as AiChatRequest),
+    );
+    return this.ids(data.data);
+  }
+
+  private async getJson(
+    url: string,
+    headers: Record<string, string>,
+    label: string,
+  ): Promise<ModelListResponse> {
+    const res = await fetch(url, { headers });
+    if (!res.ok)
+      throw new BadRequestException(`${label} API error: ${await res.text()}`);
+    return (await res.json()) as ModelListResponse;
+  }
+
+  private ids(list?: { id?: string }[]): string[] {
+    return (list ?? []).map((m) => m.id ?? '').filter(Boolean);
+  }
+
   private errorLabel(req: AiChatRequest): string {
     return req.errorLabel ?? DEFAULT_ERROR_LABELS[req.provider];
   }
@@ -44,8 +116,8 @@ export class HttpAiProvider implements AiChatProvider {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: req.model ?? 'claude-haiku-4-5-20251001',
-        max_tokens: req.maxTokens,
+        model: req.model ?? 'claude-haiku-4-5',
+        max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: req.temperature,
         system: system || undefined,
         messages: turns.map((m) => ({ role: m.role, content: m.content })),
@@ -83,7 +155,7 @@ export class HttpAiProvider implements AiChatProvider {
           contents,
           generationConfig: {
             temperature: req.temperature,
-            maxOutputTokens: req.maxTokens,
+            maxOutputTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
           },
         }),
       },
@@ -106,6 +178,9 @@ export class HttpAiProvider implements AiChatProvider {
         : 'https://api.openai.com/v1/chat/completions';
     const defaultModel =
       req.provider === 'deepseek' ? 'deepseek-v4-flash' : 'gpt-4o-mini';
+    const model = req.model ?? defaultModel;
+    const isOpenAi = req.provider === 'openai';
+    const maxTokens = req.maxTokens ?? DEFAULT_MAX_TOKENS;
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -113,9 +188,16 @@ export class HttpAiProvider implements AiChatProvider {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: req.model ?? defaultModel,
-        max_tokens: req.maxTokens,
-        temperature: req.temperature,
+        model,
+        // OpenAI dejó de aceptar `max_tokens` en Chat Completions;
+        // `max_completion_tokens` lo entienden tanto los modelos nuevos como
+        // los antiguos. DeepSeek sigue con el nombre clásico.
+        ...(isOpenAi
+          ? { max_completion_tokens: maxTokens }
+          : { max_tokens: maxTokens }),
+        ...(isOpenAi && OPENAI_FIXED_TEMPERATURE.test(model)
+          ? {}
+          : { temperature: req.temperature }),
         messages: req.messages,
       }),
     });

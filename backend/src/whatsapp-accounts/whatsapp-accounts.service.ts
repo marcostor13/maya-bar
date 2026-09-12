@@ -289,7 +289,7 @@ export class WhatsAppAccountsService {
     try {
       await this.wa.sendMessage(
         formatted,
-        '✅ Mensaje de prueba desde MAYA Platform',
+        '✅ Mensaje de prueba desde Maya CRM',
         config,
       );
       return { success: true, formattedPhone: formatted };
