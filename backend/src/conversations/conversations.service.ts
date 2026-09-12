@@ -44,6 +44,13 @@ const DEFAULT_PAGE_SIZE = 50;
 /** Tope de etiquetas por contacto: la ficha deja de ser legible más allá. */
 const MAX_TAGS = 12;
 
+/**
+ * Cada cuánto se refresca la foto de perfil. Las URLs firmadas de Meta duran
+ * más que esto; con tres días se renuevan de sobra sin convertir cada mensaje
+ * entrante en una llamada extra a su API.
+ */
+const AVATAR_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
 /** Cuenta conectada tal como la consume el selector de la bandeja de entrada. */
 export interface InboxAccount {
   _id: string;
@@ -78,6 +85,12 @@ export interface InboundMessage {
   contact: string;
   chatId?: string;
   contactName?: string;
+  /**
+   * Foto de perfil, solo en Messenger e Instagram. WhatsApp Cloud API no la
+   * expone: el webhook trae únicamente `profile.name`, y el único
+   * `profile_picture_url` de su API es el del propio número de empresa.
+   */
+  contactAvatar?: string;
   externalId?: string;
   type: MessageType;
   text?: string;
@@ -845,7 +858,11 @@ export class ConversationsService {
       channel: 'instagram',
       tenantId: String(account.tenantId),
       accountId: String(account._id),
-      inbound,
+      inbound: await this.withInstagramProfile(
+        String(account._id),
+        inbound,
+        this.igAccounts.toConfig(account),
+      ),
       downloadMedia: (media) => this.downloadPublicMedia(media),
       resolveAgent: () =>
         this.agents.findPublishedByInstagramAccount(String(account._id)),
@@ -879,24 +896,65 @@ export class ConversationsService {
    * pedirlo en cada mensaje sería una llamada extra a Meta por mensaje.
    * Si Meta no lo da, la conversación sigue con el PSID.
    */
+  /** Igual que en Messenger: el webhook de Instagram solo trae el IGSID. */
+  private async withInstagramProfile(
+    accountId: string,
+    inbound: InboundMessage,
+    config: IgConfig,
+  ): Promise<InboundMessage> {
+    if (inbound.fromMe) return inbound;
+    const known = await this.convModel
+      .findOne({
+        channel: 'instagram',
+        accountId: new Types.ObjectId(accountId),
+        contact: inbound.contact,
+      })
+      .select('contactName contactAvatarAt')
+      .exec();
+
+    if (
+      (inbound.contactName || known?.contactName) &&
+      !this.avatarCaducado(known?.contactAvatarAt)
+    )
+      return inbound;
+
+    const profile = await this.ig.fetchContactProfile(inbound.contact, config);
+    return {
+      ...inbound,
+      contactName: inbound.contactName ?? profile.name,
+      contactAvatar: profile.avatar,
+    };
+  }
+
   private async withMessengerProfile(
     accountId: string,
     inbound: InboundMessage,
     config: MsConfig,
   ): Promise<InboundMessage> {
-    if (inbound.contactName || inbound.fromMe) return inbound;
+    if (inbound.fromMe) return inbound;
     const known = await this.convModel
       .findOne({
         channel: 'messenger',
         accountId: new Types.ObjectId(accountId),
         contact: inbound.contact,
       })
-      .select('contactName')
+      .select('contactName contactAvatarAt')
       .exec();
-    if (known?.contactName) return inbound;
+
+    // Se pide el perfil si falta el nombre o si la foto ya está rancia. No en
+    // cada mensaje: sería una llamada extra a Meta por mensaje recibido.
+    if (
+      (inbound.contactName || known?.contactName) &&
+      !this.avatarCaducado(known?.contactAvatarAt)
+    )
+      return inbound;
 
     const profile = await this.ms.fetchContactProfile(inbound.contact, config);
-    return profile.name ? { ...inbound, contactName: profile.name } : inbound;
+    return {
+      ...inbound,
+      contactName: inbound.contactName ?? profile.name,
+      contactAvatar: profile.avatar,
+    };
   }
 
   /** Actualiza el estado de un mensaje saliente a partir del ack del proveedor. */
@@ -1295,6 +1353,12 @@ export class ConversationsService {
     return recent !== null;
   }
 
+  /** ¿Toca volver a pedir la foto? Sin fecha, sí: nunca se trajo. */
+  private avatarCaducado(traidaEl?: Date): boolean {
+    if (!traidaEl) return true;
+    return Date.now() - traidaEl.getTime() > AVATAR_TTL_MS;
+  }
+
   private async upsertConversation(
     channel: ConversationChannel,
     tenantId: string,
@@ -1311,6 +1375,13 @@ export class ConversationsService {
       if (inbound.contactName && inbound.contactName !== existing.contactName) {
         existing.contactName = inbound.contactName;
       }
+      // La foto SIEMPRE se pisa, aunque no haya cambiado de persona: las URLs
+      // de Meta llevan firma temporal y caducan. Refrescarla en cada mensaje
+      // entrante es lo que la mantiene viva sin re-hospedar la imagen.
+      if (inbound.contactAvatar) {
+        existing.contactAvatar = inbound.contactAvatar;
+        existing.contactAvatarAt = new Date();
+      }
       if (inbound.chatId && inbound.chatId !== existing.chatId)
         existing.chatId = inbound.chatId;
       return existing;
@@ -1320,6 +1391,8 @@ export class ConversationsService {
       tenantId: new Types.ObjectId(tenantId),
       chatId: inbound.chatId,
       contactName: inbound.contactName,
+      contactAvatar: inbound.contactAvatar,
+      contactAvatarAt: inbound.contactAvatar ? new Date() : undefined,
       autoReply: true,
       status: 'open',
       unreadCount: 0,

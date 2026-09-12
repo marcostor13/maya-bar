@@ -34,8 +34,17 @@ export class Conversation extends Document {
   @Prop()
   contactName?: string;
 
+  /** Solo Messenger e Instagram; WhatsApp Cloud API no expone la foto. */
   @Prop()
   contactAvatar?: string;
+
+  /**
+   * Cuándo se trajo la foto. Las URLs de Meta llevan firma temporal, así que
+   * pasada la ventana se vuelve a pedir el perfil; sin esta marca habría que
+   * elegir entre llamar a Meta en cada mensaje o dejar avatares rotos.
+   */
+  @Prop({ type: Date })
+  contactAvatarAt?: Date;
 
   @Prop({ type: Date, default: Date.now, index: true })
   lastMessageAt: Date;

@@ -100,6 +100,42 @@ export class InstagramService {
     }
   }
 
+  /**
+   * Nombre y foto del contacto a partir de su IGSID.
+   *
+   * Instagram sí lo expone —a diferencia de WhatsApp Cloud API— porque el
+   * perfil de Instagram ya es público: la foto se ve entrando a la cuenta, así
+   * que dársela a la empresa con la que el usuario está hablando no añade nada.
+   *
+   * La URL que devuelve lleva firma temporal: hay que volver a pedirla cada
+   * cierto tiempo en vez de guardarla para siempre.
+   */
+  async fetchContactProfile(
+    igsid: string,
+    config: IgConfig,
+  ): Promise<{ name?: string; avatar?: string }> {
+    if (!config.pageAccessToken || !igsid) return {};
+    try {
+      const data = await this.graph.get<{
+        name?: string;
+        username?: string;
+        profile_pic?: string;
+      }>(`/${igsid}`, {
+        host: IG_HOST,
+        accessToken: config.pageAccessToken,
+        params: { fields: 'name,username,profile_pic' },
+      });
+      return {
+        // El nombre puede no estar; el usuario siempre sirve de etiqueta.
+        name: data.name || (data.username ? `@${data.username}` : undefined),
+        avatar: data.profile_pic,
+      };
+    } catch {
+      // El perfil es opcional: sin él la conversación se muestra con el IGSID.
+      return {};
+    }
+  }
+
   async getStatus(config: IgConfig): Promise<IgStatus> {
     if (!config.igBusinessAccountId || !config.pageAccessToken) {
       return {

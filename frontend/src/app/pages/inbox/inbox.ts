@@ -85,6 +85,8 @@ interface Conv {
   accountId: string;
   contact: string;
   contactName?: string;
+  /** Foto de perfil; solo Messenger e Instagram la publican. */
+  contactAvatar?: string;
   chatId?: string;
   lastMessageAt: string;
   lastMessagePreview: string;
@@ -218,7 +220,12 @@ const EMOJIS = [
                 (click)="openConversation(c)"
               >
                 <div class="avatar" [attr.data-channel]="c.channel">
-                  {{ initials(c) }}
+                  @if (c.contactAvatar && !avatarRoto().has(c._id)) {
+                    <img class="avatar-img" [src]="c.contactAvatar" [alt]="displayName(c)"
+                      loading="lazy" (error)="marcarAvatarRoto(c._id)" />
+                  } @else {
+                    {{ initials(c) }}
+                  }
                   <span class="channel-dot">
                     @if (c.channel === 'instagram') {
                       <lucide-icon [img]="Instagram" [size]="10" [strokeWidth]="2.6"></lucide-icon>
@@ -295,7 +302,14 @@ const EMOJIS = [
             <button class="btn-icon btn-ghost back-btn" (click)="closeThread()" aria-label="Volver">
               <lucide-icon [img]="ArrowLeft" [size]="20" [strokeWidth]="2.2"></lucide-icon>
             </button>
-            <div class="avatar" [attr.data-channel]="selected()!.channel">{{ initials(selected()!) }}</div>
+            <div class="avatar" [attr.data-channel]="selected()!.channel">
+              @if (selected()!.contactAvatar && !avatarRoto().has(selected()!._id)) {
+                <img class="avatar-img" [src]="selected()!.contactAvatar" [alt]="displayName(selected()!)"
+                  (error)="marcarAvatarRoto(selected()!._id)" />
+              } @else {
+                {{ initials(selected()!) }}
+              }
+            </div>
             <div class="thread-who">
               <span class="thread-name">{{ displayName(selected()!) }}</span>
               <span class="thread-sub">
@@ -943,6 +957,13 @@ const EMOJIS = [
     }
     .avatar[data-channel="instagram"] { background: linear-gradient(135deg, #F58529, #DD2A7B); }
     .avatar[data-channel="messenger"] { background: linear-gradient(135deg, #0866FF, #A033FF); }
+    /* La foto tapa el degradado; si no carga, queda el degradado y las
+       iniciales detrás, así que nunca se ve un hueco. */
+    .avatar-img {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      border-radius: 50%; object-fit: cover;
+    }
 
     .channel-dot {
       position: absolute; right: -2px; bottom: -2px;
@@ -2507,6 +2528,18 @@ export class InboxComponent implements OnInit, OnDestroy {
   contactHandle(c: Conv) {
     if (c.channel === 'whatsapp') return `+${c.contact}`;
     return c.channel === 'messenger' ? 'Messenger' : 'Instagram DM';
+  }
+
+  /**
+   * Conversaciones cuya foto no cargó. Las URLs de Meta llevan firma temporal:
+   * si el contacto lleva días sin escribir, la suya puede haber caducado. En
+   * vez de dejar el hueco roto se vuelve a las iniciales, y al siguiente
+   * mensaje el servidor la refresca.
+   */
+  avatarRoto = signal<Set<string>>(new Set());
+
+  marcarAvatarRoto(id: string) {
+    this.avatarRoto.update(s => new Set(s).add(id));
   }
 
   initials(c: Conv) {
