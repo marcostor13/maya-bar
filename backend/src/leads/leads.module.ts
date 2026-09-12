@@ -7,6 +7,7 @@ import { Lead, LeadSchema } from './lead.schema';
 import { LeadActivity, LeadActivitySchema } from './lead-activity.schema';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
 import { User, UserSchema } from '../users/user.schema';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -16,6 +17,9 @@ import { User, UserSchema } from '../users/user.schema';
       { name: Customer.name, schema: CustomerSchema },
       { name: User.name, schema: UserSchema },
     ]),
+    // Los recordatorios avisan por WhatsApp con la cuenta del tenant.
+    // `SettingsService` no es global, así que hay que traer su módulo.
+    SettingsModule,
   ],
   controllers: [LeadsController],
   providers: [LeadsService, LeadRemindersService],

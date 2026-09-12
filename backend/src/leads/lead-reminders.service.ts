@@ -10,6 +10,9 @@ import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
 import { SettingsService } from '../settings/settings.service';
 
+/** Pasado este margen desde el vencimiento, el aviso ya no se manda. */
+const CADUCIDAD_AVISO_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Avisa de las tareas de seguimiento cuando vencen.
  *
@@ -54,9 +57,15 @@ export class LeadRemindersService {
 
     if (!vencidas.length) return;
 
+    // Una tarea que venció hace días no se avisa: si el servicio estuvo caído,
+    // o se importan tareas antiguas, el primer barrido dispararía una avalancha
+    // de avisos de cosas que ya nadie espera. Se cierran en silencio.
+    const limite = new Date(Date.now() - CADUCIDAD_AVISO_MS);
+
     let enviados = 0;
     for (const tarea of vencidas) {
       try {
+        if (tarea.dueAt && tarea.dueAt < limite) continue;
         await this.avisar(tarea);
         enviados++;
       } catch (err) {

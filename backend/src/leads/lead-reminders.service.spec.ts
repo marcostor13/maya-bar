@@ -194,6 +194,21 @@ describe('LeadRemindersService', () => {
     expect(settings.sendWhatsApp).not.toHaveBeenCalled();
   });
 
+  it('no avisa de una tarea que venció hace días, pero la cierra', async () => {
+    const hace3dias = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const t = tarea({ dueAt: hace3dias });
+    vencidas([t]);
+    leadDevuelto({ _id: leadId, tenantId, title: 'Academia', ownerId });
+
+    await service.enviarPendientes();
+
+    // Si el servicio estuvo caído, el primer barrido no debe disparar una
+    // avalancha de avisos de cosas que ya nadie espera.
+    expect(push.sendToUser).not.toHaveBeenCalled();
+    expect(nativePush.sendToUser).not.toHaveBeenCalled();
+    expect(t.remindedAt).toBeInstanceOf(Date);
+  });
+
   it('si el lead ya no existe no avisa, pero cierra el recordatorio', async () => {
     const t = tarea();
     vencidas([t]);
