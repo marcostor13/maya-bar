@@ -344,7 +344,9 @@ describe('HttpAiProvider', () => {
   describe('listModels', () => {
     it('lists Claude models from the Anthropic endpoint', async () => {
       fetchSpy.mockResolvedValue(
-        mockResponse({ data: [{ id: 'claude-haiku-4-5' }, { id: 'claude-opus-5' }] }),
+        mockResponse({
+          data: [{ id: 'claude-haiku-4-5' }, { id: 'claude-opus-5' }],
+        }),
       );
 
       const ids = await provider.listModels('claude', 'ck');
