@@ -6,6 +6,8 @@
  * Uso:
  *   node scripts/analyze-conversations.js                        # últimos 30 días, todos los tenants
  *   node scripts/analyze-conversations.js --days 7 --tenant <id>
+ *   node scripts/analyze-conversations.js --user admin@ignia.site   # resuelve el tenant por email
+ *   node scripts/analyze-conversations.js --user admin@ignia.site --agent "Ventas" --vertical generico
  *   node scripts/analyze-conversations.js --channel whatsapp --out ../docs/reporte.md
  *   node scripts/analyze-conversations.js --llm --sample 25      # + rúbrica de ventas con IA
  *   node scripts/analyze-conversations.js --transcripts chats.jsonl
@@ -37,6 +39,9 @@ function parseArgs(argv) {
     days: DEFAULT_DAYS,
     sample: DEFAULT_SAMPLE,
     tenant: null,
+    user: null,
+    agent: null,
+    vertical: 'reservas',
     channel: null,
     limit: 0,
     out: path.join(__dirname, '../../docs/reporte-conversaciones.md'),
@@ -50,6 +55,9 @@ function parseArgs(argv) {
     if (a === '--days') args.days = Number(next());
     else if (a === '--sample') args.sample = Number(next());
     else if (a === '--tenant') args.tenant = next();
+    else if (a === '--user') args.user = next();
+    else if (a === '--agent') args.agent = next();
+    else if (a === '--vertical') args.vertical = next();
     else if (a === '--channel') args.channel = next();
     else if (a === '--limit') args.limit = Number(next());
     else if (a === '--out') args.out = path.resolve(next());
@@ -96,17 +104,53 @@ const INTENT_KEYWORDS = [
   ['reserva', RE.intent],
 ];
 
-const STAGES = [
-  'contacto',
-  'local_identificado',
-  'info_entregada',
-  'intencion_reserva',
-  'datos_capturados',
-  'confirmada',
-];
+/**
+ * Etapas del embudo por vertical. `reservas` es el negocio de discotecas
+ * (locales, box/mesa/lista); `generico` sirve para cualquier agente de venta
+ * consultiva (consulta → propuesta → intención → datos → cierre/agenda).
+ */
+const VERTICALS = {
+  reservas: {
+    stages: [
+      'contacto',
+      'local_identificado',
+      'info_entregada',
+      'intencion_reserva',
+      'datos_capturados',
+      'confirmada',
+    ],
+  },
+  generico: {
+    stages: [
+      'contacto',
+      'necesidad_expuesta',
+      'propuesta_entregada',
+      'intencion',
+      'datos_capturados',
+      'cierre',
+    ],
+  },
+};
+
+const RE_GEN = {
+  need: /\b(necesito|quiero|busco|estoy buscando|me interesa|cotiza\w*|presupuesto|proyecto|desarroll\w*|sistema|p[aá]gina|landing|app|tienda|software)\b/i,
+  proposal:
+    /\b(propuesta|cotizaci[oó]n|presupuesto|alcance|plazo|entrega|desde\s*(S\/|\$)|\$\s?\d|S\/\s?\d|inversi[oó]n)\b/i,
+  intent:
+    /\b(me interesa|avancemos|c[oó]mo seguimos|cu[aá]ndo podemos|reuni[oó]n|llamada|agendar|cita|demo|empecemos|lo tomo)\b/i,
+  email: /[\w.+-]+@[\w-]+\.[\w.]+/,
+  closed:
+    /\b(agendad[ao]|reuni[oó]n confirmada|qued[oó] agendad|te env[ií]o (el|la) (link|calendario|invitaci[oó]n)|nos vemos el|confirmad[ao] para)\b/i,
+};
 
 /** Etapa máxima alcanzada por la conversación, según lo que se dijeron. */
-function funnelStage(msgs, localNames) {
+function funnelStage(msgs, ctx) {
+  return ctx.vertical === 'generico'
+    ? genericStage(msgs)
+    : reservasStage(msgs, ctx.localNames);
+}
+
+function reservasStage(msgs, localNames) {
   let stage = 0;
   const reLocal = localNames.length
     ? new RegExp(`\\b(${localNames.map(escapeRe).join('|')})\\b`, 'i')
@@ -131,6 +175,22 @@ function funnelStage(msgs, localNames) {
     }
   }
   if (hasPhone && hasDate && hasName) stage = Math.max(stage, 4);
+  return stage;
+}
+
+function genericStage(msgs) {
+  let stage = 0;
+  for (const m of msgs) {
+    const t = m.text || '';
+    if (m.author === 'customer') {
+      if (RE_GEN.need.test(t) || t.split(/\s+/).length > 15) stage = Math.max(stage, 1);
+      if (RE_GEN.intent.test(t)) stage = Math.max(stage, 3);
+      if (RE_GEN.email.test(t) || RE.phone.test(t)) stage = Math.max(stage, 4);
+    } else if (m.author === 'agent' || m.author === 'human') {
+      if (RE_GEN.proposal.test(t)) stage = Math.max(stage, 2);
+      if (RE_GEN.closed.test(t)) stage = Math.max(stage, 5);
+    }
+  }
   return stage;
 }
 
@@ -184,7 +244,7 @@ function analyzeConversation(conv, msgs, ctx) {
     : 0;
 
   const last = ordered[ordered.length - 1];
-  const stage = funnelStage(ordered, ctx.localNames);
+  const stage = funnelStage(ordered, ctx);
 
   return {
     id: String(conv._id),
@@ -203,7 +263,7 @@ function analyzeConversation(conv, msgs, ctx) {
     takenOver: !!conv.takenOverBy,
     savedAsCustomer: !!conv.customerId,
     stage,
-    stageName: STAGES[stage],
+    stageName: ctx.stages[stage],
     unanswered: !!last && last.author === 'customer',
     ghosted: !!last && last.author !== 'customer' && stage >= 2 && stage < 5,
     agentQuestions: texts.filter((t) => RE.question.test(t)).length,
@@ -234,10 +294,10 @@ function analyzeConversation(conv, msgs, ctx) {
 // Agregación
 // ---------------------------------------------------------------------------
 
-function aggregate(convs) {
+function aggregate(convs, stages) {
   const n = convs.length || 1;
   const byChannel = {};
-  const byStage = Object.fromEntries(STAGES.map((s) => [s, 0]));
+  const byStage = Object.fromEntries(stages.map((s) => [s, 0]));
   const intents = {};
   const escalationReasons = {};
   const hours = new Array(24).fill(0);
@@ -254,7 +314,7 @@ function aggregate(convs) {
   }
 
   // el embudo es acumulado: quien llegó a "confirmada" pasó por todas las previas
-  const funnel = STAGES.map((name, idx) => ({
+  const funnel = stages.map((name, idx) => ({
     name,
     count: convs.filter((c) => c.stage >= idx).length,
   }));
@@ -429,7 +489,7 @@ function bar(count, total, width = 28) {
   return '█'.repeat(filled).padEnd(width, '·');
 }
 
-function renderReport(agg, convs, args, llm) {
+function renderReport(agg, convs, args, llm, agents) {
   const L = [];
   let section = 0;
   const h = (title) => `## ${++section}. ${title}`;
@@ -437,9 +497,35 @@ function renderReport(agg, convs, args, llm) {
   L.push('# Reporte de conversaciones del agente de IA');
   L.push('');
   L.push(`Generado: ${new Date().toISOString().slice(0, 16).replace('T', ' ')} · Ventana: últimos ${args.days} días (desde ${since.toISOString().slice(0, 10)})`);
+  if (args.user) L.push(`Cuenta: ${args.user}`);
   if (args.tenant) L.push(`Tenant: \`${args.tenant}\``);
   if (args.channel) L.push(`Canal: ${args.channel}`);
+  L.push(`Embudo: vertical \`${args.vertical}\``);
   L.push('');
+
+  if (agents && agents.length === 1) {
+    const a = agents[0];
+    L.push(h('Ficha del agente'));
+    L.push('');
+    L.push('| Campo | Valor |');
+    L.push('| --- | --- |');
+    L.push(`| Nombre | ${a.name || '—'} |`);
+    L.push(`| Publicado | ${a.published ? 'sí' : 'no'} |`);
+    L.push(`| Proveedor / modelo | ${a.provider || 'auto'} · ${a.aiModel || '(por defecto)'} |`);
+    L.push(`| Temperatura / maxTokens | ${a.temperature ?? '—'} / ${a.maxTokens ?? '—'} |`);
+    L.push(`| RAG | ${a.ragEnabled ? `sí (topK ${a.topK ?? 5})` : 'no'} |`);
+    L.push(`| Derivación a humano | ${a.handoffEnabled ? 'sí' : 'no'} |`);
+    L.push(`| Fallback | ${a.fallbackMessage || '—'} |`);
+    L.push('');
+    L.push('<details><summary>Prompt del sistema actual</summary>');
+    L.push('');
+    L.push('```');
+    L.push(a.systemPrompt || '(vacío)');
+    L.push('```');
+    L.push('');
+    L.push('</details>');
+    L.push('');
+  }
 
   L.push(h('Resumen'));
   L.push('');
@@ -449,7 +535,8 @@ function renderReport(agg, convs, args, llm) {
   L.push(`| Por canal | ${Object.entries(agg.byChannel).map(([k, v]) => `${k}: ${v}`).join(' · ') || '—'} |`);
   L.push(`| Mensajes por conversación (mediana) | ${agg.medianMsgs} |`);
   L.push(`| Primera respuesta (mediana) | ${agg.medianFirstResponse}s |`);
-  L.push(`| Llegaron a reserva confirmada | ${agg.byStage.confirmada} (${pct(agg.byStage.confirmada, agg.total)}) |`);
+  const closedStage = agg.funnel[agg.funnel.length - 1];
+  L.push(`| Llegaron a la última etapa (${closedStage.name}) | ${closedStage.count} (${pct(closedStage.count, agg.total)}) |`);
   L.push(`| Escaladas a humano | ${agg.escalated} (${pct(agg.escalated, agg.total)}) |`);
   L.push(`| Tomadas manualmente por un operador | ${agg.takenOver} (${pct(agg.takenOver, agg.total)}) |`);
   L.push(`| Guardadas como contacto en el CRM | ${agg.savedAsCustomer} (${pct(agg.savedAsCustomer, agg.total)}) |`);
@@ -577,7 +664,7 @@ function renderReport(agg, convs, args, llm) {
 // ---------------------------------------------------------------------------
 
 async function loadFromMongo(args) {
-  const { MongoClient } = require('mongodb');
+  const { MongoClient, ObjectId } = require('mongodb');
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('Falta MONGODB_URI en el entorno (.env)');
 
@@ -585,30 +672,70 @@ async function loadFromMongo(args) {
   await client.connect();
   const db = client.db();
 
-  const since = new Date(Date.now() - args.days * 86400000);
-  const query = { lastMessageAt: { $gte: since } };
-  if (args.tenant) {
-    const { ObjectId } = require('mongodb');
-    query.tenantId = new ObjectId(args.tenant);
+  try {
+    // --- tenant: por id o resuelto desde el email de un usuario ---
+    let tenantId = args.tenant ? new ObjectId(args.tenant) : null;
+    if (args.user) {
+      const user = await db.collection('users').findOne({ email: args.user });
+      if (!user) throw new Error(`No existe ningún usuario con email ${args.user}`);
+      if (!user.tenantId)
+        throw new Error(`El usuario ${args.user} no tiene tenant asignado`);
+      tenantId = user.tenantId;
+      console.log(`Usuario ${args.user} → tenant ${String(tenantId)}`);
+    }
+
+    // --- agentes del tenant (para el fallback y la ficha del reporte) ---
+    const agents = await db
+      .collection('aiagents')
+      .find(tenantId ? { tenantId } : {})
+      .toArray();
+
+    let agent = null;
+    if (args.agent) {
+      agent =
+        agents.find((a) => String(a._id) === args.agent) ||
+        agents.find((a) => (a.name || '').toLowerCase() === args.agent.toLowerCase());
+      if (!agent)
+        throw new Error(
+          `No encontré el agente "${args.agent}". Disponibles: ${agents.map((a) => a.name).join(', ') || '(ninguno)'}`,
+        );
+    }
+
+    const since = new Date(Date.now() - args.days * 86400000);
+    const query = { lastMessageAt: { $gte: since } };
+    if (tenantId) query.tenantId = tenantId;
+    if (args.channel) query.channel = args.channel;
+    if (agent) {
+      // el agente responde por sus cuentas; `agentId` marca quién contestó
+      const accounts = [
+        ...(agent.accountIds || []),
+        ...(agent.instagramAccountIds || []),
+        ...(agent.messengerAccountIds || []),
+      ];
+      query.$or = [{ agentId: agent._id }, { accountId: { $in: accounts } }];
+    }
+
+    let cursor = db.collection('conversations').find(query).sort({ lastMessageAt: -1 });
+    if (args.limit) cursor = cursor.limit(args.limit);
+    const conversations = await cursor.toArray();
+
+    const ids = conversations.map((c) => c._id);
+    const messages = await db
+      .collection('messages')
+      .find({ conversationId: { $in: ids } })
+      .sort({ at: 1 })
+      .toArray();
+
+    const locals = await db
+      .collection('locals')
+      .find(tenantId ? { tenantId } : {})
+      .project({ name: 1 })
+      .toArray();
+
+    return { conversations, messages, agents: agent ? [agent] : agents, locals };
+  } finally {
+    await client.close();
   }
-  if (args.channel) query.channel = args.channel;
-
-  let cursor = db.collection('conversations').find(query).sort({ lastMessageAt: -1 });
-  if (args.limit) cursor = cursor.limit(args.limit);
-  const conversations = await cursor.toArray();
-
-  const ids = conversations.map((c) => c._id);
-  const messages = await db
-    .collection('messages')
-    .find({ conversationId: { $in: ids } })
-    .sort({ at: 1 })
-    .toArray();
-
-  const agents = await db.collection('aiagents').find({}).toArray();
-  const locals = await db.collection('locals').find({}).project({ name: 1 }).toArray();
-
-  await client.close();
-  return { conversations, messages, agents, locals };
 }
 
 function demoData() {
@@ -672,7 +799,13 @@ async function main() {
     byConv.get(key).push(m);
   }
 
+  const vertical = VERTICALS[args.vertical];
+  if (!vertical)
+    throw new Error(`--vertical debe ser ${Object.keys(VERTICALS).join(' o ')}`);
+
   const ctx = {
+    vertical: args.vertical,
+    stages: vertical.stages,
     fallbacks: [...new Set(agents.map((a) => a.fallbackMessage).filter(Boolean))],
     localNames: [...new Set(locals.map((l) => l.name).filter(Boolean))],
   };
@@ -688,7 +821,7 @@ async function main() {
     return;
   }
 
-  const agg = aggregate(analyzed);
+  const agg = aggregate(analyzed, ctx.stages);
   agg.noAgentReply = withMessages.filter(
     (c) => c.agentMsgs === 0 && c.humanMsgs === 0 && c.customerMsgs > 0,
   ).length;
@@ -700,7 +833,7 @@ async function main() {
     if (scores.length) llm = { scores, summary: summarizeScores(scores) };
   }
 
-  const report = renderReport(agg, analyzed, args, llm);
+  const report = renderReport(agg, analyzed, args, llm, agents);
   fs.mkdirSync(path.dirname(args.out), { recursive: true });
   fs.writeFileSync(args.out, report);
   console.log(`Reporte escrito en ${args.out} (${analyzed.length} conversaciones).`);

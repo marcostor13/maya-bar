@@ -18,13 +18,34 @@ plataforma para que cierre más reservas.
 cd backend
 MONGODB_URI="mongodb://..." npm run analyze:conversations -- --days 30
 
-# variantes
+# una cuenta concreta: resuelve el tenant a partir del email del usuario
+npm run analyze:conversations -- --user admin@ignia.site --days 30
+
+# un agente concreto de esa cuenta (por nombre o por id)
+npm run analyze:conversations -- --user admin@ignia.site --agent "Ventas" --vertical generico
+
+# otras variantes
 npm run analyze:conversations -- --days 7 --tenant <tenantId>
 npm run analyze:conversations -- --channel whatsapp --out ../docs/reporte-septiembre.md
 npm run analyze:conversations -- --transcripts /tmp/chats.jsonl     # chats completos para leer
 npm run analyze:conversations -- --llm --sample 25                  # + rúbrica de ventas puntuada por IA
 npm run analyze:conversations -- --demo                             # prueba en seco, sin Mongo
 ```
+
+| Flag | Para qué |
+| --- | --- |
+| `--user <email>` | resuelve el tenant desde `users.email`; es la forma cómoda de apuntar a una cuenta |
+| `--agent <nombre\|id>` | limita el análisis a las conversaciones de ese agente y agrega su ficha + prompt actual al reporte |
+| `--vertical reservas\|generico` | qué embudo usar (ver abajo). Por defecto `reservas` |
+| `--days`, `--channel`, `--limit` | ventana, canal y tope de conversaciones |
+| `--llm --sample N` | puntúa N chats con la rúbrica de venta |
+| `--transcripts <archivo>` | vuelca los chats completos en JSONL para leerlos |
+
+**Verticales del embudo.** `reservas` es el negocio de discotecas (local → box/mesa
+→ intención → datos → confirmada). `generico` sirve para cualquier agente de venta
+consultiva: contacto → necesidad expuesta → propuesta entregada → intención →
+datos capturados → cierre/agenda. Elegir mal la vertical no rompe nada, pero el
+embudo queda plano.
 
 El script escribe `docs/reporte-conversaciones.md` con:
 
@@ -109,6 +130,12 @@ Estas once conductas son exactamente las dimensiones que puntúa la rúbrica de
 
 Hallazgos verificables en el código y en `docs/PROMPT_AGENTE_RESERVAS.md`,
 ordenados por impacto en ventas.
+
+> **Alcance.** Los hallazgos de la plataforma (A, B, D, E, F, I, J) son del motor
+> de agentes y afectan a **todos** los agentes de todos los tenants. Los
+> hallazgos C y G y las sugerencias de la sección 4 están escritos sobre el
+> prompt de reservas de Grupo Solar; para el agente de otra cuenta hay que releer
+> su propio prompt (sale en la ficha del reporte con `--agent`).
 
 ### 3.1. Bloqueantes de negocio
 
