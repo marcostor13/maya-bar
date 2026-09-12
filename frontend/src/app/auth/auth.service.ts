@@ -1,6 +1,8 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { Observable, catchError, finalize, map, shareReplay, tap, throwError } from 'rxjs';
+import { ToastService } from '../shared/toast';
 import { environment } from '../../environments/environment';
 
 export interface AuthUser {
@@ -23,6 +25,11 @@ export class AuthService {
   permissionsReset?: () => void;
 
   private apiUrl = environment.apiUrl;
+  private router = inject(Router);
+  private toast = inject(ToastService);
+
+  /** Renovación en curso, compartida por todas las peticiones que caduquen. */
+  private refreshing: Observable<string> | null = null;
 
   private _user = signal<AuthUser | null>(null);
   isAuthenticated = computed(() => !!this._user());
@@ -52,7 +59,20 @@ export class AuthService {
   }
 
   logout() {
+    // Invalida el refresh token en el servidor: sin esto seguiría sirviendo
+    // para renovar aunque el dispositivo haya cerrado sesión.
+    const refreshToken = this.getRefreshToken();
+    if (refreshToken) {
+      this.http
+        .post(`${this.apiUrl}/auth/logout`, { refreshToken })
+        .subscribe({ error: () => undefined });
+    }
+    this.clearSession();
+  }
+
+  private clearSession() {
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
     this._user.set(null);
     // Si no se limpian, el siguiente usuario heredaría el menú del anterior.
@@ -72,6 +92,63 @@ export class AuthService {
     return localStorage.getItem('token');
   }
 
+  getRefreshToken(): string | null {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem('refresh_token');
+  }
+
+  /**
+   * Canjea el refresh token por una sesión nueva.
+   *
+   * La llamada se comparte: si diez peticiones caducan a la vez, todas esperan
+   * al mismo refresco. Lanzar uno por petición sería peor que no tener
+   * refresco — el backend rota el token en cada uso, así que el segundo
+   * invalidaría al primero y acabarían todas en el login.
+   */
+  refreshSession(): Observable<string> {
+    if (this.refreshing) return this.refreshing;
+
+    const refreshToken = this.getRefreshToken();
+    if (!refreshToken) {
+      this.expireSession();
+      return throwError(() => new Error('Sin sesión'));
+    }
+
+    this.refreshing = this.http
+      .post<{ access_token: string; refresh_token: string; user: AuthUser }>(
+        `${this.apiUrl}/auth/refresh`,
+        { refreshToken },
+      )
+      .pipe(
+        map((res) => {
+          this.saveSession(res);
+          return res.access_token;
+        }),
+        catchError((err: unknown) => {
+          // El refresh token ya no vale: caducado, revocado o cuenta cerrada.
+          this.expireSession();
+          return throwError(() => err);
+        }),
+        finalize(() => {
+          this.refreshing = null;
+        }),
+        shareReplay(1),
+      );
+
+    return this.refreshing;
+  }
+
+  /**
+   * Cierra la sesión por caducidad: avisa y manda al login. Se distingue del
+   * `logout()` voluntario para poder explicar por qué se ha salido.
+   */
+  private expireSession(): void {
+    if (!this.isAuthenticated()) return; // ya estaba fuera: no avisar dos veces
+    this.clearSession();
+    this.toast.warning('Tu sesión ha caducado. Entra de nuevo.');
+    void this.router.navigate(['/login']);
+  }
+
   updateSession(res: any) {
     this.saveSession(res);
   }
@@ -79,6 +156,10 @@ export class AuthService {
   private saveSession(res: any) {
     if (res.access_token) {
       localStorage.setItem('token', res.access_token);
+      // Es lo que mantiene la sesión viva entre arranques de la app.
+      if (res.refresh_token) {
+        localStorage.setItem('refresh_token', res.refresh_token);
+      }
       localStorage.setItem('user', JSON.stringify(res.user));
       this._user.set(res.user);
       this.permissionsReset?.();

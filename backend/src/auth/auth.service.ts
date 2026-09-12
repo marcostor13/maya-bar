@@ -4,10 +4,22 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { createHash, randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { MailService } from '../mail/mail.service';
+import { RefreshToken } from './refresh-token.schema';
+
+/** Cuánto dura la sesión sin volver a escribir la contraseña. */
+const REFRESH_TOKEN_TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 días
+
+/** En la base solo se guarda el hash: un volcado no entrega sesiones vivas. */
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 @Injectable()
 export class AuthService {
@@ -16,6 +28,8 @@ export class AuthService {
     private usersService: UsersService,
     private tenantsService: TenantsService,
     private mailService: MailService,
+    @InjectModel(RefreshToken.name)
+    private refreshTokens: Model<RefreshToken>,
   ) {}
 
   /**
@@ -42,7 +56,79 @@ export class AuthService {
     return result;
   }
 
-  login(user: Record<string, any>) {
+  /**
+   * Emite un refresh token y devuelve el valor en claro (lo único que ve el
+   * cliente). En la base solo queda el hash.
+   */
+  private async issueRefreshToken(
+    userId: string,
+    userAgent?: string,
+  ): Promise<string> {
+    const token = randomBytes(48).toString('base64url');
+    await this.refreshTokens.create({
+      userId: new Types.ObjectId(userId),
+      tokenHash: hashToken(token),
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      userAgent,
+    });
+    return token;
+  }
+
+  /**
+   * Canjea un refresh token por una sesión nueva y lo rota.
+   *
+   * Rotar es lo que limita el daño de un token robado: en cuanto el dueño
+   * legítimo renueva, la copia del atacante ya está marcada y no sirve.
+   */
+  async refresh(token: string, userAgent?: string) {
+    const registro = await this.refreshTokens.findOne({
+      tokenHash: hashToken(token),
+    });
+    if (!registro || registro.revokedAt || registro.expiresAt < new Date())
+      throw new UnauthorizedException('La sesión ha caducado');
+
+    const user = await this.usersService.findById(String(registro.userId));
+    if (!user || user.isActive === false) {
+      await this.revokeAllFor(String(registro.userId));
+      throw new UnauthorizedException('Tu cuenta ya no está activa');
+    }
+
+    registro.revokedAt = new Date();
+    await registro.save();
+
+    const plano = (
+      user as unknown as { toObject: () => Record<string, any> }
+    ).toObject();
+    return this.buildSession(
+      plano,
+      await this.issueRefreshToken(String(user._id), userAgent),
+    );
+  }
+
+  /** Cierre de sesión: invalida el token de este dispositivo. */
+  async revokeRefreshToken(token: string): Promise<void> {
+    await this.refreshTokens.updateOne(
+      { tokenHash: hashToken(token), revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+  }
+
+  /** Cierra todas las sesiones del usuario (cuenta desactivada, por ejemplo). */
+  private async revokeAllFor(userId: string): Promise<void> {
+    await this.refreshTokens.updateMany(
+      { userId: new Types.ObjectId(userId), revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+  }
+
+  async login(user: Record<string, any>, userAgent?: string) {
+    return this.buildSession(
+      user,
+      await this.issueRefreshToken(String(user['_id']), userAgent),
+    );
+  }
+
+  private buildSession(user: Record<string, any>, refreshToken: string) {
     /* eslint-disable @typescript-eslint/no-unsafe-assignment */
     const payload = {
       sub: user['_id'],
@@ -56,6 +142,7 @@ export class AuthService {
     };
     const result = {
       access_token: this.jwtService.sign(payload),
+      refresh_token: refreshToken,
       user: {
         id: user['_id'],
         email: user['email'],

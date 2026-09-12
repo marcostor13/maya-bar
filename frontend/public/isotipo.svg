@@ -1,14 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="Maya CRM">
   <title>Maya CRM</title>
   <!--
-    Isotipo: doble check. Un solo gesto, sin letras: el visto de un mensaje
-    entregado (WhatsApp es el canal del producto) y, a la vez, el trato cerrado.
-    El segundo trazo sube más alto que el primero para leerse como
-    crecimiento. Un solo color y un solo peso: funciona igual en rojo sobre
-    blanco que en blanco sobre rojo, y se lee a 16 px.
+    Isotipo: el visto, como una sola pieza sólida.
+
+    Antes era un doble check de trazo fino. El trazo se lee técnico y se
+    deshace al reducirlo; las marcas deportivas —Nike, Adidas— son siluetas
+    macizas de un solo color, y por eso aguantan a 16 px, bordadas o en una
+    barra de estado.
+
+    La geometría es deliberada: el brazo corto es de grosor constante y el
+    largo se afila hacia la punta, que es lo que le da velocidad y lo levanta
+    en diagonal en vez de dejarlo quieto. Sin curvas: el corte recto se lee
+    más rotundo y no se emborrona al escalar.
+
+    Un solo relleno y sin huecos interiores: se puede teñir entero, y como
+    silueta pura sirve de icono de notificación, donde Android solo respeta
+    el canal alfa.
   -->
-  <g fill="none" stroke="#E11D48" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M50 66 L90 16" />
-    <path d="M8 50 L30 72 L68 24" />
-  </g>
+  <path fill="#E11D48" d="M4 47 L18 33 L38 53 L88 2 L94 15 L38 80 Z" />
 </svg>

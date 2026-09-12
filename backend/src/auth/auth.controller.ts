@@ -3,6 +3,7 @@ import {
   Post,
   Patch,
   Body,
+  Headers,
   Request,
   UnauthorizedException,
   UseGuards,
@@ -16,6 +17,7 @@ import {
   LoginDto,
   RegisterTenantDto,
   ResetPasswordDto,
+  RefreshTokenDto,
 } from './dto/auth.dto';
 
 @Controller('auth')
@@ -23,11 +25,30 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('login')
-  async login(@Body() body: LoginDto) {
+  async login(@Body() body: LoginDto, @Headers('user-agent') ua?: string) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const user = await this.authService.validateUser(body.email, body.password);
     if (!user) throw new UnauthorizedException('Invalid credentials');
-    return this.authService.login(user);
+    return this.authService.login(user, ua);
+  }
+
+  /**
+   * Renueva la sesión con el refresh token y lo rota. No lleva guard: el
+   * access token puede estar ya caducado, que es justo cuando se llama.
+   */
+  @Post('refresh')
+  async refresh(
+    @Body() body: RefreshTokenDto,
+    @Headers('user-agent') ua?: string,
+  ) {
+    return this.authService.refresh(body.refreshToken, ua);
+  }
+
+  /** Cierra la sesión de este dispositivo invalidando su refresh token. */
+  @Post('logout')
+  async logout(@Body() body: RefreshTokenDto) {
+    await this.authService.revokeRefreshToken(body.refreshToken);
+    return { ok: true };
   }
 
   @Post('register')

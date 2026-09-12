@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
@@ -9,7 +10,7 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [AuthService, provideHttpClient(), provideHttpClientTesting()],
+      providers: [AuthService, provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     });
     service = TestBed.inject(AuthService);
     httpMock = TestBed.inject(HttpTestingController);
@@ -55,7 +56,14 @@ describe('AuthService', () => {
     localStorage.setItem('token', 'saved-token');
     localStorage.setItem('user', JSON.stringify({ id: '2', email: 'x@y.com', role: 'MANAGER' }));
 
-    const freshService = new AuthService({ post: () => ({ pipe: () => ({}) } as any) } as any);
+    // Instancia nueva a través del inyector: el servicio usa `inject()` para
+    // el router y los avisos, así que construirlo a mano ya no es posible.
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [AuthService, provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    });
+    const freshService = TestBed.inject(AuthService);
+
     expect(freshService.getToken()).toBe('saved-token');
     expect(freshService.isAuthenticated()).toBe(true);
   });

@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getModelToken } from '@nestjs/mongoose';
+import { RefreshToken } from './refresh-token.schema';
 import { JwtService } from '@nestjs/jwt';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { Types } from 'mongoose';
@@ -44,6 +46,7 @@ describe('AuthService', () => {
   const usersService = {
     findOneByEmail: jest.fn(),
     findOneByEmailAnyStatus: jest.fn(),
+    findById: jest.fn(),
     create: jest.fn(),
     changePassword: jest.fn(),
     saveResetCode: jest.fn(),
@@ -52,6 +55,13 @@ describe('AuthService', () => {
   const tenantsService = { create: jest.fn() };
   const mailService = { sendPasswordResetEmail: jest.fn() };
   const jwtService = { sign: jest.fn().mockReturnValue('signed.jwt.token') };
+  // El modelo de refresh tokens: login emite uno en cada sesión.
+  const refreshTokenModel = {
+    create: jest.fn().mockResolvedValue({}),
+    findOne: jest.fn(),
+    updateOne: jest.fn().mockResolvedValue({}),
+    updateMany: jest.fn().mockResolvedValue({}),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -64,6 +74,10 @@ describe('AuthService', () => {
         { provide: UsersService, useValue: usersService },
         { provide: TenantsService, useValue: tenantsService },
         { provide: MailService, useValue: mailService },
+        {
+          provide: getModelToken(RefreshToken.name),
+          useValue: refreshTokenModel,
+        },
       ],
     }).compile();
 
@@ -126,10 +140,10 @@ describe('AuthService', () => {
   // ─── login ─────────────────────────────────────────────────────────────────
 
   describe('login', () => {
-    it('signs a JWT payload with sub, role, tenantId (string) and localIds (strings)', () => {
+    it('signs a JWT payload with sub, role, tenantId (string) and localIds (strings)', async () => {
       const user = makeUserDoc().toObject();
 
-      const result = service.login(user);
+      const result = await service.login(user);
 
       expect(jwtService.sign).toHaveBeenCalledWith({
         sub: user._id,
@@ -142,10 +156,10 @@ describe('AuthService', () => {
       expect(result.access_token).toBe('signed.jwt.token');
     });
 
-    it('returns the public user object without password', () => {
+    it('returns the public user object without password', async () => {
       const user = makeUserDoc().toObject();
 
-      const result = service.login(user);
+      const result = await service.login(user);
 
       expect(result.user).toEqual({
         id: user._id,
@@ -159,14 +173,14 @@ describe('AuthService', () => {
       expect((result.user as Record<string, unknown>).password).toBeUndefined();
     });
 
-    it('uses tenantId null and empty localIds when the user has none (SUPERADMIN)', () => {
+    it('uses tenantId null and empty localIds when the user has none (SUPERADMIN)', async () => {
       const user = makeUserDoc({
         role: 'SUPERADMIN',
         tenantId: null,
         localIds: undefined,
       }).toObject();
 
-      service.login(user);
+      await service.login(user);
 
       const payload = jwtService.sign.mock.calls[0][0];
       expect(payload.tenantId).toBeNull();
@@ -354,6 +368,71 @@ describe('AuthService', () => {
       ).rejects.toThrow(
         new BadRequestException('El código es inválido o ha expirado'),
       );
+    });
+  });
+
+  describe('refresh', () => {
+    /** Registro tal como lo devuelve mongoose, con save() espiable. */
+    const registro = (over = {}) => {
+      const doc = {
+        userId: new Types.ObjectId(),
+        expiresAt: new Date(Date.now() + 86400000),
+        revokedAt: null,
+        save: jest.fn(),
+        ...over,
+      };
+      doc.save.mockResolvedValue(doc);
+      return doc;
+    };
+
+    it('rechaza un token que no existe', async () => {
+      refreshTokenModel.findOne.mockResolvedValue(null);
+      await expect(service.refresh('inventado')).rejects.toThrow(
+        'La sesión ha caducado',
+      );
+    });
+
+    it('rechaza un token ya usado: la rotación lo dejó revocado', async () => {
+      refreshTokenModel.findOne.mockResolvedValue(
+        registro({ revokedAt: new Date() }),
+      );
+      await expect(service.refresh('usado')).rejects.toThrow(
+        'La sesión ha caducado',
+      );
+    });
+
+    it('rechaza un token caducado', async () => {
+      refreshTokenModel.findOne.mockResolvedValue(
+        registro({ expiresAt: new Date(Date.now() - 1000) }),
+      );
+      await expect(service.refresh('viejo')).rejects.toThrow(
+        'La sesión ha caducado',
+      );
+    });
+
+    it('revoca el anterior y emite uno nuevo al renovar', async () => {
+      const doc = registro();
+      refreshTokenModel.findOne.mockResolvedValue(doc);
+      usersService.findById.mockResolvedValue(makeUserDoc());
+
+      const res = await service.refresh('bueno');
+
+      // Rotación: el usado queda marcado y se crea otro distinto.
+      expect(doc.revokedAt).toBeInstanceOf(Date);
+      expect(doc.save).toHaveBeenCalled();
+      expect(refreshTokenModel.create).toHaveBeenCalled();
+      expect(res.access_token).toBe('signed.jwt.token');
+      expect(res.refresh_token).toEqual(expect.any(String));
+    });
+
+    it('cierra TODAS las sesiones si la cuenta ya no está activa', async () => {
+      refreshTokenModel.findOne.mockResolvedValue(registro());
+      usersService.findById.mockResolvedValue(makeUserDoc({ isActive: false }));
+
+      await expect(service.refresh('bueno')).rejects.toThrow(
+        'Tu cuenta ya no está activa',
+      );
+      expect(refreshTokenModel.updateMany).toHaveBeenCalled();
     });
   });
 });

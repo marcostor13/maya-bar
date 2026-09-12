@@ -67,3 +67,9 @@ export class ResetPasswordDto {
   @MinLength(8)
   newPassword!: string;
 }
+
+export class RefreshTokenDto {
+  @IsString()
+  @IsNotEmpty()
+  refreshToken!: string;
+}

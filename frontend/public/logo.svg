@@ -1,20 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 308 124" width="308" height="124" role="img" aria-label="Maya CRM">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 108" width="300" height="108" role="img" aria-label="Maya CRM">
   <title>Maya CRM</title>
   <!--
-    Lockup horizontal: isotipo (doble check) + "MAYA" + descriptor "CRM".
-    Todo trazo, sin dependencias de fuentes: las letras son paths con las
-    mismas terminaciones redondeadas que el isotipo.
+    Lockup horizontal: isotipo sólido + "MAYA" + descriptor "CRM".
+
+    Las letras suben de peso para acompañar al isotipo macizo: un trazo fino
+    junto a una silueta sólida parece de otra marca. Siguen siendo paths, sin
+    depender de ninguna fuente instalada.
+
+    El isotipo se alinea con la altura de las mayúsculas, no con la caja
+    entera: así el conjunto se apoya en la misma línea óptica.
   -->
+
+  <!-- Isotipo -->
+  <g transform="translate(0 16) scale(0.78)">
+    <path fill="#E11D48" d="M4 47 L18 33 L38 53 L88 2 L94 15 L38 80 Z" />
+  </g>
+
   <g fill="none" stroke="#E11D48" stroke-linecap="round" stroke-linejoin="round">
-
-    <!-- Isotipo -->
-    <g transform="translate(0 14)" stroke-width="13">
-      <path d="M50 66 L90 16" />
-      <path d="M8 50 L30 72 L68 24" />
-    </g>
-
     <!-- MAYA -->
-    <g transform="translate(124 26)" stroke-width="8.5">
+    <g transform="translate(102 22)" stroke-width="10.5">
       <path d="M0 40 L0 7 L17 26 L34 7 L34 40" />
       <g transform="translate(50 0)">
         <path d="M0 40 L15 5 L30 40" />
@@ -30,8 +34,8 @@
       </g>
     </g>
 
-    <!-- CRM -->
-    <g transform="translate(152 80)" stroke-width="5">
+    <!-- CRM: descriptor, deliberadamente más ligero y espaciado -->
+    <g transform="translate(130 78)" stroke-width="5.5">
       <path d="M12.7 4.4 A 7.2 7.2 0 1 0 12.7 13.6" />
       <g transform="translate(42 0)">
         <path d="M0 18 L0 0" />
