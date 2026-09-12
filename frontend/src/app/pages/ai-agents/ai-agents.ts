@@ -624,17 +624,13 @@ function blankAgent(): Agent {
               <div class="bubble" [class.user]="m.role === 'user'" [class.assistant]="m.role === 'assistant'">
                 {{ m.content }}
               </div>
-              <!-- Simulación, no es algo que el agente diga al cliente. -->
+              <!-- El playground muestra exactamente lo que vería el cliente.
+                   La derivación no se anota: el backend la sigue devolviendo en
+                   el campo handoff por si se quiere mostrar en otro sitio. -->
               @for (f of m.files ?? []; track f) {
                 <div class="sim-note">
                   <lucide-icon [img]="Paperclip" [size]="13" [strokeWidth]="2.5"></lucide-icon>
                   Enviaría el archivo <strong>{{ f }}</strong>
-                </div>
-              }
-              @if (m.handoff) {
-                <div class="sim-note sim-note--handoff">
-                  <lucide-icon [img]="PhoneForwarded" [size]="13" [strokeWidth]="2.5"></lucide-icon>
-                  Derivaría a una persona y se apagaría en este chat@if (m.handoff.reason) { <span>· {{ m.handoff.reason }}</span> }
                 </div>
               }
             }
@@ -767,9 +763,7 @@ function blankAgent(): Agent {
       font-size: 12px; font-weight: 600; color: var(--color-text-muted);
       background: var(--color-bg-light); border: 1px dashed var(--color-border);
       border-radius: var(--radius-sm); padding: 7px 12px; }
-    .sim-note--handoff { color: #92400E; background: #FFFBEB; border-color: #FDE68A; }
     .sim-note strong { font-weight: 700; }
-    .sim-note span { opacity: 0.85; font-weight: 600; }
 
     .chat-input { display: flex; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--color-border); flex-shrink: 0; align-items: flex-end; }
     .chat-input .input { flex: 1; resize: none; max-height: 120px; }
