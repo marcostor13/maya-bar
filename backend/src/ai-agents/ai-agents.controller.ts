@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   BadRequestException,
@@ -14,6 +15,7 @@ import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { AiAgentsService } from './ai-agents.service';
+import type { AiProviderId } from '../ai/providers/ai-provider.interface';
 import {
   CreateAiAgentDto,
   UpdateAiAgentDto,
@@ -39,6 +41,17 @@ export class AiAgentsController {
     if (!dto.name || !dto.systemPrompt)
       throw new BadRequestException('Faltan nombre o prompt');
     return this.service.create(req.user.tenantId, req.user.userId, dto);
+  }
+
+  /** Modelos que se pueden elegir para ese proveedor con las keys del tenant. */
+  @Get('models')
+  listModels(
+    @Query('provider') provider: AiProviderId,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    if (!provider) throw new BadRequestException('Falta el proveedor');
+    return this.service.listModels(req.user.tenantId, provider);
   }
 
   @Get(':id')

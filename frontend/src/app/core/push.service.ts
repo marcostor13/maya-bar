@@ -129,7 +129,7 @@ export class NativePushService {
     // App en primer plano: Android no pinta la notificación del sistema, así
     // que el aviso lo damos nosotros.
     await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-      const title = notification.title ?? 'Maya';
+      const title = notification.title ?? 'Maya CRM';
       const body = notification.body ?? '';
       this.toast.info(body ? `${title}: ${body}` : title);
     });

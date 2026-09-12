@@ -17,6 +17,13 @@ import {
 } from './dto/ai-agent.dto';
 import { RagService } from './rag.service';
 import { AiService, ChatMessage, AiApiKeys } from '../ai/ai.service';
+import {
+  AI_MODEL_CATALOG,
+  AiModelOption,
+  isChatModel,
+  mergeWithCatalog,
+} from '../ai/ai-models.catalog';
+import type { AiProviderId } from '../ai/providers/ai-provider.interface';
 import { TenantConfig } from '../settings/tenant-config.schema';
 import { WaMediaType } from '../whatsapp/whatsapp.service';
 
@@ -428,6 +435,42 @@ export class AiAgentsService {
     // Al derivar, el texto puede quedar vacío: ahí habla el mensaje de derivación.
     const reply = text || (handoff ? '' : agent.fallbackMessage);
     return { reply, sources, filesToSend, handoff };
+  }
+
+  /**
+   * Modelos elegibles para un proveedor. Se pregunta al proveedor con la key
+   * del tenant, se descarta lo que no sirve para conversar (embeddings, audio,
+   * imagen) y se ordenan primero los recomendados del catálogo. Si la consulta
+   * falla —sin key, key inválida, proveedor caído— se devuelve el catálogo.
+   */
+  async listModels(
+    tenantId: string,
+    provider: AiProviderId,
+  ): Promise<{
+    provider: AiProviderId;
+    source: 'live' | 'catalog';
+    models: AiModelOption[];
+  }> {
+    if (!AI_MODEL_CATALOG[provider])
+      throw new BadRequestException(`Proveedor desconocido: ${provider}`);
+
+    try {
+      const apiKeys = await this.getTenantApiKeys(tenantId);
+      const live = (await this.ai.listModels(provider, apiKeys)).filter(
+        isChatModel,
+      );
+      if (live.length)
+        return {
+          provider,
+          source: 'live',
+          models: mergeWithCatalog(provider, live),
+        };
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo listar los modelos de ${provider}: ${String(err)}`,
+      );
+    }
+    return { provider, source: 'catalog', models: AI_MODEL_CATALOG[provider] };
   }
 
   /** Test desde el playground (sin persistir conversación). Muestra archivos como notas. */

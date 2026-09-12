@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'site.mayacrm.app',
-  appName: 'Maya',
+  appName: 'Maya CRM',
   // Build estático del proyecto `mobile` (el build `frontend` es SSR y no sirve aquí).
   webDir: 'dist/mobile/browser',
   server: {

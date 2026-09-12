@@ -881,7 +881,7 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
         <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px -3px rgba(0,0,0,.1);">
           <div style="padding:40px;">${mediaHtml}${bodyHtml}</div>
           <div style="background:#111827;padding:20px;text-align:center;">
-            <p style="color:#9ca3af;font-size:12px;margin:0;">© 2026 MAYA Platform</p>
+            <p style="color:#9ca3af;font-size:12px;margin:0;">© 2026 Maya CRM</p>
           </div>
         </div>
       </div>

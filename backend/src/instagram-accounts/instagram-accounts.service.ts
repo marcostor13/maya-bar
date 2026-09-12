@@ -207,7 +207,7 @@ export class InstagramAccountsService {
     try {
       await this.ig.sendMessage(
         recipientId.trim(),
-        '✅ Mensaje de prueba desde MAYA Platform',
+        '✅ Mensaje de prueba desde Maya CRM',
         config,
       );
       return { success: true };

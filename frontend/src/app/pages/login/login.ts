@@ -13,7 +13,7 @@ import { ToastService } from '../../shared/toast';
     <div class="login-page">
       <div class="login-card card animate-fade-in">
         <div class="login-header">
-          <img src="/logo.png" alt="Maya" class="logo-img" />
+          <img src="/logo.png" alt="Maya CRM" class="logo-img" />
           <h1>Bienvenido a Maya</h1>
           <p>Ingresa a tu cuenta para continuar.</p>
         </div>

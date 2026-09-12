@@ -112,6 +112,57 @@ describe('HttpAiProvider', () => {
       expect('temperature' in body).toBe(false);
     });
 
+    it('sends max_completion_tokens to OpenAI and max_tokens a DeepSeek', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({ choices: [{ message: { content: 'ok' } }] }),
+      );
+
+      await provider.chat({
+        provider: 'openai',
+        apiKey: 'sk',
+        maxTokens: 300,
+        temperature: 0.4,
+        messages: userMessages,
+      });
+
+      const { body } = lastFetchCall(fetchSpy);
+      expect(body.max_completion_tokens).toBe(300);
+      expect('max_tokens' in body).toBe(false);
+      expect(body.temperature).toBe(0.4);
+    });
+
+    it('falls back to 1024 tokens when maxTokens comes null from the agent', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({ choices: [{ message: { content: 'ok' } }] }),
+      );
+
+      await provider.chat({
+        provider: 'openai',
+        apiKey: 'sk',
+        maxTokens: null as unknown as number,
+        messages: userMessages,
+      });
+
+      expect(lastFetchCall(fetchSpy).body.max_completion_tokens).toBe(1024);
+    });
+
+    it('omits temperature on OpenAI reasoning models (gpt-5, o-series)', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({ choices: [{ message: { content: 'ok' } }] }),
+      );
+
+      await provider.chat({
+        provider: 'openai',
+        apiKey: 'sk',
+        model: 'gpt-5-mini',
+        maxTokens: 300,
+        temperature: 0.4,
+        messages: userMessages,
+      });
+
+      expect('temperature' in lastFetchCall(fetchSpy).body).toBe(false);
+    });
+
     it('returns empty string when response has no content', async () => {
       fetchSpy.mockResolvedValue(mockResponse({}));
       const result = await provider.chat({
@@ -181,7 +232,7 @@ describe('HttpAiProvider', () => {
       const headers = init.headers as Record<string, string>;
       expect(headers['x-api-key']).toBe('ck');
       expect(headers['anthropic-version']).toBe('2023-06-01');
-      expect(body.model).toBe('claude-haiku-4-5-20251001');
+      expect(body.model).toBe('claude-haiku-4-5');
       expect(body.max_tokens).toBe(512);
       expect(body.system).toBe('Eres útil.\n\nResponde en español.');
       expect(body.messages).toEqual([
@@ -197,7 +248,7 @@ describe('HttpAiProvider', () => {
       await provider.chat({
         provider: 'claude',
         apiKey: 'ck',
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5',
         maxTokens: 1024,
         messages: userMessages,
       });
@@ -287,6 +338,49 @@ describe('HttpAiProvider', () => {
           messages: userMessages,
         }),
       ).rejects.toThrow(new BadRequestException('Gemini API error: quota'));
+    });
+  });
+
+  describe('listModels', () => {
+    it('lists Claude models from the Anthropic endpoint', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({ data: [{ id: 'claude-haiku-4-5' }, { id: 'claude-opus-5' }] }),
+      );
+
+      const ids = await provider.listModels('claude', 'ck');
+
+      expect(ids).toEqual(['claude-haiku-4-5', 'claude-opus-5']);
+      const [url, init] = fetchSpy.mock.calls[0];
+      expect(String(url)).toContain('https://api.anthropic.com/v1/models');
+      expect(
+        ((init as RequestInit).headers as Record<string, string>)['x-api-key'],
+      ).toBe('ck');
+    });
+
+    it('keeps only Gemini models that can generate content', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({
+          models: [
+            {
+              name: 'models/gemini-2.5-flash',
+              supportedGenerationMethods: ['generateContent'],
+            },
+            {
+              name: 'models/text-embedding-004',
+              supportedGenerationMethods: ['embedContent'],
+            },
+          ],
+        }),
+      );
+
+      expect(await provider.listModels('gemini', 'gk')).toEqual([
+        'gemini-2.5-flash',
+      ]);
+    });
+
+    it('returns an empty list without an API key, without calling the network', async () => {
+      expect(await provider.listModels('openai', '')).toEqual([]);
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 });

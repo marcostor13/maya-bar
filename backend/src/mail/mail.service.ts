@@ -33,7 +33,7 @@ export const DEFAULT_EMAIL_DESIGN: EmailDesign = {
   textColor: '#111827',
   ticketLabel: 'Tu Código de Acceso',
   footerNote: 'Presenta este código al llegar para tu check-in.',
-  footerText: '© 2026 MAYA Platform. Gestionado por BAR.',
+  footerText: '© 2026 Maya CRM. Gestionado por BAR.',
   showTicket: true,
 };
 
@@ -86,13 +86,13 @@ export class MailService {
   }
 
   async sendPasswordResetEmail(email: string, code: string) {
-    const subject = 'Recuperación de contraseña - MAYA';
+    const subject = 'Recuperación de contraseña - Maya CRM';
     const html = `
       <div style="font-family: 'Inter', Arial, sans-serif; background-color: #f9fafb; padding: 40px 20px;">
         <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
           <div style="padding: 40px; text-align: center;">
             <div style="margin-bottom: 24px;">
-              <img src="cid:logo" alt="MAYA" style="height: 48px; width: auto;" />
+              <img src="cid:logo" alt="Maya CRM" style="height: 48px; width: auto;" />
             </div>
             <h2 style="color: #111827; font-size: 22px; font-weight: 700; margin-bottom: 12px;">Recuperar contraseña</h2>
             <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
@@ -114,7 +114,7 @@ export class MailService {
     if (this.resend) {
       try {
         await this.resend.emails.send({
-          from: 'MAYA <no_reply@mayasend.marcostorresalarcon.com>',
+          from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
           to: email,
           subject,
           html,
@@ -150,7 +150,7 @@ export class MailService {
   }) {
     const confirmationUrl = `http://localhost:4200/book/confirm/${data.token}`;
     const friendlyDate = this.formatDate(data.date);
-    const subject = `Tu reserva en ${data.localName} - MAYA`;
+    const subject = `Tu reserva en ${data.localName} - Maya CRM`;
 
     const html = `
       <div style="font-family: 'Inter', 'Poppins', Arial, sans-serif; background-color: #f3f4f6; padding: 48px 20px;">
@@ -158,7 +158,7 @@ export class MailService {
           <div style="padding: 48px 40px;">
             <!-- Logo area -->
             <div style="text-align: center; margin-bottom: 40px;">
-              <img src="cid:logo" alt="MAYA" style="height: 60px; width: auto;" />
+              <img src="cid:logo" alt="Maya CRM" style="height: 60px; width: auto;" />
             </div>
 
             <h2 style="color: #111827; font-size: 26px; font-weight: 700; margin-bottom: 16px; text-align: center;">¡Hola, ${data.guestName}!</h2>
@@ -197,7 +197,7 @@ export class MailService {
           
           <div style="background-color: #111827; padding: 24px; text-align: center;">
             <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              © 2026 MAYA Platform. Todos los derechos reservados.
+              © 2026 Maya CRM. Todos los derechos reservados.
             </p>
           </div>
         </div>
@@ -207,7 +207,7 @@ export class MailService {
     if (this.resend) {
       try {
         await this.resend.emails.send({
-          from: 'MAYA <no_reply@mayasend.marcostorresalarcon.com>',
+          from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
           to: data.email,
           subject,
           html,
@@ -257,13 +257,13 @@ export class MailService {
 
     const subject = d.subject?.trim()
       ? interpolate(d.subject)
-      : `Confirmación: ${data.eventTitle} - MAYA`;
+      : `Confirmación: ${data.eventTitle} - Maya CRM`;
 
-    // Cabecera: imagen personalizada (URL) o el logo MAYA adjunto vía CID.
+    // Cabecera: imagen personalizada (URL) o el logo de Maya CRM adjunto vía CID.
     const usesCustomHeader = !!d.headerImageUrl?.trim();
     const headerImg = usesCustomHeader
       ? `<img src="${d.headerImageUrl}" alt="" style="max-height: 80px; width: auto; max-width: 100%;" />`
-      : `<img src="cid:logo" alt="MAYA" style="height: 60px; width: auto;" />`;
+      : `<img src="cid:logo" alt="Maya CRM" style="height: 60px; width: auto;" />`;
 
     const bannerHtml = d.bannerImageUrl?.trim()
       ? `<div style="margin-bottom: 32px;"><img src="${d.bannerImageUrl}" alt="" style="width: 100%; border-radius: 20px; display: block;" /></div>`
@@ -360,7 +360,7 @@ export class MailService {
           });
         }
         await this.resend.emails.send({
-          from: 'MAYA <no_reply@mayasend.marcostorresalarcon.com>',
+          from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
           to: data.email,
           subject,
           html,
@@ -393,12 +393,12 @@ export class MailService {
       <div style="font-family: 'Inter', Arial, sans-serif; background-color: #f9fafb; padding: 40px 20px;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
           <div style="padding: 40px;">
-            ${this.logoBase64 ? '<div style="text-align:center;margin-bottom:32px;"><img src="cid:logo" alt="MAYA" style="height:48px;width:auto;" /></div>' : ''}
+            ${this.logoBase64 ? '<div style="text-align:center;margin-bottom:32px;"><img src="cid:logo" alt="Maya CRM" style="height:48px;width:auto;" /></div>' : ''}
             ${mediaHtml}
             <div style="font-size: 16px; color: #374151; line-height: 1.7; white-space: pre-wrap;">${params.body.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
           </div>
           <div style="background-color: #111827; padding: 20px; text-align: center;">
-            <p style="color: #9ca3af; font-size: 12px; margin: 0;">© 2026 MAYA Platform</p>
+            <p style="color: #9ca3af; font-size: 12px; margin: 0;">© 2026 Maya CRM</p>
           </div>
         </div>
       </div>
@@ -406,7 +406,7 @@ export class MailService {
 
     if (this.resend) {
       await this.resend.emails.send({
-        from: 'MAYA <no_reply@mayasend.marcostorresalarcon.com>',
+        from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
         to: params.to,
         subject: params.subject,
         html,

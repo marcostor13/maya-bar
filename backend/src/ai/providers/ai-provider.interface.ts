@@ -21,6 +21,8 @@ export interface AiChatRequest {
 /** Transporte HTTP hacia un proveedor de chat de IA (DIP). */
 export interface AiChatProvider {
   chat(req: AiChatRequest): Promise<string>;
+  /** Ids de modelos que la API key puede usar hoy, tal como los lista el proveedor. */
+  listModels(provider: AiProviderId, apiKey: string): Promise<string[]>;
 }
 
 /** Transporte HTTP hacia un proveedor de embeddings (DIP). */
