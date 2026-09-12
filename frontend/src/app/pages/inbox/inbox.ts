@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, DestroyRef, effect, inject, signal, computed, ElementRef, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
+import { DOCUMENT } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
@@ -8,7 +9,7 @@ import {
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
-  CheckCheck as ReadIcon,
+  CheckCheck as ReadIcon, Reply,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -16,6 +17,7 @@ import { AppChromeService } from '../../shared/app-chrome';
 import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
 import { PushService } from '../../shared/push.service';
 import { silentRequest } from '../../shared/loader';
+import { PlatformService } from '../../core/platform.service';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -55,7 +57,18 @@ interface Msg {
   status: MsgStatus;
   error?: string;
   at: string;
+  /** Mensaje citado, como en WhatsApp. */
+  replyToId?: string;
 }
+
+/** Cómo se resume un adjunto cuando se cita un mensaje sin texto. */
+/** Tope de altura del campo de escritura, en píxeles. */
+const COMPOSER_MAX_PX = 140;
+
+const MEDIA_PREVIEW: Record<string, string> = {
+  image: '📷 Foto', video: '🎥 Video', audio: '🎧 Audio', voice: '🎤 Nota de voz',
+  document: '📄 Documento', sticker: 'Sticker', location: '📍 Ubicación', contact: '👤 Contacto',
+};
 
 type Channel = 'whatsapp' | 'instagram' | 'messenger';
 
@@ -436,8 +449,19 @@ const EMOJIS = [
                     <span>{{ m.text }}</span>
                   </div>
                 } @else {
-                <div class="row" [class.out]="m.direction === 'out'">
+                <div class="row" [class.out]="m.direction === 'out'" [id]="'msg-' + m._id">
                   <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'">
+                    <button class="reply-btn" (click)="replyTo.set(m)" title="Responder" aria-label="Responder a este mensaje">
+                      <lucide-icon [img]="Reply" [size]="14" [strokeWidth]="2.4"></lucide-icon>
+                    </button>
+
+                    @if (quoted(m); as q) {
+                      <button class="quote" (click)="scrollToMessage(q._id)" [attr.aria-label]="'Ir al mensaje citado'">
+                        <span class="quote-who">{{ q.direction === 'out' ? 'Tú' : (selected()?.contactName || 'Cliente') }}</span>
+                        <span class="quote-text">{{ preview(q) }}</span>
+                      </button>
+                    }
+
                     @if (m.author === 'agent') {
                       <span class="by-agent"><lucide-icon [img]="Bot" [size]="11" [strokeWidth]="2.4"></lucide-icon> Agente IA</span>
                     }
@@ -545,6 +569,20 @@ const EMOJIS = [
               </div>
             }
 
+            @if (replyTo(); as r) {
+              <div class="reply-bar">
+                <div class="reply-bar-body">
+                  <span class="reply-bar-who">
+                    Respondiendo a {{ r.direction === 'out' ? 'ti' : (selected()?.contactName || 'el cliente') }}
+                  </span>
+                  <span class="reply-bar-text">{{ preview(r) }}</span>
+                </div>
+                <button class="btn-icon btn-ghost" (click)="replyTo.set(null)" aria-label="Cancelar respuesta">
+                  <lucide-icon [img]="X" [size]="16" [strokeWidth]="2.5"></lucide-icon>
+                </button>
+              </div>
+            }
+
             <div class="composer-row">
               <div class="attach-wrap">
                 <button class="btn-icon btn-ghost" (click)="attachOpen.set(!attachOpen())" title="Adjuntar" aria-label="Adjuntar archivo">
@@ -570,11 +608,12 @@ const EMOJIS = [
               </button>
 
               <textarea
+                #composerInput
                 class="textarea composer-input"
                 rows="1"
                 placeholder="Escribe un mensaje…"
                 [ngModel]="draft()"
-                (ngModelChange)="draft.set($event)"
+                (ngModelChange)="onDraftChange($event)"
                 (keydown)="onKeydown($event)"
                 aria-label="Mensaje"
               ></textarea>
@@ -916,19 +955,19 @@ const EMOJIS = [
     .chat-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
     .chat-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
     .chat-name {
-      font-weight: 600; font-size: 14px; color: var(--color-text-main);
+      font-weight: 600; font-size: 15.5px; color: var(--color-text-main);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .chat-time { font-size: 11px; color: var(--color-text-muted); flex-shrink: 0; }
 
     .chat-account {
-      display: block; font-size: 11px; font-weight: 600; color: var(--color-text-muted);
+      display: block; font-size: 12px; font-weight: 600; color: var(--color-text-muted);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;
     }
 
     .chat-item-bottom { display: flex; align-items: center; gap: 8px; }
     .chat-preview {
-      flex: 1; min-width: 0; font-size: 12.5px; color: var(--color-text-muted);
+      flex: 1; min-width: 0; font-size: 13.5px; color: var(--color-text-muted);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .chat-preview .you { color: var(--color-text-main); font-weight: 600; }
@@ -1188,6 +1227,60 @@ const EMOJIS = [
     }
     .bubble[data-author="agent"] { background: #F1EBFF; }
     .bubble.failed { background: #FEE2E2; }
+
+    /* ── Responder a un mensaje ── */
+    .reply-btn {
+      position: absolute; top: 4px; right: 4px;
+      width: 26px; height: 26px; border-radius: 50%;
+      border: none; background: rgba(255,255,255,0.92); color: var(--color-text-muted);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity var(--transition-fast);
+      box-shadow: var(--shadow-sm);
+    }
+    .bubble:hover .reply-btn { opacity: 1; }
+    .reply-btn:hover { color: var(--color-brand); }
+    /* En táctil no hay hover: el botón se queda visible y algo más tenue. */
+    @media (hover: none) {
+      .reply-btn { opacity: 0.55; }
+    }
+
+    .quote {
+      display: flex; flex-direction: column; gap: 1px; width: 100%;
+      text-align: left; border: none; cursor: pointer;
+      background: rgba(0,0,0,0.05);
+      border-left: 3px solid var(--color-brand);
+      border-radius: 7px; padding: 5px 9px; margin-bottom: 2px;
+      font-family: inherit;
+    }
+    .quote:hover { background: rgba(0,0,0,0.08); }
+    .quote-who { font-size: 11.5px; font-weight: 700; color: var(--color-brand); }
+    .quote-text {
+      font-size: 12.5px; color: var(--color-text-muted); line-height: 1.35;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* Resalta un instante el mensaje al que se salta desde una cita. */
+    .row.highlight .bubble {
+      animation: destacar 1.6s ease;
+    }
+    @keyframes destacar {
+      0%, 70% { box-shadow: 0 0 0 3px var(--color-brand-light), var(--shadow-md); }
+      100% { box-shadow: var(--shadow-sm); }
+    }
+
+    .reply-bar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; margin-bottom: 8px;
+      background: var(--color-bg-app);
+      border-left: 3px solid var(--color-brand);
+      border-radius: 8px;
+    }
+    .reply-bar-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .reply-bar-who { font-size: 11.5px; font-weight: 700; color: var(--color-brand); }
+    .reply-bar-text {
+      font-size: 13px; color: var(--color-text-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
 
     @keyframes bubbleIn {
       from { opacity: 0; transform: translateY(6px); }
@@ -1465,6 +1558,8 @@ const EMOJIS = [
 })
 export class InboxComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
+  private document = inject(DOCUMENT);
+  private platform = inject(PlatformService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private toast = inject(ToastService);
@@ -1476,6 +1571,7 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   readonly MessagesSquare = MessagesSquare;
   readonly Send = Send;
+  readonly Reply = Reply;
   readonly Paperclip = Paperclip;
   readonly ImageIcon = ImageIcon;
   readonly Video = Video;
@@ -1581,6 +1677,8 @@ export class InboxComponent implements OnInit, OnDestroy {
   typing = signal(false);
 
   draft = signal('');
+  /** Mensaje que se está citando; null si no se responde a nada. */
+  replyTo = signal<Msg | null>(null);
   attachment = signal<{ url: string; key?: string; type: MsgType; mimeType: string; filename: string; size: number } | null>(null);
   /** Hoja de acciones del chat en móvil. */
   threadMenu = signal(false);
@@ -1592,6 +1690,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   recordingSeconds = signal(0);
 
   private scroller = viewChild<ElementRef<HTMLDivElement>>('scroller');
+  private composerInput = viewChild<ElementRef<HTMLTextAreaElement>>('composerInput');
   private mediaInput = viewChild<ElementRef<HTMLInputElement>>('mediaInput');
   private docInput = viewChild<ElementRef<HTMLInputElement>>('docInput');
   private audioInput = viewChild<ElementRef<HTMLInputElement>>('audioInput');
@@ -2122,16 +2221,65 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   // ── Envío ──
 
+  /**
+   * En escritorio, Enter envía y Shift+Enter salta de línea, que es lo que
+   * espera quien escribe con teclado. En un móvil no: ahí la tecla de la
+   * derecha es un salto de línea y el mensaje se manda con el botón, como en
+   * WhatsApp. Interceptarla obligaba a escribir todo de un tirón.
+   */
   onKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      void this.send();
-    }
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (this.platform.esTactil()) return;
+    event.preventDefault();
+    void this.send();
+  }
+
+  /**
+   * El textarea nace con una fila y crece con el texto hasta un tope. Sin esto
+   * se quedaba en una línea: escribías tres párrafos y solo veías el último.
+   */
+  onDraftChange(valor: string) {
+    this.draft.set(valor);
+    this.ajustarAltura();
+  }
+
+  private ajustarAltura() {
+    const el = this.composerInput()?.nativeElement;
+    if (!el) return;
+    // A 'auto' primero: si no, scrollHeight conserva el alto anterior y el
+    // campo solo sabe crecer, nunca encoger al borrar.
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
   }
 
   addEmoji(e: string) {
     this.draft.update(d => d + e);
     this.emojiOpen.set(false);
+    this.ajustarAltura();
+  }
+
+  // ── Citas ──
+
+  /** Mensaje citado por `m`, si sigue cargado en el hilo. */
+  quoted(m: Msg): Msg | null {
+    if (!m.replyToId) return null;
+    return this.messages().find(x => x._id === m.replyToId) ?? null;
+  }
+
+  /** Resumen de una línea del mensaje citado, para la burbuja y la barra. */
+  preview(m: Msg): string {
+    const texto = (m.text ?? '').trim();
+    if (texto) return texto.length > 80 ? `${texto.slice(0, 77)}…` : texto;
+    return MEDIA_PREVIEW[m.type] ?? 'Mensaje';
+  }
+
+  /** Salta al mensaje citado y lo resalta un momento, como en WhatsApp. */
+  scrollToMessage(id: string) {
+    const el = this.document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('highlight');
+    setTimeout(() => el.classList.remove('highlight'), 1600);
   }
 
   send() {
@@ -2142,14 +2290,20 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (!text && !att) return;
 
     this.sending.set(true);
-    const body = att
-      ? { text, type: att.type, mediaUrl: att.url, mediaKey: att.key, mimeType: att.mimeType, filename: att.filename, size: att.size }
-      : { text, type: 'text' as MsgType };
+    const citado = this.replyTo();
+    const body = {
+      ...(att
+        ? { text, type: att.type, mediaUrl: att.url, mediaKey: att.key, mimeType: att.mimeType, filename: att.filename, size: att.size }
+        : { text, type: 'text' as MsgType }),
+      ...(citado ? { replyToId: citado._id } : {}),
+    };
 
     this.http.post<Msg>(`${API}/conversations/${conv._id}/messages`, body).subscribe({
       next: msg => {
         this.upsertMessage(msg);
         this.draft.set('');
+        this.ajustarAltura();
+        this.replyTo.set(null);
         this.clearAttachment();
         this.emojiOpen.set(false);
         this.sending.set(false);

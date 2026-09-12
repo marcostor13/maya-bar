@@ -712,6 +712,7 @@ export class ConversationsService {
       filename: dto.filename,
       size: dto.size,
       durationSeconds: dto.durationSeconds,
+      replyToId: dto.replyToId ? new Types.ObjectId(dto.replyToId) : undefined,
       status: 'pending',
       sentBy: new Types.ObjectId(userId),
       at: new Date(),
@@ -747,6 +748,18 @@ export class ConversationsService {
     // El caption viaja como cuerpo; para documentos se usa el nombre si no hay texto.
     const body = msg.text || (msg.mediaUrl ? (msg.filename ?? '') : '');
 
+    // Para citar hace falta el id del mensaje EN EL PROVEEDOR, no el nuestro.
+    // Si el citado no lo tiene (por ejemplo, uno que falló al enviarse), se
+    // manda sin cita en vez de romper el envío.
+    const replyTo = msg.replyToId
+      ? (
+          await this.msgModel
+            .findById(msg.replyToId)
+            .select('externalId')
+            .lean<{ externalId?: string }>()
+        )?.externalId
+      : undefined;
+
     if (conv.channel === 'whatsapp') {
       const account = await this.waAccounts.findById(String(conv.accountId));
       if (!account) throw new Error('La cuenta de WhatsApp ya no existe');
@@ -759,6 +772,7 @@ export class ConversationsService {
         config,
         msg.mediaUrl,
         mediaType,
+        replyTo,
       );
     }
 
@@ -774,6 +788,7 @@ export class ConversationsService {
         msConfig,
         msg.mediaUrl,
         mediaType,
+        replyTo,
       );
     }
 
@@ -786,6 +801,7 @@ export class ConversationsService {
       igConfig,
       msg.mediaUrl,
       mediaType,
+      replyTo,
     );
     return undefined;
   }

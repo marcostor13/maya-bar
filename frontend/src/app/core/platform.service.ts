@@ -24,4 +24,19 @@ export class PlatformService {
   readonly platform = this.isBrowser ? Capacitor.getPlatform() : 'server';
 
   readonly isAndroid = this.platform === 'android';
+
+  /**
+   * Teclado táctil, no físico. Decide si Enter envía el mensaje o hace un salto
+   * de línea: en un móvil, interceptar Enter deja al usuario sin forma de
+   * escribir dos párrafos.
+   *
+   * No basta con `isNative`: la PWA y el navegador de un móvil tienen el mismo
+   * problema. Se mira el puntero grueso y la ausencia de hover, que es lo que
+   * de verdad distingue una pantalla táctil de un escritorio.
+   */
+  esTactil(): boolean {
+    if (!this.isBrowser) return false;
+    if (this.isNative) return true;
+    return window.matchMedia?.('(pointer: coarse) and (hover: none)').matches ?? false;
+  }
 }

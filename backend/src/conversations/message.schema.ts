@@ -81,6 +81,15 @@ export class Message extends Document {
   @Prop({ index: true })
   externalId?: string;
 
+  /**
+   * Mensaje al que este responde, como en WhatsApp. Se guarda la referencia
+   * interna para poder pintar la cita aunque el proveedor no la devuelva, y el
+   * `externalId` del citado es lo que se manda al canal para que el cliente
+   * vea la respuesta enlazada en su propia aplicación.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Message' })
+  replyToId?: Types.ObjectId;
+
   @Prop({
     enum: ['pending', 'sent', 'delivered', 'read', 'failed'],
     default: 'sent',

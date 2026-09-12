@@ -50,6 +50,20 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Notas de voz en la bandeja de entrada. Sin este permiso getUserMedia
+         falla siempre dentro del WebView, aunque el navegador lo soporte. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Adjuntar archivos. Android 13+ separó el permiso de lectura por tipo;
+         READ_EXTERNAL_STORAGE se queda para las versiones anteriores. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <!-- Haptics -->
     <uses-permission android:name="android.permission.VIBRATE" />
 

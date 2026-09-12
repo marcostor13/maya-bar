@@ -44,12 +44,17 @@ export class WhatsAppService {
   constructor(private readonly graph: MetaGraphClient) {}
 
   /** Envía un mensaje y devuelve el id del proveedor (para rastrear los acks), si lo hay. */
+  /**
+   * @param replyTo id del mensaje citado en el proveedor (wamid o id de WAHA).
+   *   Con él, el cliente ve la respuesta enlazada en su propio WhatsApp.
+   */
   async sendMessage(
     to: string,
     body: string,
     config: WaConfig,
     mediaUrl?: string,
     mediaType?: WaMediaType,
+    replyTo?: string,
   ): Promise<string | undefined> {
     const phone = this.formatPhone(to);
     if (!phone) {
@@ -87,10 +92,10 @@ export class WhatsAppService {
     }
 
     if (config.provider === 'waha') {
-      return this.sendWaha(phone, body, config);
+      return this.sendWaha(phone, body, config, replyTo);
     }
     if (config.provider === 'cloudapi') {
-      return this.sendCloudApi(phone, body, config);
+      return this.sendCloudApi(phone, body, config, replyTo);
     }
     this.logger.log(`[MOCK WA] To: ${phone} | ${body.substring(0, 80)}`);
     return undefined;
@@ -490,6 +495,7 @@ export class WhatsAppService {
     to: string,
     body: string,
     config: WaConfig,
+    replyTo?: string,
   ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
     const res = await fetch(`${config.wahaApiUrl}/api/sendText`, {
@@ -498,7 +504,12 @@ export class WhatsAppService {
         'Content-Type': 'application/json',
         'X-Api-Key': config.wahaApiKey ?? '',
       },
-      body: JSON.stringify({ session, chatId: `${to}@c.us`, text: body }),
+      body: JSON.stringify({
+        session,
+        chatId: `${to}@c.us`,
+        text: body,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      }),
     });
     if (!res.ok) throw new Error(`WAHA ${res.status}: ${await res.text()}`);
     return this.wahaMessageId(await res.json().catch(() => null));
@@ -608,11 +619,14 @@ export class WhatsAppService {
     to: string,
     body: string,
     config: WaConfig,
+    replyTo?: string,
   ): Promise<string | undefined> {
     return this.postCloudApiMessage(config, 'CloudAPI', {
       to,
       type: 'text',
       text: { body },
+      // Así es como Cloud API enlaza una respuesta con el mensaje citado.
+      ...(replyTo ? { context: { message_id: replyTo } } : {}),
     });
   }
 

@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsMongoId,
   IsNumber,
   IsOptional,
   IsString,
@@ -70,6 +71,11 @@ export class SendMessageDto {
   @IsOptional()
   @IsBoolean()
   pauseAgent?: boolean;
+
+  /** Mensaje de la conversación que se está citando, como en WhatsApp. */
+  @IsOptional()
+  @IsMongoId()
+  replyToId?: string;
 }
 
 export class AutoReplyDto {

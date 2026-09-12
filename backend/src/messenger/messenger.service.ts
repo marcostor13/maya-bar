@@ -37,12 +37,14 @@ export class MessengerService {
   constructor(private readonly graph: MetaGraphClient) {}
 
   /** Envía un mensaje de Messenger. `to` es el PSID del contacto. Devuelve el id de Meta. */
+  /** @param replyTo `mid` del mensaje citado; Meta lo enlaza en el chat. */
   async sendMessage(
     to: string,
     body: string,
     config: MsConfig,
     mediaUrl?: string,
     mediaType?: MsMediaType,
+    replyTo?: string,
   ): Promise<string | undefined> {
     if (!to) {
       this.logger.warn('Skipping Messenger message — missing recipient PSID');
@@ -61,6 +63,7 @@ export class MessengerService {
       recipient: { id: to },
       messaging_type: 'RESPONSE',
       message: { text: body },
+      ...(replyTo ? { reply_to: { mid: replyTo } } : {}),
     });
   }
 

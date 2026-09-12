@@ -10,6 +10,7 @@ import { PushService } from '../../shared/push.service';
 import { PushCenterComponent } from '../../shared/push-center';
 import { BackButtonService } from '../../core/back-button.service';
 import { NativePushService } from '../../core/push.service';
+import { DevicePermissionsService } from '../../core/device-permissions.service';
 import {
   LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight,
   Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, X, MessagesSquare,
@@ -686,6 +687,7 @@ export class ShellComponent {
   /** Push del contenedor nativo (FCM). En web es un no-op; el canal del
    *  navegador lo lleva `PushService` (Web Push/VAPID). */
   private nativePush = inject(NativePushService);
+  private devicePermissions = inject(DevicePermissionsService);
 
   // Icons
   readonly LogOut = LogOut;
@@ -715,6 +717,9 @@ export class ShellComponent {
     void this.push.init();
     // Dentro de la app nativa el canal es FCM, no el service worker.
     void this.nativePush.init();
+    // Primera vez en la app: micrófono, cámara y notificaciones de una vez, en
+    // lugar de fallar justo cuando alguien intenta grabar una nota de voz.
+    void this.devicePermissions.pedirAlInstalar();
 
     this.url.set(this.router.url);
     this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(e => {

@@ -27,12 +27,14 @@ export class InstagramService {
   constructor(private readonly graph: MetaGraphClient) {}
 
   /** Envía un DM de Instagram. `to` es el Instagram-Scoped ID (IGSID) del contacto. */
+  /** @param replyTo `mid` del mensaje citado; Meta lo enlaza en el chat. */
   async sendMessage(
     to: string,
     body: string,
     config: IgConfig,
     mediaUrl?: string,
     mediaType?: IgMediaType,
+    replyTo?: string,
   ): Promise<void> {
     if (!to) {
       this.logger.warn('Skipping IG message — missing recipient IGSID');
@@ -52,6 +54,7 @@ export class InstagramService {
       recipient: { id: to },
       messaging_type: 'RESPONSE',
       message: { text: body },
+      ...(replyTo ? { reply_to: { mid: replyTo } } : {}),
     });
   }
 
