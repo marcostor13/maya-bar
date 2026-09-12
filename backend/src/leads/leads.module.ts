@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { LeadsController } from './leads.controller';
 import { LeadsService } from './leads.service';
+import { LeadRemindersService } from './lead-reminders.service';
 import { Lead, LeadSchema } from './lead.schema';
 import { LeadActivity, LeadActivitySchema } from './lead-activity.schema';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
@@ -17,7 +18,7 @@ import { User, UserSchema } from '../users/user.schema';
     ]),
   ],
   controllers: [LeadsController],
-  providers: [LeadsService],
+  providers: [LeadsService, LeadRemindersService],
   // La bandeja de entrada crea contactos y oportunidades desde el chat.
   exports: [LeadsService],
 })

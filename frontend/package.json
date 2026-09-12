@@ -9,7 +9,7 @@
     "test": "ng test",
     "lint": "ng lint",
     "serve:ssr": "node dist/frontend/server/server.mjs",
-    "assets:android": "node scripts/generate-app-assets.mjs",
+    "assets:android": "node scripts/brand-assets.mjs",
     "build:mobile": "ng build mobile --configuration production",
     "cap:sync": "npm run build:mobile && cap sync android",
     "cap:open": "cap open android",

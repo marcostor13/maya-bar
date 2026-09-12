@@ -114,6 +114,11 @@ export class CreateActivityDto {
   @IsOptional()
   @IsDateString()
   dueAt?: string;
+
+  /** Además del push, avisar por WhatsApp al responsable cuando venza. */
+  @IsOptional()
+  @IsBoolean()
+  remindByWhatsApp?: boolean;
 }
 
 export class UpdateActivityDto {
@@ -132,4 +137,9 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsDateString()
   dueAt?: string;
+
+  /** Además del push, avisar por WhatsApp al responsable cuando venza. */
+  @IsOptional()
+  @IsBoolean()
+  remindByWhatsApp?: boolean;
 }

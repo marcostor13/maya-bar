@@ -114,6 +114,15 @@ if (fs.existsSync(ANDROID_RES)) {
       .toFile(path.join(base, 'ic_launcher_round.png'));
   }
 
+  // Icono de la barra de estado. Android lo dibuja usando SOLO el alfa, así
+  // que va en blanco puro sobre transparente: un PNG a color sale como un
+  // cuadrado gris. Se respetan las densidades que ya existan.
+  for (const dir of dirs.filter((d) => d.startsWith('drawable-') && !d.includes('night'))) {
+    const icono = path.join(ANDROID_RES, dir, 'ic_stat_maya.png');
+    if (!fs.existsSync(icono)) continue;
+    await iconTransparent(isoWhite, await size(icono), 0.88, icono);
+  }
+
   // Splash: lockup centrado sobre blanco (el backgroundColor de capacitor.config).
   for (const dir of dirs) {
     const splash = path.join(ANDROID_RES, dir, 'splash.png');

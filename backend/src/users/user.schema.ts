@@ -31,6 +31,13 @@ export class User extends Document {
   @Prop()
   name?: string;
 
+  /**
+   * Teléfono en formato internacional sin "+". Lo usan los avisos por WhatsApp
+   * (recordatorios de seguimiento); sin él solo llega el push.
+   */
+  @Prop({ trim: true })
+  phone?: string;
+
   @Prop({ default: 'SERVER' })
   role: string;
 

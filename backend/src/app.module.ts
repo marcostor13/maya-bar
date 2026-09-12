@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -34,10 +35,13 @@ import { RolesModule } from './roles/roles.module';
 import { PushModule } from './push/push.module';
 import { SuppressionModule } from './suppression/suppression.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Tareas periódicas: hoy solo los recordatorios de seguimiento.
+    ScheduleModule.forRoot(),
     SharedModule,
     WhatsAppTemplatesModule,
     ContactImportModule,
@@ -76,6 +80,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     PushModule,
     SuppressionModule,
     NotificationsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],

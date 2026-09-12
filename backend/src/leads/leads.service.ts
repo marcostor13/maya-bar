@@ -611,6 +611,7 @@ export class LeadsService {
       body: dto.body,
       at: dto.at ? new Date(dto.at) : new Date(),
       dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+      remindByWhatsApp: dto.remindByWhatsApp ?? false,
       done: false,
       createdBy: new Types.ObjectId(userId),
     });
@@ -638,8 +639,16 @@ export class LeadsService {
     if (!activity) throw new NotFoundException('Actividad no encontrada');
     if (dto.title !== undefined) activity.title = dto.title.trim();
     if (dto.body !== undefined) activity.body = dto.body;
-    if (dto.dueAt !== undefined)
-      activity.dueAt = dto.dueAt ? new Date(dto.dueAt) : undefined;
+    if (dto.dueAt !== undefined) {
+      const nueva = dto.dueAt ? new Date(dto.dueAt) : undefined;
+      // Aplazar una tarea debe volver a avisar: si no se limpia el sello, el
+      // recordatorio nuevo no saldría nunca porque el viejo ya se envió.
+      if (nueva?.getTime() !== activity.dueAt?.getTime())
+        activity.remindedAt = undefined;
+      activity.dueAt = nueva;
+    }
+    if (dto.remindByWhatsApp !== undefined)
+      activity.remindByWhatsApp = dto.remindByWhatsApp;
     if (dto.done !== undefined) {
       activity.done = dto.done;
       activity.doneAt = dto.done ? new Date() : undefined;

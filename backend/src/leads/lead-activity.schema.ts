@@ -39,6 +39,18 @@ export class LeadActivity extends Document {
   @Prop({ type: Date })
   doneAt?: Date;
 
+  /**
+   * Cuándo se avisó del vencimiento. Es lo que impide que el recordatorio se
+   * repita en cada pasada del cron: se marca al enviarlo, y se limpia si se
+   * cambia la fecha para que el aviso nuevo vuelva a salir.
+   */
+  @Prop({ type: Date })
+  remindedAt?: Date;
+
+  /** Además del push, avisar por WhatsApp al responsable. */
+  @Prop({ default: false })
+  remindByWhatsApp: boolean;
+
   @Prop({ type: Types.ObjectId, ref: 'User' })
   createdBy?: Types.ObjectId;
 }
@@ -47,3 +59,6 @@ export const LeadActivitySchema = SchemaFactory.createForClass(LeadActivity);
 LeadActivitySchema.index({ leadId: 1, at: -1 });
 // Tareas pendientes del tenant ordenadas por vencimiento (agenda y KPIs).
 LeadActivitySchema.index({ tenantId: 1, done: 1, dueAt: 1 });
+// El barrido de recordatorios: tareas vencidas que aún no se han avisado.
+// Sin este índice el cron recorre la colección entera cada pocos minutos.
+LeadActivitySchema.index({ done: 1, remindedAt: 1, dueAt: 1 });

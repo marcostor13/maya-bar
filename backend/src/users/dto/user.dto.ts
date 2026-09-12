@@ -24,6 +24,11 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
   role!: string;
+
+  /** Internacional sin "+". Habilita los avisos por WhatsApp. */
+  @IsOptional()
+  @IsString()
+  phone?: string;
 }
 
 export class UpdateUserDto {
@@ -43,4 +48,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Internacional sin "+". Habilita los avisos por WhatsApp. */
+  @IsOptional()
+  @IsString()
+  phone?: string;
 }

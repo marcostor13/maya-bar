@@ -441,6 +441,16 @@ function blankForm(stage: string): LeadForm {
                 <div class="field">
                   <label class="field-label">Vence</label>
                   <input class="input" type="datetime-local" [(ngModel)]="newActivity.dueAt" />
+                  @if (newActivity.dueAt) {
+                    <label class="check">
+                      <input type="checkbox" [(ngModel)]="newActivity.remindByWhatsApp" />
+                      <span>Avisarme también por WhatsApp</span>
+                    </label>
+                    <span class="field-hint">
+                      Al vencer llega una notificación al móvil. El WhatsApp va al teléfono
+                      del responsable de la oportunidad.
+                    </span>
+                  }
                 </div>
               }
               <button class="btn btn-primary btn-sm" [disabled]="savingActivity()" (click)="addActivity()">
@@ -729,6 +739,10 @@ function blankForm(stage: string): LeadForm {
 
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field-label { font-size: 12px; font-weight: 600; color: var(--color-text-main); }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+      color: var(--color-text-main); cursor: pointer; margin-top: 4px; }
+    .check input { width: 16px; height: 16px; accent-color: var(--color-brand); cursor: pointer; }
+    .field-hint { font-size: 12px; color: var(--color-text-muted); line-height: 1.45; }
     .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .options { border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
     .option { display: flex; flex-direction: column; align-items: flex-start; width: 100%; border: 0; border-bottom: 1px solid var(--color-border); background: var(--color-white); padding: 9px 14px; cursor: pointer; text-align: left; font: inherit; }
@@ -793,8 +807,10 @@ export class LeadsComponent implements OnInit {
   detail = signal<Lead | null>(null);
   activities = signal<Activity[]>([]);
   savingActivity = signal(false);
-  newActivity: { type: string; title: string; body: string; dueAt: string } = {
-    type: 'note', title: '', body: '', dueAt: '',
+  newActivity: {
+    type: string; title: string; body: string; dueAt: string; remindByWhatsApp: boolean;
+  } = {
+    type: 'note', title: '', body: '', dueAt: '', remindByWhatsApp: false,
   };
 
   // alta / edición
@@ -913,7 +929,7 @@ export class LeadsComponent implements OnInit {
   openDetail(lead: Lead) {
     this.detail.set(lead);
     this.activities.set([]);
-    this.newActivity = { type: 'note', title: '', body: '', dueAt: '' };
+    this.newActivity = { type: 'note', title: '', body: '', dueAt: '', remindByWhatsApp: false };
     this.loadActivities(lead._id);
   }
 
@@ -943,11 +959,15 @@ export class LeadsComponent implements OnInit {
       title: this.newActivity.title.trim(),
       body: this.newActivity.body.trim() || undefined,
       dueAt: this.newActivity.type === 'task' ? new Date(this.newActivity.dueAt).toISOString() : undefined,
+      remindByWhatsApp: this.newActivity.type === 'task' ? this.newActivity.remindByWhatsApp : undefined,
     };
     this.http.post<Activity>(`${API}/leads/${lead._id}/activities`, body).subscribe({
       next: () => {
         this.toast.success('Actividad registrada');
-        this.newActivity = { type: this.newActivity.type, title: '', body: '', dueAt: '' };
+        this.newActivity = {
+          type: this.newActivity.type, title: '', body: '', dueAt: '',
+          remindByWhatsApp: false,
+        };
         this.savingActivity.set(false);
         this.loadActivities(lead._id);
         this.load(false);
