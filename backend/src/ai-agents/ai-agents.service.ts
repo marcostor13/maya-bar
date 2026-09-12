@@ -320,11 +320,15 @@ export class AiAgentsService {
     reply: string,
     agent: AiAgent,
   ): { text: string; handoff: AgentHandoff | null } {
-    if (!agent.handoffEnabled) return { text: reply, handoff: null };
     let handoff: AgentHandoff | null = null;
+    // El token se limpia SIEMPRE, también con la derivación apagada: es sintaxis
+    // interna y un modelo puede emitirla por su cuenta. Antes se devolvía el
+    // texto intacto y el `{{HANDOFF:…}}` viajaba tal cual hasta el cliente.
     const text = reply
       .replace(HANDOFF_TOKEN, (_, reason?: string) => {
-        handoff ??= { reason: reason?.trim() || undefined };
+        if (agent.handoffEnabled) {
+          handoff ??= { reason: reason?.trim() || undefined };
+        }
         return '';
       })
       .replace(/\n{3,}/g, '\n\n')
@@ -488,19 +492,16 @@ export class AiAgentsService {
       last.content,
       history,
     );
-    let displayReply = reply || (handoff ? agent.handoffMessage : reply);
-    if (filesToSend.length > 0) {
-      displayReply +=
-        '\n\n' +
-        filesToSend
-          .map((f) => `📎 [Se enviaría archivo: ${f.name}]`)
-          .join('\n');
-    }
-    if (handoff) {
-      const reason = handoff.reason ? `: ${handoff.reason}` : '';
-      displayReply += `\n\n🔔 [Se avisaría a un agente humano y el agente IA se apagaría en el chat${reason}]`;
-    }
-    return { reply: displayReply, sources, handoff: !!handoff };
+    // Lo que se simula (archivos que se enviarían, derivación) va APARTE del
+    // texto: pegarlo al mensaje hacía creer que el agente se lo dice al cliente,
+    // y en el playground es justo lo que se está evaluando. La interfaz lo pinta
+    // como anotación propia.
+    return {
+      reply: reply || (handoff ? agent.handoffMessage : reply),
+      sources,
+      handoff: handoff ? { reason: handoff.reason ?? null } : null,
+      files: filesToSend.map((f) => f.name),
+    };
   }
 
   async findPublishedByAccount(accountId: string): Promise<AiAgent | null> {

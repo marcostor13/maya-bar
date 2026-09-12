@@ -320,11 +320,15 @@ describe('AiAgentsService', () => {
       expect(result.handoff).toEqual({ reason: undefined });
     });
 
-    it('leaves the HANDOFF token untouched when handoff is disabled', async () => {
+    it('strips the HANDOFF token even when handoff is disabled', async () => {
       mockAi.chatMessages.mockResolvedValue('texto {{HANDOFF:x}}');
       const result = await service.generateAnswer(makeAgent(), 'hola');
+
+      // No se deriva, pero el token es sintaxis interna: un modelo puede
+      // emitirlo por su cuenta y nunca debe llegar al cliente.
       expect(result.handoff).toBeNull();
-      expect(result.reply).toContain('{{HANDOFF:x}}');
+      expect(result.reply).not.toContain('{{HANDOFF');
+      expect(result.reply).toBe('texto');
     });
 
     it('propagates AiService errors', async () => {
@@ -373,7 +377,7 @@ describe('AiAgentsService', () => {
       expect(messages).toHaveLength(4);
     });
 
-    it('appends a note for each file that would be sent', async () => {
+    it('devuelve los archivos aparte, sin mezclarlos con el texto', async () => {
       fileModel.find.mockReturnValue(buildQuery([makeAgentFile()]));
       mockAi.chatMessages.mockResolvedValue('Te la envío {{SEND_FILE:carta}}');
 
@@ -383,8 +387,11 @@ describe('AiAgentsService', () => {
         [{ role: 'user', content: 'carta' }],
       );
 
-      expect(result.reply).toContain('Te la envío');
-      expect(result.reply).toContain('[Se enviaría archivo: Carta del bar]');
+      // La simulación va en su propio campo: pegada al texto parecía algo que
+      // el agente le dice al cliente, que es justo lo que se está evaluando.
+      expect(result.reply).toBe('Te la envío');
+      expect(result.files).toEqual(['Carta del bar']);
+      expect(result.reply).not.toContain('Se enviaría');
     });
   });
 

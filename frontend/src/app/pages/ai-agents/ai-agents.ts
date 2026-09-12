@@ -624,6 +624,19 @@ function blankAgent(): Agent {
               <div class="bubble" [class.user]="m.role === 'user'" [class.assistant]="m.role === 'assistant'">
                 {{ m.content }}
               </div>
+              <!-- Simulación, no es algo que el agente diga al cliente. -->
+              @for (f of m.files ?? []; track f) {
+                <div class="sim-note">
+                  <lucide-icon [img]="Paperclip" [size]="13" [strokeWidth]="2.5"></lucide-icon>
+                  Enviaría el archivo <strong>{{ f }}</strong>
+                </div>
+              }
+              @if (m.handoff) {
+                <div class="sim-note sim-note--handoff">
+                  <lucide-icon [img]="PhoneForwarded" [size]="13" [strokeWidth]="2.5"></lucide-icon>
+                  Derivaría a una persona y se apagaría en este chat@if (m.handoff.reason) { <span>· {{ m.handoff.reason }}</span> }
+                </div>
+              }
             }
             @if (sending()) {
               <div class="bubble assistant typing">Escribiendo…</div>
@@ -748,6 +761,16 @@ function blankAgent(): Agent {
     .bubble.user { align-self: flex-end; background: var(--color-brand); color: #fff; border-bottom-right-radius: 6px; }
     .bubble.assistant { align-self: flex-start; background: #fff; color: var(--color-text-main); border: 1px solid var(--color-border); border-bottom-left-radius: 6px; }
     .bubble.typing { opacity: .6; font-style: italic; }
+    /* Anotación de simulación: se distingue a propósito de una burbuja, para
+       que no parezca algo que el agente le dice al cliente. */
+    .sim-note { align-self: flex-start; display: flex; align-items: center; gap: 6px; max-width: 90%;
+      font-size: 12px; font-weight: 600; color: var(--color-text-muted);
+      background: var(--color-bg-light); border: 1px dashed var(--color-border);
+      border-radius: var(--radius-sm); padding: 7px 12px; }
+    .sim-note--handoff { color: #92400E; background: #FFFBEB; border-color: #FDE68A; }
+    .sim-note strong { font-weight: 700; }
+    .sim-note span { opacity: 0.85; font-weight: 600; }
+
     .chat-input { display: flex; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--color-border); flex-shrink: 0; align-items: flex-end; }
     .chat-input .input { flex: 1; resize: none; max-height: 120px; }
 
@@ -833,7 +856,13 @@ export class AiAgentsComponent implements OnInit {
 
   // playground
   playgroundAgent = signal<Agent | null>(null);
-  chat = signal<{ role: 'user' | 'assistant'; content: string }[]>([]);
+  /** `files` y `handoff` son simulación del playground, no texto del agente. */
+  chat = signal<{
+    role: 'user' | 'assistant';
+    content: string;
+    files?: string[];
+    handoff?: { reason: string | null } | null;
+  }[]>([]);
   chatInput = '';
   sending = signal(false);
 
@@ -1196,10 +1225,19 @@ export class AiAgentsComponent implements OnInit {
     this.chat.update(c => [...c, { role: 'user', content: text }]);
     this.chatInput = '';
     this.sending.set(true);
-    this.http.post<{ reply: string; sources: number }>(`${API}/ai-agents/${agent._id}/test`, {
-      messages: this.chat(),
+    this.http.post<{
+      reply: string; sources: number;
+      handoff: { reason: string | null } | null; files: string[];
+    }>(`${API}/ai-agents/${agent._id}/test`, {
+      // Solo el rol y el texto: las anotaciones de simulación no son historial.
+      messages: this.chat().map(m => ({ role: m.role, content: m.content })),
     }).subscribe({
-      next: (r) => { this.chat.update(c => [...c, { role: 'assistant', content: r.reply }]); this.sending.set(false); },
+      next: (r) => {
+        this.chat.update(c => [...c, {
+          role: 'assistant', content: r.reply, files: r.files, handoff: r.handoff,
+        }]);
+        this.sending.set(false);
+      },
       error: (err) => {
         this.chat.update(c => [...c, { role: 'assistant', content: '⚠️ ' + (err?.error?.message || 'Error al responder') }]);
         this.sending.set(false);
