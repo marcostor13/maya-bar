@@ -202,3 +202,85 @@ condición. Las dos cosas a la vez es lo que un cliente recuerda como engaño.
 **No lo mandes en el primer mensaje.** De los 66, **33 solo hicieron clic en el
 anuncio** y nunca conversaron. Una oferta de permanencia a quien todavía no sabe
 qué le vendes no es un incentivo: es ruido.
+
+---
+
+## 7. Cuándo mandarla
+
+Todos los destinatarios son `+51`, así que la zona horaria es **America/Lima
+(UTC−5, sin horario de verano)**. Todas las horas de este apartado son de Lima.
+
+Los números salen de los 324 mensajes entrantes de clientes registrados en la
+cuenta entre el 3 y el 12 de septiembre de 2026.
+
+### 7.1 La hora está en los datos
+
+Mensajes entrantes por hora:
+
+| Hora | 08 | 09 | 10 | 11 | 12 | 13 | 14 | 15 | **16** | **17** | 18 | **19** | **20** | 21 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| n | 16 | 24 | 16 | 7 | 23 | 24 | 27 | 12 | **36** | **48** | 19 | **31** | **33** | 6 |
+
+**El 52 % del tráfico (167 de 324) cae entre las 16:00 y las 20:00.**
+
+Y si se miran solo los **primeros** mensajes de cada conversación —el momento en
+que alguien decide abrir el chat—, el pico se aprieta más: **las 19:00
+concentran el 22 % de todas las aperturas**, más del doble que cualquier otra
+hora.
+
+Ese dato no es un sesgo propio: es Meta optimizando la entrega del anuncio hacia
+donde encontraba conversión. El algoritmo ya hizo el trabajo de averiguar a qué
+hora responde este público.
+
+Horas a evitar: **11:00 y 15:00** (clase y almuerzo, caen a 7 y 12), y de las
+21:00 en adelante, donde el canal está muerto.
+
+### 7.2 El día NO está en los datos
+
+La distribución por día del histórico sale viernes 164 / sábado 126 / resto
+residual. **Eso no dice que el viernes funcione: dice que el anuncio corrió
+viernes y sábado.** Son los días de pauta comprados, no una preferencia del
+cliente. Tomar ese número como conducta sería leer el propio calendario de
+inversión como si fuera un dato de mercado.
+
+El día hay que razonarlo aparte. Los destinatarios son academias, institutos y
+colegios —"Grupo de estudios con respaldo de colegio", "Innovaroots Perú",
+"RedComunitaria"—: deciden en días laborables y enseñan de día. El lunes se va
+en ordenar la semana; el viernes ya nadie abre un proveedor nuevo.
+
+### 7.3 La recomendación
+
+> **Primer toque (la plantilla del 5.1): martes, entre las 18:30 y las 19:30.**
+
+Martes es el día con más capacidad de decisión de la semana, y las 19:00 es la
+hora a la que esta lista concreta abre WhatsApp.
+
+> **Segundo toque (la oferta del 5.3): jueves, misma franja.**
+
+48 h de separación, y **solo a quien respondió o abrió la demo**.
+
+Con fecha límite el 30 de septiembre queda margen para un tercer recordatorio el
+lunes anterior al cierre.
+
+**Feriados:** entre Santa Rosa (30 de agosto) y el Combate de Angamos (8 de
+octubre) no hay feriado nacional en Perú. Septiembre está limpio.
+
+### 7.4 Dos cosas operativas antes de apretar el botón
+
+**a) Los 66 no van de golpe.** Un número que nunca ha enviado marketing masivo y
+de pronto suelta 66 plantillas en un minuto es justo el patrón que le baja la
+calificación de calidad a Meta — y con la calidad baja llega el *throttling*, que
+frena el resto de la campaña.
+
+1. Mandar **10** y esperar 30 minutos.
+2. Revisar entregados, leídos y bloqueos.
+3. Si está limpio, seguir en tandas de **~15 cada 10 minutos**.
+
+Los 66 caben de sobra dentro de la franja de una hora.
+
+**b) El reparto ventana-dentro / ventana-fuera caduca solo.** Cuando se armó
+`destinatarios-recuperacion.csv` eran 47 fuera y 19 dentro de las 24 h.
+Comprobado el 13 de septiembre de 2026: **73 fuera y 2 dentro**. La ventana se
+cierra sola con el paso de los días, así que **hay que recontar el mismo día del
+envío**, no fiarse del CSV. En la práctica, hoy toda la campaña va por plantilla
+aprobada y el apartado 5.2 casi no aplica.
