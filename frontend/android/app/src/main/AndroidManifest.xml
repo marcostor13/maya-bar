@@ -53,6 +53,13 @@
     <!-- Notas de voz en la bandeja de entrada. Sin este permiso getUserMedia
          falla siempre dentro del WebView, aunque el navegador lo soporte. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Obligatorio aunque no se toque el volumen: cuando la página pide
+         AUDIO_CAPTURE, BridgeWebChromeClient de Capacitor lanza JUNTOS
+         MODIFY_AUDIO_SETTINGS y RECORD_AUDIO, y solo concede el permiso al
+         WebView si TODOS vuelven concedidos. Un permiso no declarado vuelve
+         siempre denegado, así que sin esta línea el micrófono no funciona
+         nunca y ni siquiera llega a salir el diálogo del sistema. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- Adjuntar archivos. Android 13+ separó el permiso de lectura por tipo;

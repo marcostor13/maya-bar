@@ -2,8 +2,16 @@ import { Injectable, inject } from '@angular/core';
 import { PlatformService } from './platform.service';
 import { NativePushService } from './push.service';
 
-/** Marca de que ya se pidieron los permisos: solo se hace la primera vez. */
-const YA_PEDIDOS = 'maya.permisos.pedidos';
+/**
+ * Marca de que ya se pidieron los permisos: solo se hace la primera vez.
+ *
+ * La versión sube a `v2` a propósito. En la v1 el micrófono no se podía
+ * conceder nunca (faltaba MODIFY_AUDIO_SETTINGS en el manifest, sin el cual
+ * Capacitor deniega el permiso al WebView), y la marca se guardaba igualmente:
+ * quien ya tenía la app instalada se quedaba sin que volviera a preguntarle
+ * jamás. Cambiar la clave descarta esa marca envenenada.
+ */
+const YA_PEDIDOS = 'maya.permisos.pedidos.v2';
 
 /**
  * Permisos del dispositivo, pedidos la primera vez que se abre la app.
@@ -28,12 +36,16 @@ export class DevicePermissionsService {
     if (!this.platform.isNative) return;
     if (this.yaSePidieron()) return;
 
-    // Se marca ANTES de pedir: si el usuario deniega, no se le vuelve a
-    // preguntar en cada arranque, que es la forma de que acabe odiando la app.
-    this.marcar();
-
     await this.microfonoYCamara();
     await this.push.enable().catch(() => false);
+
+    // Se marca DESPUÉS de preguntar, no antes. Marcar antes parecía más
+    // seguro —evita insistir si el usuario cierra la app a media pregunta—,
+    // pero convierte cualquier fallo al pedir el permiso en permanente: la
+    // marca queda puesta aunque el diálogo no haya llegado a salir. Si la app
+    // muere durante el diálogo se vuelve a preguntar al siguiente arranque,
+    // que es mucho menos grave que no preguntar nunca más.
+    this.marcar();
   }
 
   /**

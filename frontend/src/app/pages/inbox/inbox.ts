@@ -568,10 +568,14 @@ const EMOJIS = [
               <div class="recording-bar">
                 <span class="rec-dot"></span>
                 Grabando nota de voz · {{ formatSeconds(recordingSeconds()) }}
-                <button class="btn btn-sm btn-secondary" (click)="cancelRecording()">Cancelar</button>
-                <button class="btn btn-sm btn-primary" (click)="stopRecording()">
-                  <lucide-icon [img]="Square" [size]="14" [strokeWidth]="2.4"></lucide-icon> Enviar
-                </button>
+                @if (manosLibres()) {
+                  <button class="btn btn-sm btn-secondary" (click)="cancelRecording()">Cancelar</button>
+                  <button class="btn btn-sm btn-primary" (click)="stopRecording()">
+                    <lucide-icon [img]="Square" [size]="14" [strokeWidth]="2.4"></lucide-icon> Enviar
+                  </button>
+                } @else {
+                  <span class="rec-hint">Suelta para enviar</span>
+                }
               </div>
             }
 
@@ -637,7 +641,16 @@ const EMOJIS = [
                   <lucide-icon [img]="Send" [size]="19" [strokeWidth]="2.4"></lucide-icon>
                 </button>
               } @else {
-                <button class="btn-icon send" (click)="startRecording()" [disabled]="recording()" title="Grabar nota de voz" aria-label="Grabar nota de voz">
+                <button
+                  class="btn-icon send mic-btn"
+                  [class.rec]="recording()"
+                  (pointerdown)="onMicDown($event)"
+                  (pointerup)="onMicUp()"
+                  (pointercancel)="onMicCancel()"
+                  (contextmenu)="$event.preventDefault()"
+                  title="Mantén pulsado para grabar"
+                  aria-label="Grabar nota de voz: mantén pulsado para grabar, toca para manos libres"
+                >
                   <lucide-icon [img]="Mic" [size]="19" [strokeWidth]="2.4"></lucide-icon>
                 </button>
               }
@@ -1449,7 +1462,20 @@ const EMOJIS = [
       width: 9px; height: 9px; border-radius: 50%; background: var(--color-error);
       animation: pulse 1.1s infinite;
     }
+    .rec-hint { margin-left: auto; opacity: 0.75; font-weight: 500; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+    /* Mantener pulsado sobre un elemento del WebView dispara el gesto nativo
+       —selección, lupa, menú contextual— y el evento de puntero se pierde.
+       Estas cuatro reglas son las que hacen que la pulsación larga llegue. */
+    .mic-btn {
+      touch-action: none;
+      user-select: none; -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .mic-btn.rec { transform: scale(1.15); background: var(--color-error); }
 
     .emoji-pop {
       display: flex; flex-wrap: wrap; gap: 2px;
@@ -1709,6 +1735,8 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   recording = signal(false);
   recordingSeconds = signal(0);
+  /** true cuando se grabó con un toque: la barra manda, no el dedo. */
+  manosLibres = signal(false);
 
   private scroller = viewChild<ElementRef<HTMLDivElement>>('scroller');
   private composerInput = viewChild<ElementRef<HTMLTextAreaElement>>('composerInput');
@@ -1722,6 +1750,14 @@ export class InboxComponent implements OnInit, OnDestroy {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
   private stream: MediaStream | null = null;
+
+  /** Por debajo de esto la pulsación fue un toque, no un "mantener pulsado". */
+  private static readonly TOQUE_CORTO_MS = 400;
+  /** Momento del `pointerdown`, para distinguir toque de pulsación larga. */
+  private pulsadoEn = 0;
+  /** `getUserMedia` en vuelo: el permiso puede tardar y el dedo levantarse antes. */
+  private arrancando = false;
+  private soltadoAntesDeArrancar = false;
   private allLoaded = false;
 
   selected = computed(() => this.conversations().find(c => c._id === this.selectedId()) ?? null);
@@ -2398,36 +2434,147 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   // ── Nota de voz ──
 
-  async startRecording() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      this.toast.error('Tu navegador no soporta grabación de audio');
+  /**
+   * Formatos de grabación en orden de preferencia.
+   *
+   * El orden no es estético: WhatsApp Cloud API solo acepta aac, amr, mpeg,
+   * mp4 y ogg-con-opus. `audio/webm` —que es lo que devuelve Chrome por
+   * defecto— lo rechaza. Se pide el primero que el dispositivo soporte de
+   * verdad y webm queda como último recurso, porque Messenger e Instagram sí
+   * lo aceptan y es mejor eso que no poder grabar.
+   */
+  private static readonly FORMATOS_AUDIO = [
+    'audio/ogg;codecs=opus',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/mp4',
+    'audio/aac',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ];
+
+  private mejorFormato(): string | undefined {
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return undefined;
+    return InboxComponent.FORMATOS_AUDIO.find(t => MediaRecorder.isTypeSupported(t));
+  }
+
+  private extensionDe(mime: string): string {
+    if (mime.includes('ogg')) return 'ogg';
+    if (mime.includes('mp4')) return 'm4a';
+    if (mime.includes('aac')) return 'aac';
+    return 'webm';
+  }
+
+  /**
+   * Pulsar y mantener, como en WhatsApp.
+   *
+   * Antes esto era un `(click)`: en el WebView de Android una pulsación
+   * larga dispara el gesto nativo de selección y el click no llega nunca, así
+   * que mantener el botón pulsado no hacía absolutamente nada. Con
+   * `pointerdown` se empieza al apoyar el dedo.
+   */
+  onMicDown(ev: PointerEvent) {
+    // Evita que el WebView se quede con el gesto (selección de texto, lupa).
+    ev.preventDefault();
+    this.pulsadoEn = Date.now();
+    this.manosLibres.set(false);
+    void this.startRecording();
+  }
+
+  /**
+   * Al soltar: si fue una pulsación larga se envía, y si fue un toque corto se
+   * pasa a manos libres para no mandar una nota de medio segundo por error.
+   */
+  onMicUp() {
+    // Un toque corto deja la grabación en marcha: se envía con el botón de la
+    // barra. Así un dedo resbalado no manda una nota de medio segundo.
+    if (Date.now() - this.pulsadoEn < InboxComponent.TOQUE_CORTO_MS) {
+      this.manosLibres.set(true);
       return;
     }
+    // Pulsación larga soltada antes de que el sistema concediera el micrófono:
+    // no hay nada grabado, así que se descarta el flujo cuando llegue.
+    if (this.arrancando) {
+      this.soltadoAntesDeArrancar = true;
+      return;
+    }
+    if (this.recording()) this.stopRecording();
+  }
+
+  /** El dedo se fue fuera del botón o el sistema se quedó el gesto: se descarta. */
+  onMicCancel() {
+    if (this.manosLibres()) return;
+    if (this.arrancando) this.soltadoAntesDeArrancar = true;
+    this.cancelRecording();
+  }
+
+  async startRecording() {
+    if (this.recording() || this.arrancando) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.toast.error('Este dispositivo no permite grabar audio');
+      return;
+    }
+    this.arrancando = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // El dedo pudo levantarse mientras el sistema pedía el permiso: sin esto
+      // quedaría una grabación viva que nadie va a parar.
+      if (this.soltadoAntesDeArrancar) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
       this.stream = stream;
       this.audioChunks = [];
-      this.mediaRecorder = new MediaRecorder(stream);
+      const formato = this.mejorFormato();
+      this.mediaRecorder = new MediaRecorder(stream, formato ? { mimeType: formato } : undefined);
       this.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) this.audioChunks.push(e.data); };
       this.mediaRecorder.onstop = () => {
-        const mimeType = this.mediaRecorder?.mimeType || 'audio/webm';
+        const mimeType = this.mediaRecorder?.mimeType || formato || 'audio/webm';
         const blob = new Blob(this.audioChunks, { type: mimeType });
         this.releaseStream();
-        const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'm4a' : 'webm';
-        this.uploadFile(blob, `nota-de-voz-${Date.now()}.${ext}`);
+        // Una nota de menos de medio segundo es un resbalón, no un mensaje.
+        if (blob.size < 1024) {
+          this.toast.error('La nota de voz salió vacía. Mantén pulsado más tiempo.');
+          return;
+        }
+        this.uploadFile(blob, `nota-de-voz-${Date.now()}.${this.extensionDe(mimeType)}`);
       };
       this.mediaRecorder.start();
       this.recording.set(true);
       this.recordingSeconds.set(0);
       this.recordingTimer = setInterval(() => this.recordingSeconds.update(s => s + 1), 1000);
-    } catch {
-      this.toast.error('No se pudo acceder al micrófono');
+    } catch (err) {
+      this.avisarFalloMicrofono(err);
+    } finally {
+      this.arrancando = false;
+      this.soltadoAntesDeArrancar = false;
     }
   }
 
+  /**
+   * Un permiso denegado y un micrófono ocupado se arreglan de formas distintas;
+   * decirlo ahorra el "no funciona" sin más datos.
+   */
+  private avisarFalloMicrofono(err: unknown) {
+    const nombre = (err as { name?: string } | null)?.name ?? '';
+    if (nombre === 'NotAllowedError' || nombre === 'SecurityError') {
+      this.toast.error(
+        this.platform.isNative
+          ? 'Falta el permiso de micrófono. Actívalo en Ajustes › Aplicaciones › Maya CRM › Permisos.'
+          : 'Falta el permiso de micrófono. Actívalo en el candado de la barra de direcciones.',
+      );
+      return;
+    }
+    if (nombre === 'NotFoundError') {
+      this.toast.error('No se encontró ningún micrófono en este dispositivo');
+      return;
+    }
+    this.toast.error('No se pudo acceder al micrófono');
+  }
+
   stopRecording() {
-    this.mediaRecorder?.stop();
+    if (this.mediaRecorder?.state === 'recording') this.mediaRecorder.stop();
     this.recording.set(false);
+    this.manosLibres.set(false);
     if (this.recordingTimer) { clearInterval(this.recordingTimer); this.recordingTimer = null; }
   }
 
@@ -2439,6 +2586,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     }
     this.releaseStream();
     this.recording.set(false);
+    this.manosLibres.set(false);
     if (this.recordingTimer) { clearInterval(this.recordingTimer); this.recordingTimer = null; }
   }
 
@@ -2456,6 +2604,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.releaseStream();
     if (this.recordingTimer) { clearInterval(this.recordingTimer); this.recordingTimer = null; }
     this.recording.set(false);
+    this.manosLibres.set(false);
   }
 
   // ── Tiempo real ──
