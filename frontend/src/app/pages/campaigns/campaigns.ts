@@ -1,7 +1,8 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule, Plus, Send, Edit2, Trash2, Megaphone, Mail, MessageSquare,
-  CheckCircle2, Clock, AlertCircle, Copy, Search, Image, Video, RotateCcw, Mic, FileText,
+  CheckCircle2, Clock, AlertCircle, Copy, Search, Image, Video, RotateCcw, Mic, FileText, HeartHandshake,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -12,7 +13,7 @@ import { CampaignEditorComponent } from './campaign-editor';
 @Component({
   selector: 'app-campaigns',
   standalone: true,
-  imports: [LucideAngularModule, CampaignEditorComponent],
+  imports: [LucideAngularModule, RouterLink, CampaignEditorComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -20,10 +21,16 @@ import { CampaignEditorComponent } from './campaign-editor';
           <h1 class="page-title">Campañas</h1>
           <p class="page-subtitle">Email y WhatsApp para tus clientes</p>
         </div>
-        <button class="btn btn-primary btn-lg" (click)="openDrawer()">
-          <lucide-icon [img]="Plus" [size]="18"></lucide-icon>
-          Nueva Campaña
-        </button>
+        <div class="header-actions">
+          <a class="btn btn-secondary btn-lg" routerLink="/recuperacion">
+            <lucide-icon [img]="HeartHandshake" [size]="18"></lucide-icon>
+            Recuperar clientes
+          </a>
+          <button class="btn btn-primary btn-lg" (click)="openDrawer()">
+            <lucide-icon [img]="Plus" [size]="18"></lucide-icon>
+            Nueva Campaña
+          </button>
+        </div>
       </div>
 
       <div class="stats-row">
@@ -202,6 +209,7 @@ import { CampaignEditorComponent } from './campaign-editor';
     .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
     .page-title { font-family: var(--font-heading); font-size: 26px; font-weight: 700; color: var(--color-text-main); margin: 0 0 4px; }
     .page-subtitle { font-size: 14px; color: var(--color-text-muted); margin: 0; }
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
     .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
     .stat-card { background: var(--color-white); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 20px 24px; }
@@ -283,6 +291,7 @@ import { CampaignEditorComponent } from './campaign-editor';
     @media (max-width: 768px) {
       .page { padding: 20px 16px; }
       .page-header { flex-wrap: wrap; gap: 12px; }
+      .header-actions { width: 100%; flex-direction: column; }
       .page-header .btn { width: 100%; justify-content: center; }
       .stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
       .filter-bar { flex-direction: column; align-items: stretch; }
@@ -315,6 +324,7 @@ export class CampaignsComponent implements OnInit, OnDestroy {
   readonly Clock = Clock; readonly AlertCircle = AlertCircle; readonly Copy = Copy;
   readonly Search = Search; readonly Image = Image; readonly Video = Video;
   readonly RotateCcw = RotateCcw; readonly Mic = Mic; readonly FileText = FileText;
+  readonly HeartHandshake = HeartHandshake;
 
   campaigns = signal<Campaign[]>([]);
   availableLists = signal<ContactList[]>([]);

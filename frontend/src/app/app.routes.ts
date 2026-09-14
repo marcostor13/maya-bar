@@ -120,6 +120,17 @@ export const routes: Routes = [
         canActivate: [moduleGuard('campaigns')],
       },
       {
+        path: 'recuperacion',
+        loadComponent: () => import('./pages/recovery/recovery').then(m => m.RecoveryComponent),
+        canActivate: [moduleGuard('campaigns')],
+      },
+      {
+        path: 'recuperacion/:id',
+        loadComponent: () =>
+          import('./pages/recovery/recovery-wizard').then(m => m.RecoveryWizardComponent),
+        canActivate: [moduleGuard('campaigns')],
+      },
+      {
         path: 'plantillas',
         loadComponent: () =>
           import('./pages/whatsapp-templates/whatsapp-templates').then(m => m.WhatsappTemplatesComponent),

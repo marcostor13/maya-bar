@@ -36,6 +36,7 @@ import { PushModule } from './push/push.module';
 import { SuppressionModule } from './suppression/suppression.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { RecoveryModule } from './recovery/recovery.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     SuppressionModule,
     NotificationsModule,
     DashboardModule,
+    RecoveryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

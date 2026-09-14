@@ -14,7 +14,7 @@ import { DevicePermissionsService } from '../../core/device-permissions.service'
 import {
   LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight,
   Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, X, MessagesSquare,
-  LayoutTemplate, FileText, Target, LayoutGrid, BanIcon, type LucideIconData,
+  LayoutTemplate, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, type LucideIconData,
 } from 'lucide-angular';
 
 /** Una entrada del menú. La misma alimenta el lateral, la barra inferior y la hoja "Más". */
@@ -25,6 +25,8 @@ interface NavItem {
   short?: string;
   icon: LucideIconData;
   route: string;
+  /** Módulo de permisos, cuando no coincide con `key` (varias entradas de un mismo módulo). */
+  module?: string;
 }
 
 interface NavGroup {
@@ -766,7 +768,7 @@ export class ShellComponent {
 
   /** Catálogo completo del menú; cada grupo ya viene filtrado por permisos. */
   navGroups: Signal<NavGroup[]> = computed(() => {
-    const keep = (items: NavItem[]) => items.filter(i => this.can(i.key));
+    const keep = (items: NavItem[]) => items.filter(i => this.can(i.module ?? i.key));
     const groups: NavGroup[] = [];
 
     if (this.isSuperAdmin()) {
@@ -789,6 +791,7 @@ export class ShellComponent {
         { key: 'leads', label: 'Seguimiento', icon: Target, route: '/leads' },
         { key: 'lists', label: 'Listas', icon: List, route: '/lists' },
         { key: 'campaigns', label: 'Campañas', icon: Megaphone, route: '/campaigns' },
+        { key: 'recovery', module: 'campaigns', label: 'Recuperar clientes', short: 'Recuperar', icon: HeartHandshake, route: '/recuperacion' },
       ]);
       if (mine.length) groups.push({ label: 'MI ACTIVIDAD', items: mine });
       if (clients.length) groups.push({ label: 'MIS CLIENTES', items: clients });
@@ -807,6 +810,7 @@ export class ShellComponent {
       { key: 'lists', label: 'Listas', icon: List, route: '/lists' },
       { key: 'forms', label: 'Formularios', short: 'Forms', icon: FileText, route: '/forms' },
       { key: 'campaigns', label: 'Campañas', icon: Megaphone, route: '/campaigns' },
+      { key: 'recovery', module: 'campaigns', label: 'Recuperar clientes', short: 'Recuperar', icon: HeartHandshake, route: '/recuperacion' },
       { key: 'templates', label: 'Plantillas', icon: LayoutTemplate, route: '/plantillas' },
       { key: 'ai-agents', label: 'Agentes IA', short: 'Agentes', icon: Bot, route: '/ai-agents' },
       { key: 'inbox', label: 'Conversaciones', short: 'Chats', icon: MessagesSquare, route: '/inbox' },
