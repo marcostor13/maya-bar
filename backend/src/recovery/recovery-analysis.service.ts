@@ -32,6 +32,13 @@ const MESSAGES_PER_CONVERSATION = 14;
 const CHUNK_SIZE = 15;
 const CONCURRENCY = 3;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Modelo del análisis: DeepSeek V4 Pro, la versión pro más reciente. */
+const RECOVERY_MODEL = 'deepseek-v4-pro';
+/**
+ * Tope de salida por llamada. V4 Pro razona antes de responder y esos tokens
+ * cuentan: con un tope corto la respuesta llega vacía.
+ */
+const MAX_OUTPUT_TOKENS = 24000;
 
 interface AiOptions {
   provider: 'auto' | 'openai' | 'claude' | 'deepseek' | 'gemini';
@@ -336,7 +343,7 @@ Responde SOLO con JSON: {"message":"..."}`;
     const raw = await this.ai.chatMessages(
       [{ role: 'user', content: prompt }],
       {
-        maxTokens: 4000,
+        maxTokens: MAX_OUTPUT_TOKENS,
         temperature: 0.7,
         ...(await this.aiOptions(tenantId)),
       },
@@ -405,10 +412,8 @@ Responde SOLO con JSON: {"items":[{"id":"","stage":"","note":"","name":""}]}`,
     let error = '';
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        // Tope amplio: los modelos de razonamiento gastan tokens pensando antes
-        // de escribir, y con un tope corto devuelven la respuesta vacía.
         const raw = await this.ai.chatMessages(messages, {
-          maxTokens: 12000,
+          maxTokens: MAX_OUTPUT_TOKENS,
           temperature: 0.1,
           ...ai,
         });
@@ -486,7 +491,7 @@ Responde SOLO con JSON:
       const raw = await this.ai.chatMessages(
         [{ role: 'user', content: prompt }],
         {
-          maxTokens: 12000,
+          maxTokens: MAX_OUTPUT_TOKENS,
           temperature: 0.5,
           ...ai,
         },
@@ -526,35 +531,18 @@ Responde SOLO con JSON:
   }
 
   /**
-   * Proveedor, modelo y keys para hablar con la IA: los mismos del agente del
-   * tenant, que es la configuración que ya funciona. Con `auto` se elegía la
-   * primera key de entorno (DeepSeek) aunque el tenant tuviera la suya propia
-   * de otro proveedor.
+   * La recuperación siempre analiza con DeepSeek en su versión pro, sea cual
+   * sea el proveedor del agente: es un análisis por lotes, no una conversación,
+   * y conviene el modelo que mejor razona. Usa la key de DeepSeek del tenant
+   * y, si no tiene, la del servidor (`DEEPSEEK_API_KEY`).
    */
   private async aiOptions(tenantId: string): Promise<AiOptions> {
     const cfg = await this.settings.get(tenantId);
-    const apiKeys: AiApiKeys = {
-      openai: cfg?.openaiApiKey,
-      deepseek: cfg?.deepseekApiKey,
-      gemini: cfg?.geminiApiKey,
-      claude: cfg?.claudeApiKey,
+    return {
+      provider: 'deepseek',
+      model: RECOVERY_MODEL,
+      apiKeys: { deepseek: cfg?.deepseekApiKey },
     };
-    const agent = await this.agentModel
-      .findOne(
-        { tenantId: { $in: [tenantId, new Types.ObjectId(tenantId)] } },
-        { provider: 1, aiModel: 1 },
-      )
-      .sort({ updatedAt: -1 })
-      .lean<{ provider?: string; aiModel?: string }>()
-      .exec();
-    const provider = agent?.provider as AiOptions['provider'] | undefined;
-    if (provider && provider !== 'auto')
-      return { provider, model: agent?.aiModel, apiKeys };
-
-    const own = (['openai', 'claude', 'gemini', 'deepseek'] as const).find(
-      (p) => apiKeys[p]?.trim(),
-    );
-    return { provider: own ?? 'auto', apiKeys };
   }
 }
 
