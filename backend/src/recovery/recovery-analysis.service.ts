@@ -39,11 +39,26 @@ const RECOVERY_MODEL = 'deepseek-v4-pro';
  * cuentan: con un tope corto la respuesta llega vacía.
  */
 const MAX_OUTPUT_TOKENS = 24000;
+/** Tiempo máximo por llamada a la IA: sin él, una llamada colgada frena el plan para siempre. */
+const AI_TIMEOUT_MS = 4 * 60_000;
+/** Intentos (con error) antes de dar el análisis por fallido. */
+export const MAX_ANALYSIS_ATTEMPTS = 3;
+
+/** El plan dejó de estar en análisis mientras se procesaba: se abandona sin tocarlo. */
+export class AnalysisAbortedError extends Error {
+  constructor() {
+    super('Análisis abandonado: el plan ya no está en análisis');
+  }
+}
+
+/** Error que reintentar no arregla (no hay conversaciones que analizar). */
+export class NothingToAnalyzeError extends Error {}
 
 interface AiOptions {
   provider: 'auto' | 'openai' | 'claude' | 'deepseek' | 'gemini';
   model?: string;
   apiKeys: AiApiKeys;
+  timeoutMs: number;
 }
 
 interface Classified {
@@ -88,25 +103,16 @@ export class RecoveryAnalysisService {
     private suppression: SuppressionService,
   ) {}
 
-  /** Corre en segundo plano: el progreso y el resultado quedan en el plan. */
-  async run(planId: string): Promise<void> {
-    const plan = await this.planModel.findById(planId).exec();
-    if (!plan) return;
-    try {
-      await this.analyze(plan);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Análisis del plan ${planId} falló: ${message}`);
-      await this.planModel
-        .updateOne(
-          { _id: plan._id },
-          { $set: { status: 'failed', 'analysis.error': message } },
-        )
-        .exec();
-    }
-  }
-
-  private async analyze(plan: RecoveryPlan): Promise<void> {
+  /**
+   * Analiza un plan ya reclamado por el worker. Se puede llamar varias veces
+   * sobre el mismo plan: lo clasificado se guarda tras cada lote en
+   * `analysisCheckpoint` y al retomar solo se procesa lo que falta.
+   *
+   * Lanza `AnalysisAbortedError` si el plan dejó de estar en análisis (lo
+   * borraron o lo relanzaron), y cualquier otro error para que el worker
+   * decida si reintenta.
+   */
+  async run(plan: RecoveryPlan): Promise<void> {
     const tenantId = String(plan.tenantId);
     const tid = new Types.ObjectId(tenantId);
     const since = new Date(Date.now() - plan.lookbackDays * 86_400_000);
@@ -142,22 +148,77 @@ export class RecoveryAnalysisService {
       lastInbound.has(String(c._id)),
     );
     if (!candidates.length)
-      throw new Error(
+      throw new NothingToAnalyzeError(
         `No hay conversaciones de WhatsApp con mensajes de clientes en los últimos ${plan.lookbackDays} días`,
       );
 
-    await this.planModel
-      .updateOne(
-        { _id: plan._id },
-        {
-          $set: {
-            'analysis.total': candidates.length,
-            'analysis.processed': 0,
-          },
-        },
-      )
-      .exec();
+    const suppressed = await this.suppression.setFor(tenantId);
+    const businessContext = await this.businessContext(tid, plan.context);
+    const ai = await this.aiOptions(tenantId);
 
+    // ── 1. Clasificar por lotes, retomando lo ya hecho ──
+    const classified = new Map<string, Classified>(
+      Object.entries(plan.analysisCheckpoint ?? {}).map(([id, c]) => [
+        id,
+        { id, ...c },
+      ]),
+    );
+    const toClassify = candidates.filter(
+      (c) =>
+        !classified.has(String(c._id)) &&
+        !this.suppression.matches(suppressed, { phone: c.contact }),
+    );
+    const chunks: Conversation[][] = [];
+    for (let i = 0; i < toClassify.length; i += CHUNK_SIZE)
+      chunks.push(toClassify.slice(i, i + CHUNK_SIZE));
+
+    let processed = candidates.length - toClassify.length;
+    await this.progress(plan, {
+      'analysis.total': candidates.length,
+      'analysis.processed': processed,
+      'analysis.stage': 'classifying',
+    });
+
+    let failedChunks = 0;
+    let lastError = '';
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const batch: Record<string, unknown> = {};
+      await Promise.all(
+        chunks.slice(i, i + CONCURRENCY).map(async (chunk) => {
+          const result = await this.classifyChunk(chunk, businessContext, ai);
+          if ('error' in result) {
+            failedChunks++;
+            lastError = result.error;
+            return;
+          }
+          const valid = new Set(chunk.map((c) => String(c._id)));
+          for (const item of result.items) {
+            if (!valid.has(item.id)) continue;
+            classified.set(item.id, item);
+            batch[`analysisCheckpoint.${item.id}`] = {
+              stage: item.stage,
+              note: item.note ?? '',
+              name: item.name ?? '',
+            };
+          }
+          processed += chunk.length;
+        }),
+      );
+      await this.progress(plan, { ...batch, 'analysis.processed': processed });
+    }
+
+    if (failedChunks) {
+      const detail = `${failedChunks} de ${chunks.length} lotes fallaron (${ai.provider} · ${ai.model}): ${lastError}`;
+      // Mientras queden intentos se reintenta: lo clasificado ya está guardado.
+      if (plan.analysisAttempts + 1 < MAX_ANALYSIS_ATTEMPTS)
+        throw new Error(detail);
+      // Último intento: si algo salió, se sigue con lo que hay.
+      if (!classified.size)
+        throw new Error(`La IA no pudo analizar las conversaciones. ${detail}`);
+      this.logger.warn(`Plan ${String(plan._id)}: se sigue sin ${detail}`);
+    }
+
+    // ── 2. Armar destinatarios ──
     const customerIds = candidates
       .map((c) => c.customerId)
       .filter((id): id is Types.ObjectId => !!id);
@@ -167,48 +228,6 @@ export class RecoveryAnalysisService {
       .exec();
     const customerName = new Map(customers.map((c) => [String(c._id), c.name]));
 
-    const suppressed = await this.suppression.setFor(tenantId);
-    const businessContext = await this.businessContext(tid, plan.context);
-    const ai = await this.aiOptions(tenantId);
-
-    // ── 1. Clasificar por tandas ──
-    const classified = new Map<string, Classified>();
-    const toClassify = candidates.filter(
-      (c) => !this.suppression.matches(suppressed, { phone: c.contact }),
-    );
-    const chunks: Conversation[][] = [];
-    for (let i = 0; i < toClassify.length; i += CHUNK_SIZE)
-      chunks.push(toClassify.slice(i, i + CHUNK_SIZE));
-
-    let processed = candidates.length - toClassify.length;
-    let failedChunks = 0;
-    let lastError = '';
-    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-      await Promise.all(
-        chunks.slice(i, i + CONCURRENCY).map(async (chunk) => {
-          const result = await this.classifyChunk(chunk, businessContext, ai);
-          if ('error' in result) {
-            failedChunks++;
-            lastError = result.error;
-          } else {
-            for (const item of result.items) classified.set(item.id, item);
-          }
-          processed += chunk.length;
-        }),
-      );
-      await this.planModel
-        .updateOne(
-          { _id: plan._id },
-          { $set: { 'analysis.processed': processed } },
-        )
-        .exec();
-    }
-    if (chunks.length && failedChunks === chunks.length)
-      throw new Error(
-        `La IA no pudo analizar las conversaciones (${ai.provider}${ai.model ? ' · ' + ai.model : ''}): ${lastError}`,
-      );
-
-    // ── 2. Armar destinatarios ──
     const now = Date.now();
     const byStage = new Map<string, RecoveryRecipient[]>();
     const excluded: RecoveryRecipient[] = [];
@@ -252,6 +271,7 @@ export class RecoveryAnalysisService {
     const stages = RECOVERABLE_STAGES.filter((s) => byStage.get(s)?.length);
 
     // ── 3. Plan y mensajes ──
+    await this.progress(plan, { 'analysis.stage': 'drafting' });
     const draft = await this.draftPlan(
       stages.map((s) => ({ key: s, recipients: byStage.get(s)! })),
       excluded,
@@ -282,9 +302,9 @@ export class RecoveryAnalysisService {
       };
     });
 
-    await this.planModel
+    const res = await this.planModel
       .updateOne(
-        { _id: plan._id },
+        { _id: plan._id, status: 'analyzing' },
         {
           $set: {
             status: 'review',
@@ -305,9 +325,22 @@ export class RecoveryAnalysisService {
               ].filter((r) => r.insideWindow).length,
             },
           },
+          $unset: { analysisCheckpoint: 1, analysisLockedUntil: 1 },
         },
       )
       .exec();
+    if (!res.matchedCount) throw new AnalysisAbortedError();
+  }
+
+  /** Guarda avance; si el plan ya no está en análisis, detiene el trabajo. */
+  private async progress(
+    plan: RecoveryPlan,
+    set: Record<string, unknown>,
+  ): Promise<void> {
+    const res = await this.planModel
+      .updateOne({ _id: plan._id, status: 'analyzing' }, { $set: set })
+      .exec();
+    if (!res.matchedCount) throw new AnalysisAbortedError();
   }
 
   /** Reescribe el mensaje de un segmento siguiendo la indicación del usuario. */
@@ -542,6 +575,7 @@ Responde SOLO con JSON:
       provider: 'deepseek',
       model: RECOVERY_MODEL,
       apiKeys: { deepseek: cfg?.deepseekApiKey },
+      timeoutMs: AI_TIMEOUT_MS,
     };
   }
 }

@@ -29,6 +29,13 @@ const WORKING_TIPS = [
         <h2 class="working-title">{{ phaseLabel() }}</h2>
         <p class="panel-sub">{{ tip() }}</p>
 
+        @if (retrying()) {
+          <div class="alert alert-warning retry" role="status">
+            <lucide-icon [img]="RotateCcw" [size]="16"></lucide-icon>
+            <span>La IA dio un error y lo estamos reintentando solos (intento {{ attempt() }} de 3). Lo ya analizado no se pierde.</span>
+          </div>
+        }
+
         @if (total() > 0) {
           <div class="working-progress">
             <div class="progress"><span [style.width.%]="percent()" style="background:var(--color-ai)"></span></div>
@@ -36,7 +43,7 @@ const WORKING_TIPS = [
           </div>
         }
         <p class="hint" style="margin-top:20px">
-          Puedes salir de esta pantalla: el análisis sigue y lo encontrarás en «Recuperar clientes».
+          Se hace en segundo plano: puedes cerrar esta pantalla o la app. Te avisaremos con una notificación cuando el plan esté listo.
         </p>
       </div>
     } @else {
@@ -135,6 +142,7 @@ const WORKING_TIPS = [
     @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
     .working-title { font-family: var(--font-heading); font-size: 22px; font-weight: 600; margin: 0 0 6px; }
     .working-progress { width: 100%; max-width: 420px; margin-top: 28px; }
+    .retry { margin-top: 20px; text-align: left; max-width: 480px; }
     .working-count { font-size: 13px; color: var(--color-text-muted); margin-top: 10px; font-weight: 500; }
 
     @media (max-width: 768px) {
@@ -165,9 +173,14 @@ export class RecoveryAnalyzeStepComponent implements OnInit, OnDestroy {
   processed = computed(() => this.plan()?.analysis?.processed ?? 0);
   percent = computed(() => (this.total() ? Math.round((this.processed() / this.total()) * 100) : 5));
   tip = computed(() => WORKING_TIPS[this.tipIndex() % WORKING_TIPS.length]);
+  retrying = computed(() => !!this.plan()?.analysis?.error && (this.plan()?.analysisAttempts ?? 0) > 0);
+  attempt = computed(() => Math.min(3, (this.plan()?.analysisAttempts ?? 0) + 1));
+
   phaseLabel = computed(() => {
-    if (!this.total()) return 'Buscando conversaciones';
-    if (this.processed() >= this.total()) return 'Armando tu plan y redactando los mensajes';
+    const stage = this.plan()?.analysis?.stage;
+    if (stage === 'queued' || (!stage && !this.total())) return 'En cola, empezando en unos segundos';
+    if (stage === 'drafting' || (this.total() && this.processed() >= this.total()))
+      return 'Armando tu plan y redactando los mensajes';
     return 'Analizando tus conversaciones';
   });
 

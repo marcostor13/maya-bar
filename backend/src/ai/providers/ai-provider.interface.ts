@@ -16,6 +16,8 @@ export interface AiChatRequest {
   model?: string;
   /** Etiqueta usada en el mensaje de error `<label> API error: ...`. */
   errorLabel?: string;
+  /** Aborta la llamada pasado este tiempo. Sin él, espera indefinidamente. */
+  timeoutMs?: number;
 }
 
 /** Transporte HTTP hacia un proveedor de chat de IA (DIP). */

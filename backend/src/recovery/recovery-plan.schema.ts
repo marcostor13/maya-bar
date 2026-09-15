@@ -51,6 +51,17 @@ export interface RecoveryRecipient {
   error?: string;
 }
 
+/** Reescritura de un mensaje con IA, hecha en segundo plano por el worker. */
+export interface RewriteJob {
+  state: 'pending' | 'running' | 'done' | 'failed';
+  instruction: string;
+  requestedAt: Date;
+  startedAt?: Date;
+  finishedAt?: Date;
+  result?: string;
+  error?: string;
+}
+
 export type SegmentSendStatus =
   | 'idle'
   | 'scheduled'
@@ -89,6 +100,7 @@ export interface RecoverySegment {
   sendStatus: SegmentSendStatus;
   nextBatchAt?: Date;
   sendError?: string;
+  rewriteJob?: RewriteJob;
 }
 
 export interface RecoveryAnalysis {
@@ -102,7 +114,10 @@ export interface RecoveryAnalysis {
   hourHistogram: number[];
   bestHour?: number;
   insideWindow: number;
+  /** Mientras analiza: último error de un intento que se va a reintentar. */
   error?: string;
+  /** Fase del análisis, para contar en pantalla qué está pasando. */
+  stage?: 'queued' | 'classifying' | 'drafting';
 }
 
 @Schema({ timestamps: true })
@@ -156,6 +171,28 @@ export class RecoveryPlan extends Document {
   @Prop({ type: Array, default: [] })
   excluded: RecoveryRecipient[];
 
+  // ── Cola del análisis ──
+  // El análisis no vive en la memoria del proceso: un worker lo toma de aquí,
+  // renueva el candado mientras trabaja y guarda lo clasificado tras cada lote.
+  // Si el proceso muere (un despliegue), el candado caduca y otro lo retoma
+  // desde ese punto.
+
+  @Prop({ type: Date })
+  analysisQueuedAt?: Date;
+
+  @Prop({ type: Date })
+  analysisLockedUntil?: Date;
+
+  @Prop({ default: 0 })
+  analysisAttempts: number;
+
+  /** Conversaciones ya clasificadas por id, para no repetirlas al retomar. */
+  @Prop({ type: Object, default: () => ({}) })
+  analysisCheckpoint: Record<
+    string,
+    { stage: string; note: string; name?: string }
+  >;
+
   /** Candado del cron de envío, para que dos instancias no manden la misma tanda. */
   @Prop({ type: Date })
   lockedUntil?: Date;
@@ -166,4 +203,5 @@ export class RecoveryPlan extends Document {
 }
 
 export const RecoveryPlanSchema = SchemaFactory.createForClass(RecoveryPlan);
-RecoveryPlanSchema.index({ status: 1 });
+RecoveryPlanSchema.index({ status: 1, analysisLockedUntil: 1 });
+RecoveryPlanSchema.index({ 'segments.rewriteJob.state': 1 });

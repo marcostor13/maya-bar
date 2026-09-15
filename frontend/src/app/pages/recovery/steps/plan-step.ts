@@ -26,6 +26,9 @@ interface DraftSegment {
 }
 
 const EXCLUDED = '__excluded__';
+/** Cada cuánto se pregunta por una reescritura en curso, y cuánto se espera. */
+const REWRITE_POLL_MS = 2500;
+const REWRITE_TIMEOUT_MS = 6 * 60_000;
 const LIST_PREVIEW = 30;
 const DEFAULT_CUSTOM_MESSAGE =
   'Hola {{1}}, te escribo porque me quedé con tu consulta a medias.\n\n¿Te puedo ayudar con algo?';
@@ -378,6 +381,7 @@ export class RecoveryPlanStepComponent implements OnInit, OnDestroy {
   submitting = signal(false);
 
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private rewriteTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingSave = false;
 
   locked = computed(() => ['scheduled', 'sending', 'done'].includes(this.plan().status));
@@ -404,9 +408,16 @@ export class RecoveryPlanStepComponent implements OnInit, OnDestroy {
       description: s.description, strategy: s.strategy, recipients: [...s.recipients], templateId: s.templateId,
     })));
     this.excluded.set([...p.excluded]);
+    // Si se salió con una reescritura en marcha, se sigue esperándola.
+    const pending = p.segments.find(s => s.rewriteJob?.state === 'pending' || s.rewriteJob?.state === 'running');
+    if (pending?.rewriteJob) {
+      this.rewriting.set(pending.key);
+      this.waitRewrite(pending.key, pending.rewriteJob.requestedAt, Date.now());
+    }
   }
 
   ngOnDestroy() {
+    if (this.rewriteTimer) { clearTimeout(this.rewriteTimer); this.rewriteTimer = null; }
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
     if (this.pendingSave) this.save().catch(() => undefined);
   }
@@ -478,21 +489,54 @@ export class RecoveryPlanStepComponent implements OnInit, OnDestroy {
     this.scheduleSave();
   }
 
+  /**
+   * Pide otra versión. La IA trabaja en segundo plano (puede tardar un par de
+   * minutos): aquí solo se encola y se consulta hasta que termina.
+   */
   async rewrite(key: string) {
     if (this.rewriting()) return;
     this.rewriting.set(key);
-    await this.flushSave();
+    try {
+      await this.flushSave();
+    } catch {
+      this.rewriting.set(null);
+      return;
+    }
     this.api.rewrite(this.plan()._id, key, this.instructions()[key] ?? '').subscribe({
-      next: ({ message }) => {
-        this.rewriting.set(null);
-        this.patch(key, { message });
-        this.toast.success('Nueva versión lista. Si no te convence, pide otra.');
-      },
+      next: ({ requestedAt }) => this.waitRewrite(key, requestedAt, Date.now()),
       error: (err: { error?: { message?: string } }) => {
         this.rewriting.set(null);
-        this.toast.error(err.error?.message || 'La IA no pudo reescribir el mensaje');
+        this.toast.error(err.error?.message || 'No se pudo pedir otra versión');
       },
     });
+  }
+
+  private waitRewrite(key: string, requestedAt: string, startedAt: number) {
+    this.rewriteTimer = setTimeout(() => {
+      this.rewriteTimer = null;
+      this.api.get(this.plan()._id).subscribe({
+        next: (plan) => {
+          const job = plan.segments.find(s => s.key === key)?.rewriteJob;
+          const mine = !!job && new Date(job.requestedAt).getTime() === new Date(requestedAt).getTime();
+          if (!mine) { this.rewriting.set(null); return; }
+          if (job.state === 'done' && job.result) {
+            this.rewriting.set(null);
+            this.patch(key, { message: job.result });
+            this.toast.success('Nueva versión lista. Si no te convence, pide otra.');
+          } else if (job.state === 'failed') {
+            this.rewriting.set(null);
+            this.toast.error(job.error || 'La IA no pudo reescribir el mensaje');
+          } else if (Date.now() - startedAt > REWRITE_TIMEOUT_MS) {
+            this.rewriting.set(null);
+            this.toast.error('La IA está tardando demasiado. Vuelve a intentarlo en un momento.');
+          } else {
+            this.waitRewrite(key, requestedAt, startedAt);
+          }
+        },
+        // Un fallo de red puntual no cancela la espera.
+        error: () => this.waitRewrite(key, requestedAt, startedAt),
+      });
+    }, REWRITE_POLL_MS);
   }
 
   // ── Guardado ────────────────────────────────────────────────────────

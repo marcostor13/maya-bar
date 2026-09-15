@@ -3,7 +3,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
@@ -17,7 +16,7 @@ import {
   RecoveryRecipient,
   RecoverySegment,
 } from './recovery-plan.schema';
-import { RecoveryAnalysisService } from './recovery-analysis.service';
+import { RecoveryWorker } from './recovery-worker.service';
 import {
   CreateRecoveryPlanDto,
   ScheduleRecoveryDto,
@@ -41,33 +40,17 @@ const TEMPLATE_SYNC_MS = 10 * 60 * 1000;
 const LOCK_MS = 5 * 60 * 1000;
 
 @Injectable()
-export class RecoveryService implements OnModuleInit {
+export class RecoveryService {
   private readonly logger = new Logger(RecoveryService.name);
 
   constructor(
     @InjectModel(RecoveryPlan.name) private planModel: Model<RecoveryPlan>,
-    private analysis: RecoveryAnalysisService,
+    private worker: RecoveryWorker,
     private templates: WhatsAppTemplatesService,
     private accounts: WhatsAppAccountsService,
     private settings: SettingsService,
     private suppression: SuppressionService,
   ) {}
-
-  /** El análisis corre en memoria: uno a medias tras un reinicio no terminará nunca. */
-  async onModuleInit() {
-    await this.planModel
-      .updateMany(
-        { status: 'analyzing' },
-        {
-          $set: {
-            status: 'failed',
-            'analysis.error':
-              'El análisis se interrumpió por un reinicio del servidor. Vuelve a lanzarlo.',
-          },
-        },
-      )
-      .exec();
-  }
 
   findAll(tenantId: string) {
     return this.planModel
@@ -81,6 +64,8 @@ export class RecoveryService implements OnModuleInit {
           createdAt: 1,
           updatedAt: 1,
           'analysis.total': 1,
+          'analysis.processed': 1,
+          'analysis.stage': 1,
           'analysis.headline': 1,
           'segments.key': 1,
           'segments.name': 1,
@@ -104,6 +89,8 @@ export class RecoveryService implements OnModuleInit {
         _id: new Types.ObjectId(id),
         tenantId: new Types.ObjectId(tenantId),
       })
+      // Lo usa solo el worker, y puede pesar cientos de entradas.
+      .select('-analysisCheckpoint')
       .exec();
     if (!plan) throw new NotFoundException('Plan no encontrado');
     return plan;
@@ -133,17 +120,11 @@ export class RecoveryService implements OnModuleInit {
       context: dto.context?.trim() ?? '',
       timezone,
       status: 'analyzing',
-      analysis: {
-        total: 0,
-        processed: 0,
-        headline: '',
-        summary: '',
-        insights: [],
-        hourHistogram: [],
-        insideWindow: 0,
-      },
+      analysisQueuedAt: new Date(),
+      analysis: emptyAnalysis(),
     });
-    void this.analysis.run(String(plan._id));
+    // Se encola y se responde ya: el worker lo toma en segundo plano.
+    void this.worker.kick();
     return plan;
   }
 
@@ -164,17 +145,16 @@ export class RecoveryService implements OnModuleInit {
     plan.status = 'analyzing';
     plan.segments = [];
     plan.excluded = [];
-    plan.analysis = {
-      total: 0,
-      processed: 0,
-      headline: '',
-      summary: '',
-      insights: [],
-      hourHistogram: [],
-      insideWindow: 0,
-    };
+    plan.analysis = emptyAnalysis();
+    plan.analysisQueuedAt = new Date();
+    plan.analysisAttempts = 0;
+    plan.analysisLockedUntil = undefined;
     await plan.save();
-    void this.analysis.run(String(plan._id));
+    // El checkpoint no se cargó (findOne lo excluye): se vacía aparte.
+    await this.planModel
+      .updateOne({ _id: plan._id }, { $unset: { analysisCheckpoint: 1 } })
+      .exec();
+    void this.worker.kick();
     return plan;
   }
 
@@ -253,26 +233,39 @@ export class RecoveryService implements OnModuleInit {
     return plan.save();
   }
 
-  async rewriteMessage(
+  /**
+   * Encola la reescritura de un mensaje. Con un modelo que razona puede tardar
+   * más de lo que aguanta una petición HTTP, así que la hace el worker y la
+   * pantalla consulta el resultado en `segments[].rewriteJob`. Pedir otra
+   * versión mientras una está en curso la sustituye.
+   */
+  async requestRewrite(
     id: string,
     tenantId: string,
     key: string,
     instruction?: string,
-  ): Promise<{ message: string }> {
+  ): Promise<{ requestedAt: Date }> {
     const plan = await this.findOne(id, tenantId);
-    const segment = plan.segments.find((s) => s.key === key);
-    if (!segment) throw new NotFoundException('Segmento no encontrado');
-    const message = await this.analysis.rewriteMessage(
-      plan,
-      segment,
-      instruction ?? '',
-    );
-    const invalid = validateTemplateBody(message);
-    if (invalid)
-      throw new BadRequestException(
-        `La IA propuso un mensaje que Meta rechazaría (${invalid}). Inténtalo de nuevo.`,
-      );
-    return { message };
+    if (!plan.segments.some((s) => s.key === key))
+      throw new NotFoundException('Segmento no encontrado');
+    const requestedAt = new Date();
+    await this.planModel
+      .updateOne(
+        { _id: plan._id },
+        {
+          $set: {
+            'segments.$[s].rewriteJob': {
+              state: 'pending',
+              instruction: instruction?.trim() ?? '',
+              requestedAt,
+            },
+          },
+        },
+        { arrayFilters: [{ 's.key': key }] },
+      )
+      .exec();
+    void this.worker.kick();
+    return { requestedAt };
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -614,4 +607,17 @@ export class RecoveryService implements OnModuleInit {
       );
     return String(account._id);
   }
+}
+
+function emptyAnalysis() {
+  return {
+    total: 0,
+    processed: 0,
+    headline: '',
+    summary: '',
+    insights: [],
+    hourHistogram: [],
+    insideWindow: 0,
+    stage: 'queued' as const,
+  };
 }

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import {
   LucideAngularModule, HeartHandshake, Plus, Sparkles, Users, FileCheck2, CalendarClock,
@@ -72,7 +72,12 @@ const STATUS: Record<RecoveryStatus, { label: string; cls: string; cta: string }
                 </button>
               </div>
               <h3 class="plan-name">{{ p.name }}</h3>
-              @if (p.analysis.headline) { <p class="plan-headline">{{ p.analysis.headline }}</p> }
+              @if (p.status === 'analyzing') {
+                <p class="plan-headline">
+                  {{ p.analysis.total ? 'Analizando ' + p.analysis.processed + ' de ' + p.analysis.total + ' conversaciones…' : 'En cola…' }}
+                </p>
+                <div class="bar"><span class="ai" [style.width.%]="p.analysis.total ? (p.analysis.processed / p.analysis.total) * 100 : 4"></span></div>
+              } @else if (p.analysis.headline) { <p class="plan-headline">{{ p.analysis.headline }}</p> }
 
               @if (p.segments.length) {
                 <div class="seg-dots">
@@ -143,7 +148,8 @@ const STATUS: Record<RecoveryStatus, { label: string; cls: string; cta: string }
     .plan-stats span { display: inline-flex; align-items: center; gap: 5px; }
     .plan-stats .sent { color: var(--color-success); font-weight: 600; }
     .bar { height: 6px; background: var(--color-bg-app); border-radius: var(--radius-pill); overflow: hidden; margin-top: 10px; }
-    .bar span { display: block; height: 100%; background: var(--color-success); }
+    .bar span { display: block; height: 100%; background: var(--color-success); transition: width var(--transition-smooth); }
+    .bar span.ai { background: var(--color-ai); }
     .plan-foot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 18px; }
     .date { font-size: 12px; color: var(--color-text-muted); }
     .cta { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--color-brand); }
@@ -163,7 +169,7 @@ const STATUS: Record<RecoveryStatus, { label: string; cls: string; cta: string }
     }
   `],
 })
-export class RecoveryComponent implements OnInit {
+export class RecoveryComponent implements OnInit, OnDestroy {
   private api = inject(RecoveryApiService);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
@@ -182,12 +188,21 @@ export class RecoveryComponent implements OnInit {
 
   plans = signal<RecoveryPlan[]>([]);
   loading = signal(true);
+  private timer: ReturnType<typeof setTimeout> | null = null;
 
   ngOnInit() { this.load(); }
 
+  ngOnDestroy() { if (this.timer) clearTimeout(this.timer); }
+
   load() {
     this.api.list().subscribe({
-      next: (plans) => { this.plans.set(plans); this.loading.set(false); },
+      next: (plans) => {
+        this.plans.set(plans);
+        this.loading.set(false);
+        // Los análisis corren en segundo plano: la lista se refresca sola.
+        const active = plans.some(p => ['analyzing', 'sending', 'scheduled'].includes(p.status));
+        if (active) this.timer = setTimeout(() => this.load(), plans.some(p => p.status === 'analyzing') ? 5000 : 30_000);
+      },
       error: (err: { error?: { message?: string } }) => {
         this.loading.set(false);
         this.toast.error(err.error?.message || 'No se pudieron cargar los planes');

@@ -98,6 +98,10 @@ export class HttpAiProvider implements AiChatProvider {
     return (list ?? []).map((m) => m.id ?? '').filter(Boolean);
   }
 
+  private signal(req: AiChatRequest): AbortSignal | undefined {
+    return req.timeoutMs ? AbortSignal.timeout(req.timeoutMs) : undefined;
+  }
+
   private errorLabel(req: AiChatRequest): string {
     return req.errorLabel ?? DEFAULT_ERROR_LABELS[req.provider];
   }
@@ -110,6 +114,7 @@ export class HttpAiProvider implements AiChatProvider {
     const turns = req.messages.filter((m) => m.role !== 'system');
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
+      signal: this.signal(req),
       headers: {
         'x-api-key': req.apiKey,
         'anthropic-version': '2023-06-01',
@@ -149,6 +154,7 @@ export class HttpAiProvider implements AiChatProvider {
       `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${req.apiKey}`,
       {
         method: 'POST',
+        signal: this.signal(req),
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: system ? { parts: [{ text: system }] } : undefined,
@@ -183,6 +189,7 @@ export class HttpAiProvider implements AiChatProvider {
     const maxTokens = req.maxTokens ?? DEFAULT_MAX_TOKENS;
     const res = await fetch(url, {
       method: 'POST',
+      signal: this.signal(req),
       headers: {
         Authorization: `Bearer ${req.apiKey}`,
         'content-type': 'application/json',

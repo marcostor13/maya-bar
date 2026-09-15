@@ -81,7 +81,7 @@ export class RecoveryController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.recovery.rewriteMessage(
+    return this.recovery.requestRewrite(
       id,
       req.user.tenantId,
       key,

@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { RecoveryController } from './recovery.controller';
 import { RecoveryService } from './recovery.service';
 import { RecoveryAnalysisService } from './recovery-analysis.service';
+import { RecoveryWorker } from './recovery-worker.service';
 import { RecoveryPlan, RecoveryPlanSchema } from './recovery-plan.schema';
 import {
   Conversation,
@@ -31,6 +32,6 @@ import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.m
     WhatsAppAccountsModule,
   ],
   controllers: [RecoveryController],
-  providers: [RecoveryService, RecoveryAnalysisService],
+  providers: [RecoveryService, RecoveryAnalysisService, RecoveryWorker],
 })
 export class RecoveryModule {}

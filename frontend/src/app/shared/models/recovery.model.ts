@@ -25,6 +25,15 @@ export interface RecoveryRecipient {
   error?: string;
 }
 
+/** Reescritura del mensaje con IA, hecha en segundo plano. */
+export interface RewriteJob {
+  state: 'pending' | 'running' | 'done' | 'failed';
+  instruction: string;
+  requestedAt: string;
+  result?: string;
+  error?: string;
+}
+
 export interface RecoverySegment {
   key: string;
   name: string;
@@ -50,6 +59,7 @@ export interface RecoverySegment {
   sendStatus: SegmentSendStatus;
   nextBatchAt?: string;
   sendError?: string;
+  rewriteJob?: RewriteJob;
 }
 
 export interface RecoveryAnalysis {
@@ -62,7 +72,9 @@ export interface RecoveryAnalysis {
   hourHistogram: number[];
   bestHour?: number;
   insideWindow: number;
+  /** Mientras analiza: error del último intento, que se va a reintentar. */
   error?: string;
+  stage?: 'queued' | 'classifying' | 'drafting';
 }
 
 export interface RecoveryPlan {
@@ -74,6 +86,7 @@ export interface RecoveryPlan {
   timezone: string;
   language: string;
   analysis: RecoveryAnalysis;
+  analysisAttempts?: number;
   segments: RecoverySegment[];
   excluded: RecoveryRecipient[];
   createdAt: string;

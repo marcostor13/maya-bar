@@ -24,6 +24,8 @@ interface AiOptions {
   model?: string;
   temperature?: number;
   apiKeys?: AiApiKeys;
+  /** Tiempo máximo de la llamada; sin él, espera lo que tarde el proveedor. */
+  timeoutMs?: number;
 }
 
 @Injectable()
@@ -139,6 +141,7 @@ export class AiService {
       maxTokens,
       temperature,
       messages,
+      timeoutMs: options.timeoutMs,
     });
   }
 

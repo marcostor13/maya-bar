@@ -34,8 +34,9 @@ export class RecoveryApiService {
     return this.http.patch<RecoveryPlan>(`${this.base}/${id}`, body);
   }
 
-  rewrite(id: string, key: string, instruction: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`${this.base}/${id}/segments/${key}/rewrite`, { instruction });
+  /** Encola la reescritura; el resultado aparece en `segments[].rewriteJob`. */
+  rewrite(id: string, key: string, instruction: string): Observable<{ requestedAt: string }> {
+    return this.http.post<{ requestedAt: string }>(`${this.base}/${id}/segments/${key}/rewrite`, { instruction });
   }
 
   submitTemplates(id: string): Observable<RecoveryPlan> {
