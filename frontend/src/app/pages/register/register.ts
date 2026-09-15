@@ -11,7 +11,7 @@ import { AuthService } from '../../auth/auth.service';
     <div class="register-page">
       <div class="register-card card animate-fade-in">
         <div class="register-header">
-          <img src="/logo.png" alt="Maya CRM" class="logo-img" />
+          <img src="/logo.png?v=2" alt="Maya CRM" class="logo-img" />
           <h1>Empieza gratis</h1>
           <p>14 días de prueba, sin tarjeta de crédito.</p>
         </div>

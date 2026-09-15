@@ -3,7 +3,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, Lightbulb, Users, UserX, MessageCircle, Clock, ChevronDown, Wand2,
-  Plus, ArrowRight, AlertCircle, Braces, Trash2, Sparkles, Info, Check,
+  Plus, ArrowRight, AlertCircle, Braces, Trash2, Sparkles, Info, Check, Pencil,
 } from 'lucide-angular';
 import { ToastService } from '../../../shared/toast';
 import { ConfirmService } from '../../../shared/confirm';
@@ -128,7 +128,10 @@ const DEFAULT_CUSTOM_MESSAGE =
               }
               <div class="field">
                 <div class="editor-head">
-                  <label class="label" [for]="'msg-' + s.key">Mensaje</label>
+                  <label class="label edit-label" [for]="'msg-' + s.key">
+                    <lucide-icon [img]="Pencil" [size]="14"></lucide-icon>
+                    {{ locked() ? 'Mensaje' : 'Mensaje · escribe aquí para cambiarlo' }}
+                  </label>
                   <span class="counter" [class.over]="s.message.length > 1024">{{ s.message.length }}/1024</span>
                 </div>
                 <textarea #ta class="textarea msg" [id]="'msg-' + s.key" rows="8" [ngModel]="s.message"
@@ -304,7 +307,14 @@ const DEFAULT_CUSTOM_MESSAGE =
     .editor-head { display: flex; justify-content: space-between; align-items: center; }
     .counter { font-size: 12px; color: var(--color-text-muted); }
     .counter.over { color: var(--color-error); font-weight: 600; }
-    .msg { min-height: 180px; line-height: 1.5; }
+    .msg {
+      min-height: 180px; line-height: 1.5; background: var(--color-white);
+      border: 1.5px dashed var(--color-border); cursor: text;
+    }
+    .msg:hover:not(:disabled) { border-color: var(--color-brand); }
+    .msg:focus { border-style: solid; }
+    .edit-label { display: inline-flex; align-items: center; gap: 6px; }
+    .edit-label lucide-icon { color: var(--color-brand); }
     .field-error { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-error); }
     .editor-tools { display: flex; gap: 8px; }
     .rewrite { display: flex; gap: 8px; }
@@ -363,7 +373,7 @@ export class RecoveryPlanStepComponent implements OnInit, OnDestroy {
   readonly MessageCircle = MessageCircle; readonly Clock = Clock; readonly ChevronDown = ChevronDown;
   readonly Wand2 = Wand2; readonly Plus = Plus; readonly ArrowRight = ArrowRight;
   readonly AlertCircle = AlertCircle; readonly Braces = Braces; readonly Trash2 = Trash2;
-  readonly Sparkles = Sparkles; readonly Info = Info; readonly Check = Check;
+  readonly Sparkles = Sparkles; readonly Info = Info; readonly Check = Check; readonly Pencil = Pencil;
   readonly EXCLUDED = EXCLUDED;
   readonly LIST_PREVIEW = LIST_PREVIEW;
 

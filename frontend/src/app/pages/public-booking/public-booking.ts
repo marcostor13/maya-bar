@@ -33,7 +33,7 @@ const OCCASION_OPTIONS = [
         <!-- Header -->
         <div class="booking-header">
           <div class="booking-logo">
-            <img src="/logo.png" alt="Maya CRM" class="logo-img" />
+            <img src="/logo.png?v=2" alt="Maya CRM" class="logo-img" />
           </div>
           <h1 class="booking-title">{{ config()?.welcomeTitle || localName() || 'Reserva en Maya' }}</h1>
           <p class="booking-subtitle">{{ config()?.welcomeMessage || 'Reserva tu mesa de forma rápida y segura.' }}</p>

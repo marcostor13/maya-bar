@@ -65,7 +65,7 @@ const DESCRIPTION =
     <header class="lp-header" [class.open]="menuOpen()">
       <div class="lp-wrap header-inner">
         <a class="brand" routerLink="/" aria-label="Maya CRM, inicio">
-          <img src="/logo.png" alt="Maya CRM" width="147" height="40" />
+          <img src="/logo.png?v=2" alt="Maya CRM" width="147" height="40" />
         </a>
 
         <nav class="header-nav" aria-label="Secciones">
@@ -371,7 +371,7 @@ const DESCRIPTION =
       <div class="lp-wrap footer-inner">
         <div class="footer-brand">
           <a class="brand" routerLink="/" aria-label="Maya CRM, inicio">
-            <img src="/logo-light.png" alt="Maya CRM" width="132" height="36" />
+            <img src="/logo-light.png?v=2" alt="Maya CRM" width="132" height="36" />
           </a>
           <p>
             CRM de ventas y marketing: captación, base de datos, WhatsApp con inteligencia
@@ -930,7 +930,7 @@ export class LandingComponent implements OnInit {
       title: TITLE,
       description: DESCRIPTION,
       path: '/',
-      image: '/logo.png',
+      image: '/logo.png?v=2',
       siteName: 'Maya CRM',
       siteUrl,
     });
@@ -954,7 +954,7 @@ export class LandingComponent implements OnInit {
         '@type': 'Organization',
         name: 'Maya CRM',
         url: siteUrl,
-        logo: `${siteUrl}/logo.png`,
+        logo: `${siteUrl}/logo.png?v=2`,
       },
     });
 

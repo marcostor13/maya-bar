@@ -86,6 +86,12 @@ type TemplateState = 'approved' | 'pending' | 'rejected' | 'error' | 'changed' |
 
         @if (editing() === s.key) {
           <div class="field" style="margin-top:14px">
+            @if (state === 'approved' || state === 'pending') {
+              <div class="alert alert-warning">
+                <lucide-icon [img]="Info" [size]="16"></lucide-icon>
+                <span>Al guardar, la plantilla vuelve a revisión de Meta{{ state === 'approved' ? ' y no se podrá enviar hasta que la aprueben de nuevo' : '' }}.</span>
+              </div>
+            }
             <textarea class="textarea" rows="7" [(ngModel)]="draft" aria-label="Mensaje"></textarea>
             @if (draftError(); as err) { <span class="field-error">{{ err }}</span> }
           </div>
@@ -99,18 +105,17 @@ type TemplateState = 'approved' | 'pending' | 'rejected' | 'error' | 'changed' |
           <div class="wa-preview" style="margin-top:14px">
             <div class="wa-bubble">{{ preview(s) }}<span class="wa-time">19:00</span></div>
           </div>
-          @if (state !== 'approved' && state !== 'pending') {
-            <div class="tpl-actions">
-              <button class="btn btn-secondary btn-sm" (click)="startEdit(s)">
-                <lucide-icon [img]="Pencil" [size]="14"></lucide-icon> Corregir mensaje
+          <div class="tpl-actions">
+            <button class="btn btn-secondary btn-sm" [disabled]="resubmitting()" (click)="startEdit(s)">
+              <lucide-icon [img]="Pencil" [size]="14"></lucide-icon>
+              {{ state === 'approved' || state === 'pending' ? 'Editar mensaje' : 'Corregir mensaje' }}
+            </button>
+            @if (state === 'changed') {
+              <button class="btn btn-primary btn-sm" [disabled]="resubmitting()" (click)="resubmitAll()">
+                <lucide-icon [img]="Send" [size]="14"></lucide-icon> Reenviar a Meta
               </button>
-              @if (state === 'changed') {
-                <button class="btn btn-primary btn-sm" [disabled]="resubmitting()" (click)="resubmitAll()">
-                  <lucide-icon [img]="Send" [size]="14"></lucide-icon> Reenviar a Meta
-                </button>
-              }
-            </div>
-          }
+            }
+          </div>
         }
       </div>
     }

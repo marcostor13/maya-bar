@@ -53,7 +53,7 @@ const TAB_PRIORITY: Record<string, string[]> = {
       <!-- ══ Cabecera móvil ══ -->
       <header class="mobile-topbar" [class.scrolled]="scrolled()">
         <div class="topbar-title">
-          <img src="/logo.png" alt="Maya CRM" class="topbar-logo" />
+          <img src="/logo.png?v=2" alt="Maya CRM" class="topbar-logo" />
           <h1>{{ currentTitle() }}</h1>
         </div>
         <div class="topbar-actions">
@@ -69,7 +69,7 @@ const TAB_PRIORITY: Record<string, string[]> = {
         <div class="sidebar-header" [class.collapsed-header]="collapsed()">
           @if (!collapsed()) {
             <div class="logo">
-              <img src="/logo.png" alt="Maya CRM" class="logo-img" />
+              <img src="/logo.png?v=2" alt="Maya CRM" class="logo-img" />
             </div>
           }
           <button class="collapse-btn" (click)="collapsed.set(!collapsed())" [title]="collapsed() ? 'Expandir' : 'Colapsar'">

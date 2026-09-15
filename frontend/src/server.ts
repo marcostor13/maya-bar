@@ -49,7 +49,18 @@ app.get('/healthz', (_req, res) => {
  * revalidando en cada carga.
  */
 app.get(
-  ['/sw.js', '/manifest.webmanifest', '/favicon.ico', '/icons/:file'],
+  [
+    '/sw.js',
+    '/manifest.webmanifest',
+    '/favicon.ico',
+    '/icons/:file',
+    // El logo y el isotipo también tienen nombre fijo: con el año de caché,
+    // un cambio de marca no se veía hasta que el navegador lo descartara.
+    '/logo.png',
+    '/logo-light.png',
+    '/logo.svg',
+    '/isotipo.svg',
+  ],
   (req, res, next) => {
     res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
     if (req.path === '/sw.js') {
