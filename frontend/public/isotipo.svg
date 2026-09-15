@@ -1,21 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="Maya CRM">
   <title>Maya CRM</title>
   <!--
-    Isotipo: el visto, como una sola pieza sólida.
+    Isotipo: una burbuja de chat con una M calada.
 
-    Antes era un doble check de trazo fino. El trazo se lee técnico y se
-    deshace al reducirlo; las marcas deportivas —Nike, Adidas— son siluetas
-    macizas de un solo color, y por eso aguantan a 16 px, bordadas o en una
-    barra de estado.
+    - La burbuja dice de qué va la plataforma: vender conversando por WhatsApp,
+      Instagram y Messenger.
+    - La M es la inicial, y su segunda mitad es el visto del logo anterior: el
+      mensaje entregado y el trato cerrado. Conversación que termina en venta.
+    - El pico derecho queda más alto que el izquierdo: la línea sube.
 
-    La geometría es deliberada: el brazo corto es de grosor constante y el
-    largo se afila hacia la punta, que es lo que le da velocidad y lo levanta
-    en diagonal en vez de dejarlo quieto. Sin curvas: el corte recto se lee
-    más rotundo y no se emborrona al escalar.
-
-    Un solo relleno y sin huecos interiores: se puede teñir entero, y como
-    silueta pura sirve de icono de notificación, donde Android solo respeta
-    el canal alfa.
+    Una sola tinta con la M vaciada (evenodd): se tiñe entera, y como es pura
+    silueta sirve de icono de notificación en Android, que solo lee el alfa.
+    Sin trazos: todo es relleno, así no se emborrona a 16 px.
   -->
-  <path fill="#E11D48" d="M4 47 L18 33 L38 53 L88 2 L94 15 L38 80 Z" />
+  <path fill="#E11D48" fill-rule="evenodd" d="
+    M30 6 H66 A24 24 0 0 1 90 30 V52 A24 24 0 0 1 66 76 H43 L23.5 88.6 Q20.6 90.6 21 87.1 L22 74.6 A24 24 0 0 1 6 52 V30 A24 24 0 0 1 30 6 Z
+    M26.5 64.5Q21 64.5 21 59V35.5Q21 28.6 26.2 32.9L49.5 52.2L69.3 21.6Q75 14.6 75 23.6V59Q75 64.5 69.5 64.5Q64 64.5 64 59V38.8L53.6 56.8Q49.9 61.2 45.5 57.5L32 46.3V59Q32 64.5 26.5 64.5Z
+  " />
 </svg>

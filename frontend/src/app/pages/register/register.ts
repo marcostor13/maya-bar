@@ -11,7 +11,7 @@ import { AuthService } from '../../auth/auth.service';
     <div class="register-page">
       <div class="register-card card animate-fade-in">
         <div class="register-header">
-          <div class="logo-mark">BAR<span>.</span></div>
+          <img src="/logo.png" alt="Maya CRM" class="logo-img" />
           <h1>Empieza gratis</h1>
           <p>14 días de prueba, sin tarjeta de crédito.</p>
         </div>
@@ -89,15 +89,12 @@ import { AuthService } from '../../auth/auth.service';
       margin-bottom: 32px;
     }
 
-    .logo-mark {
-      font-family: var(--font-heading);
-      font-size: 28px;
-      font-weight: 700;
-      color: var(--color-text-main);
+    .logo-img {
+      height: 44px;
+      width: auto;
       margin-bottom: 16px;
+      object-fit: contain;
     }
-
-    .logo-mark span { color: var(--color-brand); }
 
     .register-header h1 {
       font-size: 22px;

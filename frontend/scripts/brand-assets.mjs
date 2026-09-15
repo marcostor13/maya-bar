@@ -6,7 +6,8 @@
  *   npm i --no-save sharp png-to-ico
  *   node scripts/brand-assets.mjs
  *
- * Salidas: public/logo.png, public/favicon.ico y public/icons/*.png.
+ * Salidas: public/logo.png, public/logo-light.png (para fondos oscuros),
+ * public/favicon.ico y public/icons/*.png.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -54,6 +55,12 @@ fs.mkdirSync(ICONS, { recursive: true });
 
 // Lockup horizontal a 3x (se usa a 32-40 px de alto en la app y la landing).
 await sharp(logoSvg, { density: 900 }).resize({ width: 930 }).png().toFile(path.join(PUBLIC, 'logo.png'));
+// Variante para fondos oscuros (pie de la landing): la palabra en blanco y el
+// descriptor en gris claro; el isotipo conserva el rojo.
+const logoLight = Buffer.from(
+  logoSvg.toString('utf8').replaceAll('#111827', '#FFFFFF').replaceAll('#6B7280', '#CBD5E1'),
+);
+await sharp(logoLight, { density: 900 }).resize({ width: 930 }).png().toFile(path.join(PUBLIC, 'logo-light.png'));
 
 // Iconos de la PWA: blanco sobre rojo de marca.
 await iconOnBrand(192, 0.6, path.join(ICONS, 'icon-192.png'));
