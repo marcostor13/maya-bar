@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AiService, type ChatMessage } from '../ai/ai.service';
+import { AiService, type AiApiKeys, type ChatMessage } from '../ai/ai.service';
 import { SettingsService } from '../settings/settings.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { Conversation } from '../conversations/conversation.schema';
@@ -32,6 +32,12 @@ const MESSAGES_PER_CONVERSATION = 14;
 const CHUNK_SIZE = 15;
 const CONCURRENCY = 3;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+interface AiOptions {
+  provider: 'auto' | 'openai' | 'claude' | 'deepseek' | 'gemini';
+  model?: string;
+  apiKeys: AiApiKeys;
+}
 
 interface Classified {
   id: string;
@@ -156,7 +162,7 @@ export class RecoveryAnalysisService {
 
     const suppressed = await this.suppression.setFor(tenantId);
     const businessContext = await this.businessContext(tid, plan.context);
-    const apiKeys = await this.apiKeys(tenantId);
+    const ai = await this.aiOptions(tenantId);
 
     // ── 1. Clasificar por tandas ──
     const classified = new Map<string, Classified>();
@@ -169,16 +175,17 @@ export class RecoveryAnalysisService {
 
     let processed = candidates.length - toClassify.length;
     let failedChunks = 0;
+    let lastError = '';
     for (let i = 0; i < chunks.length; i += CONCURRENCY) {
       await Promise.all(
         chunks.slice(i, i + CONCURRENCY).map(async (chunk) => {
-          const items = await this.classifyChunk(
-            chunk,
-            businessContext,
-            apiKeys,
-          );
-          if (!items) failedChunks++;
-          for (const item of items ?? []) classified.set(item.id, item);
+          const result = await this.classifyChunk(chunk, businessContext, ai);
+          if ('error' in result) {
+            failedChunks++;
+            lastError = result.error;
+          } else {
+            for (const item of result.items) classified.set(item.id, item);
+          }
           processed += chunk.length;
         }),
       );
@@ -191,7 +198,7 @@ export class RecoveryAnalysisService {
     }
     if (chunks.length && failedChunks === chunks.length)
       throw new Error(
-        'La IA no pudo analizar las conversaciones. Revisa la API key en Configuración → IA',
+        `La IA no pudo analizar las conversaciones (${ai.provider}${ai.model ? ' · ' + ai.model : ''}): ${lastError}`,
       );
 
     // ── 2. Armar destinatarios ──
@@ -243,7 +250,7 @@ export class RecoveryAnalysisService {
       excluded,
       candidates.length,
       businessContext,
-      apiKeys,
+      ai,
     );
 
     const schedule = recommendSchedule(stages.length, hist, plan.timezone);
@@ -329,9 +336,9 @@ Responde SOLO con JSON: {"message":"..."}`;
     const raw = await this.ai.chatMessages(
       [{ role: 'user', content: prompt }],
       {
-        maxTokens: 800,
+        maxTokens: 4000,
         temperature: 0.7,
-        apiKeys: await this.apiKeys(tenantId),
+        ...(await this.aiOptions(tenantId)),
       },
     );
     const { message } = this.ai.parseJson<{ message?: string }>(raw);
@@ -343,8 +350,8 @@ Responde SOLO con JSON: {"message":"..."}`;
   private async classifyChunk(
     chunk: Conversation[],
     context: string,
-    apiKeys: Awaited<ReturnType<RecoveryAnalysisService['apiKeys']>>,
-  ): Promise<Classified[] | null> {
+    ai: AiOptions,
+  ): Promise<{ items: Classified[] } | { error: string }> {
     const transcripts = await Promise.all(
       chunk.map(async (conv) => {
         const msgs = await this.messageModel
@@ -395,25 +402,29 @@ Responde SOLO con JSON: {"items":[{"id":"","stage":"","note":"","name":""}]}`,
       { role: 'user', content: transcripts.join('\n\n') },
     ];
 
+    let error = '';
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
+        // Tope amplio: los modelos de razonamiento gastan tokens pensando antes
+        // de escribir, y con un tope corto devuelven la respuesta vacía.
         const raw = await this.ai.chatMessages(messages, {
-          maxTokens: 3000,
+          maxTokens: 12000,
           temperature: 0.1,
-          apiKeys,
+          ...ai,
         });
         const parsed = this.ai.parseJson<
           { items?: Classified[] } | Classified[]
         >(raw);
         const items = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
-        return items.filter((i) => i?.id);
+        return { items: items.filter((i) => i?.id) };
       } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
         this.logger.warn(
-          `Clasificación de ${chunk.length} conversaciones falló (intento ${attempt + 1}): ${String(err)}`,
+          `Clasificación de ${chunk.length} conversaciones falló (intento ${attempt + 1}): ${error}`,
         );
       }
     }
-    return null;
+    return { error: error.slice(0, 300) };
   }
 
   private async draftPlan(
@@ -421,7 +432,7 @@ Responde SOLO con JSON: {"items":[{"id":"","stage":"","note":"","name":""}]}`,
     excluded: RecoveryRecipient[],
     total: number,
     context: string,
-    apiKeys: Awaited<ReturnType<RecoveryAnalysisService['apiKeys']>>,
+    ai: AiOptions,
   ): Promise<PlanDraft> {
     if (!segments.length)
       return {
@@ -475,9 +486,9 @@ Responde SOLO con JSON:
       const raw = await this.ai.chatMessages(
         [{ role: 'user', content: prompt }],
         {
-          maxTokens: 3500,
+          maxTokens: 12000,
           temperature: 0.5,
-          apiKeys,
+          ...ai,
         },
       );
       return this.ai.parseJson<PlanDraft>(raw);
@@ -514,14 +525,36 @@ Responde SOLO con JSON:
     return parts.join('\n\n') || 'Sin información adicional del negocio.';
   }
 
-  private async apiKeys(tenantId: string) {
+  /**
+   * Proveedor, modelo y keys para hablar con la IA: los mismos del agente del
+   * tenant, que es la configuración que ya funciona. Con `auto` se elegía la
+   * primera key de entorno (DeepSeek) aunque el tenant tuviera la suya propia
+   * de otro proveedor.
+   */
+  private async aiOptions(tenantId: string): Promise<AiOptions> {
     const cfg = await this.settings.get(tenantId);
-    return {
+    const apiKeys: AiApiKeys = {
       openai: cfg?.openaiApiKey,
       deepseek: cfg?.deepseekApiKey,
       gemini: cfg?.geminiApiKey,
       claude: cfg?.claudeApiKey,
     };
+    const agent = await this.agentModel
+      .findOne(
+        { tenantId: { $in: [tenantId, new Types.ObjectId(tenantId)] } },
+        { provider: 1, aiModel: 1 },
+      )
+      .sort({ updatedAt: -1 })
+      .lean<{ provider?: string; aiModel?: string }>()
+      .exec();
+    const provider = agent?.provider as AiOptions['provider'] | undefined;
+    if (provider && provider !== 'auto')
+      return { provider, model: agent?.aiModel, apiKeys };
+
+    const own = (['openai', 'claude', 'gemini', 'deepseek'] as const).find(
+      (p) => apiKeys[p]?.trim(),
+    );
+    return { provider: own ?? 'auto', apiKeys };
   }
 }
 
