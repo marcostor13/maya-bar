@@ -38,7 +38,12 @@ export class ProspectSearch extends Document {
   @Prop({ default: 20 })
   maxResults: number;
 
-  @Prop({ enum: SEARCH_STATUSES, default: 'searching', index: true })
+  @Prop({
+    type: String,
+    enum: SEARCH_STATUSES,
+    default: 'searching',
+    index: true,
+  })
   status: SearchStatus;
 
   /** Consultas que generó la IA y se lanzaron contra las fuentes. */

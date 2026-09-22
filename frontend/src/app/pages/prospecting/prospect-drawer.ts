@@ -637,9 +637,11 @@ export class ProspectDrawerComponent implements OnInit {
   }
 
   private apply(p: Prospect, notify = true) {
-    const wasBusy = this.p() && (isBusy(this.p()!.research.state) || isBusy(this.p()!.material.state));
+    const prev = this.p();
+    const wasBusy = !!prev && (isBusy(prev.research.state) || isBusy(prev.material.state));
+    // Las notas se cargan una vez: refrescos y cambios de estado no pisan lo que se está escribiendo.
+    if (!prev) this.notes = p.notes ?? '';
     this.p.set(p);
-    if (!this.notes || !wasBusy) this.notes = p.notes ?? '';
     if (notify) this.changed.emit(p);
     // Investigación y material corren en segundo plano: se refresca mientras duren.
     if (isBusy(p.research.state) || isBusy(p.material.state))

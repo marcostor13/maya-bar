@@ -106,7 +106,7 @@ export class Prospect extends Document {
 
   @Prop() fitReason?: string;
 
-  @Prop({ enum: PROSPECT_STATUSES, default: 'new', index: true })
+  @Prop({ type: String, enum: PROSPECT_STATUSES, default: 'new', index: true })
   status: ProspectStatus;
 
   @Prop({ type: Object, default: () => ({ state: 'idle' }) })

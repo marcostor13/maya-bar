@@ -71,6 +71,10 @@ export class ProspectingResearchService {
     };
   }
 
+  hasAi(keys: ProspectingKeys): boolean {
+    return this.ai.hasAnyKey(keys.ai);
+  }
+
   private async askJson<T>(
     keys: ProspectingKeys,
     system: string,
@@ -130,6 +134,8 @@ Las búsquedas deben ser tipos de negocio concretos que compran estos servicios,
       .map((q) => String(q).trim())
       .filter(Boolean)
       .slice(0, 8);
+    // Sin búsquedas de la IA se arman con lo que escribió el usuario.
+    if (!queries.length) queries.push(...fallbackQueries(search));
     await this.searchModel
       .updateOne(
         { _id: search._id },
@@ -184,7 +190,9 @@ Las búsquedas deben ser tipos de negocio concretos que compran estos servicios,
     // Sin fuentes (o sin resultados) la IA propone empresas conocidas.
     if (!candidates.length) {
       if ((keys.places || keys.serper) && errors.length === queries.length)
-        throw new Error(`Las fuentes de búsqueda fallaron: ${errors[0]}`);
+        throw new Error(
+          `Las fuentes de búsqueda fallaron: ${errors[0] ?? 'sin respuesta'}`,
+        );
       await progress('Pidiendo a la IA empresas candidatas…');
       add(await this.aiCandidates(keys, search, plan.idealProfile ?? ''));
     }
@@ -229,7 +237,10 @@ Las búsquedas deben ser tipos de negocio concretos que compran estos servicios,
         {
           $set: {
             status: 'done',
-            found: top.length,
+            // "Buscar más" suma a lo ya encontrado en la misma búsqueda.
+            found: await this.prospectModel
+              .countDocuments({ searchId: search._id })
+              .exec(),
             sources: [...sources],
             progress: '',
             error: top.length ? undefined : 'No se encontraron empresas nuevas',
@@ -542,6 +553,7 @@ ${list}
       ? (ai.people as ProspectPerson[])
       : [];
     const mergedPeople = [...people];
+    const previous = prospect.research?.people ?? [];
     for (const p of aiPeople) {
       if (!p?.name) continue;
       const existing = mergedPeople.find(
@@ -574,7 +586,7 @@ ${list}
       'research.searchResults': searchResults.slice(0, 10),
       'research.emails': emails,
       'research.phones': phones,
-      'research.people': mergedPeople.slice(0, 15),
+      'research.people': keepContactLinks(mergedPeople, previous).slice(0, 15),
       'research.ai': ai,
       'research.lockedUntil': null,
     };
@@ -803,4 +815,37 @@ Incluye de 5 a 8 áreas en el diagnóstico. Firma los mensajes como [Tu nombre].
       )
       .exec();
   }
+}
+
+/** Búsquedas mínimas cuando la IA no propone ninguna. */
+export function fallbackQueries(search: {
+  industries: string[];
+  idealCustomer: string;
+  location: string;
+}): string[] {
+  const where = search.location ? ` en ${search.location}` : '';
+  const kinds = search.industries.length
+    ? search.industries
+    : [search.idealCustomer.split(/[.,;\n]/)[0]?.trim() || 'empresas'];
+  return kinds.slice(0, 8).map((k) => `${k}${where}`);
+}
+
+/**
+ * Al reinvestigar se rehace la lista de personas: las que ya se pasaron a
+ * contactos conservan el enlace para no crearlas dos veces.
+ */
+export function keepContactLinks(
+  people: ProspectPerson[],
+  previous: ProspectPerson[],
+): ProspectPerson[] {
+  const linked = previous.filter((p) => p.customerId);
+  const key = (p: ProspectPerson) => p.name.trim().toLowerCase();
+  const out = people.map((p) => {
+    const old = linked.find((x) => key(x) === key(p));
+    return old ? { ...p, customerId: old.customerId } : p;
+  });
+  // Las que ya eran contacto y esta vez no aparecieron se conservan.
+  for (const old of linked)
+    if (!out.some((p) => key(p) === key(old))) out.push(old);
+  return out;
 }

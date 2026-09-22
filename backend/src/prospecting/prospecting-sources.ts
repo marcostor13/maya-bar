@@ -4,6 +4,9 @@
  * una falla.
  */
 
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 /** Tope de HTML leído por página: más allá no aporta y consume memoria. */
@@ -151,11 +154,19 @@ export function extractEmails(text: string): string[] {
   return [...set].slice(0, 15);
 }
 
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Solo teléfonos explícitos (tel:, wa.me): los números sueltos dan ruido. */
 export function extractPhones(html: string): string[] {
   const set = new Set<string>();
   for (const m of html.matchAll(/href=["']tel:([^"']+)["']/gi))
-    set.add(decodeURIComponent(m[1]).replace(/[^\d+]/g, ''));
+    set.add(safeDecode(m[1]).replace(/[^\d+]/g, ''));
   for (const m of html.matchAll(/wa\.me\/(\d{7,15})/gi)) set.add(`+${m[1]}`);
   for (const m of html.matchAll(
     /api\.whatsapp\.com\/send\/?\?phone=(\d{7,15})/gi,
@@ -319,38 +330,118 @@ export function keyPageLinks(html: string, base: string, limit = 4): string[] {
   return out;
 }
 
+/** Redirecciones que se siguen a mano, comprobando cada destino. */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Direcciones que no son internet público: loopback, redes privadas,
+ * link-local (metadatos de la nube), CGNAT, multicast y reservadas.
+ */
+export function isPrivateAddress(ip: string): boolean {
+  const v4 = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  if (isIP(v4) === 4) {
+    const [a, b] = v4.split('.').map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      a >= 224
+    );
+  }
+  const v6 = ip.toLowerCase();
+  return (
+    v6 === '::' ||
+    v6 === '::1' ||
+    /^f[cd]/.test(v6) ||
+    /^fe[89ab]/.test(v6) ||
+    /^ff/.test(v6)
+  );
+}
+
+/**
+ * La web de un prospecto la puede escribir cualquier usuario: sin esta
+ * comprobación el servidor descargaría direcciones internas (SSRF).
+ */
+export async function assertPublicUrl(raw: string): Promise<URL> {
+  const url = new URL(raw);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    throw new Error('Solo se analizan direcciones http y https');
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const addresses = isIP(host)
+    ? [host]
+    : (await lookup(host, { all: true })).map((a) => a.address);
+  if (!addresses.length || addresses.some(isPrivateAddress))
+    throw new Error('La dirección de la web no es pública');
+  return url;
+}
+
+/** Lee el cuerpo hasta `max` bytes y corta la descarga. */
+async function readCapped(res: Response, max: number): Promise<string> {
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < max) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.byteLength;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return Buffer.concat(chunks).subarray(0, max).toString('utf8');
+}
+
 async function fetchHtml(
   url: string,
 ): Promise<{ html: string; status: number; finalUrl: string; ms: number }> {
   const started = Date.now();
-  const res = await fetchWithTimeout(
-    url,
-    {
-      redirect: 'follow',
-      headers: {
-        'User-Agent': UA,
-        Accept: 'text/html,application/xhtml+xml',
-        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+  let current = url;
+  for (let hop = 0; ; hop++) {
+    await assertPublicUrl(current);
+    const res = await fetchWithTimeout(
+      current,
+      {
+        redirect: 'manual',
+        headers: {
+          'User-Agent': UA,
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        },
       },
-    },
-    20_000,
-  );
-  const type = res.headers.get('content-type') ?? '';
-  if (!type.includes('html'))
+      20_000,
+    );
+    const location = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && location) {
+      await res.body?.cancel().catch(() => undefined);
+      if (hop >= MAX_REDIRECTS) throw new Error('Demasiadas redirecciones');
+      current = new URL(location, current).toString();
+      continue;
+    }
+    const type = res.headers.get('content-type') ?? '';
+    if (!type.includes('html')) {
+      await res.body?.cancel().catch(() => undefined);
+      return {
+        html: '',
+        status: res.status,
+        finalUrl: current,
+        ms: Date.now() - started,
+      };
+    }
+    const html = await readCapped(res, MAX_HTML_BYTES);
     return {
-      html: '',
+      html,
       status: res.status,
-      finalUrl: res.url || url,
+      finalUrl: current,
       ms: Date.now() - started,
     };
-  const buf = await res.arrayBuffer();
-  const html = Buffer.from(buf.slice(0, MAX_HTML_BYTES)).toString('utf8');
-  return {
-    html,
-    status: res.status,
-    finalUrl: res.url || url,
-    ms: Date.now() - started,
-  };
+  }
 }
 
 /** Recorre la portada y las páginas clave y resume lo que dice la web. */
@@ -455,7 +546,7 @@ export async function scrapeWebsite(rawUrl: string): Promise<WebsiteReport> {
       allHtml,
     ),
     hasEcommerce:
-      /(add[-_]to[-_]cart|carrito|cart|checkout|woocommerce|shopify)/i.test(
+      /(add[-_]to[-_]cart|\/cart\b|\/carrito\b|\/checkout\b|woocommerce|cdn\.shopify)/i.test(
         allHtml,
       ),
     pagesVisited: [page.url, ...extra.map((p) => p.url)],
@@ -508,13 +599,25 @@ export async function runPageSpeed(
   const qs = new URLSearchParams({ url, strategy, locale: 'es' });
   for (const c of ['PERFORMANCE', 'ACCESSIBILITY', 'BEST_PRACTICES', 'SEO'])
     qs.append('category', c);
-  if (apiKey) qs.set('key', apiKey);
-  const res = await fetchWithTimeout(
-    `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${qs.toString()}`,
-    {},
-    120_000,
-  );
-  const body = await json<PageSpeedResponse>(res, 'PageSpeed');
+  const call = async (key?: string) => {
+    const params = new URLSearchParams(qs);
+    if (key) params.set('key', key);
+    const res = await fetchWithTimeout(
+      `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`,
+      {},
+      120_000,
+    );
+    return json<PageSpeedResponse>(res, 'PageSpeed');
+  };
+  let body: PageSpeedResponse;
+  try {
+    body = await call(apiKey);
+  } catch (err) {
+    // Una key sin la API de PageSpeed habilitada responde 400/403: se reintenta
+    // con la cuota anónima antes de dar el paso por fallido.
+    if (!apiKey || !/PageSpeed 40[03]/.test(errorText(err))) throw err;
+    body = await call();
+  }
   const cats = body.lighthouseResult?.categories ?? {};
   const audits = body.lighthouseResult?.audits ?? {};
   const score = (k: string) =>

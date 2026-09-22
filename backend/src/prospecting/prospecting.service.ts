@@ -60,7 +60,7 @@ export class ProspectingService {
       pageSpeed: !!keys.pageSpeed,
       serper: !!keys.serper,
       hunter: !!keys.hunter,
-      ai: Object.values(keys.ai).some((k?: string) => !!k?.trim()),
+      ai: this.research.hasAi(keys),
     };
   }
 
