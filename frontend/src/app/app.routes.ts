@@ -115,6 +115,18 @@ export const routes: Routes = [
         canActivate: [moduleGuard('leads')],
       },
       {
+        path: 'prospeccion',
+        loadComponent: () =>
+          import('./pages/prospecting/prospecting').then(m => m.ProspectingComponent),
+        canActivate: [moduleGuard('leads')],
+      },
+      {
+        path: 'prospeccion/:id',
+        loadComponent: () =>
+          import('./pages/prospecting/prospecting-search').then(m => m.ProspectingSearchComponent),
+        canActivate: [moduleGuard('leads')],
+      },
+      {
         path: 'campaigns',
         loadComponent: () => import('./pages/campaigns/campaigns').then(m => m.CampaignsComponent),
         canActivate: [moduleGuard('campaigns')],

@@ -1,7 +1,7 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  LucideAngularModule, Save, Eye, EyeOff, Sparkles,
+  LucideAngularModule, Save, Eye, EyeOff, Sparkles, Radar,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { AccountsApiService } from '../../core/api/accounts-api.service';
@@ -10,6 +10,8 @@ import { WhatsappSettingsComponent } from './whatsapp-settings';
 import { InstagramSettingsComponent } from './instagram-settings';
 import { MessengerSettingsComponent } from './messenger-settings';
 import { NotificationsSettingsComponent } from './notifications-settings';
+
+type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' | 'hunterApiKey';
 
 @Component({
   selector: 'app-settings',
@@ -103,6 +105,41 @@ import { NotificationsSettingsComponent } from './notifications-settings';
         </div>
       </div>
 
+      <!-- Prospección Card -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-icon" style="background: #ECFEFF;">
+            <lucide-icon [img]="Radar" [size]="22" style="color: #0E7490;"></lucide-icon>
+          </div>
+          <div>
+            <h2 class="section-title">Prospección</h2>
+            <p class="section-desc">Fuentes para encontrar e investigar empresas. Todas son opcionales: con más fuentes, más completa la investigación.</p>
+          </div>
+        </div>
+
+        <div class="fields-grid">
+          @for (f of prospectingFields; track f.key) {
+            <div class="field">
+              <label class="label">{{ f.label }}</label>
+              <div class="input-wrap">
+                <input class="input" [type]="showAiKey()[f.key] ? 'text' : 'password'" [(ngModel)]="prospectingKeys[f.key]" [placeholder]="f.placeholder" />
+                <button class="eye-btn" (click)="toggleAiKey(f.key)" type="button">
+                  <lucide-icon [img]="showAiKey()[f.key] ? EyeOff : Eye" [size]="16"></lucide-icon>
+                </button>
+              </div>
+              <span class="field-hint">{{ f.hint }}</span>
+            </div>
+          }
+        </div>
+
+        <div class="section-footer">
+          <button class="btn btn-primary" (click)="saveProspecting()" [disabled]="savingProspecting()">
+            <lucide-icon [img]="Save" [size]="16"></lucide-icon>
+            {{ savingProspecting() ? 'Guardando...' : 'Guardar keys de prospección' }}
+          </button>
+        </div>
+      </div>
+
     </div>
   `,
   styles: [`
@@ -176,6 +213,16 @@ export class SettingsComponent implements OnInit {
   readonly Eye = Eye;
   readonly EyeOff = EyeOff;
   readonly Sparkles = Sparkles;
+  readonly Radar = Radar;
+
+  readonly prospectingFields: { key: ProspectingKey; label: string; placeholder: string; hint: string }[] = [
+    { key: 'googlePlacesApiKey', label: 'Google Places API Key', placeholder: 'AIza...', hint: 'Busca empresas en Google Maps con reseñas, teléfono y web. console.cloud.google.com → Places API (New)' },
+    { key: 'pageSpeedApiKey', label: 'PageSpeed Insights API Key', placeholder: 'AIza...', hint: 'Mide velocidad, SEO y accesibilidad de la web. Si la dejas vacía se usa la de Google Places.' },
+    { key: 'serperApiKey', label: 'Serper API Key (búsqueda en Google)', placeholder: '...', hint: 'Encuentra webs, redes sociales, noticias y personas en LinkedIn. serper.dev' },
+    { key: 'hunterApiKey', label: 'Hunter.io API Key', placeholder: '...', hint: 'Encuentra correos y cargos de las personas de la empresa. hunter.io/api-keys' },
+  ];
+  prospectingKeys: Record<ProspectingKey, string> = { googlePlacesApiKey: '', pageSpeedApiKey: '', serperApiKey: '', hunterApiKey: '' };
+  savingProspecting = signal(false);
 
   /** Provider de la cuenta WhatsApp predeterminada, reportado por la sección de WhatsApp. */
   defaultProvider = signal('');
@@ -205,6 +252,12 @@ export class SettingsComponent implements OnInit {
           geminiApiKey: cfg.geminiApiKey ?? '',
           claudeApiKey: cfg.claudeApiKey ?? '',
         };
+        this.prospectingKeys = {
+          googlePlacesApiKey: cfg.googlePlacesApiKey ?? '',
+          pageSpeedApiKey: cfg.pageSpeedApiKey ?? '',
+          serperApiKey: cfg.serperApiKey ?? '',
+          hunterApiKey: cfg.hunterApiKey ?? '',
+        };
       },
       error: () => {},
     });
@@ -215,6 +268,14 @@ export class SettingsComponent implements OnInit {
     this.api.updateSettings({ ...this.aiKeys }).subscribe({
       next: () => { this.toast.success('API keys de IA guardadas'); this.savingAi.set(false); },
       error: (err: { error?: { message?: string } }) => { this.toast.error(err.error?.message || 'Error al guardar'); this.savingAi.set(false); },
+    });
+  }
+
+  saveProspecting() {
+    this.savingProspecting.set(true);
+    this.api.updateSettings({ ...this.prospectingKeys }).subscribe({
+      next: () => { this.toast.success('Keys de prospección guardadas'); this.savingProspecting.set(false); },
+      error: (err: { error?: { message?: string } }) => { this.toast.error(err.error?.message || 'Error al guardar'); this.savingProspecting.set(false); },
     });
   }
 

@@ -37,6 +37,7 @@ import { SuppressionModule } from './suppression/suppression.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { RecoveryModule } from './recovery/recovery.module';
+import { ProspectingModule } from './prospecting/prospecting.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { RecoveryModule } from './recovery/recovery.module';
     NotificationsModule,
     DashboardModule,
     RecoveryModule,
+    ProspectingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

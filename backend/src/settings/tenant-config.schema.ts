@@ -25,6 +25,12 @@ export class TenantConfig extends Document {
   @Prop() deepseekApiKey?: string;
   @Prop() geminiApiKey?: string;
   @Prop() claudeApiKey?: string;
+
+  // Prospección: fuentes de datos para investigar empresas.
+  @Prop() googlePlacesApiKey?: string;
+  @Prop() pageSpeedApiKey?: string;
+  @Prop() serperApiKey?: string;
+  @Prop() hunterApiKey?: string;
 }
 
 export const TenantConfigSchema = SchemaFactory.createForClass(TenantConfig);

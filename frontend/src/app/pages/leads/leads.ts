@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed, OnInit, HostListener } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   LucideAngularModule, Plus, X, Trash2, Search, Target, TrendingUp, Trophy, CalendarClock,
   AlertTriangle, User, Phone, Mail, MessageSquare, StickyNote, PhoneCall, Users, CheckCircle2,
@@ -772,6 +772,7 @@ export class LeadsComponent implements OnInit {
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   readonly Plus = Plus; readonly X = X; readonly Trash2 = Trash2; readonly Search = Search;
   readonly Target = Target; readonly TrendingUp = TrendingUp; readonly Trophy = Trophy;
@@ -840,6 +841,13 @@ export class LeadsComponent implements OnInit {
       error: () => {},
     });
     this.load();
+    // `?lead=<id>` abre la ficha directamente (enlace desde Prospección).
+    const leadId = this.route.snapshot.queryParamMap.get('lead');
+    if (leadId)
+      this.http.get<Lead>(`${API}/leads/${leadId}`).subscribe({
+        next: lead => this.openDetail(lead),
+        error: () => this.toast.error('No se encontró la oportunidad'),
+      });
   }
 
   load(withSpinner = true) {

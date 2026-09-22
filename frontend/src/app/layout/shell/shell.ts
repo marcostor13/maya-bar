@@ -14,7 +14,7 @@ import { DevicePermissionsService } from '../../core/device-permissions.service'
 import {
   LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight,
   Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, X, MessagesSquare,
-  LayoutTemplate, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, type LucideIconData,
+  LayoutTemplate, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, type LucideIconData,
 } from 'lucide-angular';
 
 /** Una entrada del menú. La misma alimenta el lateral, la barra inferior y la hoja "Más". */
@@ -807,6 +807,7 @@ export class ShellComponent {
     const clients = keep([
       { key: 'customers', label: 'Clientes', icon: ContactRound, route: '/customers' },
       { key: 'leads', label: 'Seguimiento', short: 'Leads', icon: Target, route: '/leads' },
+      { key: 'prospecting', module: 'leads', label: 'Prospección', short: 'Prospectar', icon: Radar, route: '/prospeccion' },
       { key: 'lists', label: 'Listas', icon: List, route: '/lists' },
       { key: 'forms', label: 'Formularios', short: 'Forms', icon: FileText, route: '/forms' },
       { key: 'campaigns', label: 'Campañas', icon: Megaphone, route: '/campaigns' },
