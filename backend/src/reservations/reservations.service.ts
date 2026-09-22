@@ -14,6 +14,7 @@ import {
   ReservationConfigDto,
 } from './dto/reservation.dto';
 import { MailService } from '../mail/mail.service';
+import { ConversionsService } from '../conversions/conversions.service';
 
 @Injectable()
 export class ReservationsService {
@@ -21,6 +22,7 @@ export class ReservationsService {
     @InjectModel(Reservation.name) private reservationModel: Model<Reservation>,
     @InjectModel(Local.name) private localModel: Model<Local>,
     private mailService: MailService,
+    private conversions: ConversionsService,
   ) {}
 
   // ─── Public ───────────────────────────────────────────────────────────────
@@ -112,6 +114,20 @@ export class ReservationsService {
     });
 
     const saved = await reservation.save();
+
+    // Una reserva de alguien que llegó por un anuncio es la cita que la
+    // campaña vino a buscar. Sin `await`: reservar no puede depender de que el
+    // sistema de atribución conteste.
+    void this.conversions.report({
+      tenantId: saved.tenantId,
+      event: 'schedule',
+      refType: 'reservation',
+      refId: String(saved._id),
+      name: saved.guestName,
+      phone: saved.guestPhone,
+      email: saved.guestEmail,
+      notes: `Reserva ${saved.date} ${saved.turno} · ${saved.partySize} personas`,
+    });
 
     // Enviar correo de confirmación
     void this.mailService.sendReservationEmail({

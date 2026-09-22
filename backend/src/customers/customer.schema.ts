@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import type { AdReferral } from '../shared/ad-referral';
 
 @Schema({ timestamps: true })
 export class Customer extends Document {
@@ -49,6 +50,14 @@ export class Customer extends Document {
     default: 'manual',
   })
   source: string;
+
+  /**
+   * Anuncio del que salió el contacto, copiado de la conversación que lo creó.
+   * Vive aquí además de en el chat porque las conversiones (oportunidad
+   * calificada, reserva, venta) cuelgan del contacto, no del chat.
+   */
+  @Prop({ type: Object })
+  adReferral?: AdReferral;
 
   /** Fuente de importación de la que vino el contacto, si aplica. */
   @Prop({ type: Types.ObjectId, ref: 'ContactSource', index: true })

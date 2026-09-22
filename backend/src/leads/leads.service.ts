@@ -26,6 +26,7 @@ import {
   statusForStage,
 } from './lead-stages.catalog';
 import { isOwnerScoped } from '../auth/permissions';
+import { ConversionsService } from '../conversions/conversions.service';
 import { formatPhone, phoneDigits } from '../shared/phone';
 
 /** Columna del tablero: la etapa, sus oportunidades y sus totales. */
@@ -77,6 +78,7 @@ export class LeadsService {
     private activityModel: Model<LeadActivity>,
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
     @InjectModel(User.name) private userModel: Model<User>,
+    private conversions: ConversionsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -479,13 +481,17 @@ export class LeadsService {
     lead.lastActivityAt = new Date();
     await lead.save();
 
-    if (dto.stage !== undefined && dto.stage !== previousStage)
+    if (dto.stage !== undefined && dto.stage !== previousStage) {
       await this.log(
         lead,
         'stage_change',
         `Etapa: ${stageLabel(previousStage)} → ${stageLabel(lead.stage)}`,
         userId,
       );
+      // Sin `await`: avisar al sistema de atribución no puede retrasar —ni
+      // tumbar— el movimiento del embudo. El evento queda encolado en Mongo.
+      void this.conversions.reportLeadStage(lead, previousStage);
+    }
 
     return this.findOne(id, tenantId, userId, role);
   }
@@ -519,6 +525,7 @@ export class LeadsService {
         `Etapa: ${stageLabel(previousStage)} → ${stageLabel(dto.stage)}${reason}`,
         userId,
       );
+      void this.conversions.reportLeadStage(lead, previousStage);
     }
     return this.findOne(id, tenantId, userId, role);
   }

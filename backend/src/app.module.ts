@@ -37,6 +37,7 @@ import { SuppressionModule } from './suppression/suppression.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { RecoveryModule } from './recovery/recovery.module';
+import { ConversionsModule } from './conversions/conversions.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { RecoveryModule } from './recovery/recovery.module';
     AiAgentsModule,
     ConversationsModule,
     LeadsModule,
+    ConversionsModule,
     FormsModule,
     RolesModule,
     PushModule,

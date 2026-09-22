@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import type { AdReferral } from '../shared/ad-referral';
 
 export type ConversationChannel = 'whatsapp' | 'instagram' | 'messenger';
 
@@ -70,6 +71,14 @@ export class Conversation extends Document {
 
   @Prop({ enum: ['open', 'closed'], default: 'open' })
   status: string;
+
+  /**
+   * Anuncio del que salió el chat (Click-to-WhatsApp). Se graba con el primer
+   * mensaje y NO se pisa después: la atribución es del anuncio que trajo al
+   * cliente, no del último que volvió a tocar.
+   */
+  @Prop({ type: Object })
+  adReferral?: AdReferral;
 
   /** Contacto del CRM al que se guardó esta conversación, si se guardó. */
   @Prop({ type: Types.ObjectId, ref: 'Customer', index: true })

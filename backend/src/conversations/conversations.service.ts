@@ -40,6 +40,7 @@ import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { Customer } from '../customers/customer.schema';
+import { hasAttribution, type AdReferral } from '../shared/ad-referral';
 import { Lead } from '../leads/lead.schema';
 
 /** Historial que se le pasa al agente IA en cada respuesta. */
@@ -103,6 +104,8 @@ export interface InboundMessage {
   longitude?: number;
   locationName?: string;
   at?: Date;
+  /** Anuncio del que salió el chat (Click-to-WhatsApp), si lo trae el canal. */
+  referral?: AdReferral;
   /** true cuando el mensaje lo envió el negocio desde su propio móvil. */
   fromMe?: boolean;
 }
@@ -608,12 +611,23 @@ export class ConversationsService {
       conv.contactName?.trim() ||
       (phone ? `+${conv.contact}` : conv.contact);
 
-    return this.leads.upsertCustomer(tenantId, userId, role, {
+    const customer = await this.leads.upsertCustomer(tenantId, userId, role, {
       name,
       email: data.email,
       phone,
       source: conv.channel,
     });
+
+    // Las conversiones cuelgan del contacto, no del chat: el anuncio de origen
+    // viaja con él la primera vez que se guarda.
+    if (
+      hasAttribution(conv.adReferral) &&
+      !hasAttribution(customer.adReferral)
+    ) {
+      customer.adReferral = conv.adReferral;
+      await customer.save();
+    }
+    return customer;
   }
 
   /** Etiquetas ya usadas en el tenant, para sugerirlas al clasificar. */
@@ -1419,6 +1433,13 @@ export class ConversationsService {
       }
       if (inbound.chatId && inbound.chatId !== existing.chatId)
         existing.chatId = inbound.chatId;
+      // Atribución de primer toque: si el chat ya vino de un anuncio, un clic
+      // posterior en otro no se la quita al que trajo al cliente.
+      if (
+        hasAttribution(inbound.referral) &&
+        !hasAttribution(existing.adReferral)
+      )
+        existing.adReferral = inbound.referral;
       return existing;
     }
     return this.convModel.create({
@@ -1428,6 +1449,9 @@ export class ConversationsService {
       contactName: inbound.contactName,
       contactAvatar: inbound.contactAvatar,
       contactAvatarAt: inbound.contactAvatar ? new Date() : undefined,
+      adReferral: hasAttribution(inbound.referral)
+        ? inbound.referral
+        : undefined,
       autoReply: true,
       status: 'open',
       unreadCount: 0,

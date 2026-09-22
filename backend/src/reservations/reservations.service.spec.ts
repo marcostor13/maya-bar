@@ -10,6 +10,7 @@ import { ReservationsService } from './reservations.service';
 import { Reservation } from './reservation.schema';
 import { Local } from '../locals/local.schema';
 import { MailService } from '../mail/mail.service';
+import { ConversionsService } from '../conversions/conversions.service';
 
 const tenantOid = new Types.ObjectId();
 const localOid = new Types.ObjectId();
@@ -84,6 +85,7 @@ describe('ReservationsService', () => {
   let service: ReservationsService;
   let reservationModel: any;
   let localModel: any;
+  let conversions: { report: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -93,6 +95,7 @@ describe('ReservationsService', () => {
 
     reservationModel = createMockModel(resDoc);
     localModel = createMockModel(localDoc);
+    conversions = { report: jest.fn().mockResolvedValue(null) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -109,6 +112,7 @@ describe('ReservationsService', () => {
             sendPasswordResetEmail: jest.fn(),
           },
         },
+        { provide: ConversionsService, useValue: conversions },
       ],
     }).compile();
 

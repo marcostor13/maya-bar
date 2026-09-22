@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { ConversationsService, InboundMessage } from './conversations.service';
+import type { AdReferral } from '../shared/ad-referral';
 import { MessageType, MessageStatus } from './message.schema';
 
 /**
@@ -150,6 +151,7 @@ export class WhatsAppWebhookController {
       externalId: msg.id,
       type: 'unsupported',
       at: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
+      referral: this.cloudReferral(msg),
     };
 
     switch (msg.type) {
@@ -230,6 +232,25 @@ export class WhatsAppWebhookController {
       default:
         return base;
     }
+  }
+
+  /**
+   * Anuncio del que viene el chat. Meta solo lo manda en el PRIMER mensaje que
+   * el cliente escribe tras pulsar un anuncio de Click-to-WhatsApp: si no se
+   * guarda aquí, la conversión que venga después no se puede atribuir.
+   */
+  private cloudReferral(msg: CloudMessage): AdReferral | undefined {
+    const ref = msg.referral;
+    if (!ref?.ctwa_clid && !ref?.source_id) return undefined;
+    return {
+      ctwaClid: ref.ctwa_clid,
+      adId: ref.source_id,
+      sourceType: ref.source_type,
+      sourceUrl: ref.source_url,
+      headline: ref.headline,
+      body: ref.body,
+      at: new Date(),
+    };
   }
 
   private cloudStatus(status: string): MessageStatus {
@@ -414,6 +435,15 @@ interface CloudMessage {
     list_reply?: { title?: string };
   };
   reaction?: { emoji?: string; message_id?: string };
+  /** Anuncio de origen (Click-to-WhatsApp); solo viene en el primer mensaje. */
+  referral?: {
+    source_url?: string;
+    source_id?: string;
+    source_type?: string;
+    headline?: string;
+    body?: string;
+    ctwa_clid?: string;
+  };
 }
 
 interface CloudBody {

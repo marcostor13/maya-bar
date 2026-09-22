@@ -7,6 +7,7 @@ import { Lead } from './lead.schema';
 import { LeadActivity } from './lead-activity.schema';
 import { Customer } from '../customers/customer.schema';
 import { User } from '../users/user.schema';
+import { ConversionsService } from '../conversions/conversions.service';
 
 const tenantId = new Types.ObjectId().toString();
 const userId = new Types.ObjectId().toString();
@@ -54,6 +55,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
 
 describe('LeadsService', () => {
   let service: LeadsService;
+  let conversions: { reportLeadStage: jest.Mock };
   let leadModel: any;
   let activityModel: any;
   let customerModel: any;
@@ -64,6 +66,7 @@ describe('LeadsService', () => {
     activityModel = createMockModel();
     customerModel = createMockModel();
     activityModel.create.mockResolvedValue({ _id: new Types.ObjectId() });
+    conversions = { reportLeadStage: jest.fn().mockResolvedValue(null) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -72,6 +75,7 @@ describe('LeadsService', () => {
         { provide: getModelToken(LeadActivity.name), useValue: activityModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
         { provide: getModelToken(User.name), useValue: createMockModel() },
+        { provide: ConversionsService, useValue: conversions },
       ],
     }).compile();
 
@@ -234,6 +238,20 @@ describe('LeadsService', () => {
         type: 'stage_change',
         title: 'Etapa: Propuesta → Ganado',
       });
+    });
+
+    it('reports the conversion when the lead reaches a stage that counts', async () => {
+      const lead = makeLead({ stage: 'contacted' });
+      leadModel.find.mockReturnValue(buildQuery([lead]));
+
+      await service.move(String(leadOid), tenantId, userId, 'TENANT_ADMIN', {
+        stage: 'qualified',
+      });
+
+      expect(conversions.reportLeadStage).toHaveBeenCalledWith(
+        lead,
+        'contacted',
+      );
     });
 
     it('keeps the lost reason only while the lead is lost', async () => {

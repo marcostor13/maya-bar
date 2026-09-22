@@ -8,6 +8,7 @@ import { LeadActivity, LeadActivitySchema } from './lead-activity.schema';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
 import { User, UserSchema } from '../users/user.schema';
 import { SettingsModule } from '../settings/settings.module';
+import { ConversionsModule } from '../conversions/conversions.module';
 
 @Module({
   imports: [
@@ -20,6 +21,8 @@ import { SettingsModule } from '../settings/settings.module';
     // Los recordatorios avisan por WhatsApp con la cuenta del tenant.
     // `SettingsService` no es global, así que hay que traer su módulo.
     SettingsModule,
+    // Calificar o ganar una oportunidad es una conversión que hay que reportar.
+    ConversionsModule,
   ],
   controllers: [LeadsController],
   providers: [LeadsService, LeadRemindersService],

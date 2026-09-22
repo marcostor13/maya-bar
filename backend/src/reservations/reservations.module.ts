@@ -5,6 +5,7 @@ import { Local, LocalSchema } from '../locals/local.schema';
 import { ReservationsService } from './reservations.service';
 import { ReservationsController } from './reservations.controller';
 import { MailModule } from '../mail/mail.module';
+import { ConversionsModule } from '../conversions/conversions.module';
 
 @Module({
   imports: [
@@ -13,6 +14,8 @@ import { MailModule } from '../mail/mail.module';
       { name: Local.name, schema: LocalSchema },
     ]),
     MailModule,
+    // Una reserva es una cita: si el cliente vino de un anuncio, se reporta.
+    ConversionsModule,
   ],
   controllers: [ReservationsController],
   providers: [ReservationsService],
