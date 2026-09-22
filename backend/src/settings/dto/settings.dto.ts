@@ -48,4 +48,20 @@ export class SaveSettingsDto {
   @IsOptional()
   @IsString()
   claudeApiKey?: string;
+
+  @IsOptional()
+  @IsString()
+  googlePlacesApiKey?: string;
+
+  @IsOptional()
+  @IsString()
+  pageSpeedApiKey?: string;
+
+  @IsOptional()
+  @IsString()
+  serperApiKey?: string;
+
+  @IsOptional()
+  @IsString()
+  hunterApiKey?: string;
 }

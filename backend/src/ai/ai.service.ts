@@ -121,6 +121,11 @@ export class AiService {
     );
   }
 
+  /** ¿Hay alguna key de IA utilizable, del tenant o del servidor? */
+  hasAnyKey(apiKeys?: AiApiKeys): boolean {
+    return Object.values(this.resolveKeys(apiKeys)).some(Boolean);
+  }
+
   /** Chat con historial de mensajes (system + turnos). */
   async chatMessages(
     messages: ChatMessage[],

@@ -7,6 +7,10 @@ export interface TenantSettings {
   deepseekApiKey?: string;
   geminiApiKey?: string;
   claudeApiKey?: string;
+  googlePlacesApiKey?: string;
+  pageSpeedApiKey?: string;
+  serperApiKey?: string;
+  hunterApiKey?: string;
 }
 
 // ── WhatsApp ──────────────────────────────────────────────────────────────

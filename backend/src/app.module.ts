@@ -38,6 +38,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { RecoveryModule } from './recovery/recovery.module';
 import { ConversionsModule } from './conversions/conversions.module';
+import { ProspectingModule } from './prospecting/prospecting.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { ConversionsModule } from './conversions/conversions.module';
     NotificationsModule,
     DashboardModule,
     RecoveryModule,
+    ProspectingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
