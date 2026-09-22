@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { ConversationsService } from './conversations.service';
+import { MediaUnderstandingService } from '../ai/media-understanding.service';
 import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
 import { SuppressionService } from '../suppression/suppression.service';
@@ -84,6 +85,7 @@ describe('ConversationsService — contacto del CRM', () => {
         { provide: InstagramAccountsService, useValue: {} },
         { provide: MessengerAccountsService, useValue: {} },
         { provide: AiAgentsService, useValue: {} },
+        { provide: MediaUnderstandingService, useValue: {} },
         { provide: UploadService, useValue: {} },
         { provide: ConversationsGateway, useValue: gateway },
         { provide: HandoffService, useValue: {} },
@@ -246,6 +248,7 @@ describe('ConversationsService — clasificación y seguimiento', () => {
         { provide: InstagramAccountsService, useValue: {} },
         { provide: MessengerAccountsService, useValue: {} },
         { provide: AiAgentsService, useValue: {} },
+        { provide: MediaUnderstandingService, useValue: {} },
         { provide: UploadService, useValue: {} },
         { provide: ConversationsGateway, useValue: gateway },
         { provide: HandoffService, useValue: {} },

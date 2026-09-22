@@ -72,3 +72,39 @@ solo muestra los modelos que soportan `generateContent`.
 Usa la primera API key configurada, en este orden: DeepSeek → Claude → OpenAI →
 Gemini, con el modelo por defecto de cada uno. En automático no se puede elegir
 modelo: para fijarlo hay que elegir proveedor.
+
+## Adjuntos: notas de voz, imágenes, videos y documentos
+
+El chat del agente es de texto plano de punta a punta (historial en Mongo,
+cuatro proveedores, RAG). Para que el agente entienda un adjunto no se vuelve
+multimodal toda la cadena —eso dejaría fuera a DeepSeek, que no ve—: el archivo
+se lee **una sola vez al recibirlo** y lo que viaja después es su texto.
+
+Ese texto se guarda en el mensaje (`transcript`), se muestra en la bandeja bajo
+el adjunto y se le pasa al agente en cada turno. No se vuelve a pagar por
+releerlo.
+
+| Entra | Se convierte en | Quién lo hace |
+| --- | --- | --- |
+| Nota de voz / audio | Transcripción literal | OpenAI (`gpt-4o-mini-transcribe`) → Gemini |
+| Imagen | Descripción + texto visible (OCR) | OpenAI (`gpt-4o-mini`) → Claude → Gemini |
+| Video | Descripción + lo que se dice | Gemini (`gemini-2.5-flash`) |
+| PDF / txt / csv / json | Contenido del documento | Local (`pdf-parse`); si el PDF es escaneado, Claude → Gemini |
+
+Se usa la primera key del tenant que sepa hacer esa modalidad, y si el
+proveedor falla se intenta con el siguiente. Notas:
+
+- **Sin key de Gemini no se leen videos**: es el único proveedor que los
+  procesa nativamente. Separar la pista de audio necesitaría ffmpeg.
+- **Solo con key de DeepSeek no se lee ningún adjunto.** DeepSeek no tiene
+  visión ni audio; el agente recibe el aviso de siempre ("[El cliente envió una
+  nota de voz]") y contesta a ciegas. Basta con cargar una key de OpenAI o
+  Gemini en Ajustes para que empiece a funcionar, sin tocar el agente.
+- Topes por archivo: audio 25 MB, imagen 5 MB, video 18 MB, documento 20 MB. Por
+  encima se archiva el adjunto sin leerlo.
+- El texto guardado se recorta a 4.000 caracteres: un PDF largo no puede comerse
+  el prompt de cada turno.
+- Los stickers no se interpretan a propósito: son decorativos y leerlos cuesta
+  lo mismo que leer una foto que sí trae información.
+- La lectura ocurre aunque el chat esté en manual — el operador también quiere
+  leer la nota de voz sin ponerse los audífonos.

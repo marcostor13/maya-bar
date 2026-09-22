@@ -17,6 +17,7 @@ import { InstagramAccountsModule } from '../instagram-accounts/instagram-account
 import { MessengerModule } from '../messenger/messenger.module';
 import { MessengerAccountsModule } from '../messenger-accounts/messenger-accounts.module';
 import { AiAgentsModule } from '../ai-agents/ai-agents.module';
+import { AiModule } from '../ai/ai.module';
 import { UploadModule } from '../upload/upload.module';
 import { LeadsModule } from '../leads/leads.module';
 
@@ -34,6 +35,7 @@ import { LeadsModule } from '../leads/leads.module';
     MessengerModule,
     MessengerAccountsModule,
     AiAgentsModule,
+    AiModule,
     UploadModule,
     LeadsModule,
   ],

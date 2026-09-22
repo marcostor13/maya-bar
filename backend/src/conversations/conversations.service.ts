@@ -28,6 +28,10 @@ import { InstagramAccount } from '../instagram-accounts/instagram-account.schema
 import { MessengerAccount } from '../messenger-accounts/messenger-account.schema';
 import { AiAgentsService } from '../ai-agents/ai-agents.service';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
+import {
+  MediaUnderstandingService,
+  MediaKind,
+} from '../ai/media-understanding.service';
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
@@ -137,6 +141,28 @@ const AI_HINT_BY_TYPE: Record<MessageType, string> = {
   unsupported: '[El cliente envió un mensaje que no se pudo interpretar]',
 };
 
+/**
+ * Qué adjuntos se convierten a texto al recibirlos. Los stickers quedan fuera a
+ * propósito: son decorativos, llegan a montones y leerlos cuesta lo mismo que
+ * leer una foto que sí trae información.
+ */
+const MEDIA_KIND_BY_TYPE: Partial<Record<MessageType, MediaKind>> = {
+  image: 'image',
+  video: 'video',
+  audio: 'audio',
+  voice: 'voice',
+  document: 'document',
+};
+
+/** Cómo se le presenta al agente IA el texto que se sacó del adjunto. */
+const TRANSCRIPT_LABEL: Partial<Record<MessageType, string>> = {
+  image: 'Lo que se ve en la imagen',
+  video: 'Lo que se ve y se dice en el video',
+  audio: 'Transcripción del audio',
+  voice: 'Transcripción de la nota de voz',
+  document: 'Contenido del documento',
+};
+
 /** Lo mismo, pero redactado para la notificación del sistema. */
 const PUSH_HINT_BY_TYPE: Record<MessageType, string> = {
   text: 'Nuevo mensaje',
@@ -165,6 +191,7 @@ export class ConversationsService {
     private igAccounts: InstagramAccountsService,
     private msAccounts: MessengerAccountsService,
     private agents: AiAgentsService,
+    private media: MediaUnderstandingService,
     private uploads: UploadService,
     private gateway: ConversationsGateway,
     private handoff: HandoffService,
@@ -1001,13 +1028,15 @@ export class ConversationsService {
     const isEcho = inbound.fromMe === true;
     if (isEcho && (await this.isDuplicateEcho(conv, inbound))) return;
 
-    const media = inbound.media
-      ? await this.storeInboundMedia(
-          inbound.media,
-          params.downloadMedia,
-          channel,
-        )
+    // El binario se descarga una sola vez: se re-hospeda en S3 y, de paso, se
+    // interpreta más abajo sin volver a bajarlo del proveedor.
+    const file = inbound.media
+      ? await this.downloadInboundMedia(inbound.media, params.downloadMedia)
       : null;
+    const media =
+      inbound.media && file
+        ? await this.storeInboundMedia(inbound.media, file, channel)
+        : null;
 
     const msg = await this.msgModel.create({
       tenantId: conv.tenantId,
@@ -1040,6 +1069,12 @@ export class ConversationsService {
       void this.notifyInbound(conv, msg);
       void this.notifyInboundNative(conv, msg);
     }
+
+    // Leer el adjunto va después de avisar al equipo y antes del agente: el
+    // aviso no puede esperar a que el modelo transcriba, pero el agente sí —
+    // si no, respondería a "[El cliente envió una nota de voz]" en vez de a lo
+    // que la nota dice.
+    if (!isEcho && file) await this.interpretMedia(conv, msg, file);
 
     if (isEcho) {
       // Contestaron desde el móvil: el agente se aparta para no pisar a la persona.
@@ -1426,7 +1461,10 @@ export class ConversationsService {
       return `${AI_HINT_BY_TYPE.location}${place}: ${msg.latitude}, ${msg.longitude}`;
     }
     const hint = AI_HINT_BY_TYPE[msg.type];
-    return msg.text ? `${hint} con el texto: ${msg.text}` : hint;
+    const head = msg.text ? `${hint} con el texto: ${msg.text}` : hint;
+    if (!msg.transcript) return head;
+    const label = TRANSCRIPT_LABEL[msg.type] ?? 'Contenido del adjunto';
+    return `${head}\n${label}: ${msg.transcript}`;
   }
 
   /** Historial reciente en el formato que espera el agente (excluye el mensaje actual). */
@@ -1462,17 +1500,30 @@ export class ConversationsService {
     return 'document';
   }
 
-  /** Descarga la media entrante y la re-hospeda en S3 (las URLs del proveedor caducan). */
-  private async storeInboundMedia(
+  /** Baja el binario del proveedor. Un fallo aquí no puede perder el mensaje. */
+  private async downloadInboundMedia(
     media: InboundMedia,
     download: (
       media: InboundMedia,
     ) => Promise<{ buffer: Buffer; mimeType: string } | null>,
+  ): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    try {
+      return await download(media);
+    } catch (err) {
+      this.logger.error(
+        `No se pudo descargar la media entrante: ${String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  /** Re-hospeda la media entrante en S3 (las URLs del proveedor caducan). */
+  private async storeInboundMedia(
+    media: InboundMedia,
+    file: { buffer: Buffer; mimeType: string },
     channel: ConversationChannel,
   ) {
     try {
-      const file = await download(media);
-      if (!file) return null;
       return await this.uploads.uploadBuffer(
         file.buffer,
         media.mimeType ?? file.mimeType,
@@ -1484,6 +1535,42 @@ export class ConversationsService {
         `No se pudo re-hospedar la media entrante: ${String(err)}`,
       );
       return null;
+    }
+  }
+
+  /**
+   * Convierte el adjunto en texto (transcripción, descripción o contenido) y lo
+   * guarda en el mensaje. Se paga una sola vez: el historial de cada turno
+   * reutiliza lo guardado en lugar de volver a mandar el archivo al modelo.
+   *
+   * Corre aunque la conversación esté en manual — el operador también quiere
+   * leer la nota de voz sin ponerse los audífonos.
+   */
+  private async interpretMedia(
+    conv: Conversation,
+    msg: Message,
+    file: { buffer: Buffer; mimeType: string },
+  ): Promise<void> {
+    const kind = MEDIA_KIND_BY_TYPE[msg.type];
+    if (!kind) return;
+    try {
+      const keys = await this.agents.getTenantApiKeys(conv.tenantId);
+      const result = await this.media.interpret(
+        {
+          kind,
+          buffer: file.buffer,
+          mimeType: msg.mimeType ?? file.mimeType,
+          filename: msg.filename,
+        },
+        keys,
+      );
+      if (!result?.text) return;
+      msg.transcript = result.text;
+      await msg.save();
+      this.gateway.emitMessageUpdated(String(conv.tenantId), msg);
+    } catch (err) {
+      // Un adjunto ilegible no puede impedir que el agente conteste.
+      this.logger.warn(`No se pudo interpretar el adjunto: ${String(err)}`);
     }
   }
 

@@ -9,7 +9,7 @@ import {
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
-  CheckCheck as ReadIcon, Reply,
+  CheckCheck as ReadIcon, Reply, Sparkles,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -54,6 +54,9 @@ interface Msg {
   latitude?: number;
   longitude?: number;
   locationName?: string;
+  /** Lo que dice el adjunto: transcripción del audio, descripción de la imagen
+   *  o del video, contenido del documento. Lo calcula el backend al recibirlo. */
+  transcript?: string;
   status: MsgStatus;
   error?: string;
   at: string;
@@ -64,6 +67,12 @@ interface Msg {
 /** Cómo se resume un adjunto cuando se cita un mensaje sin texto. */
 /** Tope de altura del campo de escritura, en píxeles. */
 const COMPOSER_MAX_PX = 140;
+
+/** Cómo se titula la lectura del adjunto en la burbuja. */
+const TRANSCRIPT_LABEL: Record<string, string> = {
+  voice: 'Transcripción', audio: 'Transcripción', video: 'Lo que muestra el video',
+  image: 'Lo que muestra la imagen', document: 'Contenido del documento',
+};
 
 const MEDIA_PREVIEW: Record<string, string> = {
   image: '📷 Foto', video: '🎥 Video', audio: '🎧 Audio', voice: '🎤 Nota de voz',
@@ -524,6 +533,16 @@ const EMOJIS = [
 
                     @if (m.text && m.type !== 'location') {
                       <p class="bubble-text">{{ m.text }}</p>
+                    }
+
+                    @if (m.transcript) {
+                      <div class="transcript">
+                        <span class="transcript-head">
+                          <lucide-icon [img]="Sparkles" [size]="11" [strokeWidth]="2.4"></lucide-icon>
+                          {{ transcriptLabel(m.type) }}
+                        </span>
+                        <p>{{ m.transcript }}</p>
+                      </div>
                     }
 
                     <span class="meta">
@@ -1335,6 +1354,23 @@ const EMOJIS = [
       overflow-wrap: anywhere;
     }
 
+    /* Lectura del adjunto: se distingue del mensaje del cliente porque no es
+       suyo, la escribió la IA a partir del archivo. */
+    .transcript {
+      margin-top: 6px; padding: 7px 10px;
+      background: rgba(0,0,0,0.04); border-radius: 10px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .transcript-head {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10.5px; font-weight: 700; color: var(--color-ai);
+      text-transform: uppercase; letter-spacing: 0.02em;
+    }
+    .transcript p {
+      margin: 0; font-size: 13px; line-height: 1.5;
+      color: var(--color-text-muted); white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+
     .meta {
       display: flex; align-items: center; justify-content: flex-end; gap: 4px;
       font-size: 10.5px; color: var(--color-text-muted);
@@ -1619,6 +1655,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly MessagesSquare = MessagesSquare;
   readonly Send = Send;
   readonly Reply = Reply;
+  readonly Sparkles = Sparkles;
   readonly Paperclip = Paperclip;
   readonly ImageIcon = ImageIcon;
   readonly Video = Video;
@@ -2377,6 +2414,10 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   // ── Adjuntos ──
+
+  transcriptLabel(type: MsgType): string {
+    return TRANSCRIPT_LABEL[type] ?? 'Contenido del adjunto';
+  }
 
   pick(kind: 'media' | 'doc' | 'audio') {
     this.attachOpen.set(false);

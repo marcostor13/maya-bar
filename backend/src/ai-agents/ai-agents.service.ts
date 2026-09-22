@@ -65,7 +65,7 @@ export class AiAgentsService {
   ) {}
 
   /** Lee las API keys de IA configuradas por el tenant. */
-  private async getTenantApiKeys(
+  async getTenantApiKeys(
     tenantId: string | Types.ObjectId,
   ): Promise<AiApiKeys> {
     const cfg = await this.configModel

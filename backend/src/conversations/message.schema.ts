@@ -72,6 +72,14 @@ export class Message extends Document {
   @Prop() size?: number;
   @Prop() durationSeconds?: number;
 
+  /**
+   * Lo que dice el adjunto en texto: transcripción de la nota de voz o del
+   * audio, descripción de la imagen o del video, contenido del documento. Se
+   * calcula una sola vez al recibirlo y es lo que lee el agente IA en cada
+   * turno (y el operador en la bandeja, sin abrir el archivo).
+   */
+  @Prop() transcript?: string;
+
   // --- Ubicación ---
   @Prop() latitude?: number;
   @Prop() longitude?: number;
