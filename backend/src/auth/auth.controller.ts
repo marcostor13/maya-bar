@@ -26,7 +26,6 @@ export class AuthController {
 
   @Post('login')
   async login(@Body() body: LoginDto, @Headers('user-agent') ua?: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const user = await this.authService.validateUser(body.email, body.password);
     if (!user) throw new UnauthorizedException('Invalid credentials');
     return this.authService.login(user, ua);

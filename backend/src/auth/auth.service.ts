@@ -39,7 +39,10 @@ export class AuthService {
    * y el motivo solo se revela tras acertar la contraseña, de modo que esto no
    * sirve para averiguar qué emails existen.
    */
-  async validateUser(email: string, pass: string): Promise<any> {
+  async validateUser(
+    email: string,
+    pass: string,
+  ): Promise<Record<string, any> | null> {
     const user = await this.usersService.findOneByEmailAnyStatus(email);
     if (!user) return null;
 
@@ -51,8 +54,10 @@ export class AuthService {
         'Tu cuenta está desactivada. Contacta con el administrador de tu empresa.',
       );
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unused-vars
-    const { password: _pw, ...result } = (user as any).toObject();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password: _pw, ...result } = (
+      user as unknown as { toObject(): Record<string, any> }
+    ).toObject();
     return result;
   }
 

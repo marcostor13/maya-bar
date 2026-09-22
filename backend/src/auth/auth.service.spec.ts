@@ -97,8 +97,8 @@ describe('AuthService', () => {
         'user@test.com',
       );
       expect(result).toBeTruthy();
-      expect(result.email).toBe('user@test.com');
-      expect(result.password).toBeUndefined();
+      expect(result?.email).toBe('user@test.com');
+      expect(result?.password).toBeUndefined();
     });
 
     it('returns null when the password is wrong', async () => {

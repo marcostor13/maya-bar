@@ -51,7 +51,7 @@ function plan(attempts = 0): Partial<RecoveryPlan> {
     createdBy: new Types.ObjectId(),
     analysisAttempts: attempts,
     segments: [],
-  } as Partial<RecoveryPlan>;
+  };
 }
 
 /** Deja correr las promesas que el worker lanza sin esperar. */
@@ -68,10 +68,7 @@ describe('RecoveryWorker', () => {
     await worker.kick();
     await flush();
 
-    const claimFilter = planModel.findOneAndUpdate.mock.calls[0][0] as Record<
-      string,
-      unknown
-    >;
+    const claimFilter = planModel.findOneAndUpdate.mock.calls[0][0];
     expect(claimFilter.status).toBe('analyzing');
     expect(analysis.run).toHaveBeenCalledWith(p);
     expect(push.sendToUser).toHaveBeenCalledWith(

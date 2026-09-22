@@ -33,8 +33,12 @@ export default tseslint.config(
     },
   },
   {
+    // Los dobles de prueba son `any` a propósito: tiparlos al milímetro no
+    // prueba nada y solo añade ruido. El resto de la familia unsafe-* ya
+    // estaba apagada aquí; `no-unsafe-argument` faltaba por descuido.
     files: ['**/*.spec.ts'],
     rules: {
+      '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
