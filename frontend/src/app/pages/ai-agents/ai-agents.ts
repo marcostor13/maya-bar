@@ -7,7 +7,7 @@ import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded,
+  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 
@@ -25,6 +25,14 @@ interface IgAccount {
   _id: string;
   label: string;
   username?: string;
+  active: boolean;
+}
+
+/** Buzón de correo conectado (Configuración → Correo electrónico). */
+interface EmailAcc {
+  _id: string;
+  label: string;
+  email: string;
   active: boolean;
 }
 
@@ -52,6 +60,7 @@ interface Agent {
   accountIds: string[];
   instagramAccountIds: string[];
   messengerAccountIds: string[];
+  emailAccountIds: string[];
   handoffEnabled: boolean;
   handoffNumbers: string[];
   handoffAccountId?: string;
@@ -94,7 +103,7 @@ function blankAgent(): Agent {
     _id: '', name: '', description: '', systemPrompt: 'Eres un asistente amable y servicial. Responde de forma clara y breve.',
     provider: 'auto', aiModel: '', temperature: 0.4, maxTokens: 800, greeting: '',
     fallbackMessage: 'Lo siento, no tengo esa información en este momento.',
-    ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [], messengerAccountIds: [],
+    ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [], messengerAccountIds: [], emailAccountIds: [],
     handoffEnabled: false, handoffNumbers: [], handoffAccountId: '', handoffInstructions: '',
     handoffMessage: 'Te comunico con una persona del equipo, en un momento te escriben por acá.',
     handoffTemplateName: '', handoffTemplateLang: 'es',
@@ -111,7 +120,7 @@ function blankAgent(): Agent {
       <div class="page-header">
         <div>
           <h1>Agentes IA</h1>
-          <p class="page-sub">Crea asistentes que responden por WhatsApp, Instagram y Messenger con tu conocimiento (RAG)</p>
+          <p class="page-sub">Crea asistentes que responden por WhatsApp, Instagram, Messenger y correo con tu conocimiento (RAG)</p>
         </div>
         <div class="header-actions">
           <button class="btn btn-primary" (click)="openNew()">
@@ -156,7 +165,10 @@ function blankAgent(): Agent {
                 @if (a.messengerAccountIds.length > 0) {
                   <span class="meta-pill"><lucide-icon [img]="Facebook" [size]="13"></lucide-icon> {{ a.messengerAccountIds.length }} Messenger</span>
                 }
-                @if (a.accountIds.length === 0 && a.instagramAccountIds.length === 0 && a.messengerAccountIds.length === 0) {
+                @if (emailCount(a) > 0) {
+                  <span class="meta-pill"><lucide-icon [img]="Mail" [size]="13"></lucide-icon> {{ emailCount(a) }} Correo</span>
+                }
+                @if (a.accountIds.length === 0 && a.instagramAccountIds.length === 0 && a.messengerAccountIds.length === 0 && emailCount(a) === 0) {
                   <span class="meta-pill">Sin canales</span>
                 }
                 @if (a.ragEnabled) {
@@ -253,7 +265,7 @@ function blankAgent(): Agent {
             <!-- CANALES -->
             @if (section() === 'channels') {
               <p class="field-hint" style="margin-bottom:16px">
-                Las cuentas de WhatsApp, Instagram y Messenger se conectan desde <strong>Configuración</strong> y quedan disponibles para todos los agentes (y para campañas). Acá solo elegís por cuáles responde este agente.
+                Las cuentas de WhatsApp, Instagram, Messenger y correo se conectan desde <strong>Configuración</strong> y quedan disponibles para todos los agentes (y para campañas). Acá solo elegís por cuáles responde este agente.
               </p>
 
               <p class="channel-group-title">
@@ -340,6 +352,31 @@ function blankAgent(): Agent {
                 <a class="btn btn-sm btn-ghost" style="margin-top:8px" routerLink="/settings">
                   <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Gestionar cuentas en Configuración
                 </a>
+              }
+
+              <p class="channel-group-title" style="margin-top:24px">
+                <lucide-icon [img]="Mail" [size]="14"></lucide-icon> Correo electrónico
+              </p>
+              @if (emailAccounts().length === 0) {
+                <div class="inline-empty">
+                  <lucide-icon [img]="Mail" [size]="28" [strokeWidth]="1.5" style="color:var(--color-text-muted)"></lucide-icon>
+                  <p>No hay buzones de correo conectados.</p>
+                  <a class="btn btn-sm btn-secondary" routerLink="/settings">
+                    <lucide-icon [img]="Settings" [size]="14"></lucide-icon> Ir a Configuración
+                  </a>
+                </div>
+              } @else {
+                <p class="field-hint" style="margin-bottom:12px">El agente leerá los correos que lleguen a estos buzones y los responderá por correo. Nunca contesta boletines, rebotes ni respuestas automáticas.</p>
+                @for (acc of emailAccounts(); track acc._id) {
+                  <label class="account-row" [class.selected]="form.emailAccountIds.includes(acc._id)">
+                    <input type="checkbox" [checked]="form.emailAccountIds.includes(acc._id)" (change)="toggleEmailAccount(acc._id)" />
+                    <div class="account-info">
+                      <span class="account-label">{{ acc.label }}</span>
+                      <span class="account-sub">{{ acc.email }}</span>
+                    </div>
+                    @if (!acc.active) { <span class="badge badge-muted">Pausado</span> }
+                  </label>
+                }
               }
             }
 
@@ -807,7 +844,7 @@ export class AiAgentsComponent implements OnInit {
   readonly Sparkles = Sparkles; readonly BookOpen = BookOpen; readonly Phone = Phone;
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
-  readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Settings = Settings;
+  readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Mail = Mail; readonly Settings = Settings;
   readonly PhoneForwarded = PhoneForwarded;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
@@ -823,6 +860,7 @@ export class AiAgentsComponent implements OnInit {
   accounts = signal<WaAccount[]>([]);
   igAccounts = signal<IgAccount[]>([]);
   msAccounts = signal<MsAccount[]>([]);
+  emailAccounts = signal<EmailAcc[]>([]);
   loading = signal(true);
 
   // editor
@@ -871,6 +909,7 @@ export class AiAgentsComponent implements OnInit {
     this.loadAccounts();
     this.loadIgAccounts();
     this.loadMsAccounts();
+    this.loadEmailAccounts();
   }
 
   load() {
@@ -938,6 +977,13 @@ export class AiAgentsComponent implements OnInit {
     });
   }
 
+  loadEmailAccounts() {
+    this.http.get<EmailAcc[]>(`${API}/email-accounts`).subscribe({
+      next: a => this.emailAccounts.set(a),
+      error: () => {},
+    });
+  }
+
   loadMsAccounts() {
     this.http.get<MsAccount[]>(`${API}/messenger-accounts`).subscribe({
       next: a => this.msAccounts.set(a),
@@ -965,6 +1011,7 @@ export class AiAgentsComponent implements OnInit {
       accountIds: [...(a.accountIds || [])],
       instagramAccountIds: [...(a.instagramAccountIds || [])],
       messengerAccountIds: [...(a.messengerAccountIds || [])],
+      emailAccountIds: [...(a.emailAccountIds || [])],
       // Los agentes creados antes de la derivación no traen estos campos.
       handoffNumbers: [...(a.handoffNumbers || [])],
       handoffAccountId: a.handoffAccountId || '',
@@ -1015,6 +1062,16 @@ export class AiAgentsComponent implements OnInit {
       ? this.form.instagramAccountIds.filter(x => x !== id)
       : [...this.form.instagramAccountIds, id];
     this.form = { ...this.form, instagramAccountIds: ids };
+  }
+
+  /** Los agentes creados antes del correo no traen el campo. */
+  emailCount(a: Agent): number { return (a.emailAccountIds as string[] | undefined)?.length ?? 0; }
+
+  toggleEmailAccount(id: string) {
+    const ids = this.form.emailAccountIds.includes(id)
+      ? this.form.emailAccountIds.filter(x => x !== id)
+      : [...this.form.emailAccountIds, id];
+    this.form = { ...this.form, emailAccountIds: ids };
   }
 
   toggleMsAccount(id: string) {

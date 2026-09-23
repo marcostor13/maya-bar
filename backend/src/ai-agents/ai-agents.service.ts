@@ -116,6 +116,9 @@ export class AiAgentsService {
       messengerAccountIds: (dto.messengerAccountIds ?? []).map(
         (a) => new Types.ObjectId(a),
       ),
+      emailAccountIds: (dto.emailAccountIds ?? []).map(
+        (a) => new Types.ObjectId(a),
+      ),
       handoffNumbers: normalizePhones(dto.handoffNumbers),
       handoffAccountId: dto.handoffAccountId
         ? new Types.ObjectId(dto.handoffAccountId)
@@ -135,6 +138,10 @@ export class AiAgentsService {
       );
     if (dto.messengerAccountIds)
       patch.messengerAccountIds = dto.messengerAccountIds.map(
+        (a) => new Types.ObjectId(a),
+      );
+    if (dto.emailAccountIds)
+      patch.emailAccountIds = dto.emailAccountIds.map(
         (a) => new Types.ObjectId(a),
       );
     if (dto.handoffNumbers)
@@ -368,6 +375,7 @@ export class AiAgentsService {
     agent: AiAgent,
     userMessage: string,
     history: { role: 'user' | 'assistant'; content: string }[] = [],
+    options: { channelHint?: string } = {},
   ): Promise<{
     reply: string;
     sources: number;
@@ -403,6 +411,7 @@ export class AiAgentsService {
           : '',
       this.buildFilesPromptSection(agentFiles),
       this.buildHandoffPromptSection(agent),
+      options.channelHint ? `\n\n${options.channelHint}` : '',
     ].join('');
 
     const messages: ChatMessage[] = [
@@ -528,6 +537,17 @@ export class AiAgentsService {
       .findOne({
         published: true,
         messengerAccountIds: new Types.ObjectId(accountId),
+      })
+      .exec();
+  }
+
+  async findPublishedByEmailAccount(
+    accountId: string,
+  ): Promise<AiAgent | null> {
+    return this.agentModel
+      .findOne({
+        published: true,
+        emailAccountIds: new Types.ObjectId(accountId),
       })
       .exec();
   }

@@ -23,6 +23,7 @@ import {
   SetTagsDto,
   SendToPipelineDto,
   DoNotContactDto,
+  ComposeEmailDto,
 } from './dto/conversation.dto';
 
 @Controller('conversations')
@@ -87,6 +88,13 @@ export class ConversationsController {
       before,
       limit: limit ? Number(limit) : undefined,
     });
+  }
+
+  /** Correo nuevo a un destinatario (crea la conversación si no existe). */
+  @Post('email/compose')
+  compose(@Body() dto: ComposeEmailDto, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.composeEmail(req.user.tenantId, req.user.userId, dto);
   }
 
   @Post(':id/messages')

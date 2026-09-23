@@ -20,6 +20,8 @@ import { AiAgentsModule } from '../ai-agents/ai-agents.module';
 import { AiModule } from '../ai/ai.module';
 import { UploadModule } from '../upload/upload.module';
 import { LeadsModule } from '../leads/leads.module';
+import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
+import { EmailListenerService } from './email-listener.service';
 
 @Module({
   imports: [
@@ -38,6 +40,7 @@ import { LeadsModule } from '../leads/leads.module';
     AiModule,
     UploadModule,
     LeadsModule,
+    EmailAccountsModule,
   ],
   controllers: [
     ConversationsController,
@@ -45,7 +48,12 @@ import { LeadsModule } from '../leads/leads.module';
     InstagramWebhookController,
     MessengerWebhookController,
   ],
-  providers: [ConversationsService, ConversationsGateway, HandoffService],
+  providers: [
+    ConversationsService,
+    ConversationsGateway,
+    HandoffService,
+    EmailListenerService,
+  ],
   exports: [ConversationsService],
 })
 export class ConversationsModule {}

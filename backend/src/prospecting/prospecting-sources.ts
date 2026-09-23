@@ -4,8 +4,9 @@
  * una falla.
  */
 
-import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { assertPublicHost, isPrivateAddress } from '../shared/network';
+
+export { isPrivateAddress };
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -334,35 +335,6 @@ export function keyPageLinks(html: string, base: string, limit = 4): string[] {
 const MAX_REDIRECTS = 5;
 
 /**
- * Direcciones que no son internet público: loopback, redes privadas,
- * link-local (metadatos de la nube), CGNAT, multicast y reservadas.
- */
-export function isPrivateAddress(ip: string): boolean {
-  const v4 = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
-  if (isIP(v4) === 4) {
-    const [a, b] = v4.split('.').map(Number);
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      a >= 224
-    );
-  }
-  const v6 = ip.toLowerCase();
-  return (
-    v6 === '::' ||
-    v6 === '::1' ||
-    /^f[cd]/.test(v6) ||
-    /^fe[89ab]/.test(v6) ||
-    /^ff/.test(v6)
-  );
-}
-
-/**
  * La web de un prospecto la puede escribir cualquier usuario: sin esta
  * comprobación el servidor descargaría direcciones internas (SSRF).
  */
@@ -370,12 +342,7 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
   const url = new URL(raw);
   if (url.protocol !== 'http:' && url.protocol !== 'https:')
     throw new Error('Solo se analizan direcciones http y https');
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  const addresses = isIP(host)
-    ? [host]
-    : (await lookup(host, { all: true })).map((a) => a.address);
-  if (!addresses.length || addresses.some(isPrivateAddress))
-    throw new Error('La dirección de la web no es pública');
+  await assertPublicHost(url.hostname);
   return url;
 }
 

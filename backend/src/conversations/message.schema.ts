@@ -85,6 +85,14 @@ export class Message extends Document {
   @Prop() longitude?: number;
   @Prop() locationName?: string;
 
+  // --- Correo ---
+  /** Asunto del correo (solo canal email). */
+  @Prop() subject?: string;
+
+  /** Cadena de Message-ID previos (References), para mantener el hilo al responder. */
+  @Prop({ type: [String], default: undefined })
+  emailReferences?: string[];
+
   /** id del mensaje en el proveedor (wamid / id de WAHA) — usado para los acks. */
   @Prop({ index: true })
   externalId?: string;

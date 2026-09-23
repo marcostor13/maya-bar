@@ -26,6 +26,14 @@ import { MessengerAccountsService } from '../messenger-accounts/messenger-accoun
 import { WhatsAppAccount } from '../whatsapp-accounts/whatsapp-account.schema';
 import { InstagramAccount } from '../instagram-accounts/instagram-account.schema';
 import { MessengerAccount } from '../messenger-accounts/messenger-account.schema';
+import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { EmailTransportService } from '../email-accounts/email-transport.service';
+import { EmailAccount } from '../email-accounts/email-account.schema';
+import {
+  type ParsedEmail,
+  replySubject,
+  textToHtml,
+} from '../email-accounts/email-message';
 import { AiAgentsService } from '../ai-agents/ai-agents.service';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import {
@@ -42,6 +50,9 @@ import { SuppressionService } from '../suppression/suppression.service';
 import { Customer } from '../customers/customer.schema';
 import { hasAttribution, type AdReferral } from '../shared/ad-referral';
 import { Lead } from '../leads/lead.schema';
+
+/** Respuestas del agente por hora en un mismo hilo de correo antes de pausarlo. */
+const MAX_AGENT_EMAILS_PER_HOUR = 5;
 
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
@@ -108,6 +119,9 @@ export interface InboundMessage {
   referral?: AdReferral;
   /** true cuando el mensaje lo envió el negocio desde su propio móvil. */
   fromMe?: boolean;
+  /** Correo: asunto y cadena de Message-ID previos. */
+  subject?: string;
+  emailReferences?: string[];
 }
 
 /** Nombre del canal tal como se muestra en avisos y notificaciones. */
@@ -115,7 +129,15 @@ const CHANNEL_LABEL: Record<ConversationChannel, string> = {
   whatsapp: 'WhatsApp',
   instagram: 'Instagram',
   messenger: 'Messenger',
+  email: 'Correo',
 };
+
+/**
+ * Lo que el agente debe saber al contestar un correo: no es un chat, así que
+ * se espera un saludo, párrafos y una despedida, sin emojis de mensajería.
+ */
+const EMAIL_CHANNEL_HINT =
+  'Estás respondiendo por CORREO ELECTRÓNICO, no por chat: saluda por el nombre si lo conoces, responde en párrafos claros y completos, y cierra con una despedida cordial. No uses emojis ni formato de chat, y no escribas el asunto ni la firma: la plataforma los añade.';
 
 const PREVIEW_BY_TYPE: Record<MessageType, string> = {
   text: 'Mensaje',
@@ -202,6 +224,8 @@ export class ConversationsService {
     private push: PushService,
     private nativePush: NativePushService,
     private suppression: SuppressionService,
+    private emailAccounts: EmailAccountsService,
+    private emailTransport: EmailTransportService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -213,10 +237,11 @@ export class ConversationsService {
    * puede entrar una conversación. Sirve para el selector de cuenta de la bandeja.
    */
   async listAccounts(tenantId: string): Promise<InboxAccount[]> {
-    const [wa, ig, ms, counts] = await Promise.all([
+    const [wa, ig, ms, em, counts] = await Promise.all([
       this.waAccounts.findAll(tenantId),
       this.igAccounts.findAll(tenantId),
       this.msAccounts.findAll(tenantId),
+      this.emailAccounts.findAll(tenantId),
       this.countsByAccount(tenantId),
     ]);
 
@@ -246,6 +271,15 @@ export class ConversationsService {
         channel: 'messenger' as const,
         label: a.label,
         detail: a.pageName || 'Messenger',
+        active: a.active,
+        isDefault: !!a.isDefault,
+        ...withCounts(String(a._id)),
+      })),
+      ...em.map((a) => ({
+        _id: String(a._id),
+        channel: 'email' as const,
+        label: a.label,
+        detail: a.email,
         active: a.active,
         isDefault: !!a.isDefault,
         ...withCounts(String(a._id)),
@@ -294,7 +328,14 @@ export class ConversationsService {
     const query: QueryFilter<Conversation> = {
       tenantId: new Types.ObjectId(tenantId),
     };
-    if (filters.channel) query.channel = filters.channel as ConversationChannel;
+    // Uno o varios canales separados por coma ("whatsapp,instagram,messenger"
+    // es la pestaña de chats, sin el correo).
+    const channels = (filters.channel ?? '')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean) as ConversationChannel[];
+    if (channels.length === 1) query.channel = channels[0];
+    else if (channels.length > 1) query.channel = { $in: channels };
     if (filters.accountId && Types.ObjectId.isValid(filters.accountId))
       query.accountId = new Types.ObjectId(filters.accountId);
     if (filters.status) query.status = filters.status;
@@ -351,7 +392,7 @@ export class ConversationsService {
       // WhatsApp) y también por los datos del contacto vinculado.
       const noContactar = this.suppression.matches(blocked, {
         phone: c.channel === 'whatsapp' ? c.contact : info?.phone,
-        email: info?.email,
+        email: c.channel === 'email' ? c.contact : info?.email,
       });
       if (!info?.tags?.length && !noContactar) return c;
       // `toObject` para poder añadir campos que no están en el esquema.
@@ -382,7 +423,7 @@ export class ConversationsService {
       : null;
     const contact = {
       phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
-      email: customer?.email,
+      email: conv.channel === 'email' ? conv.contact : customer?.email,
     };
     if (!contact.phone && !contact.email)
       throw new BadRequestException(
@@ -606,6 +647,9 @@ export class ConversationsService {
     const phone =
       data.phone?.trim() ||
       (conv.channel === 'whatsapp' ? conv.contact : undefined);
+    const email =
+      data.email?.trim() ||
+      (conv.channel === 'email' ? conv.contact : undefined);
     const name =
       data.name?.trim() ||
       conv.contactName?.trim() ||
@@ -613,7 +657,7 @@ export class ConversationsService {
 
     const customer = await this.leads.upsertCustomer(tenantId, userId, role, {
       name,
-      email: data.email,
+      email,
       phone,
       source: conv.channel,
     });
@@ -767,6 +811,8 @@ export class ConversationsService {
       size: dto.size,
       durationSeconds: dto.durationSeconds,
       replyToId: dto.replyToId ? new Types.ObjectId(dto.replyToId) : undefined,
+      subject:
+        conv.channel === 'email' ? dto.subject?.trim() || undefined : undefined,
       status: 'pending',
       sentBy: new Types.ObjectId(userId),
       at: new Date(),
@@ -814,6 +860,8 @@ export class ConversationsService {
         )?.externalId
       : undefined;
 
+    if (conv.channel === 'email') return this.deliverEmail(conv, msg);
+
     if (conv.channel === 'whatsapp') {
       const account = await this.waAccounts.findById(String(conv.accountId));
       if (!account) throw new Error('La cuenta de WhatsApp ya no existe');
@@ -858,6 +906,79 @@ export class ConversationsService {
       replyTo,
     );
     return undefined;
+  }
+
+  /**
+   * Envía el mensaje como correo, en el mismo hilo que el último correo del
+   * cliente (In-Reply-To / References) para que su programa lo agrupe.
+   */
+  private async deliverEmail(
+    conv: Conversation,
+    msg: Message,
+  ): Promise<string> {
+    const account = await this.emailAccounts.findById(String(conv.accountId));
+    if (!account) throw new Error('La cuenta de correo ya no existe');
+    if (!account.active) throw new Error('La cuenta de correo está inactiva');
+
+    const lastIn = await this.msgModel
+      .findOne({
+        conversationId: conv._id,
+        direction: 'in',
+        externalId: { $exists: true },
+      })
+      .sort({ at: -1 })
+      .select('externalId emailReferences subject')
+      .lean<{
+        externalId?: string;
+        emailReferences?: string[];
+        subject?: string;
+      }>()
+      .exec();
+
+    const subject =
+      msg.subject ||
+      replySubject(lastIn?.subject || conv.emailSubject) ||
+      `Mensaje de ${account.fromName || account.label}`;
+    const references = lastIn?.externalId
+      ? [...(lastIn.emailReferences ?? []), lastIn.externalId].slice(-20)
+      : undefined;
+    const body = msg.text || (msg.mediaUrl ? (msg.filename ?? '') : '');
+    const signature = account.signature?.trim();
+
+    const messageId = await this.emailTransport.send(
+      await this.emailAccounts.smtpConfig(account),
+      {
+        from: this.emailAccounts.fromHeader(account),
+        to: conv.contact,
+        subject,
+        text: signature ? `${body}\n\n--\n${signature}` : body,
+        html: textToHtml(body, signature),
+        inReplyTo: lastIn?.externalId,
+        references,
+        // RFC 3834: marca la respuesta como automática para que otros
+        // contestadores no le respondan y no se forme un bucle.
+        headers:
+          msg.author === 'agent'
+            ? { 'Auto-Submitted': 'auto-replied' }
+            : undefined,
+        attachments: msg.mediaUrl
+          ? [
+              {
+                href: msg.mediaUrl,
+                filename: msg.filename,
+                contentType: msg.mimeType,
+              },
+            ]
+          : undefined,
+      },
+    );
+    msg.subject = subject;
+    msg.emailReferences = references;
+    if (conv.emailSubject !== subject) {
+      conv.emailSubject = subject;
+      await conv.save();
+    }
+    return messageId;
   }
 
   private toProviderMediaType(type: MessageType): WaMediaType {
@@ -928,6 +1049,125 @@ export class ConversationsService {
       resolveAgent: () =>
         this.agents.findPublishedByMessengerAccount(String(account._id)),
       typing: (on: boolean) => this.ms.setTyping(config, inbound.contact, on),
+    });
+  }
+
+  /**
+   * Correo recibido en un buzón conectado. Cada remitente es una conversación
+   * (como en los chats); el asunto viaja en cada mensaje.
+   *
+   * Los adjuntos entran como mensajes propios, sin despertar al agente; el
+   * agente contesta al cuerpo, que se ingresa al final.
+   */
+  async handleEmailInbound(
+    account: EmailAccount,
+    email: ParsedEmail,
+  ): Promise<'ingested' | 'skipped'> {
+    if (!email.from || email.from === account.email) return 'skipped';
+    if (account.skipBulk && email.bulk) return 'skipped';
+    // El mismo correo puede llegar dos veces (reconexión, otra réplica).
+    if (
+      email.messageId &&
+      (await this.msgModel.exists({
+        tenantId: account.tenantId,
+        externalId: email.messageId,
+      }))
+    )
+      return 'skipped';
+
+    const base = {
+      channel: 'email' as const,
+      tenantId: String(account.tenantId),
+      accountId: String(account._id),
+      resolveAgent: () =>
+        this.agents.findPublishedByEmailAccount(String(account._id)),
+    };
+    const contact = {
+      contact: email.from,
+      contactName: email.fromName,
+      at: email.date,
+    };
+
+    for (const file of email.attachments) {
+      await this.ingest({
+        ...base,
+        quiet: true,
+        inbound: {
+          ...contact,
+          type: this.typeFromMime(file.contentType),
+          text: '',
+          media: { mimeType: file.contentType, filename: file.filename },
+        },
+        downloadMedia: () =>
+          Promise.resolve({ buffer: file.content, mimeType: file.contentType }),
+      });
+    }
+
+    await this.ingest({
+      ...base,
+      // A un aviso automático o un rebote nunca le contesta el agente.
+      noAgent: email.automated,
+      inbound: {
+        ...contact,
+        type: 'text',
+        text:
+          email.text ||
+          (email.attachments.length
+            ? `(Correo con ${email.attachments.length} adjunto${email.attachments.length > 1 ? 's' : ''})`
+            : '(Correo sin texto)'),
+        externalId: email.messageId,
+        subject: email.subject,
+        emailReferences: email.references,
+      },
+      downloadMedia: () => Promise.resolve(null),
+    });
+    return 'ingested';
+  }
+
+  /**
+   * Correo nuevo escrito desde la bandeja (no es respuesta a un hilo): crea
+   * la conversación con el destinatario si no existía y lo envía.
+   */
+  async composeEmail(
+    tenantId: string,
+    userId: string,
+    dto: {
+      accountId: string;
+      to: string;
+      name?: string;
+      subject: string;
+      text: string;
+      mediaUrl?: string;
+      mimeType?: string;
+      filename?: string;
+    },
+  ) {
+    const account = await this.emailAccounts.findOne(dto.accountId, tenantId);
+    const conv = await this.upsertConversation(
+      'email',
+      tenantId,
+      String(account._id),
+      {
+        contact: dto.to.trim().toLowerCase(),
+        contactName: dto.name?.trim() || undefined,
+        type: 'text',
+      },
+    );
+    // Quien escribe es una persona: el agente no se mete en este hilo hasta
+    // que alguien lo reactive.
+    conv.autoReply = false;
+    conv.takenOverBy = new Types.ObjectId(userId);
+    conv.takenOverAt = new Date();
+    conv.emailSubject = dto.subject.trim();
+    await conv.save();
+    return this.sendManual(String(conv._id), tenantId, userId, {
+      text: dto.text,
+      subject: dto.subject,
+      mediaUrl: dto.mediaUrl,
+      mimeType: dto.mimeType,
+      filename: dto.filename,
+      type: dto.mediaUrl ? this.typeFromMime(dto.mimeType) : 'text',
+      pauseAgent: true,
     });
   }
 
@@ -1029,6 +1269,10 @@ export class ConversationsService {
     ) => Promise<{ buffer: Buffer; mimeType: string } | null>;
     resolveAgent: () => Promise<AiAgent | null>;
     typing?: (on: boolean) => Promise<void>;
+    /** Solo archivar: sin avisos al equipo ni respuesta del agente. */
+    quiet?: boolean;
+    /** Avisar al equipo, pero sin respuesta del agente. */
+    noAgent?: boolean;
   }) {
     const { channel, tenantId, accountId, inbound } = params;
     const conv = await this.upsertConversation(
@@ -1068,10 +1312,15 @@ export class ConversationsService {
       longitude: inbound.longitude,
       locationName: inbound.locationName,
       externalId: inbound.externalId,
+      subject: inbound.subject,
+      emailReferences: inbound.emailReferences?.length
+        ? inbound.emailReferences
+        : undefined,
       status: isEcho ? 'sent' : 'read',
       at: inbound.at ?? new Date(),
     });
 
+    if (inbound.subject) conv.emailSubject = inbound.subject;
     if (!isEcho) conv.unreadCount += 1;
     await this.touchConversation(conv, msg);
     this.gateway.emitMessage(tenantId, msg);
@@ -1079,7 +1328,7 @@ export class ConversationsService {
     // atiende a la PWA y FCM a la app nativa. Van sin `await`: el push nunca
     // debe retrasar ni romper la recepción del mensaje. Los ecos no avisan,
     // son mensajes del propio negocio.
-    if (!isEcho) {
+    if (!isEcho && !params.quiet) {
       void this.notifyInbound(conv, msg);
       void this.notifyInboundNative(conv, msg);
     }
@@ -1101,6 +1350,8 @@ export class ConversationsService {
       return;
     }
 
+    if (params.quiet || params.noAgent) return;
+    if (channel === 'email' && (await this.agentEmailFlood(conv))) return;
     if (!conv.autoReply || conv.status === 'closed') return;
     // Quien pidió no recibir comunicaciones no recibe respuestas automáticas.
     // Puede seguir escribiendo y una persona puede contestarle a mano: lo que
@@ -1156,8 +1407,36 @@ export class ConversationsService {
       : null;
     return this.suppression.isSuppressed(String(conv.tenantId), {
       phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
-      email: customer?.email,
+      email: conv.channel === 'email' ? conv.contact : customer?.email,
     });
+  }
+
+  /**
+   * Freno ante bucles de correo: un contestador automático que no se marca
+   * como tal podría escribirse con el agente sin fin. Pasado el tope por hora
+   * el agente se calla en ese hilo hasta que una persona lo revise.
+   */
+  private async agentEmailFlood(conv: Conversation): Promise<boolean> {
+    const recent = await this.msgModel
+      .countDocuments({
+        conversationId: conv._id,
+        author: 'agent',
+        at: { $gte: new Date(Date.now() - 60 * 60_000) },
+      })
+      .exec();
+    if (recent < MAX_AGENT_EMAILS_PER_HOUR) return false;
+    this.logger.warn(
+      `Conversación ${String(conv._id)}: el agente ya respondió ${recent} correos en la última hora; se pausa para evitar un bucle.`,
+    );
+    conv.autoReply = false;
+    conv.takenOverAt = new Date();
+    await conv.save();
+    await this.systemNote(
+      conv,
+      `El agente IA se pausó en este hilo: respondió ${recent} correos en la última hora y podría estar en un bucle con un contestador automático. Revísalo y reactívalo si hace falta.`,
+    );
+    this.gateway.emitConversation(String(conv.tenantId), conv);
+    return true;
   }
 
   /** Genera y envía la respuesta del agente publicado para esta cuenta. */
@@ -1190,6 +1469,7 @@ export class ConversationsService {
         agent,
         userMessage,
         history,
+        conv.channel === 'email' ? { channelHint: EMAIL_CHANNEL_HINT } : {},
       );
 
       conv.agentId = agent._id;
@@ -1479,7 +1759,10 @@ export class ConversationsService {
   }
 
   private toAiContent(msg: Message): string {
-    if (msg.type === 'text') return msg.text ?? '';
+    if (msg.type === 'text')
+      return msg.subject && msg.direction === 'in'
+        ? `Asunto: ${msg.subject}\n\n${msg.text ?? ''}`
+        : (msg.text ?? '');
     if (msg.type === 'location') {
       const place = msg.locationName ? ` (${msg.locationName})` : '';
       return `${AI_HINT_BY_TYPE.location}${place}: ${msg.latitude}, ${msg.longitude}`;

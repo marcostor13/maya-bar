@@ -47,6 +47,7 @@ export class Customer extends Document {
       'instagram',
       'messenger',
       'prospecting',
+      'email',
     ],
     default: 'manual',
   })

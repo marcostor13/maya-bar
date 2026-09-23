@@ -63,6 +63,13 @@ export class AiAgent extends Document {
   })
   messengerAccountIds: Types.ObjectId[];
 
+  // Buzones de correo que escucha y desde los que responde
+  @Prop({
+    type: [{ type: Types.ObjectId, ref: 'EmailAccount' }],
+    default: [],
+  })
+  emailAccountIds: Types.ObjectId[];
+
   // ------------------------------------------------------------------
   // Escalamiento a un agente humano
   // ------------------------------------------------------------------

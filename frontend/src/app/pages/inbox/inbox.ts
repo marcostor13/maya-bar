@@ -9,7 +9,7 @@ import {
   Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
-  CheckCheck as ReadIcon, Reply, Sparkles,
+  CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -18,6 +18,7 @@ import { ConversationsRealtimeService } from '../../shared/conversations-realtim
 import { PushService } from '../../shared/push.service';
 import { silentRequest } from '../../shared/loader';
 import { PlatformService } from '../../core/platform.service';
+import { EmailComposeComponent } from './email-compose';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -62,6 +63,8 @@ interface Msg {
   at: string;
   /** Mensaje citado, como en WhatsApp. */
   replyToId?: string;
+  /** Solo correo: asunto del mensaje. */
+  subject?: string;
 }
 
 /** Cómo se resume un adjunto cuando se cita un mensaje sin texto. */
@@ -79,13 +82,20 @@ const MEDIA_PREVIEW: Record<string, string> = {
   document: '📄 Documento', sticker: 'Sticker', location: '📍 Ubicación', contact: '👤 Contacto',
 };
 
-type Channel = 'whatsapp' | 'instagram' | 'messenger';
+type Channel = 'whatsapp' | 'instagram' | 'messenger' | 'email';
+
+/** La bandeja separa los chats (mensajería instantánea) del correo. */
+type Box = 'chats' | 'email';
+
+/** Canales de chat en el orden en que se muestran en las pestañas. */
+const CHAT_CHANNELS = ['whatsapp', 'instagram', 'messenger'] as const;
 
 /** Canales soportados en el orden en que se muestran en las pestañas. */
 const CHANNELS: { key: Channel; label: string }[] = [
   { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'instagram', label: 'Instagram' },
   { key: 'messenger', label: 'Messenger' },
+  { key: 'email', label: 'Correo' },
 ];
 
 interface Conv {
@@ -112,6 +122,8 @@ interface Conv {
   tags?: string[];
   /** Pidió no recibir comunicaciones: fuera de campañas y sin agente IA. */
   doNotContact?: boolean;
+  /** Correo: asunto del último mensaje del hilo. */
+  emailSubject?: string;
 }
 
 /** Cuenta conectada (WhatsApp, Instagram o Messenger) por la que entran las conversaciones. */
@@ -137,7 +149,7 @@ const EMOJIS = [
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, EmailComposeComponent],
   template: `
     <div class="inbox" [class.thread-open]="selectedId()">
 
@@ -146,23 +158,43 @@ const EMOJIS = [
         <div class="list-head">
           <div class="list-title">
             <h1>Conversaciones</h1>
-            <button class="btn-icon btn-ghost" (click)="reload()" title="Actualizar" aria-label="Actualizar">
-              <lucide-icon [img]="RefreshCw" [size]="18" [strokeWidth]="2.2"></lucide-icon>
-            </button>
+            <div class="list-title-actions">
+              @if (box() === 'email') {
+                <button class="btn btn-sm btn-primary compose-btn" (click)="openCompose()" title="Escribir un correo nuevo">
+                  <lucide-icon [img]="SquarePen" [size]="15" [strokeWidth]="2.4"></lucide-icon>
+                  <span>Redactar</span>
+                </button>
+              }
+              <button class="btn-icon btn-ghost" (click)="reload()" title="Actualizar" aria-label="Actualizar">
+                <lucide-icon [img]="RefreshCw" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+              </button>
+            </div>
           </div>
+          @if (hasEmail()) {
+            <div class="box-tabs" role="tablist" aria-label="Tipo de conversación">
+              @for (b of boxTabs(); track b.key) {
+                <button class="box-tab" role="tab" [class.active]="box() === b.key"
+                  [attr.aria-selected]="box() === b.key" (click)="setBox(b.key)">
+                  <lucide-icon [img]="b.key === 'email' ? Mail : MessageCircle" [size]="16" [strokeWidth]="2.3"></lucide-icon>
+                  {{ b.label }}
+                  @if (b.unread > 0) { <span class="tab-badge">{{ b.unread }}</span> }
+                </button>
+              }
+            </div>
+          }
           <div class="search-wrap">
             <lucide-icon class="search-icon" [img]="Search" [size]="17" [strokeWidth]="2.2"></lucide-icon>
             <input
               class="input search-input"
               type="search"
-              placeholder="Buscar por nombre o número"
+              [placeholder]="box() === 'email' ? 'Buscar por nombre, correo o asunto' : 'Buscar por nombre o número'"
               [ngModel]="search()"
               (ngModelChange)="onSearch($event)"
               aria-label="Buscar conversaciones"
             />
           </div>
-          @if (accounts().length > 0) {
-            @if (hasMultipleChannels()) {
+          @if (boxAccounts().length > 0) {
+            @if (box() === 'chats' && hasMultipleChannels()) {
               <div class="channel-tabs" role="group" aria-label="Canal">
                 @for (c of channelTabs(); track c.key) {
                   <button
@@ -218,8 +250,13 @@ const EMOJIS = [
           } @else if (visibleConversations().length === 0) {
             <div class="list-empty">
               <lucide-icon [img]="MessagesSquare" [size]="32" [strokeWidth]="1.6"></lucide-icon>
-              <p>No hay conversaciones todavía.</p>
-              <span>Cuando alguien escriba a tu WhatsApp aparecerá aquí.</span>
+              @if (box() === 'email') {
+                <p>No hay correos todavía.</p>
+                <span>Los correos que lleguen a tus buzones conectados aparecerán aquí.</span>
+              } @else {
+                <p>No hay conversaciones todavía.</p>
+                <span>Cuando alguien escriba a tu WhatsApp aparecerá aquí.</span>
+              }
             </div>
           } @else {
             @for (c of visibleConversations(); track c._id) {
@@ -238,6 +275,8 @@ const EMOJIS = [
                   <span class="channel-dot">
                     @if (c.channel === 'instagram') {
                       <lucide-icon [img]="Instagram" [size]="10" [strokeWidth]="2.6"></lucide-icon>
+                    } @else if (c.channel === 'email') {
+                      <lucide-icon [img]="Mail" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     } @else if (c.channel === 'messenger') {
                       <lucide-icon [img]="Facebook" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     } @else {
@@ -250,7 +289,10 @@ const EMOJIS = [
                     <span class="chat-name">{{ displayName(c) }}</span>
                     <span class="chat-time">{{ shortTime(c.lastMessageAt) }}</span>
                   </div>
-                  @if (accounts().length > 1 && accountName(c)) {
+                  @if (c.channel === 'email' && c.emailSubject) {
+                    <span class="chat-subject" [class.unread-subject]="c.unreadCount > 0">{{ c.emailSubject }}</span>
+                  }
+                  @if (boxAccounts().length > 1 && accountName(c)) {
                     <span class="chat-account">{{ accountName(c) }}</span>
                   }
                   <div class="chat-item-bottom">
@@ -428,6 +470,13 @@ const EMOJIS = [
             </div>
           }
 
+          @if (selected()!.channel === 'email' && selected()!.emailSubject) {
+            <div class="subject-bar">
+              <lucide-icon [img]="Mail" [size]="15" [strokeWidth]="2.3"></lucide-icon>
+              <span>{{ selected()!.emailSubject }}</span>
+            </div>
+          }
+
           @if (selected()!.doNotContact) {
             <div class="blocked-banner">
               <lucide-icon [img]="BanIcon" [size]="15" [strokeWidth]="2.4"></lucide-icon>
@@ -473,10 +522,16 @@ const EMOJIS = [
                   </div>
                 } @else {
                 <div class="row" [class.out]="m.direction === 'out'" [id]="'msg-' + m._id">
-                  <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'">
-                    <button class="reply-btn" (click)="replyTo.set(m)" title="Responder" aria-label="Responder a este mensaje">
-                      <lucide-icon [img]="Reply" [size]="14" [strokeWidth]="2.4"></lucide-icon>
-                    </button>
+                  <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'" [class.email]="isEmail()">
+                    @if (!isEmail()) {
+                      <button class="reply-btn" (click)="replyTo.set(m)" title="Responder" aria-label="Responder a este mensaje">
+                        <lucide-icon [img]="Reply" [size]="14" [strokeWidth]="2.4"></lucide-icon>
+                      </button>
+                    }
+
+                    @if (isEmail() && m.subject && subjectChanged(m)) {
+                      <span class="bubble-subject">{{ m.subject }}</span>
+                    }
 
                     @if (quoted(m); as q) {
                       <button class="quote" (click)="scrollToMessage(q._id)" [attr.aria-label]="'Ir al mensaje citado'">
@@ -620,6 +675,11 @@ const EMOJIS = [
               </div>
             }
 
+            @if (isEmail()) {
+              <input class="input subject-input" [ngModel]="subject()" (ngModelChange)="subject.set($event)"
+                placeholder="Asunto" aria-label="Asunto del correo" maxlength="250" />
+            }
+
             <div class="composer-row">
               <div class="attach-wrap">
                 <button class="btn-icon btn-ghost" (click)="attachOpen.set(!attachOpen())" title="Adjuntar" aria-label="Adjuntar archivo">
@@ -640,23 +700,25 @@ const EMOJIS = [
                 }
               </div>
 
-              <button class="btn-icon btn-ghost emoji-btn" (click)="emojiOpen.set(!emojiOpen())" title="Emojis" aria-label="Emojis">
-                <lucide-icon [img]="Smile" [size]="20" [strokeWidth]="2.2"></lucide-icon>
-              </button>
+              @if (!isEmail()) {
+                <button class="btn-icon btn-ghost emoji-btn" (click)="emojiOpen.set(!emojiOpen())" title="Emojis" aria-label="Emojis">
+                  <lucide-icon [img]="Smile" [size]="20" [strokeWidth]="2.2"></lucide-icon>
+                </button>
+              }
 
               <textarea
                 #composerInput
                 class="textarea composer-input"
                 rows="1"
-                placeholder="Escribe un mensaje…"
+                [placeholder]="isEmail() ? 'Escribe tu respuesta… (Ctrl + Enter para enviar)' : 'Escribe un mensaje…'"
                 [ngModel]="draft()"
                 (ngModelChange)="onDraftChange($event)"
                 (keydown)="onKeydown($event)"
                 aria-label="Mensaje"
               ></textarea>
 
-              @if (draft().trim() || attachment()) {
-                <button class="btn-icon send" (click)="send()" [disabled]="sending() || uploading()" aria-label="Enviar">
+              @if (draft().trim() || attachment() || isEmail()) {
+                <button class="btn-icon send" (click)="send()" [disabled]="sending() || uploading() || (!draft().trim() && !attachment())" aria-label="Enviar">
                   <lucide-icon [img]="Send" [size]="19" [strokeWidth]="2.4"></lucide-icon>
                 </button>
               } @else {
@@ -684,6 +746,12 @@ const EMOJIS = [
         }
       </section>
     </div>
+
+    <!-- ══ Correo nuevo ══ -->
+    @if (composeOpen()) {
+      <app-email-compose [accounts]="emailAccounts()" [preferredId]="accountId()"
+        (closed)="composeOpen.set(false)" (sent)="onComposed($event)" />
+    }
 
     <!-- ══ Clasificar: etiquetas y envío al embudo ══ -->
     @if (classifyOpen()) {
@@ -909,7 +977,18 @@ const EMOJIS = [
       flex-shrink: 0;
     }
 
-    .list-title { display: flex; align-items: center; justify-content: space-between; }
+    .list-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .list-title-actions { display: flex; align-items: center; gap: 6px; }
+
+    /* Chats | Correos: dos bandejas en la misma vista. */
+    .box-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
+      border-radius: var(--radius-pill); background: var(--color-bg-app); border: 1px solid var(--color-border); }
+    .box-tab { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 0;
+      padding: 9px 12px; border: none; background: none; cursor: pointer; border-radius: var(--radius-pill);
+      font: 600 13.5px var(--font-base); color: var(--color-text-muted); transition: all var(--transition-fast); }
+    .box-tab:hover { color: var(--color-text-main); }
+    .box-tab.active { background: var(--color-brand); color: var(--color-white); box-shadow: var(--shadow-brand); }
+    .box-tab.active .tab-badge { background: var(--color-white); color: var(--color-brand); }
     .list-title h1 {
       font-family: var(--font-heading);
       font-size: 20px;
@@ -1012,6 +1091,13 @@ const EMOJIS = [
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .chat-time { font-size: 11px; color: var(--color-text-muted); flex-shrink: 0; }
+
+    .chat-subject {
+      display: block; font-size: 13px; color: var(--color-text-main);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;
+    }
+    .chat-subject.unread-subject { font-weight: 700; }
+    .avatar[data-channel="email"] { background: linear-gradient(135deg, #0EA5E9, #6366F1); }
 
     .chat-account {
       display: block; font-size: 12px; font-weight: 600; color: var(--color-text-muted);
@@ -1279,6 +1365,18 @@ const EMOJIS = [
       border-radius: 18px 18px 6px 18px;
     }
     .bubble[data-author="agent"] { background: #F1EBFF; }
+    /* Un correo se lee como una carta, no como un globo de chat. */
+    .bubble.email { max-width: min(680px, 86%); border-radius: var(--radius-md); padding: 12px 16px 8px; }
+    .bubble-subject { font: 600 13.5px var(--font-heading); color: var(--color-text-main);
+      padding-bottom: 6px; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+
+    .subject-bar { display: flex; align-items: center; gap: 8px; padding: 10px 20px;
+      background: var(--color-white); border-bottom: 1px solid var(--color-border);
+      font: 600 14px var(--font-heading); color: var(--color-text-main); min-width: 0; }
+    .subject-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .subject-bar lucide-icon { color: var(--color-text-muted); flex-shrink: 0; }
+    .subject-input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+
     .bubble.failed { background: #FEE2E2; }
 
     /* ── Responder a un mensaje ── */
@@ -1656,6 +1754,9 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Send = Send;
   readonly Reply = Reply;
   readonly Sparkles = Sparkles;
+  readonly Mail = Mail;
+  readonly SquarePen = SquarePen;
+  readonly MessageCircle = MessageCircle;
   readonly Paperclip = Paperclip;
   readonly ImageIcon = ImageIcon;
   readonly Video = Video;
@@ -1702,15 +1803,39 @@ export class InboxComponent implements OnInit, OnDestroy {
   /** '' = todos los canales. Filtra el selector y la propia consulta. */
   channel = signal<'' | Channel>('');
 
+  /** Chats o correos: dos bandejas con la misma vista, cada una con su lista. */
+  box = signal<Box>('chats');
+
+  private chatAccounts = computed(() => this.accounts().filter(a => a.channel !== 'email'));
+  emailAccounts = computed(() => this.accounts().filter(a => a.channel === 'email'));
+  /** Las pestañas Chats/Correos solo aparecen si hay algún buzón conectado. */
+  hasEmail = computed(() => this.emailAccounts().length > 0);
+  /** Cuentas de la bandeja visible. */
+  boxAccounts = computed(() => (this.box() === 'email' ? this.emailAccounts() : this.chatAccounts()));
+
+  boxTabs = computed(() => {
+    const unread = (list: InboxAccount[]) => list.reduce((n, a) => n + (a.unread ?? 0), 0);
+    return [
+      { key: 'chats' as const, label: 'Chats', unread: unread(this.chatAccounts()) },
+      { key: 'email' as const, label: 'Correos', unread: unread(this.emailAccounts()) },
+    ];
+  });
+
+  /** El hilo abierto es un correo: cambia el redactor (asunto, sin emojis ni voz). */
+  isEmail = computed(() => this.selected()?.channel === 'email');
+  /** Asunto del correo que se va a enviar; se propone "Re: <asunto del hilo>". */
+  subject = signal('');
+
   /** Solo tiene sentido mostrar las pestañas si hay cuentas de más de un canal. */
   hasMultipleChannels = computed(
-    () => new Set(this.accounts().map(a => a.channel)).size > 1,
+    () => new Set(this.chatAccounts().map(a => a.channel)).size > 1,
   );
 
-  /** Cuentas del canal elegido; con '' se devuelven todas. */
+  /** Cuentas del canal elegido; con '' se devuelven todas las de la bandeja. */
   private accountsInChannel = computed(() => {
     const ch = this.channel();
-    return ch ? this.accounts().filter(a => a.channel === ch) : this.accounts();
+    const list = this.boxAccounts();
+    return ch ? list.filter(a => a.channel === ch) : list;
   });
 
   /** Agrupadas por canal para los `optgroup` del selector. */
@@ -1728,7 +1853,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   channelTabs = computed(() => {
     const sum = (list: InboxAccount[], k: 'total' | 'unread') =>
       list.reduce((n, a) => n + (a[k] ?? 0), 0);
-    const all = this.accounts();
+    const all = this.chatAccounts();
     return [
       { key: '' as const, label: 'Todo', total: sum(all, 'total'), unread: sum(all, 'unread') },
       // Solo los canales que el tenant tiene conectados: una pestaña vacía no aporta.
@@ -1870,6 +1995,11 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.http.get<InboxAccount[]>(`${API}/conversations/accounts`).subscribe({
       next: list => {
         this.accounts.set(list);
+        // Empresa que solo tiene correo: la pestaña de chats estaría vacía.
+        if (this.box() === 'chats' && !this.selectedId() && list.length && list.every(a => a.channel === 'email')) {
+          this.box.set('email');
+          this.loadConversations(false);
+        }
         // Si la cuenta seleccionada desapareció, vuelve a "todas".
         if (this.accountId() && !list.some(a => a._id === this.accountId())) {
           this.accountId.set('');
@@ -1887,7 +2017,10 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (q) params.set('q', q);
     if (this.accountId()) params.set('accountId', this.accountId());
     // Con una cuenta concreta el canal sobra: el accountId ya lo determina.
+    else if (this.box() === 'email') params.set('channel', 'email');
     else if (this.channel()) params.set('channel', this.channel());
+    // Pestaña "Chats" con correo conectado: todo menos el correo.
+    else if (this.hasEmail()) params.set('channel', CHAT_CHANNELS.join(','));
     const query = params.toString();
     const url = `${API}/conversations${query ? `?${query}` : ''}`;
     this.http.get<Conv[]>(url).subscribe({
@@ -1907,7 +2040,16 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.loadMessages();
     this.http.get<Conv>(`${API}/conversations/${id}`).subscribe({
       next: conv => {
+        // Un enlace a un correo abre la bandeja de correos.
+        const box: Box = conv.channel === 'email' ? 'email' : 'chats';
+        if (this.box() !== box) {
+          this.box.set(box);
+          this.channel.set('');
+          this.accountId.set('');
+          this.loadConversations(false);
+        }
         this.upsertConv(conv);
+        this.subject.set(this.replySubject(conv.emailSubject));
         if (conv.unreadCount > 0) this.markRead(conv._id);
       },
       error: () => {
@@ -1924,6 +2066,16 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   setFilter(f: Filter) { this.filter.set(f); }
+
+  /** Cambia entre chats y correos; cada bandeja empieza en "todas las cuentas". */
+  setBox(b: Box) {
+    if (this.box() === b) return;
+    this.box.set(b);
+    this.channel.set('');
+    this.accountId.set('');
+    this.closeThread();
+    this.loadConversations();
+  }
 
   /** Cambia el canal; si la cuenta elegida no pertenece a él, se vuelve a "todas". */
   setChannel(ch: '' | Channel) {
@@ -2201,6 +2353,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.selectedId.set(c._id);
     this.messages.set([]);
     this.draft.set('');
+    this.subject.set(this.replySubject(c.emailSubject));
     this.clearAttachment();
     this.allLoaded = false;
     this.loadMessages();
@@ -2323,6 +2476,8 @@ export class InboxComponent implements OnInit, OnDestroy {
    */
   onKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' || event.shiftKey) return;
+    // En un correo Enter es un salto de párrafo; se envía con Ctrl/Cmd + Enter.
+    if (this.isEmail() && !event.ctrlKey && !event.metaKey) return;
     if (this.platform.esTactil()) return;
     event.preventDefault();
     void this.send();
@@ -2384,12 +2539,14 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (!text && !att) return;
 
     this.sending.set(true);
-    const citado = this.replyTo();
+    const citado = this.isEmail() ? null : this.replyTo();
+    const subject = this.isEmail() ? this.subject().trim() : '';
     const body = {
       ...(att
         ? { text, type: att.type, mediaUrl: att.url, mediaKey: att.key, mimeType: att.mimeType, filename: att.filename, size: att.size }
         : { text, type: 'text' as MsgType }),
       ...(citado ? { replyToId: citado._id } : {}),
+      ...(subject ? { subject } : {}),
     };
 
     this.http.post<Msg>(`${API}/conversations/${conv._id}/messages`, body).subscribe({
@@ -2685,6 +2842,10 @@ export class InboxComponent implements OnInit, OnDestroy {
     // Si hay una cuenta seleccionada, ignora los de las demás.
     const account = this.accountId();
     if (account && conv.accountId !== account) return;
+    // Y cada bandeja solo muestra lo suyo: un WhatsApp no entra en Correos.
+    if (conv.channel && (conv.channel === 'email') !== (this.box() === 'email')) return;
+    const ch = this.channel();
+    if (ch && conv.channel && conv.channel !== ch) return;
     this.conversations.update(list => {
       const next = list.some(c => c._id === conv._id)
         ? list.map(c => (c._id === conv._id ? { ...c, ...conv } : c))
@@ -2717,6 +2878,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   /** Identificador visible del contacto: el teléfono en WhatsApp, el canal en el resto. */
   contactHandle(c: Conv) {
     if (c.channel === 'whatsapp') return `+${c.contact}`;
+    if (c.channel === 'email') return c.contact;
     return c.channel === 'messenger' ? 'Messenger' : 'Instagram DM';
   }
 
@@ -2730,6 +2892,36 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   marcarAvatarRoto(id: string) {
     this.avatarRoto.update(s => new Set(s).add(id));
+  }
+
+  // ── Correo ──
+
+  /** "Re: <asunto>" sin encadenar "Re: Re:". */
+  replySubject(subject?: string): string {
+    const base = (subject ?? '').replace(/^\s*((re|rv|fw|fwd)\s*:\s*)+/i, '').trim();
+    return base ? `Re: ${base}` : '';
+  }
+
+  /** El asunto se pinta en la burbuja solo cuando cambia respecto al anterior. */
+  subjectChanged(m: Msg): boolean {
+    const list = this.messages();
+    const i = list.findIndex(x => x._id === m._id);
+    const norm = (v?: string) => (v ?? '').replace(/^\s*((re|rv|fw|fwd)\s*:\s*)+/i, '').trim().toLowerCase();
+    for (let j = i - 1; j >= 0; j--) {
+      if (list[j].subject) return norm(list[j].subject) !== norm(m.subject);
+    }
+    return true;
+  }
+
+  composeOpen = signal(false);
+
+  openCompose() { this.composeOpen.set(true); }
+
+  /** El correo nuevo abre su conversación, como cualquier otra. */
+  onComposed(conversationId: string) {
+    this.composeOpen.set(false);
+    this.loadAccounts();
+    this.openById(conversationId);
   }
 
   initials(c: Conv) {

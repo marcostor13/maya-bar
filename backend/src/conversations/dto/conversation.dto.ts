@@ -2,6 +2,8 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsEmail,
+  IsNotEmpty,
   IsIn,
   IsMongoId,
   IsNumber,
@@ -76,6 +78,47 @@ export class SendMessageDto {
   @IsOptional()
   @IsMongoId()
   replyToId?: string;
+
+  /** Solo correo: asunto propio; sin él se responde con "Re: <último asunto>". */
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  subject?: string;
+}
+
+/** Correo nuevo desde la bandeja, fuera de un hilo existente. */
+export class ComposeEmailDto {
+  @IsMongoId()
+  accountId: string;
+
+  @IsEmail()
+  to: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(250)
+  subject: string;
+
+  @IsString()
+  @IsNotEmpty()
+  text: string;
+
+  @IsOptional()
+  @IsString()
+  mediaUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  mimeType?: string;
+
+  @IsOptional()
+  @IsString()
+  filename?: string;
 }
 
 export class AutoReplyDto {

@@ -70,6 +70,11 @@ export class CreateAiAgentDto {
   messengerAccountIds?: string[];
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  emailAccountIds?: string[];
+
+  @IsOptional()
   @IsBoolean()
   handoffEnabled?: boolean;
 

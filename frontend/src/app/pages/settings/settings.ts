@@ -10,6 +10,7 @@ import { WhatsappSettingsComponent } from './whatsapp-settings';
 import { InstagramSettingsComponent } from './instagram-settings';
 import { MessengerSettingsComponent } from './messenger-settings';
 import { NotificationsSettingsComponent } from './notifications-settings';
+import { EmailSettingsComponent } from './email-settings';
 
 type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' | 'hunterApiKey';
 
@@ -19,7 +20,7 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
   imports: [
     FormsModule, LucideAngularModule, WhatsappSettingsComponent,
     InstagramSettingsComponent, MessengerSettingsComponent,
-    NotificationsSettingsComponent,
+    NotificationsSettingsComponent, EmailSettingsComponent,
   ],
   template: `
     <div class="page animate-fade-in">
@@ -41,6 +42,9 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
 
       <!-- Messenger Accounts Card -->
       <app-messenger-settings />
+
+      <!-- Correo electrónico -->
+      <app-email-settings />
 
       <!-- IA / Agentes Card -->
       <div class="section-card">

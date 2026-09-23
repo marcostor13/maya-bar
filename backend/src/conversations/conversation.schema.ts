@@ -2,7 +2,11 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import type { AdReferral } from '../shared/ad-referral';
 
-export type ConversationChannel = 'whatsapp' | 'instagram' | 'messenger';
+export type ConversationChannel =
+  | 'whatsapp'
+  | 'instagram'
+  | 'messenger'
+  | 'email';
 
 @Schema({ timestamps: true })
 export class Conversation extends Document {
@@ -11,12 +15,13 @@ export class Conversation extends Document {
 
   @Prop({
     required: true,
-    enum: ['whatsapp', 'instagram', 'messenger'],
+    type: String,
+    enum: ['whatsapp', 'instagram', 'messenger', 'email'],
     default: 'whatsapp',
   })
   channel: ConversationChannel;
 
-  /** Cuenta (WhatsApp, Instagram o Messenger) por la que entra/sale el chat. */
+  /** Cuenta (WhatsApp, Instagram, Messenger o correo) por la que entra/sale el chat. */
   @Prop({ type: Types.ObjectId, required: true, index: true })
   accountId: Types.ObjectId;
 
@@ -24,7 +29,7 @@ export class Conversation extends Document {
   @Prop({ type: Types.ObjectId, ref: 'AiAgent' })
   agentId?: Types.ObjectId;
 
-  /** Identificador del cliente: número normalizado (WA), IGSID (Instagram) o PSID (Messenger). */
+  /** Identificador del cliente: número normalizado (WA), IGSID (Instagram), PSID (Messenger) o dirección de correo. */
   @Prop({ required: true, index: true })
   contact: string;
 
@@ -52,6 +57,10 @@ export class Conversation extends Document {
 
   @Prop({ default: '' })
   lastMessagePreview: string;
+
+  /** Correo: asunto del último mensaje del hilo, para mostrarlo y responder con "Re:". */
+  @Prop()
+  emailSubject?: string;
 
   @Prop({ enum: ['in', 'out'], default: 'in' })
   lastMessageDirection: string;

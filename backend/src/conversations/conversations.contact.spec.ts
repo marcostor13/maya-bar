@@ -6,6 +6,8 @@ import { MediaUnderstandingService } from '../ai/media-understanding.service';
 import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
 import { SuppressionService } from '../suppression/suppression.service';
+import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { EmailTransportService } from '../email-accounts/email-transport.service';
 import { Conversation } from './conversation.schema';
 import { Message } from './message.schema';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -95,6 +97,8 @@ describe('ConversationsService — contacto del CRM', () => {
           provide: NativePushService,
           useValue: { sendToTenantModule: jest.fn() },
         },
+        { provide: EmailAccountsService, useValue: {} },
+        { provide: EmailTransportService, useValue: {} },
         {
           provide: SuppressionService,
           useValue: {
@@ -258,6 +262,8 @@ describe('ConversationsService — clasificación y seguimiento', () => {
           provide: NativePushService,
           useValue: { sendToTenantModule: jest.fn() },
         },
+        { provide: EmailAccountsService, useValue: {} },
+        { provide: EmailTransportService, useValue: {} },
         {
           provide: SuppressionService,
           useValue: {
