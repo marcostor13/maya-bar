@@ -23,6 +23,20 @@
   --color-warning: #F59E0B;
   --color-error: #EF4444;
 
+  /* Gráficos: series categóricas en orden fijo (validadas para daltonismo y
+     contraste ≥3:1 sobre blanco) y rampa secuencial azul para magnitudes. */
+  --chart-1: #2a78d6;
+  --chart-2: #4a3aa7;
+  --chart-3: #eb6834;
+  --chart-grid: #EEF0F3;
+  --chart-empty: #F3F4F6;
+  --seq-150: #b7d3f6;
+  --seq-250: #86b6ef;
+  --seq-350: #5598e7;
+  --seq-450: #2a78d6;
+  --seq-550: #1c5cab;
+  --seq-650: #104281;
+
   /* Typography */
   --font-base: 'Inter', sans-serif;
   --font-heading: 'Poppins', sans-serif;
@@ -294,6 +308,26 @@ h1, h2, h3, h4, h5, h6 {
 .animate-fade-in {
   animation: fadeInUp var(--transition-smooth);
 }
+
+/* Tooltip de los gráficos (shared/charts.ts). */
+.viz-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  background: var(--color-text-main);
+  color: var(--color-white);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: var(--shadow-lg);
+  transform: translate(-50%, calc(-100% - 14px));
+}
+.viz-tip-title { font-weight: 600; margin-bottom: 4px; opacity: 0.8; }
+.viz-tip-row { display: flex; align-items: center; gap: 8px; }
+.viz-tip-row b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
+.viz-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; display: inline-block; }
 
 /* ==========================================================================
    RESPONSIVE / MOBILE UTILITIES

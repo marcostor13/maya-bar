@@ -97,7 +97,13 @@ export interface DashboardAnalytics {
   channels: Breakdown[];
   sources: Breakdown[];
   funnel: (Breakdown & { color: string; probability: number })[];
-  outcomes: { won: number; lost: number; lostReasons: Breakdown[] };
+  outcomes: {
+    won: number;
+    lost: number;
+    /** Perdidas por cubeta, junto a kpis.wonDeals.series. */
+    lostSeries: number[];
+    lostReasons: Breakdown[];
+  };
   agents: {
     id: string;
     name: string;
@@ -467,6 +473,7 @@ export class DashboardAnalyticsService {
       outcomes: {
         won: wonCount,
         lost: lostCount,
+        lostSeries: wonSeries.lost,
         lostReasons: lostReasons.map((r) => ({
           key: r._id,
           label: r._id,

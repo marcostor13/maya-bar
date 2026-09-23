@@ -251,6 +251,7 @@ describe('DashboardAnalyticsService', () => {
     expect(d.outcomes).toEqual({
       won: 3,
       lost: 1,
+      lostSeries: [0, 0, 0, 0, 0, 0, 1],
       lostReasons: [{ key: 'Precio', label: 'Precio', count: 1 }],
     });
 
