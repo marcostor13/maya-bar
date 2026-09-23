@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { LeadsService } from './leads.service';
 import { Lead } from './lead.schema';
@@ -8,6 +13,9 @@ import { LeadActivity } from './lead-activity.schema';
 import { Customer } from '../customers/customer.schema';
 import { User } from '../users/user.schema';
 import { ConversionsService } from '../conversions/conversions.service';
+import { RolesService } from '../roles/roles.service';
+import { PushService } from '../push/push.service';
+import { NativePushService } from '../notifications/push.service';
 
 const tenantId = new Types.ObjectId().toString();
 const userId = new Types.ObjectId().toString();
@@ -17,7 +25,7 @@ const customerOid = new Types.ObjectId();
 /** Query encadenable: find().populate().sort().limit().select().exec() */
 function buildQuery(result: unknown) {
   const q: any = { exec: jest.fn().mockResolvedValue(result) };
-  for (const m of ['populate', 'sort', 'limit', 'select', 'skip'])
+  for (const m of ['populate', 'sort', 'limit', 'select', 'skip', 'lean'])
     q[m] = jest.fn().mockReturnValue(q);
   return q;
 }
@@ -31,6 +39,8 @@ function createMockModel() {
   model.updateOne = jest.fn().mockReturnValue(buildQuery(null));
   model.deleteOne = jest.fn().mockReturnValue(buildQuery(null));
   model.deleteMany = jest.fn().mockReturnValue(buildQuery(null));
+  model.findById = jest.fn().mockReturnValue(buildQuery(null));
+  model.aggregate = jest.fn().mockReturnValue(buildQuery([]));
   return model;
 }
 
@@ -59,6 +69,9 @@ describe('LeadsService', () => {
   let leadModel: any;
   let activityModel: any;
   let customerModel: any;
+  let userModel: any;
+  let push: { sendToUser: jest.Mock };
+  let nativePush: { sendToUser: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -67,6 +80,9 @@ describe('LeadsService', () => {
     customerModel = createMockModel();
     activityModel.create.mockResolvedValue({ _id: new Types.ObjectId() });
     conversions = { reportLeadStage: jest.fn().mockResolvedValue(null) };
+    userModel = createMockModel();
+    push = { sendToUser: jest.fn().mockResolvedValue(1) };
+    nativePush = { sendToUser: jest.fn().mockResolvedValue(1) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -74,8 +90,18 @@ describe('LeadsService', () => {
         { provide: getModelToken(Lead.name), useValue: leadModel },
         { provide: getModelToken(LeadActivity.name), useValue: activityModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
-        { provide: getModelToken(User.name), useValue: createMockModel() },
+        { provide: getModelToken(User.name), useValue: userModel },
         { provide: ConversionsService, useValue: conversions },
+        {
+          provide: RolesService,
+          useValue: {
+            modulesFor: jest.fn((_t: string, role: string) =>
+              Promise.resolve(role === 'KITCHEN' ? ['kds'] : ['leads']),
+            ),
+          },
+        },
+        { provide: PushService, useValue: push },
+        { provide: NativePushService, useValue: nativePush },
       ],
     }).compile();
 
@@ -110,6 +136,7 @@ describe('LeadsService', () => {
       expect(query.$or).toEqual([
         { ownerId: new Types.ObjectId(userId) },
         { createdBy: new Types.ObjectId(userId) },
+        { ownerId: null },
       ]);
     });
 
@@ -133,7 +160,8 @@ describe('LeadsService', () => {
       leadModel.countDocuments
         .mockReturnValueOnce(buildQuery(1)) // perdidos del mes
         .mockReturnValueOnce(buildQuery(3)) // ganados histórico
-        .mockReturnValueOnce(buildQuery(1)); // perdidos histórico
+        .mockReturnValueOnce(buildQuery(1)) // perdidos histórico
+        .mockReturnValueOnce(buildQuery(4)); // sin asignar
 
       const stats = await service.stats(tenantId, userId, 'TENANT_ADMIN');
 
@@ -143,6 +171,8 @@ describe('LeadsService', () => {
       expect(stats.wonThisMonth).toBe(1);
       expect(stats.wonValueThisMonth).toBe(500);
       expect(stats.conversionRate).toBe(75); // 3 de 4 cerradas
+      expect(stats.unassigned).toBe(4);
+      expect(stats.mine).toBe(2);
     });
   });
 
@@ -361,6 +391,225 @@ describe('LeadsService', () => {
       expect(leadModel.updateOne.mock.calls[0][1]).toEqual({
         $set: { nextActionAt: null, nextActionTitle: null },
       });
+    });
+  });
+
+  describe('reparto', () => {
+    const other = new Types.ObjectId();
+    const pedro = { _id: other, name: 'Pedro', email: 'p@x.pe' };
+    const users = [
+      {
+        _id: new Types.ObjectId(userId),
+        name: 'Ana',
+        email: 'a@x.pe',
+        role: 'MARKETING',
+      },
+      { _id: other, name: 'Pedro', email: 'p@x.pe', role: 'IMPULSADOR' },
+      {
+        _id: new Types.ObjectId(),
+        name: 'Cocina',
+        email: 'k@x.pe',
+        role: 'KITCHEN',
+      },
+    ];
+    const modified = (n: number) => buildQuery({ modifiedCount: n });
+
+    beforeEach(() => {
+      userModel.find.mockReturnValue(buildQuery(users));
+      userModel.findById.mockReturnValue(buildQuery({ name: 'Ana' }));
+    });
+
+    it('toma una oportunidad de la bolsa de forma atómica', async () => {
+      const pool = makeLead({ ownerId: undefined });
+      leadModel.find.mockReturnValue(buildQuery([pool]));
+      leadModel.updateOne.mockReturnValue(modified(1));
+
+      await service.claim(String(leadOid), tenantId, userId, 'MARKETING');
+
+      const [filter, update] = leadModel.updateOne.mock.calls[0];
+      expect(filter).toMatchObject({ _id: leadOid, ownerId: null });
+      expect(update.$set.ownerId).toEqual(new Types.ObjectId(userId));
+      expect(activityModel.create.mock.calls[0][0]).toMatchObject({
+        type: 'assignment',
+        title: 'Ana la tomó',
+      });
+    });
+
+    it('si otra persona la tomó primero, avisa quién', async () => {
+      leadModel.find
+        .mockReturnValueOnce(buildQuery([makeLead({ ownerId: undefined })]))
+        .mockReturnValueOnce(buildQuery([makeLead({ ownerId: pedro })]));
+      leadModel.updateOne.mockReturnValue(modified(0));
+
+      await expect(
+        service.claim(String(leadOid), tenantId, userId, 'MARKETING'),
+      ).rejects.toThrow(new ConflictException('Ya la tomó Pedro'));
+      expect(activityModel.create).not.toHaveBeenCalled();
+    });
+
+    it('no se puede tomar una que ya tiene responsable', async () => {
+      leadModel.find.mockReturnValue(
+        buildQuery([makeLead({ ownerId: pedro })]),
+      );
+      await expect(
+        service.claim(String(leadOid), tenantId, userId, 'MANAGER'),
+      ).rejects.toThrow(ConflictException);
+      expect(leadModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('bloquea el trabajo sobre una oportunidad ajena o sin tomar', async () => {
+      leadModel.find.mockReturnValue(
+        buildQuery([makeLead({ ownerId: pedro })]),
+      );
+      await expect(
+        service.move(String(leadOid), tenantId, userId, 'MARKETING', {
+          stage: 'won',
+        }),
+      ).rejects.toThrow('La lleva Pedro');
+
+      leadModel.find.mockReturnValue(
+        buildQuery([makeLead({ ownerId: undefined })]),
+      );
+      await expect(
+        service.addActivity(String(leadOid), tenantId, userId, 'MARKETING', {
+          type: 'note',
+          title: 'x',
+        }),
+      ).rejects.toThrow('tómala');
+    });
+
+    it('quien supervisa puede trabajar cualquiera', async () => {
+      const lead = makeLead({ ownerId: pedro });
+      leadModel.find.mockReturnValue(buildQuery([lead]));
+      await service.move(String(leadOid), tenantId, userId, 'MANAGER', {
+        stage: 'won',
+      });
+      expect(lead.status).toBe('won');
+    });
+
+    it('el responsable la suelta y vuelve a la bolsa', async () => {
+      leadModel.find.mockReturnValue(buildQuery([makeLead()]));
+      await service.release(String(leadOid), tenantId, userId, 'MARKETING', {
+        reason: 'No es mi zona',
+      });
+      expect(leadModel.updateOne.mock.calls[0][1].$unset).toEqual({
+        ownerId: 1,
+        assignedAt: 1,
+      });
+      expect(activityModel.create.mock.calls[0][0].title).toBe(
+        'Ana la soltó — No es mi zona',
+      );
+      expect(push.sendToUser).not.toHaveBeenCalled();
+    });
+
+    it('nadie más puede soltar una ajena; quien supervisa sí, y avisa', async () => {
+      leadModel.find.mockReturnValue(
+        buildQuery([makeLead({ ownerId: pedro })]),
+      );
+      await expect(
+        service.release(String(leadOid), tenantId, userId, 'MARKETING', {}),
+      ).rejects.toThrow(ForbiddenException);
+
+      await service.release(String(leadOid), tenantId, userId, 'MANAGER', {});
+      expect(activityModel.create.mock.calls[0][0].title).toBe(
+        'Ana se la quitó a Pedro',
+      );
+      expect(push.sendToUser.mock.calls[0][0]).toBe(String(other));
+    });
+
+    it('deriva a otra persona del equipo y le avisa con la nota', async () => {
+      leadModel.find.mockReturnValue(buildQuery([makeLead()]));
+      await service.transfer(String(leadOid), tenantId, userId, 'MARKETING', {
+        toUserId: String(other),
+        note: 'Cliente de Surco',
+      });
+      expect(leadModel.updateOne.mock.calls[0][1].$set.ownerId).toEqual(other);
+      expect(activityModel.create.mock.calls[0][0]).toMatchObject({
+        type: 'assignment',
+        title: 'Ana se la derivó a Pedro',
+        body: 'Cliente de Surco',
+      });
+      expect(push.sendToUser).toHaveBeenCalledWith(
+        String(other),
+        expect.objectContaining({
+          title: 'Te derivaron una oportunidad',
+          url: `/leads?lead=${String(leadOid)}`,
+        }),
+      );
+      expect(nativePush.sendToUser).toHaveBeenCalled();
+    });
+
+    it('solo deriva a usuarios activos con acceso a Seguimiento', async () => {
+      leadModel.find.mockReturnValue(buildQuery([makeLead()]));
+      await expect(
+        service.transfer(String(leadOid), tenantId, userId, 'MARKETING', {
+          toUserId: String(users[2]._id),
+        }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.transfer(String(leadOid), tenantId, userId, 'MARKETING', {
+          toUserId: userId,
+        }),
+      ).rejects.toThrow('ya lleva');
+    });
+
+    it('no deriva una ajena sin supervisar', async () => {
+      leadModel.find.mockReturnValue(
+        buildQuery([makeLead({ ownerId: pedro })]),
+      );
+      await expect(
+        service.transfer(String(leadOid), tenantId, userId, 'MARKETING', {
+          toUserId: userId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('cambiar el responsable al editar pasa por derivar', async () => {
+      leadModel.find.mockReturnValue(buildQuery([makeLead()]));
+      await service.update(String(leadOid), tenantId, userId, 'MARKETING', {
+        title: 'Nuevo título',
+        ownerId: String(other),
+      });
+      expect(leadModel.updateOne.mock.calls[0][1].$set.ownerId).toEqual(other);
+      expect(push.sendToUser).toHaveBeenCalled();
+    });
+
+    it('responsables: solo roles con Seguimiento y su carga abierta', async () => {
+      leadModel.aggregate.mockReturnValue(
+        buildQuery([{ _id: other, count: 3 }]),
+      );
+      const owners = await service.owners(tenantId);
+      expect(owners.map((o) => [o.name, o.openLeads])).toEqual([
+        ['Ana', 0],
+        ['Pedro', 3],
+      ]);
+    });
+
+    it('filtra por bolsa y por mías', async () => {
+      await service.board(tenantId, userId, 'MANAGER', { ownerId: 'none' });
+      expect(leadModel.find.mock.calls[0][0].ownerId).toBeNull();
+      await service.board(tenantId, userId, 'MANAGER', { ownerId: 'me' });
+      expect(leadModel.find.mock.calls[1][0].ownerId).toEqual(
+        new Types.ObjectId(userId),
+      );
+    });
+
+    it('crear con responsable vacío la deja en la bolsa', async () => {
+      customerModel.findOne.mockReturnValue(buildQuery({ _id: customerOid }));
+      leadModel.create.mockResolvedValue(makeLead({ ownerId: undefined }));
+      leadModel.find.mockReturnValue(
+        buildQuery([makeLead({ ownerId: undefined })]),
+      );
+
+      await service.create(tenantId, userId, 'MARKETING', {
+        customerId: String(customerOid),
+        title: 'Bolsa',
+        ownerId: '',
+      });
+      expect(leadModel.create.mock.calls[0][0].ownerId).toBeUndefined();
+      expect(activityModel.create.mock.calls[1][0].title).toBe(
+        'Queda sin asignar',
+      );
     });
   });
 });

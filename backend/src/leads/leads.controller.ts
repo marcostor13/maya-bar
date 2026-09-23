@@ -18,6 +18,8 @@ import {
   CreateActivityDto,
   CreateLeadDto,
   MoveLeadDto,
+  ReleaseLeadDto,
+  TransferLeadDto,
   UpdateActivityDto,
   UpdateLeadDto,
 } from './dto/lead.dto';
@@ -158,6 +160,52 @@ export class LeadsController {
   ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.addActivity(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
+  /** Toma una oportunidad de la bolsa sin asignar. */
+  @Patch(':id/claim')
+  claim(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.claim(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
+  }
+
+  /** La devuelve a la bolsa. Solo su responsable o quien supervisa. */
+  @Patch(':id/release')
+  release(
+    @Param('id') id: string,
+    @Body() dto: ReleaseLeadDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.release(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
+  /** La deriva a otra persona del equipo. */
+  @Patch(':id/transfer')
+  transfer(
+    @Param('id') id: string,
+    @Body() dto: TransferLeadDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.transfer(
       id,
       req.user.tenantId,
       req.user.userId,

@@ -1,7 +1,9 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -25,8 +27,11 @@ import {
   stageLabel,
   statusForStage,
 } from './lead-stages.catalog';
-import { isOwnerScoped } from '../auth/permissions';
+import { isLeadSupervisor, isOwnerScoped } from '../auth/permissions';
 import { ConversionsService } from '../conversions/conversions.service';
+import { RolesService } from '../roles/roles.service';
+import { PushService } from '../push/push.service';
+import { NativePushService } from '../notifications/push.service';
 import { formatPhone, phoneDigits } from '../shared/phone';
 
 /** Columna del tablero: la etapa, sus oportunidades y sus totales. */
@@ -50,11 +55,32 @@ export interface LeadStats {
   conversionRate: number;
   overdueTasks: number;
   dueTodayTasks: number;
+  /** Abiertas sin responsable: la bolsa del equipo. */
+  unassigned: number;
+  /** Abiertas que lleva quien consulta. */
+  mine: number;
+}
+
+/** Responsable posible, con su carga de trabajo para repartir con criterio. */
+export interface LeadOwner {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+  openLeads: number;
+}
+
+/** Id de un campo que puede venir poblado (documento) o como ObjectId. */
+function idOf(v: unknown): string {
+  if (!v) return '';
+  const id = (v as { _id?: Types.ObjectId })._id ?? (v as Types.ObjectId);
+  return id.toString();
 }
 
 export interface LeadFilters {
   stage?: string;
   status?: string;
+  /** Id de usuario, `me` (quien consulta) o `none` (sin asignar). */
   ownerId?: string;
   q?: string;
   tag?: string;
@@ -72,6 +98,8 @@ export interface QuickCustomer {
 
 @Injectable()
 export class LeadsService {
+  private readonly logger = new Logger(LeadsService.name);
+
   constructor(
     @InjectModel(Lead.name) private leadModel: Model<Lead>,
     @InjectModel(LeadActivity.name)
@@ -79,6 +107,9 @@ export class LeadsService {
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
     @InjectModel(User.name) private userModel: Model<User>,
     private conversions: ConversionsService,
+    private roles: RolesService,
+    private push: PushService,
+    private nativePush: NativePushService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -91,7 +122,8 @@ export class LeadsService {
 
   /**
    * Filtro base del tenant. Los roles acotados al dueño (impulsadores) solo ven
-   * lo que tienen asignado o lo que crearon.
+   * lo que tienen asignado, lo que crearon y la bolsa sin asignar (para poder
+   * tomar de ella).
    */
   private scope(
     tenantId: string,
@@ -103,7 +135,7 @@ export class LeadsService {
     };
     if (isOwnerScoped(role)) {
       const uid = new Types.ObjectId(userId);
-      filter.$or = [{ ownerId: uid }, { createdBy: uid }];
+      filter.$or = [{ ownerId: uid }, { createdBy: uid }, { ownerId: null }];
     }
     return filter;
   }
@@ -111,8 +143,12 @@ export class LeadsService {
   private async applyFilters(
     base: QueryFilter<Lead>,
     filters: LeadFilters,
+    userId?: string,
   ): Promise<QueryFilter<Lead>> {
     const query: QueryFilter<Lead> = { ...base };
+    if (filters.ownerId === 'none') query.ownerId = null;
+    else if (filters.ownerId === 'me' && userId)
+      query.ownerId = new Types.ObjectId(userId);
     if (filters.stage) query.stage = filters.stage;
     if (filters.status) query.status = filters.status;
     if (filters.tag) query.tags = filters.tag;
@@ -163,6 +199,7 @@ export class LeadsService {
     const query = await this.applyFilters(
       this.scope(tenantId, userId, role),
       filters,
+      userId,
     );
     return this.populated(this.leadModel.find(query))
       .sort({ lastActivityAt: -1 })
@@ -180,6 +217,7 @@ export class LeadsService {
     const query = await this.applyFilters(
       this.scope(tenantId, userId, role),
       filters,
+      userId,
     );
     const leads = await this.populated(this.leadModel.find(query))
       .sort({ position: 1, lastActivityAt: -1 })
@@ -212,7 +250,7 @@ export class LeadsService {
     endOfToday.setHours(23, 59, 59, 999);
     const now = new Date();
 
-    const [open, wonMonth, lostMonth, wonEver, lostEver, tasks] =
+    const [open, wonMonth, lostMonth, wonEver, lostEver, tasks, unassigned] =
       await Promise.all([
         this.leadModel.find({ ...base, status: 'open' }).exec(),
         this.leadModel
@@ -230,6 +268,9 @@ export class LeadsService {
         this.leadModel
           .find({ ...base, status: 'open', nextActionAt: { $ne: null } })
           .select({ nextActionAt: 1 })
+          .exec(),
+        this.leadModel
+          .countDocuments({ ...base, status: 'open', ownerId: null })
           .exec(),
       ]);
 
@@ -259,6 +300,8 @@ export class LeadsService {
           l.nextActionAt >= now &&
           l.nextActionAt <= endOfToday,
       ).length,
+      unassigned,
+      mine: open.filter((l) => idOf(l.ownerId) === userId).length,
     };
   }
 
@@ -268,6 +311,17 @@ export class LeadsService {
     userId: string,
     role: string,
   ): Promise<Lead> {
+    const lead = await this.load(id, tenantId);
+    this.assertOwnership(lead, userId, role);
+    return lead;
+  }
+
+  /**
+   * Lectura sin comprobar visibilidad. Solo para devolver el resultado de una
+   * acción ya autorizada: tras derivar una oportunidad, quien la derivó puede
+   * haber dejado de verla.
+   */
+  private async load(id: string, tenantId: string): Promise<Lead> {
     if (!Types.ObjectId.isValid(id))
       throw new NotFoundException('Oportunidad no encontrada');
     const lead = await this.populated(
@@ -280,33 +334,117 @@ export class LeadsService {
       .exec()
       .then((rows) => rows[0]);
     if (!lead) throw new NotFoundException('Oportunidad no encontrada');
-    this.assertOwnership(lead, userId, role);
     return lead;
   }
 
+  /** Visibilidad: los roles acotados solo abren lo suyo y la bolsa. */
   private assertOwnership(lead: Lead, userId: string, role: string) {
     if (!isOwnerScoped(role)) return;
     const mine =
-      String(lead.ownerId ?? '') === userId ||
-      String(lead.createdBy ?? '') === userId;
+      !lead.ownerId ||
+      idOf(lead.ownerId) === userId ||
+      idOf(lead.createdBy) === userId;
     if (!mine) throw new ForbiddenException('Esta oportunidad no es tuya');
   }
 
-  /** Responsables posibles del seguimiento (para el selector). */
-  async owners(tenantId: string) {
-    const users = await this.userModel
-      .find(
-        { tenantId: new Types.ObjectId(tenantId), isActive: true },
-        { name: 1, email: 1, role: 1 },
-      )
-      .sort({ name: 1, email: 1 })
+  /**
+   * Bloqueo de trabajo: una oportunidad tomada solo la mueve, edita o anota su
+   * responsable (o quien supervisa el equipo). Sin responsable, primero hay
+   * que tomarla: así nunca hay dos personas llevando el mismo cliente.
+   */
+  private assertCanWork(lead: Lead, userId: string, role: string) {
+    if (isLeadSupervisor(role)) return;
+    if (!lead.ownerId)
+      throw new ForbiddenException(
+        'Esta oportunidad está sin asignar: tómala para trabajarla',
+      );
+    if (idOf(lead.ownerId) !== userId) {
+      const owner = lead.ownerId as unknown as {
+        name?: string;
+        email?: string;
+      };
+      const name = owner?.name || owner?.email || 'otra persona';
+      throw new ForbiddenException(
+        `La lleva ${name}. Pídele que la suelte o que te la derive`,
+      );
+    }
+  }
+
+  /** Oportunidad que el usuario puede trabajar (visible y bajo su control). */
+  private async findWorkable(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<Lead> {
+    const lead = await this.findOne(id, tenantId, userId, role);
+    this.assertCanWork(lead, userId, role);
+    return lead;
+  }
+
+  /**
+   * Responsables posibles: usuarios activos del tenant cuyo rol tiene el
+   * módulo de seguimiento, con cuántas oportunidades abiertas llevan.
+   */
+  async owners(tenantId: string): Promise<LeadOwner[]> {
+    const tid = new Types.ObjectId(tenantId);
+    const [users, loads] = await Promise.all([
+      this.userModel
+        .find({ tenantId: tid, isActive: true }, { name: 1, email: 1, role: 1 })
+        .sort({ name: 1, email: 1 })
+        .exec(),
+      this.leadModel
+        .aggregate<{
+          _id: Types.ObjectId;
+          count: number;
+        }>([
+          { $match: { tenantId: tid, status: 'open', ownerId: { $ne: null } } },
+          { $group: { _id: '$ownerId', count: { $sum: 1 } } },
+        ])
+        .exec(),
+    ]);
+    const roles = [...new Set(users.map((u) => u.role))];
+    const allowed = new Set<string>();
+    await Promise.all(
+      roles.map(async (r) => {
+        const modules = await this.roles.modulesFor(tenantId, r);
+        if (modules.includes('leads')) allowed.add(r);
+      }),
+    );
+    const load = new Map(loads.map((l) => [String(l._id), l.count]));
+    return users
+      .filter((u) => allowed.has(u.role))
+      .map((u) => ({
+        _id: String(u._id),
+        name: u.name || u.email,
+        email: u.email,
+        role: u.role,
+        openLeads: load.get(String(u._id)) ?? 0,
+      }));
+  }
+
+  /** Responsable válido del tenant o error; devuelve su nombre para el historial. */
+  private async assertEligibleOwner(
+    tenantId: string,
+    ownerId: string,
+  ): Promise<{ id: Types.ObjectId; name: string }> {
+    if (!Types.ObjectId.isValid(ownerId))
+      throw new BadRequestException('Responsable inválido');
+    const owner = (await this.owners(tenantId)).find((o) => o._id === ownerId);
+    if (!owner)
+      throw new BadRequestException(
+        'Ese usuario no está activo o no tiene acceso a Seguimiento',
+      );
+    return { id: new Types.ObjectId(ownerId), name: owner.name };
+  }
+
+  private async userName(userId: string): Promise<string> {
+    if (!Types.ObjectId.isValid(userId)) return 'Alguien';
+    const u = await this.userModel
+      .findById(new Types.ObjectId(userId), { name: 1, email: 1 })
+      .lean<{ name?: string; email?: string }>()
       .exec();
-    return users.map((u) => ({
-      _id: String(u._id),
-      name: u.name || u.email,
-      email: u.email,
-      role: u.role,
-    }));
+    return u?.name || u?.email || 'Alguien';
   }
 
   // ------------------------------------------------------------------
@@ -321,6 +459,13 @@ export class LeadsService {
   ): Promise<Lead> {
     const customerId = await this.resolveCustomer(tenantId, userId, role, dto);
     const stage = dto.stage ?? DEFAULT_LEAD_STAGE;
+    // Sin indicar, la lleva quien la crea; `''` la deja en la bolsa.
+    const owner =
+      dto.ownerId === ''
+        ? null
+        : dto.ownerId && dto.ownerId !== userId
+          ? await this.assertEligibleOwner(tenantId, dto.ownerId)
+          : { id: new Types.ObjectId(userId), name: '' };
     const status = statusForStage(stage);
 
     const lead = await this.leadModel.create({
@@ -333,9 +478,9 @@ export class LeadsService {
       value: dto.value ?? 0,
       currency: dto.currency || 'PEN',
       priority: dto.priority ?? 'medium',
-      ownerId: dto.ownerId
-        ? new Types.ObjectId(dto.ownerId)
-        : new Types.ObjectId(userId),
+      ownerId: owner?.id,
+      assignedAt: owner ? new Date() : undefined,
+      assignedBy: owner ? new Types.ObjectId(userId) : undefined,
       source: dto.source || 'manual',
       conversationId: dto.conversationId
         ? new Types.ObjectId(dto.conversationId)
@@ -352,6 +497,20 @@ export class LeadsService {
     });
 
     await this.log(lead, 'system', 'Oportunidad creada', userId);
+    if (!owner) await this.log(lead, 'assignment', 'Queda sin asignar', userId);
+    else if (owner.name) {
+      const actor = await this.userName(userId);
+      await this.log(
+        lead,
+        'assignment',
+        `${actor} se la asignó a ${owner.name}`,
+        userId,
+      );
+      void this.notifyOwner(String(owner.id), lead, {
+        title: 'Te asignaron una oportunidad',
+        body: `${actor}: ${lead.title}`,
+      });
+    }
     return this.findOne(String(lead._id), tenantId, userId, role);
   }
 
@@ -456,7 +615,7 @@ export class LeadsService {
     role: string,
     dto: UpdateLeadDto,
   ): Promise<Lead> {
-    const lead = await this.findOne(id, tenantId, userId, role);
+    const lead = await this.findWorkable(id, tenantId, userId, role);
     const previousStage = lead.stage;
 
     if (dto.title !== undefined) lead.title = dto.title.trim();
@@ -467,8 +626,6 @@ export class LeadsService {
     if (dto.tags !== undefined) lead.tags = dto.tags;
     if (dto.source !== undefined) lead.source = dto.source;
     if (dto.lostReason !== undefined) lead.lostReason = dto.lostReason;
-    if (dto.ownerId !== undefined)
-      lead.ownerId = dto.ownerId ? new Types.ObjectId(dto.ownerId) : undefined;
     if (dto.customerId !== undefined && dto.customerId)
       lead.customerId = new Types.ObjectId(dto.customerId);
     if (dto.expectedCloseDate !== undefined)
@@ -493,7 +650,18 @@ export class LeadsService {
       void this.conversions.reportLeadStage(lead, previousStage);
     }
 
-    return this.findOne(id, tenantId, userId, role);
+    // Cambiar el responsable es derivar o soltar: pasa por su propio flujo,
+    // con sus reglas, su historial y su aviso. Va al final porque después ya
+    // no la lleva quien la está editando.
+    if (dto.ownerId !== undefined && dto.ownerId !== idOf(lead.ownerId)) {
+      if (dto.ownerId)
+        await this.transfer(id, tenantId, userId, role, {
+          toUserId: dto.ownerId,
+        });
+      else await this.release(id, tenantId, userId, role, {});
+    }
+
+    return this.load(id, tenantId);
   }
 
   /** Mueve la oportunidad de columna y la coloca en la posición indicada. */
@@ -504,7 +672,7 @@ export class LeadsService {
     role: string,
     dto: MoveLeadDto,
   ): Promise<Lead> {
-    const lead = await this.findOne(id, tenantId, userId, role);
+    const lead = await this.findWorkable(id, tenantId, userId, role);
     const previousStage = lead.stage;
     if (dto.lostReason !== undefined) lead.lostReason = dto.lostReason;
     this.applyStage(lead, dto.stage);
@@ -573,10 +741,221 @@ export class LeadsService {
     userId: string,
     role: string,
   ): Promise<{ deleted: boolean }> {
-    const lead = await this.findOne(id, tenantId, userId, role);
+    const lead = await this.findWorkable(id, tenantId, userId, role);
     await this.activityModel.deleteMany({ leadId: lead._id }).exec();
     await this.leadModel.deleteOne({ _id: lead._id }).exec();
     return { deleted: true };
+  }
+
+  // ------------------------------------------------------------------
+  // Reparto: tomar, soltar y derivar
+  // ------------------------------------------------------------------
+
+  /**
+   * Toma una oportunidad de la bolsa. Es atómico: si dos personas pulsan a la
+   * vez, solo una se la queda y la otra recibe un aviso de quién la tomó.
+   */
+  async claim(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+  ): Promise<Lead> {
+    const lead = await this.findOne(id, tenantId, userId, role);
+    if (idOf(lead.ownerId) === userId) return lead;
+    if (lead.ownerId) throw this.takenBy(lead);
+    if (lead.status !== 'open')
+      throw new BadRequestException(
+        'Solo se pueden tomar oportunidades abiertas',
+      );
+
+    const now = new Date();
+    const uid = new Types.ObjectId(userId);
+    const res = await this.leadModel
+      .updateOne(
+        { _id: lead._id, tenantId: lead.tenantId, ownerId: null },
+        {
+          $set: {
+            ownerId: uid,
+            assignedAt: now,
+            assignedBy: uid,
+            lastActivityAt: now,
+          },
+        },
+      )
+      .exec();
+    if (!res?.modifiedCount) {
+      const now2 = await this.findOne(id, tenantId, userId, role);
+      if (idOf(now2.ownerId) === userId) return now2;
+      throw this.takenBy(now2);
+    }
+    await this.log(
+      lead,
+      'assignment',
+      `${await this.userName(userId)} la tomó`,
+      userId,
+    );
+    return this.findOne(id, tenantId, userId, role);
+  }
+
+  private takenBy(lead: Lead) {
+    const owner = lead.ownerId as unknown as { name?: string; email?: string };
+    return new ConflictException(
+      `Ya la tomó ${owner?.name || owner?.email || 'otra persona'}`,
+    );
+  }
+
+  /** Devuelve la oportunidad a la bolsa del equipo. */
+  async release(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: { reason?: string },
+  ): Promise<Lead> {
+    const lead = await this.findOne(id, tenantId, userId, role);
+    if (!lead.ownerId)
+      throw new BadRequestException('Esta oportunidad ya está sin asignar');
+    this.assertCanWork(lead, userId, role);
+    const previous = idOf(lead.ownerId);
+
+    await this.leadModel
+      .updateOne(
+        { _id: lead._id, tenantId: lead.tenantId },
+        {
+          $unset: { ownerId: 1, assignedAt: 1 },
+          $set: {
+            assignedBy: new Types.ObjectId(userId),
+            lastActivityAt: new Date(),
+          },
+        },
+      )
+      .exec();
+
+    const actor = await this.userName(userId);
+    const reason = dto.reason?.trim();
+    const title =
+      previous === userId
+        ? `${actor} la soltó`
+        : `${actor} se la quitó a ${this.ownerName(lead)}`;
+    await this.logAssignment(
+      lead,
+      `${title}${reason ? ` — ${reason}` : ''}`,
+      userId,
+    );
+    if (previous !== userId)
+      void this.notifyOwner(previous, lead, {
+        title: 'Ya no llevas esta oportunidad',
+        body: `${actor} la devolvió a la bolsa: ${lead.title}`,
+      });
+    return this.load(id, tenantId);
+  }
+
+  /**
+   * Deriva la oportunidad a otra persona del equipo. La lleva quien la recibe
+   * desde ese momento (sin paso de aceptación, como en los CRM habituales) y se
+   * le avisa con la nota de contexto.
+   */
+  async transfer(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    dto: { toUserId: string; note?: string },
+  ): Promise<Lead> {
+    const lead = await this.findOne(id, tenantId, userId, role);
+    // Sin responsable solo reparte quien supervisa; el resto primero la toma.
+    this.assertCanWork(lead, userId, role);
+    const previous = idOf(lead.ownerId);
+    if (dto.toUserId === previous)
+      throw new BadRequestException('Esa persona ya lleva esta oportunidad');
+    const target = await this.assertEligibleOwner(tenantId, dto.toUserId);
+
+    await this.leadModel
+      .updateOne(
+        { _id: lead._id, tenantId: lead.tenantId },
+        {
+          $set: {
+            ownerId: target.id,
+            assignedAt: new Date(),
+            assignedBy: new Types.ObjectId(userId),
+            lastActivityAt: new Date(),
+          },
+        },
+      )
+      .exec();
+
+    const actor = await this.userName(userId);
+    const note = dto.note?.trim();
+    const from = !previous
+      ? ''
+      : previous === userId
+        ? ''
+        : ` (antes la llevaba ${this.ownerName(lead)})`;
+    const title =
+      dto.toUserId === userId
+        ? `${actor} se la asignó${from}`
+        : `${actor} se la derivó a ${target.name}${from}`;
+    await this.logAssignment(lead, title, userId, note);
+
+    if (dto.toUserId !== userId)
+      void this.notifyOwner(dto.toUserId, lead, {
+        title: 'Te derivaron una oportunidad',
+        body: `${actor}: ${lead.title}${note ? ` — ${note}` : ''}`,
+      });
+    if (previous && previous !== userId)
+      void this.notifyOwner(previous, lead, {
+        title: 'Ya no llevas esta oportunidad',
+        body: `${actor} se la pasó a ${target.name}: ${lead.title}`,
+      });
+    return this.load(id, tenantId);
+  }
+
+  private ownerName(lead: Lead): string {
+    const owner = lead.ownerId as unknown as { name?: string; email?: string };
+    return owner?.name || owner?.email || 'otra persona';
+  }
+
+  private async logAssignment(
+    lead: Lead,
+    title: string,
+    userId: string,
+    body?: string,
+  ) {
+    await this.activityModel.create({
+      tenantId: lead.tenantId,
+      leadId: lead._id,
+      type: 'assignment',
+      title,
+      body,
+      at: new Date(),
+      createdBy: new Types.ObjectId(userId),
+    });
+  }
+
+  /** Push web y nativo al responsable. Nunca lanza: el reparto no depende del aviso. */
+  private async notifyOwner(
+    userId: string,
+    lead: Lead,
+    msg: { title: string; body: string },
+  ): Promise<void> {
+    const route = `/leads?lead=${String(lead._id)}`;
+    const results = await Promise.allSettled([
+      this.push.sendToUser(userId, {
+        title: msg.title,
+        body: msg.body,
+        url: route,
+        tag: `lead-owner-${String(lead._id)}`,
+      }),
+      this.nativePush.sendToUser(userId, {
+        title: msg.title,
+        body: msg.body,
+        data: { route, leadId: String(lead._id) },
+      }),
+    ]);
+    for (const r of results)
+      if (r.status === 'rejected')
+        this.logger.warn(`Aviso de reparto no enviado: ${String(r.reason)}`);
   }
 
   // ------------------------------------------------------------------
@@ -605,7 +984,7 @@ export class LeadsService {
     role: string,
     dto: CreateActivityDto,
   ) {
-    const lead = await this.findOne(leadId, tenantId, userId, role);
+    const lead = await this.findWorkable(leadId, tenantId, userId, role);
     if (AUTO_ACTIVITY_TYPES.includes(dto.type as LeadActivityType))
       throw new BadRequestException(
         'Ese tipo de actividad lo registra la plataforma automáticamente',
@@ -636,7 +1015,7 @@ export class LeadsService {
     role: string,
     dto: UpdateActivityDto,
   ) {
-    await this.findOne(leadId, tenantId, userId, role);
+    await this.findWorkable(leadId, tenantId, userId, role);
     const activity = await this.activityModel
       .findOne({
         _id: new Types.ObjectId(activityId),
@@ -672,7 +1051,7 @@ export class LeadsService {
     userId: string,
     role: string,
   ) {
-    await this.findOne(leadId, tenantId, userId, role);
+    await this.findWorkable(leadId, tenantId, userId, role);
     await this.activityModel
       .deleteOne({
         _id: new Types.ObjectId(activityId),

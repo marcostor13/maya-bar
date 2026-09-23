@@ -6,7 +6,10 @@ import {
   LucideAngularModule, Plus, X, Trash2, Search, Target, TrendingUp, Trophy, CalendarClock,
   AlertTriangle, User, Phone, Mail, MessageSquare, StickyNote, PhoneCall, Users, CheckCircle2,
   Circle, Clock, LayoutGrid, List as ListIcon, Filter, ArrowRight, Coins, Pencil,
+  Hand, Forward, Undo2, Lock, Inbox,
 } from 'lucide-angular';
+import { AuthService } from '../../auth/auth.service';
+import { LeadAssignComponent, type AssignMode } from './lead-assign';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { environment } from '../../../environments/environment';
@@ -56,6 +59,7 @@ interface Lead {
   lastActivityAt: string;
   nextActionAt?: string;
   nextActionTitle?: string;
+  assignedAt?: string;
 }
 
 interface Column {
@@ -77,6 +81,8 @@ interface Stats {
   conversionRate: number;
   overdueTasks: number;
   dueTodayTasks: number;
+  unassigned?: number;
+  mine?: number;
 }
 
 interface Activity {
@@ -95,7 +101,11 @@ interface Owner {
   name: string;
   email: string;
   role: string;
+  openLeads?: number;
 }
+
+/** Supervisan el reparto: asignan, quitan y derivan cualquier oportunidad. */
+const SUPERVISOR_ROLES = ['SUPERADMIN', 'TENANT_ADMIN', 'MANAGER'];
 
 interface CustomerOption {
   _id: string;
@@ -106,7 +116,7 @@ interface CustomerOption {
 
 const ACTIVITY_LABELS: Record<string, string> = {
   note: 'Nota', call: 'Llamada', whatsapp: 'WhatsApp', email: 'Email',
-  meeting: 'Reunión', task: 'Tarea', stage_change: 'Cambio de etapa', system: 'Sistema',
+  meeting: 'Reunión', task: 'Tarea', stage_change: 'Cambio de etapa', assignment: 'Reparto', system: 'Sistema',
 };
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -141,7 +151,7 @@ function blankForm(stage: string): LeadForm {
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, LeadAssignComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -204,6 +214,16 @@ function blankForm(stage: string): LeadForm {
               <span class="kpi-label">Tasa de conversión</span>
             </div>
           </div>
+          <button class="kpi card kpi-action" [class.pool]="(s.unassigned ?? 0) > 0" [class.on]="ownerFilter() === 'none'"
+            (click)="setOwner(ownerFilter() === 'none' ? '' : 'none')" title="Ver la bolsa sin asignar">
+            <span class="kpi-icon" style="background:var(--color-brand-light);color:var(--color-brand)">
+              <lucide-icon [img]="Inbox" [size]="17" [strokeWidth]="2.4"></lucide-icon>
+            </span>
+            <div>
+              <span class="kpi-value">{{ s.unassigned ?? 0 }}</span>
+              <span class="kpi-label">Sin asignar · {{ s.mine ?? 0 }} mías</span>
+            </div>
+          </button>
           <button class="kpi card kpi-action" [class.alert]="s.overdueTasks > 0" (click)="toggleOverdue()">
             <span class="kpi-icon" [style.background]="s.overdueTasks ? '#FEE2E2' : '#F1F5F9'" [style.color]="s.overdueTasks ? '#EF4444' : '#64748B'">
               <lucide-icon [img]="AlertTriangle" [size]="17" [strokeWidth]="2.4"></lucide-icon>
@@ -230,8 +250,10 @@ function blankForm(stage: string): LeadForm {
         </div>
         <select class="select toolbar-select" [ngModel]="ownerFilter()" (ngModelChange)="setOwner($event)">
           <option value="">Todos los responsables</option>
+          <option value="me">Mías</option>
+          <option value="none">Sin asignar (bolsa)</option>
           @for (o of owners(); track o._id) {
-            <option [value]="o._id">{{ o.name }}</option>
+            <option [value]="o._id">{{ o.name }} · {{ o.openLeads ?? 0 }}</option>
           }
         </select>
         <button class="btn btn-sm" [class.btn-primary]="overdue()" [class.btn-secondary]="!overdue()" (click)="toggleOverdue()">
@@ -259,7 +281,8 @@ function blankForm(stage: string): LeadForm {
 
               <div class="col-body">
                 @for (lead of col.leads; track lead._id) {
-                  <article class="lead-card" draggable="true"
+                  <article class="lead-card" [attr.draggable]="canWork(lead)" [class.pool]="!lead.ownerId"
+                    [class.locked]="!canWork(lead)"
                     (dragstart)="onDragStart(lead)" (dragend)="onDragEnd()"
                     (click)="openDetail(lead)">
                     <div class="lead-top">
@@ -284,7 +307,13 @@ function blankForm(stage: string): LeadForm {
                         <span class="tag">{{ lead.tags[0] }}</span>
                         @if (lead.tags.length > 1) { <span class="tag">+{{ lead.tags.length - 1 }}</span> }
                       }
-                      <span class="owner" [title]="ownerName(lead)">{{ ownerInitials(lead) }}</span>
+                      @if (lead.ownerId) {
+                        <span class="owner" [class.me]="ownerIdOf(lead) === meId()" [title]="ownerName(lead)">{{ ownerInitials(lead) }}</span>
+                      } @else {
+                        <button class="take-btn" (click)="claim(lead, $event)" title="Tomar esta oportunidad">
+                          <lucide-icon [img]="Hand" [size]="12" [strokeWidth]="2.5"></lucide-icon> Tomar
+                        </button>
+                      }
                     </div>
                   </article>
                 }
@@ -350,9 +379,11 @@ function blankForm(stage: string): LeadForm {
               </p>
             </div>
             <div class="header-right">
-              <button class="btn btn-sm btn-secondary" (click)="editDetail()">
-                <lucide-icon [img]="Pencil" [size]="14" [strokeWidth]="2.5"></lucide-icon> Editar
-              </button>
+              @if (canWork(lead)) {
+                <button class="btn btn-sm btn-secondary" (click)="editDetail()">
+                  <lucide-icon [img]="Pencil" [size]="14" [strokeWidth]="2.5"></lucide-icon> Editar
+                </button>
+              }
               <button class="btn btn-ghost btn-icon" (click)="closeDetail()" aria-label="Cerrar">
                 <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
               </button>
@@ -360,9 +391,45 @@ function blankForm(stage: string): LeadForm {
           </div>
 
           <div class="drawer-scroll">
+            <div class="owner-bar" [class.pool]="!lead.ownerId">
+              <span class="owner big" [class.me]="ownerIdOf(lead) === meId()">{{ ownerInitials(lead) }}</span>
+              <div class="owner-info">
+                <span class="fact-label">Responsable</span>
+                <strong>{{ ownerName(lead) }}{{ ownerIdOf(lead) === meId() ? ' (tú)' : '' }}</strong>
+                @if (lead.ownerId && lead.assignedAt) { <small>desde {{ shortDate(lead.assignedAt) }}</small> }
+              </div>
+              <div class="owner-actions">
+                @if (!lead.ownerId) {
+                  <button class="btn btn-primary btn-sm" [disabled]="assigning()" (click)="claim(lead)">
+                    <lucide-icon [img]="Hand" [size]="14" [strokeWidth]="2.5"></lucide-icon> Tomar
+                  </button>
+                  @if (supervisor()) {
+                    <button class="btn btn-secondary btn-sm" (click)="assignMode.set('transfer')">
+                      <lucide-icon [img]="Forward" [size]="14" [strokeWidth]="2.5"></lucide-icon> Asignar
+                    </button>
+                  }
+                } @else if (canWork(lead)) {
+                  <button class="btn btn-secondary btn-sm" (click)="assignMode.set('transfer')">
+                    <lucide-icon [img]="Forward" [size]="14" [strokeWidth]="2.5"></lucide-icon> Derivar
+                  </button>
+                  <button class="btn btn-ghost btn-sm" (click)="assignMode.set('release')">
+                    <lucide-icon [img]="Undo2" [size]="14" [strokeWidth]="2.5"></lucide-icon> Soltar
+                  </button>
+                }
+              </div>
+            </div>
+            @if (!canWork(lead)) {
+              <p class="lock-note">
+                <lucide-icon [img]="Lock" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                {{ lead.ownerId
+                  ? 'La lleva ' + ownerName(lead) + '. Pídele que la suelte o que te la derive para trabajarla.'
+                  : 'Está en la bolsa del equipo: tómala para moverla de etapa o registrar actividad.' }}
+              </p>
+            }
+
             <div class="stage-picker">
               @for (s of stages(); track s.key) {
-                <button class="stage-chip" [class.active]="lead.stage === s.key"
+                <button class="stage-chip" [class.active]="lead.stage === s.key" [disabled]="!canWork(lead)"
                   [style.--chip]="s.color" (click)="moveTo(lead, s.key)">
                   {{ s.label }}
                 </button>
@@ -377,10 +444,6 @@ function blankForm(stage: string): LeadForm {
               <div class="fact">
                 <span class="fact-label">Prioridad</span>
                 <strong>{{ priorityLabel(lead.priority) }}</strong>
-              </div>
-              <div class="fact">
-                <span class="fact-label">Responsable</span>
-                <strong>{{ ownerName(lead) }}</strong>
               </div>
               <div class="fact">
                 <span class="fact-label">Cierre estimado</span>
@@ -419,12 +482,15 @@ function blankForm(stage: string): LeadForm {
                   <lucide-icon [img]="MessageSquare" [size]="14" [strokeWidth]="2.5"></lucide-icon> Ver conversación
                 </button>
               }
-              <button class="btn btn-sm btn-ghost danger" (click)="removeLead(lead)">
-                <lucide-icon [img]="Trash2" [size]="14" [strokeWidth]="2.5"></lucide-icon> Eliminar
-              </button>
+              @if (canWork(lead)) {
+                <button class="btn btn-sm btn-ghost danger" (click)="removeLead(lead)">
+                  <lucide-icon [img]="Trash2" [size]="14" [strokeWidth]="2.5"></lucide-icon> Eliminar
+                </button>
+              }
             </div>
 
             <!-- Registrar actividad -->
+            @if (canWork(lead)) {
             <div class="activity-form">
               <div class="type-row">
                 @for (t of activityTypes; track t.key) {
@@ -457,6 +523,7 @@ function blankForm(stage: string): LeadForm {
                 {{ savingActivity() ? 'Guardando…' : 'Registrar' }}
               </button>
             </div>
+            }
 
             <!-- Historial -->
             <h3 class="timeline-title">Historial</h3>
@@ -471,12 +538,12 @@ function blankForm(stage: string): LeadForm {
                     <div class="tl-head">
                       <span class="tl-type">{{ activityLabel(a.type) }}</span>
                       <span class="tl-at">{{ shortDate(a.at) }}</span>
-                      @if (a.type === 'task') {
+                      @if (a.type === 'task' && canWork(lead)) {
                         <button class="tl-check" (click)="toggleTask(a)" [attr.aria-label]="a.done ? 'Reabrir tarea' : 'Completar tarea'">
                           <lucide-icon [img]="a.done ? CheckCircle2 : Circle" [size]="15" [strokeWidth]="2.4"></lucide-icon>
                         </button>
                       }
-                      @if (a.type !== 'stage_change' && a.type !== 'system') {
+                      @if (a.type !== 'stage_change' && a.type !== 'system' && a.type !== 'assignment' && canWork(lead)) {
                         <button class="tl-del" (click)="removeActivity(a)" aria-label="Eliminar">
                           <lucide-icon [img]="Trash2" [size]="13" [strokeWidth]="2.4"></lucide-icon>
                         </button>
@@ -496,6 +563,10 @@ function blankForm(stage: string): LeadForm {
           </div>
         </aside>
       </div>
+      @if (assignMode(); as m) {
+        <app-lead-assign [mode]="m" [leadTitle]="lead.title" [owners]="owners()" [currentOwnerId]="ownerIdOf(lead)"
+          [meId]="meId()" [busy]="assigning()" (confirm)="doAssign($event)" (cancel)="assignMode.set(null)" />
+      }
     }
 
     <!-- ───────── Alta / edición ───────── -->
@@ -573,13 +644,18 @@ function blankForm(stage: string): LeadForm {
                   <option value="high">Alta</option>
                 </select>
               </div>
-              <div class="field">
-                <label class="field-label">Responsable</label>
-                <select class="select" [(ngModel)]="form.ownerId">
-                  <option value="">Sin asignar</option>
-                  @for (o of owners(); track o._id) { <option [value]="o._id">{{ o.name }}</option> }
-                </select>
-              </div>
+              @if (!form._id) {
+                <div class="field">
+                  <label class="field-label">Responsable</label>
+                  <select class="select" [(ngModel)]="form.ownerId">
+                    <option [value]="meId()">Yo</option>
+                    <option value="">Sin asignar (a la bolsa)</option>
+                    @for (o of owners(); track o._id) {
+                      @if (o._id !== meId()) { <option [value]="o._id">{{ o.name }}</option> }
+                    }
+                  </select>
+                </div>
+              }
             </div>
 
             <div class="field">
@@ -626,6 +702,8 @@ function blankForm(stage: string): LeadForm {
     .kpi { display: flex; align-items: center; gap: 14px; padding: 18px 20px; text-align: left; }
     .kpi-action { border: 1px solid var(--color-border); cursor: pointer; font: inherit; }
     .kpi-action.alert { border-color: rgba(239,68,68,.4); }
+    .kpi-action.pool { border-color: var(--color-brand); }
+    .kpi-action.on { background: var(--color-brand-light); }
     .kpi-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: var(--radius-pill); flex-shrink: 0; }
     .kpi-value { display: block; font-family: var(--font-heading); font-size: 20px; font-weight: 700; line-height: 1.2; }
     .kpi-label { display: block; font-size: 12.5px; color: var(--color-text-muted); margin-top: 2px; }
@@ -663,6 +741,13 @@ function blankForm(stage: string): LeadForm {
     .next-action.overdue { background: #FEE2E2; color: #B91C1C; font-weight: 600; }
     .lead-foot { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
     .tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--color-brand-light); color: var(--color-brand); }
+    .lead-card.pool { box-shadow: inset 0 0 0 1.5px var(--color-brand-light), var(--shadow-sm); }
+    .lead-card.locked { cursor: pointer; }
+    .lead-card.locked:active { cursor: not-allowed; }
+    .take-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: var(--radius-pill); padding: 4px 10px;
+      background: var(--color-brand); color: var(--color-white); font: 600 11px var(--font-base); cursor: pointer; transition: transform var(--transition-fast); }
+    .take-btn:hover { transform: scale(1.05); }
+    .owner.me { background: var(--color-brand-light); color: var(--color-brand); }
     .owner { margin-left: auto; width: 24px; height: 24px; border-radius: 50%; background: var(--color-bg-app); color: var(--color-text-muted); font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 
     .skeleton-col { flex: 0 0 268px; height: 260px; border-radius: var(--radius-lg); background: linear-gradient(90deg, var(--color-bg-light) 25%, #F1F5F9 50%, var(--color-bg-light) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
@@ -692,6 +777,15 @@ function blankForm(stage: string): LeadForm {
     .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .drawer-scroll { flex: 1; overflow-y: auto; padding: 20px 28px 32px; display: flex; flex-direction: column; gap: 18px; }
 
+    .owner-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--color-bg-light); border-radius: var(--radius-md); flex-wrap: wrap; }
+    .owner-bar.pool { background: var(--color-brand-light); }
+    .owner.big { margin-left: 0; width: 36px; height: 36px; font-size: 12px; background: var(--color-white); }
+    .owner-info { display: flex; flex-direction: column; flex: 1; min-width: 120px; }
+    .owner-info strong { font-size: 13.5px; }
+    .owner-info small { font-size: 11.5px; color: var(--color-text-muted); }
+    .owner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .lock-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--color-text-muted); }
+    .stage-chip:disabled { cursor: not-allowed; opacity: 0.55; }
     .stage-picker { display: flex; flex-wrap: wrap; gap: 6px; }
     .stage-chip { border: 1.5px solid var(--color-border); background: var(--color-white); color: var(--color-text-muted); font-size: 11.5px; font-weight: 600; padding: 6px 12px; border-radius: var(--radius-pill); cursor: pointer; transition: all var(--transition-fast); }
     .stage-chip:hover { border-color: var(--chip); color: var(--chip); }
@@ -719,6 +813,7 @@ function blankForm(stage: string): LeadForm {
     .tl-dot[data-type="note"] { background: var(--color-ai); }
     .tl-dot[data-type="call"], .tl-dot[data-type="whatsapp"] { background: var(--color-success); }
     .tl-dot[data-type="stage_change"] { background: var(--color-brand); }
+    .tl-dot[data-type="assignment"] { background: var(--color-text-main); }
     .tl-body { flex: 1; }
     .tl-head { display: flex; align-items: center; gap: 8px; }
     .tl-type { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--color-text-muted); }
@@ -773,6 +868,7 @@ export class LeadsComponent implements OnInit {
   private confirmSvc = inject(ConfirmService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private auth = inject(AuthService);
 
   readonly Plus = Plus; readonly X = X; readonly Trash2 = Trash2; readonly Search = Search;
   readonly Target = Target; readonly TrendingUp = TrendingUp; readonly Trophy = Trophy;
@@ -781,7 +877,13 @@ export class LeadsComponent implements OnInit {
   readonly MessageSquare = MessageSquare; readonly CheckCircle2 = CheckCircle2;
   readonly Circle = Circle; readonly Clock = Clock; readonly LayoutGrid = LayoutGrid;
   readonly ListIcon = ListIcon; readonly Filter = Filter; readonly ArrowRight = ArrowRight;
-  readonly Coins = Coins; readonly Pencil = Pencil;
+  readonly Coins = Coins; readonly Pencil = Pencil; readonly Hand = Hand;
+  readonly Forward = Forward; readonly Undo2 = Undo2; readonly Lock = Lock; readonly Inbox = Inbox;
+
+  meId = computed(() => this.auth.currentUser()?.id ?? '');
+  supervisor = computed(() => SUPERVISOR_ROLES.includes(this.auth.currentUser()?.role ?? ''));
+  assignMode = signal<AssignMode | null>(null);
+  assigning = signal(false);
 
   readonly activityTypes = [
     { key: 'note', label: 'Nota', icon: StickyNote },
@@ -836,10 +938,7 @@ export class LeadsComponent implements OnInit {
       next: s => this.stages.set(s),
       error: () => {},
     });
-    this.http.get<Owner[]>(`${API}/leads/owners`).subscribe({
-      next: o => this.owners.set(o),
-      error: () => {},
-    });
+    this.loadOwners();
     this.load();
     // `?lead=<id>` abre la ficha directamente (enlace desde Prospección).
     const leadId = this.route.snapshot.queryParamMap.get('lead');
@@ -870,6 +969,13 @@ export class LeadsComponent implements OnInit {
     });
   }
 
+  private loadOwners() {
+    this.http.get<Owner[]>(`${API}/leads/owners`).subscribe({
+      next: o => this.owners.set(o),
+      error: () => {},
+    });
+  }
+
   onSearch(value: string) {
     this.search.set(value);
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -883,7 +989,7 @@ export class LeadsComponent implements OnInit {
   private dragging: Lead | null = null;
   dragOverStage = signal<string | null>(null);
 
-  onDragStart(lead: Lead) { this.dragging = lead; }
+  onDragStart(lead: Lead) { this.dragging = this.canWork(lead) ? lead : null; }
   onDragEnd() { this.dragging = null; this.dragOverStage.set(null); }
 
   onDragOver(event: DragEvent, stage: string) {
@@ -941,7 +1047,68 @@ export class LeadsComponent implements OnInit {
     this.loadActivities(lead._id);
   }
 
-  closeDetail() { this.detail.set(null); }
+  closeDetail() { this.detail.set(null); this.assignMode.set(null); }
+
+  // ── Reparto ──
+  ownerIdOf(lead: Lead | null): string {
+    if (!lead?.ownerId) return '';
+    return typeof lead.ownerId === 'string' ? lead.ownerId : lead.ownerId._id;
+  }
+
+  /** Solo su responsable (o quien supervisa) mueve, edita o anota la oportunidad. */
+  canWork(lead: Lead): boolean {
+    return this.supervisor() || (!!lead.ownerId && this.ownerIdOf(lead) === this.meId());
+  }
+
+  claim(lead: Lead, event?: Event) {
+    event?.stopPropagation();
+    this.assigning.set(true);
+    this.http.patch<Lead>(`${API}/leads/${lead._id}/claim`, {}).subscribe({
+      next: updated => {
+        this.assigning.set(false);
+        this.toast.success('Ahora es tuya: nadie más puede trabajarla hasta que la sueltes');
+        this.afterOwnership(updated);
+      },
+      error: err => {
+        this.assigning.set(false);
+        this.toast.error(err?.error?.message || 'No se pudo tomar la oportunidad');
+        this.load(false);
+      },
+    });
+  }
+
+  doAssign(event: { toUserId?: string; text: string }) {
+    const lead = this.detail();
+    const mode = this.assignMode();
+    if (!lead || !mode) return;
+    this.assigning.set(true);
+    const req = mode === 'transfer'
+      ? this.http.patch<Lead>(`${API}/leads/${lead._id}/transfer`, { toUserId: event.toUserId, note: event.text || undefined })
+      : this.http.patch<Lead>(`${API}/leads/${lead._id}/release`, { reason: event.text || undefined });
+    req.subscribe({
+      next: updated => {
+        this.assigning.set(false);
+        this.assignMode.set(null);
+        this.toast.success(mode === 'transfer'
+          ? `Derivada a ${this.owners().find(o => o._id === event.toUserId)?.name ?? 'otra persona'}`
+          : 'Devuelta a la bolsa del equipo');
+        this.afterOwnership(updated);
+      },
+      error: err => {
+        this.assigning.set(false);
+        this.toast.error(err?.error?.message || 'No se pudo cambiar el responsable');
+      },
+    });
+  }
+
+  private afterOwnership(updated: Lead) {
+    if (this.detail()?._id === updated._id) {
+      this.detail.set(updated);
+      this.loadActivities(updated._id);
+    }
+    this.load(false);
+    this.loadOwners();
+  }
 
   private loadActivities(leadId: string) {
     this.http.get<Activity[]>(`${API}/leads/${leadId}/activities`).subscribe({
@@ -1032,6 +1199,7 @@ export class LeadsComponent implements OnInit {
   // ── Alta / edición ──
   openNew() {
     this.form = blankForm(this.stages()[0]?.key ?? 'new');
+    this.form.ownerId = this.meId();
     this.customerQuery.set('');
     this.customerOptions.set([]);
     this.formOpen.set(true);
@@ -1102,7 +1270,8 @@ export class LeadsComponent implements OnInit {
       stage: this.form.stage,
       value: Number(this.form.value) || 0,
       priority: this.form.priority,
-      ownerId: this.form.ownerId || undefined,
+      // Solo en el alta: '' la deja en la bolsa. Después se cambia con Derivar/Soltar.
+      ownerId: isNew ? this.form.ownerId : undefined,
       expectedCloseDate: this.form.expectedCloseDate
         ? new Date(this.form.expectedCloseDate).toISOString()
         : undefined,

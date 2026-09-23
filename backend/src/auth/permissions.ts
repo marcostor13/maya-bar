@@ -63,6 +63,20 @@ export const VISIT_ROLES: UserRole[] = [
   'IMPULSADOR',
 ];
 
+/**
+ * Supervisan el reparto de oportunidades: pueden asignar, quitar y derivar
+ * cualquiera, aunque la lleve otra persona.
+ */
+export const LEAD_SUPERVISOR_ROLES: UserRole[] = [
+  'SUPERADMIN',
+  'TENANT_ADMIN',
+  'MANAGER',
+];
+
+export function isLeadSupervisor(role: string): boolean {
+  return (LEAD_SUPERVISOR_ROLES as string[]).includes(role);
+}
+
 /** True when the role's data is scoped to the owner (not the whole tenant). */
 export function isOwnerScoped(role: string): boolean {
   return role === 'IMPULSADOR';

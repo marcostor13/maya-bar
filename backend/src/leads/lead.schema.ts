@@ -42,9 +42,21 @@ export class Lead extends Document {
   @Prop({ enum: LEAD_PRIORITIES, default: 'medium' })
   priority: string;
 
-  /** Responsable del seguimiento. */
+  /**
+   * Responsable del seguimiento. Sin responsable, la oportunidad está en la
+   * bolsa del equipo: cualquiera puede tomarla y, una vez tomada, es suya
+   * hasta que la suelte o la derive (ver docs/reparto-de-leads.md).
+   */
   @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   ownerId?: Types.ObjectId;
+
+  /** Desde cuándo la lleva el responsable actual. */
+  @Prop({ type: Date })
+  assignedAt?: Date;
+
+  /** Quién se la asignó (él mismo si la tomó de la bolsa). */
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  assignedBy?: Types.ObjectId;
 
   /** De dónde salió: whatsapp, instagram, formulario, importación, manual… */
   @Prop({ trim: true, default: 'manual' })
@@ -91,3 +103,5 @@ export const LeadSchema = SchemaFactory.createForClass(Lead);
 // El tablero pide siempre las oportunidades del tenant ordenadas por columna.
 LeadSchema.index({ tenantId: 1, stage: 1, position: 1 });
 LeadSchema.index({ tenantId: 1, lastActivityAt: -1 });
+// Bolsa sin asignar y carga de trabajo por responsable.
+LeadSchema.index({ tenantId: 1, status: 1, ownerId: 1 });

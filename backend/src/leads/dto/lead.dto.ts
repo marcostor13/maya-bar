@@ -3,6 +3,8 @@ import {
   IsBoolean,
   IsDateString,
   IsIn,
+  IsMongoId,
+  MaxLength,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -51,6 +53,7 @@ export class CreateLeadDto {
   @IsIn(LEAD_PRIORITIES)
   priority?: string;
 
+  /** Responsable. Vacío (`''`) la deja en la bolsa sin asignar. */
   @IsOptional()
   @IsString()
   ownerId?: string;
@@ -142,4 +145,23 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsBoolean()
   remindByWhatsApp?: boolean;
+}
+
+export class ReleaseLeadDto {
+  /** Por qué la suelta; queda en el historial. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class TransferLeadDto {
+  @IsMongoId()
+  toUserId: string;
+
+  /** Contexto para quien la recibe; llega en el aviso y queda en el historial. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

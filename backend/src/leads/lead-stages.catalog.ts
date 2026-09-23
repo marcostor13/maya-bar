@@ -93,6 +93,7 @@ export const ACTIVITY_TYPES = [
   'meeting',
   'task',
   'stage_change',
+  'assignment',
   'system',
 ] as const;
 
@@ -101,6 +102,7 @@ export type LeadActivityType = (typeof ACTIVITY_TYPES)[number];
 /** Actividades que registra la plataforma sola: nadie las escribe a mano. */
 export const AUTO_ACTIVITY_TYPES: LeadActivityType[] = [
   'stage_change',
+  'assignment',
   'system',
 ];
 
