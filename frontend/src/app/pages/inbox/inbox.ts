@@ -151,6 +151,7 @@ const EMOJIS = [
   selector: 'app-inbox',
   standalone: true,
   imports: [FormsModule, LucideAngularModule, EmailComposeComponent],
+  host: { '(document:paste)': 'onPaste($event)' },
   template: `
     <div class="inbox" [class.thread-open]="selectedId()">
 
@@ -342,7 +343,14 @@ const EMOJIS = [
       </aside>
 
       <!-- ══ Hilo ══ -->
-      <section class="thread">
+      <section class="thread"
+        (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
+        @if (dragOver()) {
+          <div class="drop-zone">
+            <lucide-icon [img]="ImageIcon" [size]="34" [strokeWidth]="2"></lucide-icon>
+            <span>Suelta aquí para enviar</span>
+          </div>
+        }
         @if (!selected()) {
           <div class="thread-empty">
             <lucide-icon [img]="MessagesSquare" [size]="44" [strokeWidth]="1.4"></lucide-icon>
@@ -855,6 +863,33 @@ const EMOJIS = [
       </div>
     }
 
+    <!-- ══ Vista previa de imagen pegada / arrastrada (como WhatsApp) ══ -->
+    @if (mediaPreview(); as pv) {
+      <div class="overlay" (click)="closeMediaPreview()" role="dialog" aria-modal="true">
+        <div class="card preview-modal" (click)="$event.stopPropagation()">
+          <div class="pv-head">
+            <h2>Enviar imagen</h2>
+            <button class="btn-icon btn-ghost" (click)="closeMediaPreview()" aria-label="Cancelar">
+              <lucide-icon [img]="X" [size]="18" [strokeWidth]="2.4"></lucide-icon>
+            </button>
+          </div>
+          <div class="pv-img">
+            <img [src]="pv.src" [alt]="pv.filename" />
+            @if (uploading()) { <span class="pv-uploading">Subiendo…</span> }
+          </div>
+          <div class="pv-foot">
+            <input #captionInput class="input" placeholder="Añade un comentario…" maxlength="1024"
+              [ngModel]="draft()" (ngModelChange)="draft.set($event)"
+              (keydown.enter)="$event.preventDefault(); send()" (keydown.escape)="closeMediaPreview()"
+              aria-label="Comentario de la imagen" />
+            <button class="btn-icon send" (click)="send()" [disabled]="sending() || uploading() || !attachment()" aria-label="Enviar imagen">
+              <lucide-icon [img]="Send" [size]="19" [strokeWidth]="2.4"></lucide-icon>
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (lightbox(); as url) {
       <div class="overlay" (click)="lightbox.set(null)">
         <img class="lightbox-img" [src]="url" alt="Imagen ampliada" (click)="$event.stopPropagation()" />
@@ -1135,6 +1170,7 @@ const EMOJIS = [
 
     /* ── Hilo ── */
     .thread {
+      position: relative;
       display: flex; flex-direction: column; min-height: 0; min-width: 0;
       background: var(--color-bg-light);
     }
@@ -1663,6 +1699,34 @@ const EMOJIS = [
     .cm-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 24px; border-top: 1px solid var(--color-border); }
     @media (max-width: 520px) { .cm-row { grid-template-columns: 1fr; } }
 
+    .drop-zone {
+      position: absolute; inset: 12px; z-index: 30;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+      border: 2px dashed var(--color-brand); border-radius: var(--radius-lg);
+      background: var(--color-brand-light); color: var(--color-brand);
+      font-size: 15px; font-weight: 600; pointer-events: none;
+    }
+
+    .preview-modal {
+      width: calc(100% - 48px); max-width: 560px;
+      padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 16px;
+    }
+    .pv-head { display: flex; align-items: center; justify-content: space-between; }
+    .pv-head h2 { margin: 0; font-family: var(--font-heading); font-size: 18px; }
+    .pv-img {
+      position: relative; display: flex; align-items: center; justify-content: center;
+      background: var(--color-bg-light); border-radius: var(--radius-md); overflow: hidden;
+    }
+    .pv-img img { max-width: 100%; max-height: 55vh; object-fit: contain; display: block; }
+    .pv-uploading {
+      position: absolute; bottom: 10px; right: 10px;
+      padding: 4px 10px; border-radius: var(--radius-pill);
+      background: rgba(15, 23, 42, 0.6); color: var(--color-white);
+      font-size: 12px; font-weight: 600;
+    }
+    .pv-foot { display: flex; align-items: center; gap: 10px; }
+    .pv-foot .input { flex: 1; }
+
     .lightbox-img {
       max-width: calc(100vw - 64px); max-height: calc(100vh - 64px);
       border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
@@ -1896,6 +1960,11 @@ export class InboxComponent implements OnInit, OnDestroy {
   attachOpen = signal(false);
   emojiOpen = signal(false);
   lightbox = signal<string | null>(null);
+  /** Imagen pegada, arrastrada o elegida, antes de enviarla (vista previa local). */
+  mediaPreview = signal<{ src: string; filename: string } | null>(null);
+  dragOver = signal(false);
+  /** Invalida subidas en curso al cancelar: su respuesta llega tarde y se ignora. */
+  private uploadSeq = 0;
 
   recording = signal(false);
   recordingSeconds = signal(0);
@@ -1904,6 +1973,7 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   private scroller = viewChild<ElementRef<HTMLDivElement>>('scroller');
   private composerInput = viewChild<ElementRef<HTMLTextAreaElement>>('composerInput');
+  private captionInput = viewChild<ElementRef<HTMLInputElement>>('captionInput');
   private mediaInput = viewChild<ElementRef<HTMLInputElement>>('mediaInput');
   private docInput = viewChild<ElementRef<HTMLInputElement>>('docInput');
   private audioInput = viewChild<ElementRef<HTMLInputElement>>('audioInput');
@@ -1983,6 +2053,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.stopAllRecording();
+    this.revokePreview();
   }
 
   /** Recarga tras un push: la lista siempre, el hilo abierto si lo hay. */
@@ -2359,6 +2430,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.draft.set('');
     this.subject.set(this.replySubject(c.emailSubject));
     this.clearAttachment();
+    this.revokePreview();
     this.allLoaded = false;
     this.loadMessages();
     // Siempre: el contador local puede ir por detrás del servidor.
@@ -2568,6 +2640,7 @@ export class InboxComponent implements OnInit, OnDestroy {
         this.ajustarAltura();
         this.replyTo.set(null);
         this.clearAttachment();
+        this.revokePreview();
         this.emojiOpen.set(false);
         this.sending.set(false);
         // Escribir manualmente pausa al agente en el backend: reflejarlo ya.
@@ -2599,10 +2672,69 @@ export class InboxComponent implements OnInit, OnDestroy {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    this.uploadFile(file, file.name);
+    this.attachFile(file, file.name);
+  }
+
+  /** Las imágenes pasan por la vista previa con comentario, como en WhatsApp. */
+  private attachFile(file: File, filename: string) {
+    if (!this.selected()) return;
+    if (!file.type.startsWith('image/')) {
+      this.uploadFile(file, filename);
+      return;
+    }
+    this.revokePreview();
+    this.attachOpen.set(false);
+    this.emojiOpen.set(false);
+    this.mediaPreview.set({ src: URL.createObjectURL(file), filename });
+    this.uploadFile(file, filename);
+    setTimeout(() => this.captionInput()?.nativeElement.focus());
+  }
+
+  /** Ctrl+V con una imagen en el portapapeles (captura, imagen copiada del navegador…). */
+  onPaste(event: ClipboardEvent) {
+    if (!this.selected() || this.contactModal()) return;
+    const file = Array.from(event.clipboardData?.items ?? [])
+      .find(i => i.kind === 'file' && i.type.startsWith('image/'))
+      ?.getAsFile();
+    if (!file) return; // Texto: pegado normal.
+    event.preventDefault();
+    const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/\+.*$/, '');
+    this.attachFile(file, `imagen-${Date.now()}.${ext}`);
+  }
+
+  onDragOver(event: DragEvent) {
+    if (!this.selected() || !event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    this.dragOver.set(true);
+  }
+
+  onDragLeave(event: DragEvent) {
+    const section = event.currentTarget as HTMLElement;
+    if (!section.contains(event.relatedTarget as Node | null)) this.dragOver.set(false);
+  }
+
+  onDrop(event: DragEvent) {
+    this.dragOver.set(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (!this.selected() || !file) return;
+    event.preventDefault();
+    this.attachFile(file, file.name);
+  }
+
+  closeMediaPreview() {
+    this.revokePreview();
+    this.clearAttachment();
+  }
+
+  private revokePreview() {
+    const pv = this.mediaPreview();
+    if (pv) URL.revokeObjectURL(pv.src);
+    this.mediaPreview.set(null);
   }
 
   private uploadFile(file: Blob, filename: string) {
+    const seq = ++this.uploadSeq;
     this.uploading.set(true);
     const fd = new FormData();
     fd.append('file', file, filename);
@@ -2610,6 +2742,7 @@ export class InboxComponent implements OnInit, OnDestroy {
       `${API}/upload?folder=whatsapp`, fd,
     ).subscribe({
       next: r => {
+        if (seq !== this.uploadSeq) return;
         this.attachment.set({
           url: r.url,
           key: r.key,
@@ -2621,13 +2754,19 @@ export class InboxComponent implements OnInit, OnDestroy {
         this.uploading.set(false);
       },
       error: err => {
+        if (seq !== this.uploadSeq) return;
         this.uploading.set(false);
+        this.revokePreview();
         this.toast.error(err.error?.message || 'No se pudo subir el archivo');
       },
     });
   }
 
-  clearAttachment() { this.attachment.set(null); }
+  clearAttachment() {
+    this.uploadSeq++;
+    this.uploading.set(false);
+    this.attachment.set(null);
+  }
 
   attachIcon(type: MsgType) {
     if (type === 'video') return this.Video;
