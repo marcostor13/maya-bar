@@ -13,6 +13,8 @@ export interface NativePushPayload {
   body: string;
   /** Datos de navegación. `route` es la ruta del frontend a abrir al tocar. */
   data?: Record<string, string>;
+  /** Etiqueta de la notificación en Android (p. ej. `conv_<id>`). */
+  tag?: string;
 }
 
 /**
@@ -250,6 +252,9 @@ export class NativePushService implements OnModuleInit {
             channelId: 'maya_default',
             color: '#E11D48',
             icon: 'ic_stat_maya',
+            // Con etiqueta, cada aviso nuevo del mismo origen sustituye al
+            // anterior y la app puede retirarlo al abrir la conversación.
+            ...(payload.tag ? { tag: payload.tag } : {}),
           },
         },
       });

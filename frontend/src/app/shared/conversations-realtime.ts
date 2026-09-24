@@ -5,6 +5,7 @@ import { Subject } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
 import { AuthService } from '../auth/auth.service';
 import { silentRequest } from './loader';
+import { NativePushService } from '../core/push.service';
 import { environment } from '../../environments/environment';
 
 const API = environment.apiUrl;
@@ -36,6 +37,7 @@ export interface RealtimeConversation {
 export class ConversationsRealtimeService {
   private http = inject(HttpClient);
   private auth = inject(AuthService);
+  private nativePush = inject(NativePushService);
   private platformId = inject(PLATFORM_ID);
   private readonly isBrowser = isPlatformBrowser(this.platformId);
 
@@ -72,6 +74,8 @@ export class ConversationsRealtimeService {
     );
     this.socket.on('conversation:updated', (conv: RealtimeConversation) => {
       this.conversationUpdated$.next(conv);
+      // Leída aquí o en otro dispositivo: su aviso ya no pinta nada en el móvil.
+      if (conv.unreadCount === 0) void this.nativePush.clearConversation(conv._id);
       this.refreshUnread();
     });
     this.socket.on(
@@ -82,7 +86,13 @@ export class ConversationsRealtimeService {
     this.refreshUnread();
     // Red de seguridad si el socket se cae o el móvil suspende la pestaña.
     this.refreshTimer = setInterval(() => this.refreshUnread(), 60_000);
+    // Al volver a la app el socket pudo perderse eventos mientras dormía.
+    document.addEventListener('visibilitychange', this.onVisible);
   }
+
+  private onVisible = () => {
+    if (document.visibilityState === 'visible') this.refreshUnread();
+  };
 
   /** Cierra la conexión al cerrar sesión: el siguiente usuario abre la suya. */
   disconnect(): void {
@@ -91,6 +101,7 @@ export class ConversationsRealtimeService {
     this.connected.set(false);
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     this.refreshTimer = null;
+    if (this.isBrowser) document.removeEventListener('visibilitychange', this.onVisible);
     this.unread.set(0);
   }
 
@@ -102,7 +113,11 @@ export class ConversationsRealtimeService {
         context: silentRequest(),
       })
       .subscribe({
-        next: (res) => this.unread.set(res.total ?? 0),
+        next: (res) => {
+          this.unread.set(res.total ?? 0);
+          // Todo leído: ningún aviso de conversación debe quedar en el móvil.
+          if (!res.total) void this.nativePush.clearConversation();
+        },
         error: () => undefined,
       });
   }

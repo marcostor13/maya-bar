@@ -90,6 +90,23 @@ export class NativePushService {
     this.registered.set(false);
   }
 
+  /**
+   * Retira de la barra del teléfono los avisos de una conversación ya leída.
+   * El backend los etiqueta con `conv_<id>`; sin `id`, retira los de todas.
+   */
+  async clearConversation(id?: string): Promise<void> {
+    if (!this.platform.isNative) return;
+    try {
+      const { notifications } = await PushNotifications.getDeliveredNotifications();
+      const stale = notifications.filter((n) =>
+        id ? n.tag === `conv_${id}` : !!n.tag?.startsWith('conv_'),
+      );
+      if (stale.length) await PushNotifications.removeDeliveredNotifications({ notifications: stale });
+    } catch {
+      /* Sin permiso de notificaciones no hay nada que retirar. */
+    }
+  }
+
   private async register(): Promise<void> {
     // El canal debe existir antes de que llegue la primera notificación o
     // Android la coloca en el canal por defecto, sin sonido ni color.

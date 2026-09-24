@@ -503,29 +503,40 @@ export class ConversationsService {
     if (conv.unreadCount === 0) return conv;
     conv.unreadCount = 0;
     await conv.save();
-
-    if (conv.channel === 'whatsapp') {
-      const account = await this.waAccounts.findById(String(conv.accountId));
-      if (account) {
-        const last = await this.msgModel
-          .findOne({
-            conversationId: conv._id,
-            direction: 'in',
-            externalId: { $ne: null },
-          })
-          .sort({ at: -1 })
-          .exec();
-        await this.wa.markAsRead(this.waAccounts.toConfig(account), {
-          chatId: conv.chatId,
-          externalId: last?.externalId,
-        });
-      }
-    } else if (conv.channel === 'messenger') {
-      const account = await this.msAccounts.findById(String(conv.accountId));
-      if (account)
-        await this.ms.markSeen(this.msAccounts.toConfig(account), conv.contact);
-    }
+    // Las insignias de todos los clientes dependen de este evento: se emite
+    // antes de avisar al proveedor, cuyo fallo no puede dejarlas desfasadas.
     this.gateway.emitConversation(tenantId, conv);
+
+    try {
+      if (conv.channel === 'whatsapp') {
+        const account = await this.waAccounts.findById(String(conv.accountId));
+        if (account) {
+          const last = await this.msgModel
+            .findOne({
+              conversationId: conv._id,
+              direction: 'in',
+              externalId: { $ne: null },
+            })
+            .sort({ at: -1 })
+            .exec();
+          await this.wa.markAsRead(this.waAccounts.toConfig(account), {
+            chatId: conv.chatId,
+            externalId: last?.externalId,
+          });
+        }
+      } else if (conv.channel === 'messenger') {
+        const account = await this.msAccounts.findById(String(conv.accountId));
+        if (account)
+          await this.ms.markSeen(
+            this.msAccounts.toConfig(account),
+            conv.contact,
+          );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo marcar como leída en el proveedor la conversación ${String(conv._id)}: ${(err as Error).message}`,
+      );
+    }
     return conv;
   }
 
@@ -1384,6 +1395,8 @@ export class ConversationsService {
         title: `${this.displayContact(conv)} · ${CHANNEL_LABEL[conv.channel]}`,
         body:
           this.previewOf(msg) || PUSH_HINT_BY_TYPE[msg.type] || 'Nuevo mensaje',
+        // La app retira las notificaciones con esta etiqueta al abrir el chat.
+        tag: `conv_${String(conv._id)}`,
         data: {
           route: `/inbox?c=${String(conv._id)}`,
           conversationId: String(conv._id),

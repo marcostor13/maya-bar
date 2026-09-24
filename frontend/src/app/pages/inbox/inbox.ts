@@ -16,6 +16,7 @@ import { ConfirmService } from '../../shared/confirm';
 import { AppChromeService } from '../../shared/app-chrome';
 import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
 import { PushService } from '../../shared/push.service';
+import { NativePushService } from '../../core/push.service';
 import { silentRequest } from '../../shared/loader';
 import { PlatformService } from '../../core/platform.service';
 import { EmailComposeComponent } from './email-compose';
@@ -1748,6 +1749,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   private realtime = inject(ConversationsRealtimeService);
   private chrome = inject(AppChromeService);
   private push = inject(PushService);
+  private nativePush = inject(NativePushService);
   private destroyRef = inject(DestroyRef);
 
   readonly MessagesSquare = MessagesSquare;
@@ -1991,8 +1993,10 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   // ── Datos ──
 
-  loadAccounts() {
-    this.http.get<InboxAccount[]>(`${API}/conversations/accounts`).subscribe({
+  loadAccounts(silent = false) {
+    this.http.get<InboxAccount[]>(`${API}/conversations/accounts`, {
+      ...(silent ? { context: silentRequest() } : {}),
+    }).subscribe({
       next: list => {
         this.accounts.set(list);
         // Empresa que solo tiene correo: la pestaña de chats estaría vacía.
@@ -2050,7 +2054,7 @@ export class InboxComponent implements OnInit, OnDestroy {
         }
         this.upsertConv(conv);
         this.subject.set(this.replySubject(conv.emailSubject));
-        if (conv.unreadCount > 0) this.markRead(conv._id);
+        this.markRead(conv._id);
       },
       error: () => {
         this.selectedId.set(null);
@@ -2357,7 +2361,8 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.clearAttachment();
     this.allLoaded = false;
     this.loadMessages();
-    if (c.unreadCount > 0) this.markRead(c._id);
+    // Siempre: el contador local puede ir por detrás del servidor.
+    this.markRead(c._id);
   }
 
   closeThread() { this.selectedId.set(null); }
@@ -2406,16 +2411,23 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   private markRead(id: string) {
+    // El aviso del teléfono sobra en cuanto el chat está en pantalla.
+    void this.nativePush.clearConversation(id);
     this.http.patch<Conv>(`${API}/conversations/${id}/read`, {}, {
       context: silentRequest(),
     }).subscribe({
       next: conv => {
         this.upsertConv(conv);
-        // La insignia del menú vive fuera de esta pantalla.
-        this.realtime.refreshUnread();
+        this.refreshBadges();
       },
-      error: () => undefined,
+      error: () => this.refreshBadges(),
     });
+  }
+
+  /** Insignias del menú (fuera de esta pantalla) y de las pestañas por cuenta. */
+  private refreshBadges() {
+    this.realtime.refreshUnread();
+    this.loadAccounts(true);
   }
 
   // ── Acciones sobre la conversación ──
