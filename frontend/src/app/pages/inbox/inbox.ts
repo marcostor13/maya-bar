@@ -10,6 +10,7 @@ import {
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
+  CalendarPlus, ListChecks,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -20,6 +21,8 @@ import { NativePushService } from '../../core/push.service';
 import { silentRequest } from '../../shared/loader';
 import { PlatformService } from '../../core/platform.service';
 import { EmailComposeComponent } from './email-compose';
+import { InboxActionsComponent, type ActionKind } from './inbox-actions';
+import { InboxFiltersComponent } from './inbox-filters';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -69,6 +72,9 @@ interface Msg {
 }
 
 /** Cómo se resume un adjunto cuando se cita un mensaje sin texto. */
+/** Prefijo de las burbujas provisionales: aún no tienen id del servidor. */
+const TEMP_PREFIX = 'tmp-';
+
 /** Tope de altura del campo de escritura, en píxeles. */
 const COMPOSER_MAX_PX = 140;
 
@@ -150,7 +156,7 @@ const EMOJIS = [
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, EmailComposeComponent],
+  imports: [FormsModule, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent],
   host: { '(document:paste)': 'onPaste($event)' },
   template: `
     <div class="inbox" [class.thread-open]="selectedId()">
@@ -235,15 +241,8 @@ const EMOJIS = [
               }
             </select>
           }
-          <div class="filters">
-            @for (f of filters; track f.key) {
-              <button
-                class="chip"
-                [class.active]="filter() === f.key"
-                (click)="setFilter(f.key)"
-              >{{ f.label }}</button>
-            }
-          </div>
+          <app-inbox-filters [(status)]="filter" [(agentId)]="agentFilter" [(tags)]="tagFilter"
+            (serverChange)="onServerFilterChange()" />
         </div>
 
         <div class="list-scroll">
@@ -445,6 +444,26 @@ const EMOJIS = [
                   <span class="ai-track"><span class="ai-knob"></span></span>
                 </label>
 
+                <button class="sheet-row" (click)="threadMenu.set(false); openAction('call')">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="CalendarPlus" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    Agendar llamada
+                    <small>Con Google Meet o Teams si están conectados</small>
+                  </span>
+                </button>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); openAction('pending')">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="ListChecks" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    Pendientes del chat
+                    <small>Tareas y envíos programados</small>
+                  </span>
+                </button>
+
                 <button class="sheet-row" (click)="threadMenu.set(false); openClassify()">
                   <span class="sheet-row-icon">
                     <lucide-icon [img]="Tag" [size]="18" [strokeWidth]="2.2"></lucide-icon>
@@ -633,6 +652,8 @@ const EMOJIS = [
 
           <!-- ══ Composer ══ -->
           <footer class="composer">
+            <app-inbox-actions #qa [conv]="selected()!" [draft]="draft()" [subject]="subject()"
+              [attachment]="attachment()" (scheduledDraft)="onScheduledDraft()" />
             @if (attachment(); as att) {
               <div class="attach-preview">
                 @if (att.type === 'image') {
@@ -727,7 +748,7 @@ const EMOJIS = [
               ></textarea>
 
               @if (draft().trim() || attachment() || isEmail()) {
-                <button class="btn-icon send" (click)="send()" [disabled]="sending() || uploading() || (!draft().trim() && !attachment())" aria-label="Enviar">
+                <button class="btn-icon send" (click)="send()" [disabled]="uploading() || (!draft().trim() && !attachment())" aria-label="Enviar">
                   <lucide-icon [img]="Send" [size]="19" [strokeWidth]="2.4"></lucide-icon>
                 </button>
               } @else {
@@ -818,7 +839,7 @@ const EMOJIS = [
               <p class="cls-hint">Crea la oportunidad enlazada a este chat para no perderle el rastro.</p>
               <div class="cls-stage">
                 <select class="select" [(ngModel)]="pipelineStage" aria-label="Etapa del embudo">
-                  @for (st of stages; track st) {
+                  @for (st of stages(); track st) {
                     <option [value]="st">{{ stageLabel(st) }}</option>
                   }
                 </select>
@@ -882,7 +903,7 @@ const EMOJIS = [
               [ngModel]="draft()" (ngModelChange)="draft.set($event)"
               (keydown.enter)="$event.preventDefault(); send()" (keydown.escape)="closeMediaPreview()"
               aria-label="Comentario de la imagen" />
-            <button class="btn-icon send" (click)="send()" [disabled]="sending() || uploading() || !attachment()" aria-label="Enviar imagen">
+            <button class="btn-icon send" (click)="send()" [disabled]="uploading() || !attachment()" aria-label="Enviar imagen">
               <lucide-icon [img]="Send" [size]="19" [strokeWidth]="2.4"></lucide-icon>
             </button>
           </div>
@@ -1044,7 +1065,6 @@ const EMOJIS = [
        Maya Miraflores · +51 999 111 222 (12 sin leer)"). Se le pone tope. */
     .account-select { width: 100%; min-width: 0; max-width: 100%; }
 
-    .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 
     .channel-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-pill);
       background: var(--color-bg-app); border: 1px solid var(--color-border); min-width: 0; }
@@ -1057,21 +1077,6 @@ const EMOJIS = [
       box-shadow: var(--shadow-sm); }
     .tab-badge { background: var(--color-brand); color: #fff; border-radius: var(--radius-pill);
       font-size: 10px; font-weight: 700; padding: 1px 6px; min-width: 16px; }
-    .chip {
-      border: 1px solid var(--color-border);
-      background: var(--color-white);
-      color: var(--color-text-muted);
-      border-radius: var(--radius-pill);
-      padding: 5px 13px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all var(--transition-fast);
-    }
-    .chip:hover { border-color: var(--color-brand); color: var(--color-brand); }
-    .chip.active {
-      background: var(--color-brand); border-color: var(--color-brand); color: var(--color-white);
-    }
 
     .list-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 
@@ -1754,16 +1759,6 @@ const EMOJIS = [
       .blocked-banner { margin: 0 14px 8px; }
       .list-head { padding: 14px 16px 10px; gap: 10px; }
       .list-title h1 { font-size: 18px; }
-      .filters {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        margin: 0 -16px;
-        padding: 0 16px 2px;
-      }
-      .filters::-webkit-scrollbar { display: none; }
-      .chip { flex: 0 0 auto; }
       .chat-item { padding: 14px 16px; }
       .media-img, .media-video { width: 240px; }
       /* En el hilo solo caben las acciones esenciales: el resto vive en el
@@ -1853,15 +1848,11 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Phone = Phone;
   readonly MoreVertical = MoreVertical;
   readonly Tag = Tag;
+  readonly CalendarPlus = CalendarPlus;
+  readonly ListChecks = ListChecks;
   readonly BanIcon = BanIcon;
 
   readonly emojis = EMOJIS;
-  readonly filters: { key: Filter; label: string }[] = [
-    { key: 'all', label: 'Todos' },
-    { key: 'unread', label: 'No leídos' },
-    { key: 'auto', label: 'Agente IA' },
-    { key: 'manual', label: 'Manual' },
-  ];
 
   conversations = signal<Conv[]>([]);
   accounts = signal<InboxAccount[]>([]);
@@ -1943,11 +1934,13 @@ export class InboxComponent implements OnInit, OnDestroy {
   selectedId = signal<string | null>(null);
   search = signal('');
   filter = signal<Filter>('all');
+  /** Filtros que resuelve el servidor: agente IA y etiquetas del contacto. */
+  agentFilter = signal('');
+  tagFilter = signal<string[]>([]);
 
   loadingList = signal(true);
   loadingMessages = signal(false);
   loadingOlder = signal(false);
-  sending = signal(false);
   uploading = signal(false);
   typing = signal(false);
 
@@ -1965,6 +1958,8 @@ export class InboxComponent implements OnInit, OnDestroy {
   dragOver = signal(false);
   /** Invalida subidas en curso al cancelar: su respuesta llega tarde y se ignora. */
   private uploadSeq = 0;
+  /** Contador de burbujas provisionales del envío optimista. */
+  private tempSeq = 0;
 
   recording = signal(false);
   recordingSeconds = signal(0);
@@ -1974,6 +1969,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   private scroller = viewChild<ElementRef<HTMLDivElement>>('scroller');
   private composerInput = viewChild<ElementRef<HTMLTextAreaElement>>('composerInput');
   private captionInput = viewChild<ElementRef<HTMLInputElement>>('captionInput');
+  private quickActions = viewChild<InboxActionsComponent>('qa');
   private mediaInput = viewChild<ElementRef<HTMLInputElement>>('mediaInput');
   private docInput = viewChild<ElementRef<HTMLInputElement>>('docInput');
   private audioInput = viewChild<ElementRef<HTMLInputElement>>('audioInput');
@@ -2090,6 +2086,8 @@ export class InboxComponent implements OnInit, OnDestroy {
     const params = new URLSearchParams();
     const q = this.search().trim();
     if (q) params.set('q', q);
+    if (this.agentFilter()) params.set('agentId', this.agentFilter());
+    if (this.tagFilter().length) params.set('tags', this.tagFilter().join(','));
     if (this.accountId()) params.set('accountId', this.accountId());
     // Con una cuenta concreta el canal sobra: el accountId ya lo determina.
     else if (this.box() === 'email') params.set('channel', 'email');
@@ -2140,7 +2138,10 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.searchTimer = setTimeout(() => this.loadConversations(false), 300);
   }
 
-  setFilter(f: Filter) { this.filter.set(f); }
+  onServerFilterChange() {
+    this.closeThread();
+    this.loadConversations();
+  }
 
   /** Cambia entre chats y correos; cada bandeja empieza en "todas las cuentas". */
   setBox(b: Box) {
@@ -2179,8 +2180,14 @@ export class InboxComponent implements OnInit, OnDestroy {
   draftTags = signal<string[]>([]);
   openLead = signal<{ _id: string; title: string; stage: string } | null>(null);
   newTag = '';
-  pipelineStage: string = PIPELINE_STAGES[0];
-  readonly stages = PIPELINE_STAGES;
+  pipelineStage = '';
+  /** Etapas del embudo del tenant (las edita Seguimiento); se piden al abrir. */
+  private leadStages = signal<{ key: string; label: string; outcome?: string }[]>([]);
+  /** Etapas en las que tiene sentido dar de alta desde un chat: las abiertas. */
+  stages = computed(() => {
+    const open = this.leadStages().filter(st => !st.outcome).map(st => st.key);
+    return open.length ? open : [...PIPELINE_STAGES];
+  });
 
   /** Lo conocido del tenant, más lo ya elegido, más las sugerencias de partida. */
   tagOptions = computed(() => {
@@ -2229,7 +2236,8 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (!conv) return;
     this.blockedContact.set(!!conv.doNotContact);
     this.newTag = '';
-    this.pipelineStage = PIPELINE_STAGES[0];
+    this.pipelineStage = this.stages()[0];
+    this.loadStages();
     this.draftTags.set([...(conv.tags ?? [])]);
     this.openLead.set(null);
     this.classifyOpen.set(true);
@@ -2321,7 +2329,19 @@ export class InboxComponent implements OnInit, OnDestroy {
 
   /** Etiqueta legible de la etapa del embudo (el backend guarda la clave). */
   stageLabel(key: string): string {
-    return LEAD_STAGE_LABELS[key] ?? key;
+    return this.leadStages().find(st => st.key === key)?.label ?? LEAD_STAGE_LABELS[key] ?? key;
+  }
+
+  private loadStages() {
+    this.http.get<{ key: string; label: string; outcome?: string }[]>(`${API}/leads/stages`, { context: silentRequest() })
+      .subscribe({
+        next: list => {
+          this.leadStages.set(list ?? []);
+          if (!this.stages().includes(this.pipelineStage)) this.pipelineStage = this.stages()[0];
+        },
+        // Sin acceso a Seguimiento se queda con los nombres por defecto.
+        error: () => undefined,
+      });
   }
 
   openContactModal() {
@@ -2337,6 +2357,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     };
     this.contactModal.set(true);
     if (conv.customerId) this.loadCrmCard(conv._id);
+    this.loadStages();
   }
 
   closeContactModal() { this.contactModal.set(false); }
@@ -2615,44 +2636,96 @@ export class InboxComponent implements OnInit, OnDestroy {
     setTimeout(() => el.classList.remove('highlight'), 1600);
   }
 
+  /**
+   * Envío optimista, como en WhatsApp: la burbuja aparece al instante con el
+   * reloj y el compositor queda libre para seguir escribiendo. El backend
+   * responde en cuanto guarda el mensaje; el "enviado" o el fallo del
+   * proveedor llegan después por el socket.
+   */
   send() {
     const conv = this.selected();
     const att = this.attachment();
     const text = this.draft().trim();
-    if (!conv || this.sending() || this.uploading()) return;
+    if (!conv || this.uploading()) return;
     if (!text && !att) return;
 
-    this.sending.set(true);
     const citado = this.isEmail() ? null : this.replyTo();
     const subject = this.isEmail() ? this.subject().trim() : '';
     const body = {
       ...(att
         ? { text, type: att.type, mediaUrl: att.url, mediaKey: att.key, mimeType: att.mimeType, filename: att.filename, size: att.size }
         : { text, type: 'text' as MsgType }),
-      ...(citado ? { replyToId: citado._id } : {}),
+      ...(citado && !citado._id.startsWith(TEMP_PREFIX) ? { replyToId: citado._id } : {}),
       ...(subject ? { subject } : {}),
     };
 
-    this.http.post<Msg>(`${API}/conversations/${conv._id}/messages`, body).subscribe({
-      next: msg => {
-        this.upsertMessage(msg);
-        this.draft.set('');
-        this.ajustarAltura();
-        this.replyTo.set(null);
-        this.clearAttachment();
-        this.revokePreview();
-        this.emojiOpen.set(false);
-        this.sending.set(false);
-        // Escribir manualmente pausa al agente en el backend: reflejarlo ya.
-        if (conv.autoReply) this.upsertConv({ ...conv, autoReply: false });
-        if (msg.status === 'failed') this.toast.error('El mensaje no pudo entregarse');
-        this.scrollToBottom();
-      },
+    const tempId = `${TEMP_PREFIX}${Date.now()}-${++this.tempSeq}`;
+    this.upsertMessage({
+      _id: tempId,
+      conversationId: conv._id,
+      direction: 'out',
+      author: 'human',
+      type: body.type,
+      text,
+      mediaUrl: att?.url,
+      mimeType: att?.mimeType,
+      filename: att?.filename,
+      size: att?.size,
+      status: 'pending',
+      at: new Date().toISOString(),
+      replyToId: body.replyToId,
+      subject: subject || undefined,
+    });
+    this.draft.set('');
+    this.ajustarAltura();
+    this.replyTo.set(null);
+    this.clearAttachment();
+    this.revokePreview();
+    this.emojiOpen.set(false);
+    this.scrollToBottom();
+    // Escribir manualmente pausa al agente en el backend: reflejarlo ya.
+    if (conv.autoReply) this.upsertConv({ ...conv, autoReply: false });
+
+    this.http.post<Msg>(`${API}/conversations/${conv._id}/messages`, body, { context: silentRequest() }).subscribe({
+      next: msg => this.replaceTemp(tempId, msg),
       error: err => {
-        this.sending.set(false);
+        this.messages.update(list => list.map(m =>
+          m._id === tempId ? { ...m, status: 'failed' as MsgStatus, error: 'No se pudo enviar' } : m));
         this.toast.error(err.error?.message || 'No se pudo enviar el mensaje');
       },
     });
+  }
+
+  openAction(kind: ActionKind) { this.quickActions()?.open(kind); }
+
+  /** El borrador se programó desde los accesos directos: sale del compositor. */
+  onScheduledDraft() {
+    this.draft.set('');
+    this.ajustarAltura();
+    this.clearAttachment();
+    this.revokePreview();
+  }
+
+  /** Cambia la burbuja provisional por el mensaje real (sin duplicarlo si el socket llegó antes). */
+  private replaceTemp(tempId: string, msg: Msg) {
+    this.messages.update(list => {
+      const sinTemp = list.filter(m => m._id !== tempId);
+      return sinTemp.some(m => m._id === msg._id)
+        ? sinTemp.map(m => (m._id === msg._id ? { ...msg, ...m } : m))
+        : list.map(m => (m._id === tempId ? msg : m));
+    });
+  }
+
+  /**
+   * El socket puede traer el mensaje real antes que la respuesta HTTP: si hay
+   * una burbuja provisional con el mismo contenido, ocupa su lugar.
+   */
+  private matchTemp(msg: Msg): string | null {
+    if (msg.direction !== 'out' || msg.author !== 'human') return null;
+    const temp = this.messages().find(m =>
+      m._id.startsWith(TEMP_PREFIX) && m.status === 'pending' && m.type === msg.type
+      && (m.text ?? '') === (msg.text ?? '') && (m.mediaUrl ?? '') === (msg.mediaUrl ?? ''));
+    return temp?._id ?? null;
   }
 
   // ── Adjuntos ──
@@ -2968,7 +3041,9 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.realtime.messageNew$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw => {
       const msg = raw as unknown as Msg;
       if (msg.conversationId === this.selectedId()) {
-        this.upsertMessage(msg);
+        const temp = this.matchTemp(msg);
+        if (temp) this.replaceTemp(temp, msg);
+        else this.upsertMessage(msg);
         this.scrollToBottom();
         if (msg.direction === 'in') this.markRead(msg.conversationId);
       }
@@ -2976,7 +3051,11 @@ export class InboxComponent implements OnInit, OnDestroy {
 
     this.realtime.messageUpdated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw => {
       const msg = raw as unknown as Msg;
-      if (msg.conversationId === this.selectedId()) this.upsertMessage(msg);
+      if (msg.conversationId !== this.selectedId()) return;
+      const prev = this.messages().find(m => m._id === msg._id);
+      this.upsertMessage(msg);
+      if (msg.status === 'failed' && prev && prev.status !== 'failed' && msg.author === 'human')
+        this.toast.error('El mensaje no pudo entregarse');
     });
 
     this.realtime.conversationUpdated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw =>

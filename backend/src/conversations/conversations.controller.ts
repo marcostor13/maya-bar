@@ -11,6 +11,7 @@ import {
   Request,
   BadRequestException,
 } from '@nestjs/common';
+import { Types } from 'mongoose';
 import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
@@ -24,30 +25,61 @@ import {
   SendToPipelineDto,
   DoNotContactDto,
   ComposeEmailDto,
+  ScheduleMessageDto,
+  ConversationTaskDto,
+  CompleteTaskDto,
 } from './dto/conversation.dto';
+import { InboxToolsService } from './inbox-tools.service';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard, ModuleGuard('inbox'))
 export class ConversationsController {
-  constructor(private service: ConversationsService) {}
+  constructor(
+    private service: ConversationsService,
+    private tools: InboxToolsService,
+  ) {}
 
   @Get()
-  list(
+  async list(
     @Request() req: AuthReq,
     @Query('channel') channel?: string,
     @Query('accountId') accountId?: string,
     @Query('status') status?: string,
     @Query('q') q?: string,
     @Query('unread') unread?: string,
+    @Query('agentId') agentId?: string,
+    @Query('tags') tags?: string,
   ) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.service.listConversations(req.user.tenantId, {
+    const tenantId = req.user.tenantId;
+    const tagList = (tags ?? '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const [agent, customerIds] = await Promise.all([
+      agentId && Types.ObjectId.isValid(agentId)
+        ? this.tools.agentScope(tenantId, agentId)
+        : undefined,
+      tagList.length
+        ? this.tools.customerIdsByTags(tenantId, tagList)
+        : undefined,
+    ]);
+    return this.service.listConversations(tenantId, {
       channel,
       accountId,
       status,
       q,
       unread: unread === 'true',
+      agent,
+      customerIds,
     });
+  }
+
+  /** Agentes IA del tenant, para filtrar la bandeja por agente. */
+  @Get('agents')
+  agents(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.tools.listAgents(req.user.tenantId);
   }
 
   /** Cuentas conectadas (WhatsApp + Instagram) para el selector de la bandeja. */
@@ -106,7 +138,89 @@ export class ConversationsController {
     assertRole(req.user.role, CRM_ROLES);
     if (!dto.text?.trim() && !dto.mediaUrl)
       throw new BadRequestException('El mensaje está vacío');
-    return this.service.sendManual(id, req.user.tenantId, req.user.userId, dto);
+    return this.service.sendManual(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      dto,
+      { background: true },
+    );
+  }
+
+  /** Mensajes programados pendientes (o fallidos) del chat. */
+  @Get(':id/scheduled')
+  scheduled(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.tools.listScheduled(id, req.user.tenantId);
+  }
+
+  @Post(':id/scheduled')
+  schedule(
+    @Param('id') id: string,
+    @Body() dto: ScheduleMessageDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.tools.schedule(id, req.user.tenantId, req.user.userId, dto);
+  }
+
+  @Delete(':id/scheduled/:scheduledId')
+  cancelScheduled(
+    @Param('id') id: string,
+    @Param('scheduledId') scheduledId: string,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.tools.cancelScheduled(id, scheduledId, req.user.tenantId);
+  }
+
+  /** Tareas pendientes del contacto del chat (en sus oportunidades abiertas). */
+  @Get(':id/tasks')
+  tasks(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.tools.listTasks(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+    );
+  }
+
+  /** Acceso directo del chat: volver a llamar, reunión, enviar correo… */
+  @Post(':id/tasks')
+  createTask(
+    @Param('id') id: string,
+    @Body() dto: ConversationTaskDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.tools.createTask(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto,
+    );
+  }
+
+  @Patch(':id/tasks/:leadId/:taskId')
+  completeTask(
+    @Param('id') id: string,
+    @Param('leadId') leadId: string,
+    @Param('taskId') taskId: string,
+    @Body() dto: CompleteTaskDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.tools.completeTask(
+      id,
+      leadId,
+      taskId,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto.done,
+    );
   }
 
   /** Guarda a quien escribe como contacto del CRM (y opcionalmente crea lead). */

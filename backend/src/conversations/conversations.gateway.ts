@@ -35,6 +35,11 @@ export class ConversationsGateway
     this.server?.to(tenantId).emit('conversation:updated', payload);
   }
 
+  /** Cambió la lista de mensajes programados de un chat (se envió uno o falló). */
+  emitScheduledChanged(tenantId: string, conversationId: string) {
+    this.server?.to(tenantId).emit('scheduled:changed', { conversationId });
+  }
+
   emitTyping(tenantId: string, conversationId: string, typing: boolean) {
     this.server
       ?.to(tenantId)

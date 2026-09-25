@@ -10,6 +10,12 @@ import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
 import { Conversation, ConversationSchema } from './conversation.schema';
 import { Message, MessageSchema } from './message.schema';
+import {
+  ScheduledMessage,
+  ScheduledMessageSchema,
+} from './scheduled-message.schema';
+import { Customer, CustomerSchema } from '../customers/customer.schema';
+import { InboxToolsService } from './inbox-tools.service';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramModule } from '../instagram/instagram.module';
@@ -29,6 +35,8 @@ import { EmailListenerService } from './email-listener.service';
     MongooseModule.forFeature([
       { name: Conversation.name, schema: ConversationSchema },
       { name: Message.name, schema: MessageSchema },
+      { name: ScheduledMessage.name, schema: ScheduledMessageSchema },
+      { name: Customer.name, schema: CustomerSchema },
     ]),
     WhatsAppModule,
     WhatsAppAccountsModule,
@@ -53,6 +61,7 @@ import { EmailListenerService } from './email-listener.service';
     ConversationsGateway,
     HandoffService,
     EmailListenerService,
+    InboxToolsService,
   ],
   exports: [ConversationsService],
 })

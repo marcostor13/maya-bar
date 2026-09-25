@@ -45,6 +45,8 @@ export class ConversationsRealtimeService {
   readonly messageUpdated$ = new Subject<RealtimeMessage>();
   readonly conversationUpdated$ = new Subject<RealtimeConversation>();
   readonly typing$ = new Subject<{ conversationId: string; typing: boolean }>();
+  /** Un mensaje programado se envió (o falló): la lista del chat cambió. */
+  readonly scheduledChanged$ = new Subject<{ conversationId: string }>();
 
   /** Total de mensajes sin leer del tenant, para la insignia del menú. */
   unread = signal(0);
@@ -71,6 +73,9 @@ export class ConversationsRealtimeService {
     );
     this.socket.on('message:updated', (msg: RealtimeMessage) =>
       this.messageUpdated$.next(msg),
+    );
+    this.socket.on('scheduled:changed', (p: { conversationId: string }) =>
+      this.scheduledChanged$.next(p),
     );
     this.socket.on('conversation:updated', (conv: RealtimeConversation) => {
       this.conversationUpdated$.next(conv);

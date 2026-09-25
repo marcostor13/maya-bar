@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEmail,
   IsNotEmpty,
   IsIn,
@@ -207,4 +208,47 @@ export class DoNotContactDto {
   @IsString()
   @MaxLength(200)
   reason?: string;
+}
+
+/** Mensaje (o correo) que sale solo a la hora indicada. */
+export class ScheduleMessageDto extends SendMessageDto {
+  @IsDateString()
+  sendAt: string;
+}
+
+/** Tipos de tarea que se crean desde los accesos directos del chat. */
+export const CONVERSATION_TASK_TYPES = [
+  'call',
+  'meeting',
+  'task',
+  'email',
+  'whatsapp',
+] as const;
+
+/** Tarea de seguimiento creada desde el chat: volver a llamar, reunión… */
+export class ConversationTaskDto {
+  @IsIn(CONVERSATION_TASK_TYPES)
+  type: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  title: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  body?: string;
+
+  @IsDateString()
+  dueAt: string;
+
+  @IsOptional()
+  @IsBoolean()
+  remindByWhatsApp?: boolean;
+}
+
+export class CompleteTaskDto {
+  @IsBoolean()
+  done: boolean;
 }

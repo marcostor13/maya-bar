@@ -323,6 +323,10 @@ export class ConversationsService {
       status?: string;
       q?: string;
       unread?: boolean;
+      /** Agente IA: las que respondió o las de las cuentas por las que responde. */
+      agent?: { agentId: Types.ObjectId; accountIds: Types.ObjectId[] };
+      /** Contactos con las etiquetas pedidas (vacío = ninguna coincide). */
+      customerIds?: Types.ObjectId[];
     } = {},
   ) {
     const query: QueryFilter<Conversation> = {
@@ -340,17 +344,29 @@ export class ConversationsService {
       query.accountId = new Types.ObjectId(filters.accountId);
     if (filters.status) query.status = filters.status;
     if (filters.unread) query.unreadCount = { $gt: 0 };
+    if (filters.customerIds) query.customerId = { $in: filters.customerIds };
+    const and: QueryFilter<Conversation>[] = [];
+    if (filters.agent) {
+      and.push({
+        $or: [
+          { agentId: filters.agent.agentId },
+          {
+            agentId: { $exists: false },
+            accountId: { $in: filters.agent.accountIds },
+          },
+        ],
+      });
+    }
     if (filters.q) {
       const rx = new RegExp(
         filters.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
         'i',
       );
-      query.$or = [
-        { contact: rx },
-        { contactName: rx },
-        { lastMessagePreview: rx },
-      ];
+      and.push({
+        $or: [{ contact: rx }, { contactName: rx }, { lastMessagePreview: rx }],
+      });
     }
+    if (and.length) query.$and = and;
     const convs = await this.convModel
       .find(query)
       .sort({ lastMessageAt: -1 })
@@ -793,6 +809,7 @@ export class ConversationsService {
     tenantId: string,
     userId: string,
     dto: SendMessageDto,
+    opts: { background?: boolean } = {},
   ) {
     const conv = await this.getConversation(id, tenantId);
     const type: MessageType = dto.type ?? (dto.mediaUrl ? 'document' : 'text');
@@ -832,6 +849,26 @@ export class ConversationsService {
     await this.touchConversation(conv, msg);
     this.gateway.emitMessage(tenantId, msg);
 
+    // Desde la bandeja no se espera al proveedor: el mensaje ya está guardado
+    // y su estado (enviado / fallido) llega por el socket. Así el operador no
+    // se queda un segundo mirando el botón de enviar.
+    if (opts.background) {
+      this.finishDelivery(tenantId, conv, msg).catch((err) =>
+        this.logger.error(
+          `Error guardando el estado del mensaje ${String(msg._id)}: ${String(err)}`,
+        ),
+      );
+      return msg;
+    }
+    return this.finishDelivery(tenantId, conv, msg);
+  }
+
+  /** Entrega el mensaje ya guardado y publica su estado final. */
+  private async finishDelivery(
+    tenantId: string,
+    conv: Conversation,
+    msg: Message,
+  ): Promise<Message> {
     try {
       const externalId = await this.deliver(conv, msg);
       msg.status = 'sent';
