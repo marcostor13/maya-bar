@@ -28,6 +28,8 @@ La primera vez que se conecta un buzón no se importa el histórico: solo entra 
 
 Sin credenciales de OAuth, los botones de Gmail y Outlook aparecen deshabilitados, pero se puede conectar cualquier buzón con "Otro servidor".
 
+Las mismas apps de OAuth sirven para conectar calendarios (Google Meet / Microsoft Teams): ver [calendario.md](calendario.md) para las URIs de redirección y los scopes adicionales.
+
 ### Google (Gmail)
 
 1. Google Cloud Console → APIs y servicios → Credenciales → **ID de cliente de OAuth** (aplicación web).
