@@ -40,6 +40,7 @@ import { RecoveryModule } from './recovery/recovery.module';
 import { ConversionsModule } from './conversions/conversions.module';
 import { ProspectingModule } from './prospecting/prospecting.module';
 import { EmailAccountsModule } from './email-accounts/email-accounts.module';
+import { CalendarModule } from './calendar/calendar.module';
 
 @Module({
   imports: [
@@ -89,6 +90,7 @@ import { EmailAccountsModule } from './email-accounts/email-accounts.module';
     RecoveryModule,
     ProspectingModule,
     EmailAccountsModule,
+    CalendarModule,
   ],
   controllers: [AppController],
   providers: [AppService],
