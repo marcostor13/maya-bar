@@ -111,10 +111,12 @@ describe('ProspectingController (HTTP)', () => {
       .expect(200);
   });
 
+  // La etapa es del embudo del tenant: aquí solo se exige texto; que exista lo
+  // comprueba LeadsService.create.
   it('valida la etapa del seguimiento', async () => {
     await request(app.getHttpServer())
       .post('/prospecting/prospects/p1/lead')
-      .send({ stage: 'x' })
+      .send({ stage: 123 })
       .expect(400);
     await request(app.getHttpServer())
       .post('/prospecting/prospects/p1/lead')

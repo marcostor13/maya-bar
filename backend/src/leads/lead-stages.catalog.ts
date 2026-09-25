@@ -1,7 +1,11 @@
 /**
- * Etapas del embudo de seguimiento. Viven en el código, igual que el catálogo
- * de módulos: cada etapa tiene un significado para los KPIs (ganada, perdida)
- * y el tablero, así que no se pueden inventar desde una pantalla.
+ * Etapas del embudo de seguimiento. Cada empresa configura las suyas (ver
+ * `LeadStagesService`); estas son las de fábrica, con las que se siembra el
+ * embudo de un tenant la primera vez que se lee. Sus claves son las que ya
+ * guardan las oportunidades existentes, así que no hace falta migrar nada.
+ *
+ * Siempre hay una etapa `won` y una `lost`: dan significado a los KPIs y no
+ * se pueden borrar ni cambiar de desenlace.
  */
 
 export interface LeadStage {
@@ -18,7 +22,7 @@ export interface LeadStage {
   outcome?: 'won' | 'lost';
 }
 
-export const LEAD_STAGES: LeadStage[] = [
+export const LEAD_STAGES: readonly LeadStage[] = [
   { key: 'new', label: 'Nuevo', order: 0, color: '#6366F1', probability: 10 },
   {
     key: 'contacted',
@@ -66,22 +70,16 @@ export const LEAD_STAGES: LeadStage[] = [
   },
 ];
 
-export const LEAD_STAGE_KEYS = LEAD_STAGES.map((s) => s.key);
-
-/** Primera etapa: donde entra todo lo que se crea sin decir en cuál va. */
-export const DEFAULT_LEAD_STAGE = LEAD_STAGES[0].key;
-
-export function stageByKey(key: string): LeadStage | undefined {
-  return LEAD_STAGES.find((s) => s.key === key);
-}
-
 /** 'open' mientras la etapa no sea terminal; si lo es, su desenlace. */
-export function statusForStage(key: string): 'open' | 'won' | 'lost' {
-  return stageByKey(key)?.outcome ?? 'open';
+export function statusForStage(
+  stages: readonly LeadStage[],
+  key: string,
+): 'open' | 'won' | 'lost' {
+  return stages.find((s) => s.key === key)?.outcome ?? 'open';
 }
 
-export function stageLabel(key: string): string {
-  return stageByKey(key)?.label ?? key;
+export function stageLabel(stages: readonly LeadStage[], key: string): string {
+  return stages.find((s) => s.key === key)?.label ?? key;
 }
 
 /** Tipos de actividad del historial de la oportunidad. */

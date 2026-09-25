@@ -9,7 +9,7 @@ import {
 import { Message } from '../conversations/message.schema';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { Lead } from '../leads/lead.schema';
-import { LEAD_STAGES } from '../leads/lead-stages.catalog';
+import { LeadStagesService } from '../leads/lead-stages.service';
 import { Campaign } from '../campaigns/campaign.schema';
 import { FormSubmission } from '../forms/form-submission.schema';
 import { ContactForm } from '../forms/form.schema';
@@ -147,6 +147,7 @@ export class DashboardAnalyticsService {
     @InjectModel(Prospect.name) private prospectModel: Model<Prospect>,
     @InjectModel(SuppressionEntry.name)
     private suppressionModel: Model<SuppressionEntry>,
+    private leadStages: LeadStagesService,
   ) {}
 
   async analytics(
@@ -385,17 +386,21 @@ export class DashboardAnalyticsService {
         ? Math.round((wonPrevRow.count / (wonPrevRow.count + lostPrev)) * 100)
         : 0;
 
-    const funnel = LEAD_STAGES.filter((s) => !s.outcome).map((s) => {
-      const row = funnelRows.find((r) => r._id === s.key);
-      return {
-        key: s.key,
-        label: s.label,
-        color: s.color,
-        probability: s.probability,
-        count: row?.count ?? 0,
-        value: row?.value ?? 0,
-      };
-    });
+    // Embudo del tenant (configurable); las etapas de cierre no son embudo.
+    const stages = await this.leadStages.list(tenantId);
+    const funnel = stages
+      .filter((s) => !s.outcome)
+      .map((s) => {
+        const row = funnelRows.find((r) => r._id === s.key);
+        return {
+          key: s.key,
+          label: s.label,
+          color: s.color,
+          probability: s.probability,
+          count: row?.count ?? 0,
+          value: row?.value ?? 0,
+        };
+      });
     const openValue = sum(funnel.map((f) => f.value));
     const weighted = Math.round(
       sum(funnel.map((f) => (f.value * f.probability) / 100)),

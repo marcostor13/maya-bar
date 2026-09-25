@@ -5,6 +5,8 @@ import { LeadsService } from './leads.service';
 import { LeadRemindersService } from './lead-reminders.service';
 import { Lead, LeadSchema } from './lead.schema';
 import { LeadActivity, LeadActivitySchema } from './lead-activity.schema';
+import { LeadStageEntry, LeadStageEntrySchema } from './lead-stage.schema';
+import { LeadStagesService } from './lead-stages.service';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
 import { User, UserSchema } from '../users/user.schema';
 import { SettingsModule } from '../settings/settings.module';
@@ -15,6 +17,7 @@ import { ConversionsModule } from '../conversions/conversions.module';
     MongooseModule.forFeature([
       { name: Lead.name, schema: LeadSchema },
       { name: LeadActivity.name, schema: LeadActivitySchema },
+      { name: LeadStageEntry.name, schema: LeadStageEntrySchema },
       { name: Customer.name, schema: CustomerSchema },
       { name: User.name, schema: UserSchema },
     ]),
@@ -25,8 +28,9 @@ import { ConversionsModule } from '../conversions/conversions.module';
     ConversionsModule,
   ],
   controllers: [LeadsController],
-  providers: [LeadsService, LeadRemindersService],
-  // La bandeja de entrada crea contactos y oportunidades desde el chat.
-  exports: [LeadsService],
+  providers: [LeadsService, LeadStagesService, LeadRemindersService],
+  // La bandeja de entrada crea contactos y oportunidades desde el chat; el
+  // panel lee el embudo del tenant.
+  exports: [LeadsService, LeadStagesService],
 })
 export class LeadsModule {}

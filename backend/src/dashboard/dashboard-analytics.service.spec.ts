@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { DashboardAnalyticsService } from './dashboard-analytics.service';
+import { LEAD_STAGES } from '../leads/lead-stages.catalog';
 
 type Pipeline = Record<string, any>[];
 
@@ -174,6 +175,7 @@ function setup(buckets: () => string[]) {
     recovery as never,
     prospect as never,
     suppression as never,
+    { list: () => Promise.resolve(LEAD_STAGES) } as never,
   );
   return { service, msg, customer, conv, lead };
 }

@@ -1,10 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import {
-  LEAD_STAGE_KEYS,
-  DEFAULT_LEAD_STAGE,
-  LEAD_PRIORITIES,
-} from './lead-stages.catalog';
+import { LEAD_PRIORITIES } from './lead-stages.catalog';
 
 /**
  * Oportunidad de venta en seguimiento. Es la unidad del embudo: un contacto
@@ -25,7 +21,8 @@ export class Lead extends Document {
   @Prop({ trim: true })
   description?: string;
 
-  @Prop({ enum: LEAD_STAGE_KEYS, default: DEFAULT_LEAD_STAGE, index: true })
+  /** Clave de una etapa del embudo del tenant (ver `LeadStagesService`). */
+  @Prop({ trim: true, index: true })
   stage: string;
 
   /** Derivado de la etapa; se guarda para poder filtrar y agregar sin recalcular. */
