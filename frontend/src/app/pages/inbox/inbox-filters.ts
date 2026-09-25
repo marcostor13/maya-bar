@@ -29,7 +29,6 @@ interface AgentOption { _id: string; name: string; published: boolean }
       <button type="button" class="f-more" [class.on]="activeCount() > 0" (click)="openPanel()"
         aria-label="Más filtros" title="Filtrar por agente IA y etiquetas">
         <lucide-icon [img]="SlidersHorizontal" [size]="15" [strokeWidth]="2.4"></lucide-icon>
-        <span class="f-more-label">Filtros</span>
         @if (activeCount() > 0) { <span class="f-badge">{{ activeCount() }}</span> }
       </button>
     </div>
@@ -109,15 +108,16 @@ interface AgentOption { _id: string; name: string; published: boolean }
     }
     .f-status::-webkit-scrollbar { display: none; }
     .f-seg {
-      flex: 1 0 auto; border: none; background: none; cursor: pointer; white-space: nowrap;
-      padding: 6px 10px; border-radius: var(--radius-pill); font-family: var(--font-base);
+      flex: 1 1 auto; border: none; background: none; cursor: pointer; white-space: nowrap;
+      padding: 6px 8px; border-radius: var(--radius-pill); font-family: var(--font-base);
       font-size: 12.5px; font-weight: 600; color: var(--color-text-muted); transition: all var(--transition-fast);
     }
     .f-seg:hover { color: var(--color-text-main); }
     .f-seg.active { background: var(--color-white); color: var(--color-brand); box-shadow: var(--shadow-sm); }
     .f-more {
       flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-      padding: 7px 12px; border-radius: var(--radius-pill); border: 1px solid var(--color-border);
+      height: 34px; min-width: 34px; padding: 0 9px; justify-content: center;
+      border-radius: var(--radius-pill); border: 1px solid var(--color-border);
       background: var(--color-white); font-family: var(--font-base); font-size: 12.5px; font-weight: 600;
       color: var(--color-text-main); transition: all var(--transition-fast);
     }
@@ -174,8 +174,8 @@ interface AgentOption { _id: string; name: string; published: boolean }
     .f-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
     @media (max-width: 640px) {
-      .f-more-label { display: none; }
-      .f-seg { font-size: 13.5px; padding: 7px 12px; }
+      .f-seg { font-size: 13px; padding: 7px 6px; }
+      .f-more { height: 38px; min-width: 38px; }
       .f-overlay { align-items: flex-end; }
       .f-panel {
         width: 100%; max-width: none; max-height: 88dvh;
