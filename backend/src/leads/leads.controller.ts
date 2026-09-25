@@ -12,28 +12,76 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ModuleGuard } from '../roles/module.guard';
-import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
+import {
+  assertRole,
+  CRM_ROLES,
+  MANAGE_ROLES,
+  type AuthReq,
+} from '../auth/permissions';
 import { LeadsService } from './leads.service';
+import { LeadStagesService } from './lead-stages.service';
 import {
   CreateActivityDto,
   CreateLeadDto,
+  CreateLeadStageDto,
   MoveLeadDto,
   ReleaseLeadDto,
+  ReorderLeadStagesDto,
   TransferLeadDto,
   UpdateActivityDto,
   UpdateLeadDto,
+  UpdateLeadStageDto,
 } from './dto/lead.dto';
 
 @Controller('leads')
 @UseGuards(JwtAuthGuard, ModuleGuard('leads'))
 export class LeadsController {
-  constructor(private service: LeadsService) {}
+  constructor(
+    private service: LeadsService,
+    private stageConfig: LeadStagesService,
+  ) {}
 
-  /** Catálogo de etapas: lo consume el tablero para pintar las columnas. */
+  /** Embudo del tenant: lo consume el tablero para pintar las columnas. */
   @Get('stages')
   stages(@Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.service.stages();
+    return this.service.stages(req.user.tenantId);
+  }
+
+  // Configuración del embudo: solo quien administra. Rutas estáticas antes de
+  // las de `:id` para que Nest no las confunda con una oportunidad.
+
+  @Post('stages')
+  createStage(@Body() dto: CreateLeadStageDto, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.stageConfig.create(req.user.tenantId, dto);
+  }
+
+  @Patch('stages/reorder')
+  reorderStages(@Body() dto: ReorderLeadStagesDto, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.stageConfig.reorder(req.user.tenantId, dto.keys);
+  }
+
+  @Patch('stages/:key')
+  updateStage(
+    @Param('key') key: string,
+    @Body() dto: UpdateLeadStageDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.stageConfig.update(req.user.tenantId, key, dto);
+  }
+
+  /** Si la etapa tiene oportunidades, `moveTo` dice adónde pasan. */
+  @Delete('stages/:key')
+  removeStage(
+    @Param('key') key: string,
+    @Request() req: AuthReq,
+    @Query('moveTo') moveTo?: string,
+  ) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.stageConfig.remove(req.user.tenantId, key, moveTo || undefined);
   }
 
   @Get('board')

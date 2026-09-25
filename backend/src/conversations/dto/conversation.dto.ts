@@ -12,10 +12,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import {
-  LEAD_PRIORITIES,
-  LEAD_STAGE_KEYS,
-} from '../../leads/lead-stages.catalog';
+import { LEAD_PRIORITIES } from '../../leads/lead-stages.catalog';
 // `import type`: MessageType se usa en una firma decorada y el build corre con
 // isolatedModules + emitDecoratorMetadata (TS1272).
 import type { MessageType } from '../message.schema';
@@ -184,8 +181,9 @@ export class SendToPipelineDto {
   @MaxLength(120)
   title?: string;
 
+  /** Clave de una etapa del tenant; la valida `LeadsService.create`. */
   @IsOptional()
-  @IsIn(LEAD_STAGE_KEYS)
+  @IsString()
   stage?: string;
 
   @IsOptional()

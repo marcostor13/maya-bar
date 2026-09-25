@@ -16,6 +16,9 @@ import { ConversionsService } from '../conversions/conversions.service';
 import { RolesService } from '../roles/roles.service';
 import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
+import { LeadStagesService } from './lead-stages.service';
+import { LeadStageEntry } from './lead-stage.schema';
+import { LEAD_STAGES } from './lead-stages.catalog';
 
 const tenantId = new Types.ObjectId().toString();
 const userId = new Types.ObjectId().toString();
@@ -72,6 +75,7 @@ describe('LeadsService', () => {
   let userModel: any;
   let push: { sendToUser: jest.Mock };
   let nativePush: { sendToUser: jest.Mock };
+  let stageModel: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -83,10 +87,19 @@ describe('LeadsService', () => {
     userModel = createMockModel();
     push = { sendToUser: jest.fn().mockResolvedValue(1) };
     nativePush = { sendToUser: jest.fn().mockResolvedValue(1) };
+    // Embudo del tenant: por defecto, el de fábrica ya sembrado.
+    stageModel = createMockModel();
+    stageModel.find.mockReturnValue(
+      buildQuery(LEAD_STAGES.map((s) => ({ ...s }))),
+    );
+    stageModel.insertMany = jest.fn().mockResolvedValue([]);
+    stageModel.bulkWrite = jest.fn().mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeadsService,
+        LeadStagesService,
+        { provide: getModelToken(LeadStageEntry.name), useValue: stageModel },
         { provide: getModelToken(Lead.name), useValue: leadModel },
         { provide: getModelToken(LeadActivity.name), useValue: activityModel },
         { provide: getModelToken(Customer.name), useValue: customerModel },
@@ -610,6 +623,133 @@ describe('LeadsService', () => {
       expect(activityModel.create.mock.calls[1][0].title).toBe(
         'Queda sin asignar',
       );
+    });
+  });
+
+  describe('embudo del tenant', () => {
+    const custom = [
+      {
+        key: 'lost',
+        label: 'Descartado',
+        order: 0,
+        color: '#EF4444',
+        probability: 0,
+        outcome: 'lost',
+      },
+      {
+        key: 'cita-a1b2',
+        label: 'Cita agendada',
+        order: 1,
+        color: '#0EA5E9',
+        probability: 40,
+      },
+      {
+        key: 'won',
+        label: 'Cerrado',
+        order: 2,
+        color: '#10B981',
+        probability: 100,
+        outcome: 'won',
+      },
+    ];
+
+    beforeEach(() => {
+      stageModel.find.mockReturnValue(buildQuery(custom));
+      customerModel.findOne.mockReturnValue(buildQuery({ _id: customerOid }));
+      leadModel.create.mockResolvedValue(makeLead({ stage: 'cita-a1b2' }));
+      leadModel.find.mockReturnValue(buildQuery([makeLead()]));
+    });
+
+    it('siembra las etapas de fábrica si el tenant no tiene ninguna', async () => {
+      stageModel.find
+        .mockReturnValueOnce(buildQuery([]))
+        .mockReturnValueOnce(buildQuery(LEAD_STAGES.map((s) => ({ ...s }))));
+
+      const stages = await service.stages(tenantId);
+
+      expect(stageModel.insertMany).toHaveBeenCalledTimes(1);
+      expect(stageModel.insertMany.mock.calls[0][0]).toHaveLength(7);
+      expect(stages.map((s) => s.key)).toEqual(LEAD_STAGES.map((s) => s.key));
+    });
+
+    it('sin etapa, crea en la primera etapa abierta del embudo', async () => {
+      await service.create(tenantId, userId, 'MARKETING', {
+        customerId: String(customerOid),
+        title: 'Cita',
+      });
+      expect(leadModel.create.mock.calls[0][0]).toMatchObject({
+        stage: 'cita-a1b2',
+        status: 'open',
+      });
+    });
+
+    it('crear en la etapa ganada la cierra', async () => {
+      await service.create(tenantId, userId, 'MARKETING', {
+        customerId: String(customerOid),
+        title: 'Venta',
+        stage: 'won',
+      });
+      const doc = leadModel.create.mock.calls[0][0];
+      expect(doc.status).toBe('won');
+      expect(doc.closedAt).toBeInstanceOf(Date);
+    });
+
+    it('rechaza etapas que no existen en el embudo del tenant', async () => {
+      await expect(
+        service.create(tenantId, userId, 'MARKETING', {
+          customerId: String(customerOid),
+          title: 'X',
+          stage: 'proposal',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(leadModel.create).not.toHaveBeenCalled();
+
+      await expect(
+        service.move(String(leadOid), tenantId, userId, 'TENANT_ADMIN', {
+          stage: 'nope',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.update(String(leadOid), tenantId, userId, 'TENANT_ADMIN', {
+          stage: 'nope',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('el historial usa las etiquetas del tenant', async () => {
+      const lead = makeLead({ stage: 'cita-a1b2' });
+      leadModel.find.mockReturnValue(buildQuery([lead]));
+
+      await service.move(String(leadOid), tenantId, userId, 'TENANT_ADMIN', {
+        stage: 'lost',
+      });
+
+      expect(lead.status).toBe('lost');
+      expect(activityModel.create.mock.calls[0][0].title).toBe(
+        'Etapa: Cita agendada → Descartado',
+      );
+    });
+
+    it('tablero y ponderado siguen el embudo configurado', async () => {
+      leadModel.find.mockReturnValue(
+        buildQuery([makeLead({ stage: 'cita-a1b2', value: 500 })]),
+      );
+      const board = await service.board(tenantId, userId, 'TENANT_ADMIN');
+      expect(board.map((c) => [c.stage, c.label, c.count])).toEqual([
+        ['lost', 'Descartado', 0],
+        ['cita-a1b2', 'Cita agendada', 1],
+        ['won', 'Cerrado', 0],
+      ]);
+
+      leadModel.find
+        .mockReturnValueOnce(
+          buildQuery([makeLead({ stage: 'cita-a1b2', value: 1000 })]),
+        )
+        .mockReturnValueOnce(buildQuery([]))
+        .mockReturnValueOnce(buildQuery([]));
+      const stats = await service.stats(tenantId, userId, 'TENANT_ADMIN');
+      expect(stats.weightedValue).toBe(400);
     });
   });
 });

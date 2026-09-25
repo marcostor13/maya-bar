@@ -1,22 +1,22 @@
 import {
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsDateString,
+  IsHexColor,
   IsIn,
+  IsInt,
   IsMongoId,
   MaxLength,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
 } from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
-import {
-  ACTIVITY_TYPES,
-  LEAD_PRIORITIES,
-  LEAD_STAGE_KEYS,
-} from '../lead-stages.catalog';
+import { ACTIVITY_TYPES, LEAD_PRIORITIES } from '../lead-stages.catalog';
 
 export class CreateLeadDto {
   /** Contacto existente. Si no viene, hay que mandar los datos en `customer`. */
@@ -36,8 +36,9 @@ export class CreateLeadDto {
   @IsString()
   description?: string;
 
+  /** Clave de una etapa del tenant; se valida en el servicio. */
   @IsOptional()
-  @IsIn(LEAD_STAGE_KEYS)
+  @IsString()
   stage?: string;
 
   @IsOptional()
@@ -83,7 +84,8 @@ export class UpdateLeadDto extends PartialType(CreateLeadDto) {
 }
 
 export class MoveLeadDto {
-  @IsIn(LEAD_STAGE_KEYS)
+  @IsString()
+  @IsNotEmpty()
   stage: string;
 
   /** Posición destino dentro de la columna (0 = arriba del todo). */
@@ -164,4 +166,33 @@ export class TransferLeadDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+/** Etapa nueva del embudo. Siempre es abierta: ganada y perdida ya existen. */
+export class CreateLeadStageDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(40)
+  label: string;
+
+  @IsOptional()
+  @IsHexColor()
+  color?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  probability?: number;
+}
+
+/** Renombrar, recolorear o cambiar la probabilidad. La clave no cambia nunca. */
+export class UpdateLeadStageDto extends PartialType(CreateLeadStageDto) {}
+
+export class ReorderLeadStagesDto {
+  /** Todas las claves del embudo, en el orden nuevo. */
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  keys: string[];
 }

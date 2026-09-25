@@ -12,7 +12,6 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { LEAD_STAGE_KEYS } from '../../leads/lead-stages.catalog';
 import { PROSPECT_STATUSES } from '../prospect.schema';
 
 export class CreateSearchDto {
@@ -117,7 +116,8 @@ export class ConvertToLeadDto extends ConvertToCustomerDto {
   @Min(0)
   value?: number;
 
+  /** Clave de una etapa del tenant; la valida `LeadsService.create`. */
   @IsOptional()
-  @IsIn(LEAD_STAGE_KEYS)
+  @IsString()
   stage?: string;
 }

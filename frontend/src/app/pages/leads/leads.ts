@@ -6,24 +6,18 @@ import {
   LucideAngularModule, Plus, X, Trash2, Search, Target, TrendingUp, Trophy, CalendarClock,
   AlertTriangle, User, Phone, Mail, MessageSquare, StickyNote, PhoneCall, Users, CheckCircle2,
   Circle, Clock, LayoutGrid, List as ListIcon, Filter, ArrowRight, Coins, Pencil,
-  Hand, Forward, Undo2, Lock, Inbox,
+  Hand, Forward, Undo2, Lock, Inbox, Settings2,
 } from 'lucide-angular';
 import { AuthService } from '../../auth/auth.service';
 import { LeadAssignComponent, type AssignMode } from './lead-assign';
+import { LeadStagesConfigComponent, type LeadStage } from './lead-stages-config';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
 
-interface Stage {
-  key: string;
-  label: string;
-  order: number;
-  color: string;
-  probability: number;
-  outcome?: 'won' | 'lost';
-}
+type Stage = LeadStage;
 
 interface CustomerRef {
   _id: string;
@@ -151,7 +145,7 @@ function blankForm(stage: string): LeadForm {
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, LeadAssignComponent],
+  imports: [FormsModule, LucideAngularModule, LeadAssignComponent, LeadStagesConfigComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -168,6 +162,12 @@ function blankForm(stage: string): LeadForm {
               <lucide-icon [img]="ListIcon" [size]="15" [strokeWidth]="2.5"></lucide-icon>
             </button>
           </div>
+          @if (supervisor()) {
+            <button class="btn btn-secondary" (click)="stagesOpen.set(true)" title="Configurar embudo" aria-label="Configurar embudo">
+              <lucide-icon [img]="Settings2" [size]="16" [strokeWidth]="2.5"></lucide-icon>
+              <span class="hide-sm">Configurar embudo</span>
+            </button>
+          }
           <button class="btn btn-primary" (click)="openNew()">
             <lucide-icon [img]="Plus" [size]="16" [strokeWidth]="2.5"></lucide-icon>
             Nueva oportunidad
@@ -569,6 +569,12 @@ function blankForm(stage: string): LeadForm {
       }
     }
 
+    <!-- ───────── Configuración del embudo ───────── -->
+    @if (stagesOpen()) {
+      <app-lead-stages-config [counts]="stageCounts()" [filtered]="hasFilters()"
+        (changed)="onStagesChanged()" (close)="stagesOpen.set(false)" />
+    }
+
     <!-- ───────── Alta / edición ───────── -->
     @if (formOpen()) {
       <div class="overlay" (click)="closeForm()" role="dialog" aria-modal="true">
@@ -668,7 +674,7 @@ function blankForm(stage: string): LeadForm {
               <textarea class="textarea" [(ngModel)]="form.description" rows="3" placeholder="Contexto de la oportunidad…"></textarea>
             </div>
 
-            @if (form._id && form.stage === 'lost') {
+            @if (form._id && isLost(form.stage)) {
               <div class="field">
                 <label class="field-label">Motivo de la pérdida</label>
                 <input class="input" [(ngModel)]="form.lostReason" placeholder="Precio, tiempos, competencia…" />
@@ -691,7 +697,7 @@ function blankForm(stage: string): LeadForm {
     .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
     .page-header h1 { margin: 0 0 4px; font-family: var(--font-heading); font-size: 26px; }
     .page-sub { margin: 0; color: var(--color-text-muted); font-size: 13.5px; }
-    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
     .view-toggle { display: inline-flex; background: var(--color-bg-light); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 3px; }
     .view-btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 30px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--color-text-muted); cursor: pointer; transition: all var(--transition-fast); }
@@ -855,6 +861,10 @@ function blankForm(stage: string): LeadForm {
       .table-cards .empty-row { text-align: center; }
     }
 
+    @media (max-width: 640px) {
+      .hide-sm { display: none; }
+    }
+
     @media (max-width: 720px) {
       .page { padding: 24px 16px; }
       .facts { grid-template-columns: 1fr; }
@@ -879,6 +889,7 @@ export class LeadsComponent implements OnInit {
   readonly ListIcon = ListIcon; readonly Filter = Filter; readonly ArrowRight = ArrowRight;
   readonly Coins = Coins; readonly Pencil = Pencil; readonly Hand = Hand;
   readonly Forward = Forward; readonly Undo2 = Undo2; readonly Lock = Lock; readonly Inbox = Inbox;
+  readonly Settings2 = Settings2;
 
   meId = computed(() => this.auth.currentUser()?.id ?? '');
   supervisor = computed(() => SUPERVISOR_ROLES.includes(this.auth.currentUser()?.role ?? ''));
@@ -919,7 +930,7 @@ export class LeadsComponent implements OnInit {
   // alta / edición
   formOpen = signal(false);
   saving = signal(false);
-  form: LeadForm = blankForm('new');
+  form: LeadForm = blankForm('');
   customerQuery = signal('');
   customerOptions = signal<CustomerOption[]>([]);
   private customerTimer?: ReturnType<typeof setTimeout>;
@@ -927,17 +938,23 @@ export class LeadsComponent implements OnInit {
   /** Todas las oportunidades en una lista plana, para la vista de tabla. */
   allLeads = computed(() => this.columns().flatMap(c => c.leads));
 
+  /** Panel de configuración del embudo (solo quien supervisa). */
+  stagesOpen = signal(false);
+  /** Oportunidades por etapa según el tablero cargado. */
+  stageCounts = computed(() =>
+    Object.fromEntries(this.columns().map(c => [c.stage, c.count])) as Record<string, number>);
+  hasFilters = computed(() => !!(this.search().trim() || this.ownerFilter() || this.overdue()));
+
   @HostListener('document:keydown.escape')
   onEsc() {
+    // El panel del embudo gestiona su propio Escape.
+    if (this.stagesOpen()) return;
     if (this.formOpen()) { this.closeForm(); return; }
     if (this.detail()) this.closeDetail();
   }
 
   ngOnInit() {
-    this.http.get<Stage[]>(`${API}/leads/stages`).subscribe({
-      next: s => this.stages.set(s),
-      error: () => {},
-    });
+    this.loadStages();
     this.loadOwners();
     this.load();
     // `?lead=<id>` abre la ficha directamente (enlace desde Prospección).
@@ -967,6 +984,26 @@ export class LeadsComponent implements OnInit {
       next: s => this.stats.set(s),
       error: () => {},
     });
+  }
+
+  /** Etapas del embudo del tenant: columnas, selects y chips salen de aquí. */
+  loadStages() {
+    this.http.get<Stage[]>(`${API}/leads/stages`).subscribe({
+      next: s => this.stages.set(s),
+      error: () => {},
+    });
+  }
+
+  /** Tras editar el embudo: etapas, tablero y KPIs (la probabilidad pondera). */
+  onStagesChanged() {
+    this.loadStages();
+    this.load(false);
+    const open = this.detail();
+    if (open)
+      this.http.get<Lead>(`${API}/leads/${open._id}`).subscribe({
+        next: lead => this.detail.set(lead),
+        error: () => {},
+      });
   }
 
   private loadOwners() {
@@ -1016,7 +1053,7 @@ export class LeadsComponent implements OnInit {
     if (lead.stage === stage) return;
     // El motivo se escribe desde "Editar"; aquí solo se conserva el que hubiera.
     let lostReason: string | undefined;
-    if (stage === 'lost') {
+    if (this.isLost(stage)) {
       const ok = await this.confirmSvc.confirm({
         title: 'Marcar como perdida',
         message: `¿Dar por perdida "${lead.title}"? Podrás anotar el motivo desde Editar y reabrirla moviéndola a otra etapa.`,
@@ -1198,7 +1235,8 @@ export class LeadsComponent implements OnInit {
 
   // ── Alta / edición ──
   openNew() {
-    this.form = blankForm(this.stages()[0]?.key ?? 'new');
+    // Lo nuevo entra en la primera etapa abierta del embudo.
+    this.form = blankForm(this.stages().find(s => !s.outcome)?.key ?? this.stages()[0]?.key ?? '');
     this.form.ownerId = this.meId();
     this.customerQuery.set('');
     this.customerOptions.set([]);
@@ -1283,7 +1321,7 @@ export class LeadsComponent implements OnInit {
         phone: this.form.newCustomerPhone || undefined,
         email: this.form.newCustomerEmail || undefined,
       };
-    } else if (this.form.stage === 'lost') {
+    } else if (this.isLost(this.form.stage)) {
       body['lostReason'] = this.form.lostReason || undefined;
     }
 
@@ -1337,6 +1375,11 @@ export class LeadsComponent implements OnInit {
 
   stageLabel(key: string): string {
     return this.stages().find(s => s.key === key)?.label ?? key;
+  }
+
+  /** Etapa de desenlace "perdido" (la clave puede ser cualquiera). */
+  isLost(key: string): boolean {
+    return this.stages().find(s => s.key === key)?.outcome === 'lost';
   }
 
   stageColor(key: string): string {

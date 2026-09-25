@@ -21,12 +21,12 @@ import {
 } from './dto/lead.dto';
 import {
   AUTO_ACTIVITY_TYPES,
-  DEFAULT_LEAD_STAGE,
-  LEAD_STAGES,
   LeadActivityType,
+  LeadStage,
   stageLabel,
   statusForStage,
 } from './lead-stages.catalog';
+import { LeadStagesService } from './lead-stages.service';
 import { isLeadSupervisor, isOwnerScoped } from '../auth/permissions';
 import { ConversionsService } from '../conversions/conversions.service';
 import { RolesService } from '../roles/roles.service';
@@ -110,14 +110,16 @@ export class LeadsService {
     private roles: RolesService,
     private push: PushService,
     private nativePush: NativePushService,
+    private stagesService: LeadStagesService,
   ) {}
 
   // ------------------------------------------------------------------
   // Consulta
   // ------------------------------------------------------------------
 
-  stages() {
-    return LEAD_STAGES;
+  /** Embudo del tenant, ordenado. */
+  stages(tenantId: string): Promise<LeadStage[]> {
+    return this.stagesService.list(tenantId);
   }
 
   /**
@@ -219,12 +221,15 @@ export class LeadsService {
       filters,
       userId,
     );
-    const leads = await this.populated(this.leadModel.find(query))
-      .sort({ position: 1, lastActivityAt: -1 })
-      .limit(1000)
-      .exec();
+    const [leads, stages] = await Promise.all([
+      this.populated(this.leadModel.find(query))
+        .sort({ position: 1, lastActivityAt: -1 })
+        .limit(1000)
+        .exec(),
+      this.stagesService.list(tenantId),
+    ]);
 
-    return LEAD_STAGES.map((stage) => {
+    return stages.map((stage) => {
       const items = leads.filter((l) => l.stage === stage.key);
       return {
         stage: stage.key,
@@ -250,30 +255,40 @@ export class LeadsService {
     endOfToday.setHours(23, 59, 59, 999);
     const now = new Date();
 
-    const [open, wonMonth, lostMonth, wonEver, lostEver, tasks, unassigned] =
-      await Promise.all([
-        this.leadModel.find({ ...base, status: 'open' }).exec(),
-        this.leadModel
-          .find({ ...base, status: 'won', closedAt: { $gte: monthStart } })
-          .exec(),
-        this.leadModel
-          .countDocuments({
-            ...base,
-            status: 'lost',
-            closedAt: { $gte: monthStart },
-          })
-          .exec(),
-        this.leadModel.countDocuments({ ...base, status: 'won' }).exec(),
-        this.leadModel.countDocuments({ ...base, status: 'lost' }).exec(),
-        this.leadModel
-          .find({ ...base, status: 'open', nextActionAt: { $ne: null } })
-          .select({ nextActionAt: 1 })
-          .exec(),
-        this.leadModel
-          .countDocuments({ ...base, status: 'open', ownerId: null })
-          .exec(),
-      ]);
+    const [
+      open,
+      wonMonth,
+      lostMonth,
+      wonEver,
+      lostEver,
+      tasks,
+      unassigned,
+      stages,
+    ] = await Promise.all([
+      this.leadModel.find({ ...base, status: 'open' }).exec(),
+      this.leadModel
+        .find({ ...base, status: 'won', closedAt: { $gte: monthStart } })
+        .exec(),
+      this.leadModel
+        .countDocuments({
+          ...base,
+          status: 'lost',
+          closedAt: { $gte: monthStart },
+        })
+        .exec(),
+      this.leadModel.countDocuments({ ...base, status: 'won' }).exec(),
+      this.leadModel.countDocuments({ ...base, status: 'lost' }).exec(),
+      this.leadModel
+        .find({ ...base, status: 'open', nextActionAt: { $ne: null } })
+        .select({ nextActionAt: 1 })
+        .exec(),
+      this.leadModel
+        .countDocuments({ ...base, status: 'open', ownerId: null })
+        .exec(),
+      this.stagesService.list(tenantId),
+    ]);
 
+    const probability = new Map(stages.map((s) => [s.key, s.probability]));
     const closed = wonEver + lostEver;
     return {
       open: open.length,
@@ -281,10 +296,7 @@ export class LeadsService {
       weightedValue: Math.round(
         open.reduce(
           (sum, l) =>
-            sum +
-            ((l.value || 0) *
-              (LEAD_STAGES.find((s) => s.key === l.stage)?.probability ?? 0)) /
-              100,
+            sum + ((l.value || 0) * (probability.get(l.stage) ?? 0)) / 100,
           0,
         ),
       ),
@@ -457,8 +469,12 @@ export class LeadsService {
     role: string,
     dto: CreateLeadDto,
   ): Promise<Lead> {
+    // La etapa se valida antes de tocar contactos: un error no deja basura.
+    const stages = await this.stagesService.list(tenantId);
+    const stage = dto.stage
+      ? (await this.stagesService.assertStage(tenantId, dto.stage)).key
+      : await this.stagesService.defaultKey(tenantId);
     const customerId = await this.resolveCustomer(tenantId, userId, role, dto);
-    const stage = dto.stage ?? DEFAULT_LEAD_STAGE;
     // Sin indicar, la lleva quien la crea; `''` la deja en la bolsa.
     const owner =
       dto.ownerId === ''
@@ -466,7 +482,7 @@ export class LeadsService {
         : dto.ownerId && dto.ownerId !== userId
           ? await this.assertEligibleOwner(tenantId, dto.ownerId)
           : { id: new Types.ObjectId(userId), name: '' };
-    const status = statusForStage(stage);
+    const status = statusForStage(stages, stage);
 
     const lead = await this.leadModel.create({
       tenantId: new Types.ObjectId(tenantId),
@@ -617,6 +633,10 @@ export class LeadsService {
   ): Promise<Lead> {
     const lead = await this.findWorkable(id, tenantId, userId, role);
     const previousStage = lead.stage;
+    const stageChanged = dto.stage !== undefined && dto.stage !== previousStage;
+    const stages = await this.stagesService.list(tenantId);
+    if (stageChanged)
+      await this.stagesService.assertStage(tenantId, dto.stage as string);
 
     if (dto.title !== undefined) lead.title = dto.title.trim();
     if (dto.description !== undefined) lead.description = dto.description;
@@ -632,17 +652,16 @@ export class LeadsService {
       lead.expectedCloseDate = dto.expectedCloseDate
         ? new Date(dto.expectedCloseDate)
         : undefined;
-    if (dto.stage !== undefined && dto.stage !== previousStage)
-      this.applyStage(lead, dto.stage);
+    if (stageChanged) this.applyStage(lead, dto.stage as string, stages);
 
     lead.lastActivityAt = new Date();
     await lead.save();
 
-    if (dto.stage !== undefined && dto.stage !== previousStage) {
+    if (stageChanged) {
       await this.log(
         lead,
         'stage_change',
-        `Etapa: ${stageLabel(previousStage)} → ${stageLabel(lead.stage)}`,
+        `Etapa: ${stageLabel(stages, previousStage)} → ${stageLabel(stages, lead.stage)}`,
         userId,
       );
       // Sin `await`: avisar al sistema de atribución no puede retrasar —ni
@@ -673,9 +692,11 @@ export class LeadsService {
     dto: MoveLeadDto,
   ): Promise<Lead> {
     const lead = await this.findWorkable(id, tenantId, userId, role);
+    await this.stagesService.assertStage(tenantId, dto.stage);
+    const stages = await this.stagesService.list(tenantId);
     const previousStage = lead.stage;
     if (dto.lostReason !== undefined) lead.lostReason = dto.lostReason;
-    this.applyStage(lead, dto.stage);
+    this.applyStage(lead, dto.stage, stages);
     lead.position = await this.positionFor(
       tenantId,
       dto.stage,
@@ -690,7 +711,7 @@ export class LeadsService {
       await this.log(
         lead,
         'stage_change',
-        `Etapa: ${stageLabel(previousStage)} → ${stageLabel(dto.stage)}${reason}`,
+        `Etapa: ${stageLabel(stages, previousStage)} → ${stageLabel(stages, dto.stage)}${reason}`,
         userId,
       );
       void this.conversions.reportLeadStage(lead, previousStage);
@@ -699,9 +720,9 @@ export class LeadsService {
   }
 
   /** Etapa, estado y fecha de cierre van siempre juntos. */
-  private applyStage(lead: Lead, stage: string) {
+  private applyStage(lead: Lead, stage: string, stages: LeadStage[]) {
     lead.stage = stage;
-    lead.status = statusForStage(stage);
+    lead.status = statusForStage(stages, stage);
     lead.closedAt = lead.status === 'open' ? undefined : new Date();
     if (lead.status !== 'lost') lead.lostReason = undefined;
   }
