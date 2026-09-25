@@ -166,11 +166,12 @@ const SWATCHES = [
     .row-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .label-input { flex: 1; min-width: 0; font-weight: 600; }
     .order-btns { display: flex; gap: 2px; flex-shrink: 0; }
-    .row-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .row-meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .row-meta .badge { display: inline-flex; align-items: center; gap: 4px; }
     .prob { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-text-muted); }
-    .prob-input { width: 76px; padding-top: 6px; padding-bottom: 6px; text-align: center; }
-    .count { font-size: 12px; color: var(--color-text-muted); }
+    .prob-input { width: 84px; padding: 6px 6px 6px 12px; text-align: center; }
+    .row-meta .badge, .prob { flex-shrink: 0; }
+    .count { flex: 1; min-width: 0; font-size: 12px; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .danger { margin-left: auto; color: var(--color-error); }
 
     .swatch { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--color-white); box-shadow: var(--shadow-sm); cursor: pointer; flex-shrink: 0;
