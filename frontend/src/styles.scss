@@ -335,8 +335,13 @@ h1, h2, h3, h4, h5, h6 {
    768px (mobile), 480px (small phone).
    ========================================================================== */
 
+/* `clip` y no `hidden`: `overflow-x: hidden` fuerza `overflow-y: auto` y
+   convierte al body en contenedor de scroll, lo que rompe `position: sticky`
+   (el header de la landing se iba con el contenido) y el scroll en móvil.
+   `hidden` queda solo como respaldo para navegadores sin `clip`. */
 html, body {
   overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100vw;
 }
 

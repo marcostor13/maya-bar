@@ -595,6 +595,8 @@ const DESCRIPTION =
         box-sizing: border-box;
       }
       .lp-wrap.narrow { max-width: 820px; }
+      /* Los anclas del menú no deben quedar tapados por el header fijo. */
+      [id] { scroll-margin-top: 84px; }
       .center { text-align: center; }
 
       /* ---------- Aparición al scroll ----------
