@@ -51,6 +51,48 @@ export interface Faq {
   a: string;
 }
 
+export interface PlanLimit {
+  label: string;
+  value: string;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  tagline: string;
+  /** USD por mes en pago mensual; `null` = precio a medida. */
+  monthly: number | null;
+  /** USD por año en pago anual (10 meses pagados, 12 de uso). */
+  annual: number | null;
+  /** Precio para Perú en soles, sin IGV. No es la conversión exacta: va
+   *  ~10-15 % por debajo y redondeado, ver docs/plan-comercial-maya-crm.md. */
+  pen: { monthly: number; annual: number } | null;
+  featured?: boolean;
+  limits: PlanLimit[];
+  /** Línea «Todo lo de X, más:» sobre las funciones. */
+  inherits?: string;
+  features: string[];
+}
+
+/** Precios ya formateados por moneda; en soles, sin IGV. */
+export interface Prices {
+  usd: string;
+  pen: string;
+}
+
+export interface AddOn {
+  name: string;
+  price: Prices;
+}
+
+export interface SetupPackage {
+  name: string;
+  price: Prices;
+  note: string;
+  featured?: boolean;
+  items: string[];
+}
+
 /** Bloque de definición: la respuesta directa a «qué es Maya CRM», para AEO/GEO. */
 export const DEFINITION =
   'Maya CRM es una plataforma de ventas y marketing que reúne la captación de contactos, la base de datos ' +
@@ -346,8 +388,8 @@ export const DIFFERENTIATORS: Pain[] = [
 
 export const GUARANTEES: Guarantee[] = [
   {
-    title: 'Migración incluida',
-    body: 'No te entregamos un panel vacío. Traemos tu base actual, montamos tus formularios y dejamos el WhatsApp conectado.',
+    title: '14 días gratis',
+    body: 'Pruébalo con tu equipo y tus contactos reales antes de pagar. Sin tarjeta para empezar.',
   },
   {
     title: 'Sin permanencia',
@@ -360,6 +402,155 @@ export const GUARANTEES: Guarantee[] = [
   {
     title: 'Empieza por una pieza',
     body: 'No hace falta cambiarlo todo el mismo día. Arranca por la bandeja de WhatsApp o por los formularios y suma el resto cuando quieras.',
+  },
+];
+
+export const PLANS: Plan[] = [
+  {
+    id: 'inicia',
+    name: 'Inicia',
+    tagline: 'Para ordenar tus ventas y dejar de perder contactos.',
+    monthly: 29,
+    annual: 290,
+    pen: { monthly: 89, annual: 890 },
+    limits: [
+      { label: 'Usuarios', value: '2' },
+      { label: 'Números de WhatsApp', value: '1' },
+      { label: 'Contactos', value: '2.000' },
+      { label: 'Créditos de IA al mes', value: '500' },
+    ],
+    features: [
+      'Bandeja unificada: WhatsApp, Instagram y Messenger',
+      '1 agente de IA entrenado con tus documentos',
+      '1 buzón de correo (Gmail, Outlook o IMAP)',
+      'Contactos, etiquetas, listas y formularios',
+      'Seguimiento de oportunidades con bolsa y recordatorios',
+      '1.000 emails de campaña al mes',
+      'App móvil con notificaciones',
+    ],
+  },
+  {
+    id: 'crece',
+    name: 'Crece',
+    tagline: 'Para el equipo comercial que quiere vender más con los mismos contactos.',
+    monthly: 79,
+    annual: 790,
+    pen: { monthly: 249, annual: 2490 },
+    featured: true,
+    limits: [
+      { label: 'Usuarios', value: '5' },
+      { label: 'Números de WhatsApp', value: '2' },
+      { label: 'Contactos', value: '15.000' },
+      { label: 'Créditos de IA al mes', value: '3.000' },
+    ],
+    inherits: 'Todo lo de Inicia, más:',
+    features: [
+      'Campañas masivas por WhatsApp con plantillas de Meta',
+      '3 agentes de IA y 3 buzones de correo',
+      '10.000 emails de campaña al mes',
+      'Eventos con página pública, registro y check-in',
+      'Panel de analítica completo por canal y por vendedor',
+      'Reparto, derivación y reasignación de oportunidades',
+      'Soporte prioritario por WhatsApp',
+    ],
+  },
+  {
+    id: 'escala',
+    name: 'Escala',
+    tagline: 'Para empresas con varios equipos, sedes o marcas.',
+    monthly: 169,
+    annual: 1690,
+    pen: { monthly: 549, annual: 5490 },
+    limits: [
+      { label: 'Usuarios', value: '12' },
+      { label: 'Números de WhatsApp', value: '5' },
+      { label: 'Contactos', value: '60.000' },
+      { label: 'Créditos de IA al mes', value: '10.000' },
+    ],
+    inherits: 'Todo lo de Crece, más:',
+    features: [
+      'Asistente de recuperación de clientes con IA',
+      'Prospección de empresas con IA',
+      'Agentes de IA ilimitados y 10 buzones de correo',
+      '40.000 emails de campaña al mes',
+      'Multi-sede y roles a medida',
+      'Promotores con enlace de referido y visitas',
+      'Gerente de éxito asignado',
+    ],
+  },
+  {
+    id: 'empresa',
+    name: 'Empresa',
+    tagline: 'Para operaciones grandes, agencias o integraciones propias.',
+    monthly: null,
+    annual: null,
+    pen: null,
+    limits: [
+      { label: 'Usuarios', value: 'A medida' },
+      { label: 'Números de WhatsApp', value: 'A medida' },
+      { label: 'Contactos', value: 'Ilimitados' },
+      { label: 'Créditos de IA', value: 'A medida' },
+    ],
+    inherits: 'Todo lo de Escala, más:',
+    features: [
+      'Integración con tus sistemas',
+      'Varias marcas o clientes en una cuenta',
+      'Acuerdo de nivel de servicio (SLA)',
+      'Capacitación por sede o presencial',
+      'Gerente de cuenta dedicado',
+    ],
+  },
+];
+
+export const ADDONS: AddOn[] = [
+  { name: 'Usuario adicional', price: { usd: 'US$12/mes', pen: 'S/ 39/mes' } },
+  { name: 'Número de WhatsApp adicional', price: { usd: 'US$15/mes', pen: 'S/ 49/mes' } },
+  { name: '1.000 créditos de IA', price: { usd: 'US$15', pen: 'S/ 49' } },
+  { name: '5.000 créditos de IA', price: { usd: 'US$59', pen: 'S/ 199' } },
+  { name: '10.000 contactos adicionales', price: { usd: 'US$10/mes', pen: 'S/ 35/mes' } },
+  { name: '10.000 emails de campaña', price: { usd: 'US$9', pen: 'S/ 29' } },
+];
+
+export const SETUP_PACKAGES: SetupPackage[] = [
+  {
+    name: 'Autoservicio',
+    price: { usd: 'US$0', pen: 'S/ 0' },
+    note: 'Lo configuras tú',
+    items: [
+      'Guías paso a paso y videos',
+      'Conexión de WhatsApp por QR o por Meta en minutos',
+      'Soporte por chat',
+    ],
+  },
+  {
+    name: 'Puesta en marcha',
+    price: { usd: 'US$149', pen: 'S/ 490' },
+    note: 'Gratis con cualquier plan anual',
+    featured: true,
+    items: [
+      'Conectamos tu WhatsApp, Instagram y Messenger',
+      'Conectamos 1 buzón de correo',
+      'Importamos tu base (hasta 5.000 contactos)',
+      'Entrenamos 1 agente de IA con tus documentos',
+      'Creamos 2 formularios listos para publicar',
+      '1 capacitación de 90 minutos para tu equipo',
+      '7 días de acompañamiento',
+    ],
+  },
+  {
+    name: 'Implementación Pro',
+    price: { usd: 'US$449', pen: 'S/ 1.490' },
+    note: '50% menos con el plan Escala anual',
+    items: [
+      'Todo lo de Puesta en marcha',
+      'Verificación de tu negocio en Meta y alta en la API oficial',
+      'Hasta 10 plantillas de WhatsApp aprobadas',
+      'Hasta 3 agentes de IA entrenados',
+      'Embudo, reparto de oportunidades, roles y permisos',
+      'Migración desde otro CRM o Excel (hasta 50.000 contactos)',
+      '3 capacitaciones: dirección, ventas y marketing',
+      '30 días de acompañamiento por WhatsApp',
+    ],
   },
 ];
 
@@ -401,7 +592,23 @@ export const FAQS: Faq[] = [
     a: 'Sí. Cada contacto guarda su origen: qué formulario llenó, a qué evento se registró o qué promotor lo trajo mediante su enlace de referido. Eso permite medir qué canal y qué persona del equipo están trayendo resultados.',
   },
   {
-    q: '¿Cuánto cuesta?',
-    a: 'El precio depende del tamaño de tu operación: cuántos usuarios sois y qué módulos vais a usar. Escríbenos por WhatsApp, te hacemos unas preguntas y te pasamos una propuesta concreta el mismo día.',
+    q: '¿Cuánto cuesta Maya CRM?',
+    a: 'Maya CRM tiene tres planes: Inicia a US$29 al mes con 2 usuarios, Crece a US$79 al mes con 5 usuarios y Escala a US$169 al mes con 12 usuarios. Pagando al año tienes dos meses gratis. En Perú los planes cuestan S/ 89, S/ 249 y S/ 549 al mes más IGV. Para operaciones grandes existe el plan Empresa, con precio a medida. Todos los planes incluyen 14 días de prueba gratis.',
+  },
+  {
+    q: '¿Los mensajes de WhatsApp están incluidos en el plan?',
+    a: 'No. Los mensajes de la API oficial de WhatsApp los cobra Meta directamente a tu cuenta, según el país y el tipo de mensaje, y Maya CRM no les pone ningún recargo. Si conectas tu número por código QR no hay costo por mensaje, aunque sí un límite diario de envíos para proteger tu número.',
+  },
+  {
+    q: '¿Qué es un crédito de IA?',
+    a: 'Un crédito de IA es la unidad con la que se mide el uso de la inteligencia artificial en Maya CRM. Una respuesta de un agente consume un crédito; transcribir una nota de voz o leer una imagen, dos. Cada plan trae créditos mensuales y puedes comprar paquetes extra. Si conectas tus propias claves de IA, no consumes créditos.',
+  },
+  {
+    q: '¿Tengo que pagar la implementación?',
+    a: 'No es obligatorio. Puedes configurar Maya CRM por tu cuenta sin costo. Si prefieres que lo hagamos nosotros, la Puesta en marcha cuesta US$149 (S/ 490 + IGV en Perú) y es gratis con cualquier plan anual; la Implementación Pro, US$449 (S/ 1.490 + IGV), incluye además la verificación en Meta, la migración desde otro CRM y tres capacitaciones.',
+  },
+  {
+    q: '¿Puedo cambiar de plan o cancelar?',
+    a: 'Sí. Puedes subir o bajar de plan cuando quieras, y el plan mensual no tiene permanencia: si decides parar, paras. Tus contactos, listas y conversaciones se exportan en cualquier momento.',
   },
 ];

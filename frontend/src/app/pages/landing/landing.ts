@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, afterNextRender, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
@@ -12,6 +12,7 @@ import {
   Gauge,
   GraduationCap,
   HeartPulse,
+  Info,
   LayoutTemplate,
   List,
   MapPin,
@@ -36,19 +37,24 @@ import {
 } from './landing-art';
 import { RevealDirective } from './reveal.directive';
 import {
+  ADDONS,
   CAPABILITY_GROUPS,
   DEFINITION,
   DIFFERENTIATORS,
   FAQS,
   GUARANTEES,
   PAINS,
+  PLANS,
   SEGMENTS,
+  SETUP_PACKAGES,
   STEPS,
+  type Plan,
 } from './landing.data';
 
+const CURRENCY_KEY = 'maya-landing-currency';
 const TITLE = 'Maya CRM — CRM de ventas y marketing con WhatsApp e IA';
 const DESCRIPTION =
-  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Escríbenos por WhatsApp.';
+  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Planes desde US$29 al mes, 14 días gratis.';
 
 @Component({
   selector: 'app-landing',
@@ -72,6 +78,7 @@ const DESCRIPTION =
           <a href="#plataforma">Plataforma</a>
           <a href="#como-funciona">Cómo funciona</a>
           <a href="#para-quien">Para quién</a>
+          <a href="#precios">Precios</a>
           <a href="#preguntas">Preguntas</a>
         </nav>
 
@@ -95,6 +102,7 @@ const DESCRIPTION =
           <a href="#plataforma" (click)="menuOpen.set(false)">Plataforma</a>
           <a href="#como-funciona" (click)="menuOpen.set(false)">Cómo funciona</a>
           <a href="#para-quien" (click)="menuOpen.set(false)">Para quién</a>
+          <a href="#precios" (click)="menuOpen.set(false)">Precios</a>
           <a href="#preguntas" (click)="menuOpen.set(false)">Preguntas</a>
           <div class="header-mobile-actions">
             <a class="btn btn-secondary" routerLink="/login">Ingresar</a>
@@ -308,6 +316,176 @@ const DESCRIPTION =
         </div>
       </section>
 
+      <!-- PRECIOS -->
+      <section class="band" id="precios" aria-labelledby="precios-t">
+        <div class="lp-wrap">
+          <p class="eyebrow center" appReveal>Precios</p>
+          <h2 id="precios-t" class="section-title center" appReveal>
+            Un precio por equipo, no por cada vendedor
+          </h2>
+          <p class="section-intro center" appReveal>
+            Todos los planes incluyen WhatsApp, Instagram, Messenger, email y agentes de IA.
+            Empieza con 14 días gratis y sin tarjeta.
+          </p>
+
+          <div class="pricing-controls" appReveal>
+            <div class="billing-toggle" role="group" aria-label="Periodo de pago">
+              <button
+                type="button"
+                [class.active]="billing() === 'monthly'"
+                [attr.aria-pressed]="billing() === 'monthly'"
+                (click)="billing.set('monthly')">
+                Mensual
+              </button>
+              <button
+                type="button"
+                [class.active]="billing() === 'annual'"
+                [attr.aria-pressed]="billing() === 'annual'"
+                (click)="billing.set('annual')">
+                Anual <span class="toggle-save">2 meses gratis</span>
+              </button>
+            </div>
+            <div class="billing-toggle" role="group" aria-label="Moneda">
+              <button
+                type="button"
+                [class.active]="currency() === 'usd'"
+                [attr.aria-pressed]="currency() === 'usd'"
+                (click)="setCurrency('usd')">
+                Dólares
+              </button>
+              <button
+                type="button"
+                [class.active]="currency() === 'pen'"
+                [attr.aria-pressed]="currency() === 'pen'"
+                (click)="setCurrency('pen')">
+                Soles (Perú)
+              </button>
+            </div>
+          </div>
+
+          <div class="plans">
+            @for (plan of plans; track plan.id; let i = $index) {
+              <article class="plan-card" [class.featured]="plan.featured" [appReveal]="i * 80">
+                @if (plan.featured) {
+                  <span class="plan-flag">Más elegido</span>
+                }
+                <h3>{{ plan.name }}</h3>
+                <p class="plan-tagline">{{ plan.tagline }}</p>
+
+                <div class="plan-price">
+                  @if (plan.monthly === null) {
+                    <span class="amount custom">A medida</span>
+                  } @else {
+                    <span class="currency">{{ currency() === 'pen' ? 'S/' : 'US$' }}</span>
+                    <span class="amount">{{ perMonth(plan) }}</span>
+                    <span class="period">/mes{{ currency() === 'pen' ? ' + IGV' : '' }}</span>
+                  }
+                </div>
+                <p class="plan-billed">{{ billedNote(plan) }}</p>
+
+                @if (plan.monthly === null) {
+                  <a class="btn btn-secondary plan-cta" [href]="waPlan(plan.name)" target="_blank" rel="noopener">
+                    Hablar con ventas
+                  </a>
+                } @else {
+                  <a
+                    class="btn plan-cta"
+                    [class.btn-primary]="plan.featured"
+                    [class.btn-secondary]="!plan.featured"
+                    routerLink="/register"
+                    [queryParams]="{ plan: plan.id, pago: billing() === 'annual' ? 'anual' : 'mensual' }">
+                    Probar 14 días gratis
+                  </a>
+                }
+
+                <dl class="plan-limits">
+                  @for (l of plan.limits; track l.label) {
+                    <div>
+                      <dt>{{ l.label }}</dt>
+                      <dd>{{ l.value }}</dd>
+                    </div>
+                  }
+                </dl>
+
+                @if (plan.inherits) {
+                  <p class="plan-inherits">{{ plan.inherits }}</p>
+                }
+                <ul class="cap-list">
+                  @for (f of plan.features; track f) {
+                    <li><lucide-icon [img]="Check" [size]="15" /> {{ f }}</li>
+                  }
+                </ul>
+              </article>
+            }
+          </div>
+
+          <div class="meta-note" appReveal>
+            <lucide-icon [img]="Info" [size]="18" />
+            <p>
+              <strong>Mensajes de WhatsApp sin recargo.</strong> Los envíos por la API oficial los
+              cobra Meta directo a tu cuenta, según el país y el tipo de mensaje. Nosotros no les
+              sumamos nada. Si conectas tu número por QR, no pagas por mensaje.
+            </p>
+          </div>
+
+          <div class="addons" appReveal>
+            <h3>Añade solo lo que te falte</h3>
+            <ul>
+              @for (a of addons; track a.name) {
+                <li><span>{{ a.name }}</span><strong>{{ a.price[currency()] }}</strong></li>
+              }
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- IMPLEMENTACIÓN -->
+      <section class="band alt" id="implementacion" aria-labelledby="implementacion-t">
+        <div class="lp-wrap">
+          <p class="eyebrow center" appReveal>Implementación</p>
+          <h2 id="implementacion-t" class="section-title center" appReveal>
+            ¿Prefieres que lo dejemos funcionando por ti?
+          </h2>
+          <p class="section-intro center" appReveal>
+            Conectar la API oficial de WhatsApp, verificar tu negocio en Meta y entrenar a la IA
+            lleva su trabajo. Lo hacemos nosotros, con pago único y una sola vez.
+          </p>
+          <div class="grid-3">
+            @for (pkg of setupPackages; track pkg.name; let i = $index) {
+              <article class="setup-card" [class.featured]="pkg.featured" [appReveal]="i * 90">
+                <h3>{{ pkg.name }}</h3>
+                <p class="setup-price">
+                  {{ pkg.price[currency()] }}
+                  <span>pago único{{ currency() === 'pen' ? ' + IGV' : '' }}</span>
+                </p>
+                <span class="badge" [class.badge-success]="pkg.featured" [class.badge-neutral]="!pkg.featured">
+                  {{ pkg.note }}
+                </span>
+                <ul class="cap-list">
+                  @for (it of pkg.items; track it) {
+                    <li><lucide-icon [img]="Check" [size]="15" /> {{ it }}</li>
+                  }
+                </ul>
+                <a
+                  class="btn plan-cta"
+                  [class.btn-primary]="pkg.featured"
+                  [class.btn-secondary]="!pkg.featured"
+                  [href]="waSetup(pkg.name)"
+                  target="_blank"
+                  rel="noopener">
+                  <lucide-icon [img]="MessageCircle" [size]="16" />
+                  Quiero {{ pkg.name }}
+                </a>
+              </article>
+            }
+          </div>
+          <p class="setup-foot center" appReveal>
+            ¿Varias sedes, marcas o una integración con tus sistemas? La implementación Empresa
+            se cotiza a medida desde {{ currency() === 'pen' ? 'S/ 3.990 + IGV' : 'US$1.200' }}.
+          </p>
+        </div>
+      </section>
+
       <!-- GARANTÍAS -->
       <section class="band" aria-labelledby="garantias">
         <div class="lp-wrap">
@@ -384,6 +562,7 @@ const DESCRIPTION =
           <a href="#conversacion">Conversación e IA</a>
           <a href="#base">Base de datos</a>
           <a href="#equipo">Equipo y permisos</a>
+          <a href="#precios">Precios</a>
         </nav>
         <nav class="footer-links" aria-label="Cuenta">
           <h3>Tu cuenta</h3>
@@ -723,6 +902,189 @@ const DESCRIPTION =
         margin-bottom: 14px;
       }
 
+      /* ---------- Precios ---------- */
+      .pricing-controls {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        margin: -10px auto 36px;
+      }
+      .billing-toggle {
+        display: flex;
+        width: fit-content;
+        padding: 5px;
+        gap: 4px;
+        border-radius: var(--radius-pill);
+        background: var(--color-bg-light);
+        border: 1px solid var(--color-border);
+      }
+      .billing-toggle button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        background: transparent;
+        padding: 10px 20px;
+        border-radius: var(--radius-pill);
+        font-family: var(--font-base);
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        cursor: pointer;
+        transition: background var(--transition-fast), color var(--transition-fast);
+      }
+      .billing-toggle button.active {
+        background: var(--color-white);
+        color: var(--color-text-main);
+        box-shadow: var(--shadow-md);
+      }
+      .toggle-save {
+        padding: 3px 9px;
+        border-radius: var(--radius-pill);
+        background: var(--color-brand-light);
+        color: var(--color-brand);
+        font-size: 11.5px;
+      }
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+        align-items: stretch;
+      }
+      .plan-card, .setup-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        background: var(--color-white);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 28px 24px;
+        transition: transform var(--transition-smooth),
+                    box-shadow var(--transition-smooth),
+                    opacity 620ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .plan-card:hover, .setup-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-lg);
+      }
+      .plan-card.featured, .setup-card.featured {
+        border: 2px solid var(--color-brand);
+        box-shadow: var(--shadow-lg);
+      }
+      .plan-flag {
+        position: absolute;
+        top: -13px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 5px 14px;
+        border-radius: var(--radius-pill);
+        background: var(--color-brand);
+        color: var(--color-white);
+        font-family: var(--font-heading);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .plan-card h3, .setup-card h3 { font-size: 19px; margin: 0 0 6px; }
+      .plan-tagline {
+        margin: 0 0 20px;
+        min-height: 3.2em;
+        font-size: 14px;
+        line-height: 1.55;
+        color: var(--color-text-muted);
+      }
+      .plan-price {
+        display: flex;
+        align-items: baseline;
+        gap: 3px;
+        font-family: var(--font-heading);
+        color: var(--color-text-main);
+      }
+      .plan-price .currency { font-size: 16px; font-weight: 600; }
+      .plan-price .amount { font-size: 42px; font-weight: 700; line-height: 1; }
+      .plan-price .amount.custom { font-size: 30px; }
+      .plan-price .period { font-size: 15px; color: var(--color-text-muted); }
+      .plan-billed {
+        margin: 8px 0 20px;
+        min-height: 1.4em;
+        font-size: 13px;
+        color: var(--color-text-muted);
+      }
+      .plan-cta { width: 100%; gap: 8px; }
+      .plan-limits {
+        display: grid;
+        gap: 10px;
+        margin: 22px 0 20px;
+        padding: 18px 0;
+        border-top: 1px solid var(--color-border);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .plan-limits div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+      .plan-limits dt { color: var(--color-text-muted); }
+      .plan-limits dd { margin: 0; font-weight: 600; color: var(--color-text-main); text-align: right; }
+      .plan-inherits {
+        margin: 0 0 12px;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--color-text-main);
+      }
+      .meta-note {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        margin-top: 32px;
+        padding: 20px 24px;
+        border-radius: var(--radius-lg);
+        background: var(--color-bg-light);
+        border: 1px solid var(--color-border);
+      }
+      .meta-note lucide-icon { color: var(--color-brand); flex: none; margin-top: 2px; }
+      .meta-note p { margin: 0; font-size: 14.5px; line-height: 1.65; color: var(--color-text-muted); }
+      .meta-note strong { color: var(--color-text-main); }
+      .addons { margin-top: 32px; }
+      .addons h3 { font-size: 17px; margin: 0 0 14px; }
+      .addons ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .addons li {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        font-size: 14px;
+        color: var(--color-text-muted);
+      }
+      .addons li strong { color: var(--color-text-main); white-space: nowrap; }
+      .setup-price {
+        margin: 4px 0 12px;
+        font-family: var(--font-heading);
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--color-text-main);
+      }
+      .setup-price span {
+        font-family: var(--font-base);
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--color-text-muted);
+      }
+      .setup-card .badge { align-self: flex-start; margin-bottom: 20px; }
+      .setup-card .cap-list { margin-bottom: 24px; flex: 1; }
+      .setup-foot {
+        margin: 28px auto 0;
+        max-width: 60ch;
+        font-size: 14.5px;
+        color: var(--color-text-muted);
+      }
+
       /* ---------- FAQ ---------- */
       .faq { display: grid; gap: 12px; }
       .faq-item {
@@ -861,7 +1223,9 @@ const DESCRIPTION =
       @media (max-width: 1024px) {
         .hero-grid { grid-template-columns: 1fr; gap: 40px; }
         .hero-art { max-width: 480px; }
-        .grid-4 { grid-template-columns: repeat(2, 1fr); }
+        .grid-4, .plans { grid-template-columns: repeat(2, 1fr); }
+        .plans { row-gap: 32px; }
+        .addons ul { grid-template-columns: repeat(2, 1fr); }
       }
       @media (max-width: 900px) {
         .header-nav, .header-actions { display: none; }
@@ -873,7 +1237,9 @@ const DESCRIPTION =
       @media (max-width: 640px) {
         .hero { padding: 48px 0; }
         .band { padding: 56px 0; }
-        .grid-4 { grid-template-columns: 1fr; }
+        .grid-4, .plans, .addons ul { grid-template-columns: 1fr; }
+        .plan-tagline, .plan-billed { min-height: 0; }
+        .billing-toggle button { padding: 10px 14px; }
         .definition-card { padding: 26px 22px; }
         .art-wide, .art-inline { padding: 18px; }
         .hero-cta .btn, .cta-actions .btn { width: 100%; }
@@ -893,9 +1259,62 @@ export class LandingComponent implements OnInit {
   readonly differentiators = DIFFERENTIATORS;
   readonly guarantees = GUARANTEES;
   readonly faqs = FAQS;
+  readonly plans = PLANS;
+  readonly addons = ADDONS;
+  readonly setupPackages = SETUP_PACKAGES;
   readonly year = new Date().getFullYear();
 
   menuOpen = signal(false);
+  billing = signal<'monthly' | 'annual'>('monthly');
+
+  /** El prerender sale en dólares; en el navegador se pasa a soles si el
+   *  visitante eligió soles antes o su zona horaria es la de Perú. */
+  currency = signal<'usd' | 'pen'>('usd');
+
+  constructor() {
+    afterNextRender(() => {
+      let saved: string | null = null;
+      try {
+        saved = localStorage.getItem(CURRENCY_KEY);
+      } catch {}
+      if (saved === 'usd' || saved === 'pen') {
+        this.currency.set(saved);
+      } else if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'America/Lima') {
+        this.currency.set('pen');
+      }
+    });
+  }
+
+  setCurrency(c: 'usd' | 'pen'): void {
+    this.currency.set(c);
+    try {
+      localStorage.setItem(CURRENCY_KEY, c);
+    } catch {}
+  }
+
+  private prices(plan: Plan): { monthly: number; annual: number } | null {
+    if (this.currency() === 'pen') return plan.pen;
+    return plan.monthly === null || plan.annual === null
+      ? null
+      : { monthly: plan.monthly, annual: plan.annual };
+  }
+
+  /** Precio mensual mostrado; en anual, el equivalente por mes redondeado. */
+  perMonth(plan: Plan): number {
+    const p = this.prices(plan);
+    if (!p) return 0;
+    return this.billing() === 'annual' ? Math.round(p.annual / 12) : p.monthly;
+  }
+
+  billedNote(plan: Plan): string {
+    const p = this.prices(plan);
+    if (!p) return 'Cotización según tu operación';
+    if (this.billing() === 'monthly') return 'Facturado mes a mes, sin permanencia';
+    const sym = this.currency() === 'pen' ? 'S/ ' : 'US$';
+    // Punto de miles a mano, igual que el resto del copy (2.000, 15.000).
+    const fmt = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${sym}${fmt(p.annual)} al año · ahorras ${sym}${fmt(p.monthly * 12 - p.annual)}`;
+  }
 
   /** Íconos referenciados por nombre desde `landing.data.ts`. */
   readonly icons: Record<string, LucideIconData> = {
@@ -906,6 +1325,7 @@ export class LandingComponent implements OnInit {
 
   readonly ArrowRight = ArrowRight;
   readonly Check = Check;
+  readonly Info = Info;
   readonly Menu = Menu;
   readonly MessageCircle = MessageCircle;
   readonly ShieldCheck = ShieldCheck;
@@ -922,6 +1342,14 @@ export class LandingComponent implements OnInit {
   waStart = computed(() =>
     this.wa('Hola, quiero empezar a usar Maya CRM. ¿Cómo arrancamos?'),
   );
+
+  waPlan(name: string): string {
+    return this.wa(`Hola, me interesa el plan ${name} de Maya CRM.`);
+  }
+
+  waSetup(name: string): string {
+    return this.wa(`Hola, quiero contratar la ${name} de Maya CRM.`);
+  }
 
   ngOnInit(): void {
     const siteUrl = environment.siteUrl;
@@ -950,6 +1378,29 @@ export class LandingComponent implements OnInit {
         audienceType: 'Equipos de ventas y marketing',
       },
       featureList: this.groups.flatMap((g) => g.items.map((i) => i.name)),
+      offers: this.plans.flatMap((p) =>
+        (
+          [
+            [p.monthly, 'USD'],
+            [p.pen?.monthly ?? null, 'PEN'],
+          ] as const
+        )
+          .filter(([price]) => price !== null)
+          .map(([price, currency]) => ({
+            '@type': 'Offer',
+            name: `Plan ${p.name}`,
+            price,
+            priceCurrency: currency,
+            url: `${siteUrl}/#precios`,
+            priceSpecification: {
+              '@type': 'UnitPriceSpecification',
+              price,
+              priceCurrency: currency,
+              unitCode: 'MON',
+              valueAddedTaxIncluded: false,
+            },
+          })),
+      ),
       provider: {
         '@type': 'Organization',
         name: 'Maya CRM',
