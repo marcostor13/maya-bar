@@ -1,4 +1,11 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
 
 export class CreateTenantDto {
@@ -23,4 +30,12 @@ export class CreateTenantDto {
   ownerName?: string;
 }
 
-export class UpdateTenantDto extends PartialType(CreateTenantDto) {}
+export class UpdateTenantDto extends PartialType(CreateTenantDto) {
+  @IsOptional()
+  @IsIn(['starter', 'pro', 'enterprise'])
+  plan?: 'starter' | 'pro' | 'enterprise';
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

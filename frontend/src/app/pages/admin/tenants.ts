@@ -4,7 +4,7 @@ import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
-import { LucideAngularModule, Building2, Pencil, Trash2, X, CircleCheckBig } from 'lucide-angular';
+import { LucideAngularModule, Building2, Pencil, Trash2, X, CircleCheckBig, Power } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -158,7 +158,8 @@ const API = environment.apiUrl;
                   <td>
                     <div class="row-actions">
                       <button class="btn-icon" aria-label="Editar" (click)="openForm(t)"><lucide-icon [img]="Pencil" [size]="16"></lucide-icon></button>
-                      <button class="btn-icon" [class.btn-icon-danger]="t.isActive" [attr.aria-label]="t.isActive ? 'Desactivar' : 'Activar'" (click)="toggleActive(t)"><lucide-icon [img]="Trash2" [size]="16"></lucide-icon></button>
+                      <button class="btn-icon" [attr.aria-label]="t.isActive ? 'Desactivar' : 'Activar'" [attr.title]="t.isActive ? 'Desactivar' : 'Activar'" (click)="toggleActive(t)"><lucide-icon [img]="Power" [size]="16"></lucide-icon></button>
+                      <button class="btn-icon btn-icon-danger" aria-label="Eliminar" title="Eliminar" (click)="remove(t)"><lucide-icon [img]="Trash2" [size]="16"></lucide-icon></button>
                     </div>
                   </td>
                 </tr>
@@ -292,6 +293,7 @@ export class AdminTenantsComponent implements OnInit {
   readonly Trash2 = Trash2;
   readonly X = X;
   readonly CircleCheckBig = CircleCheckBig;
+  readonly Power = Power;
 
   editing = signal<any>(null);
   saving = signal(false);
@@ -395,6 +397,23 @@ export class AdminTenantsComponent implements OnInit {
         this.load();
       },
       error: () => this.toast.error('Error al cambiar estado'),
+    });
+  }
+
+  async remove(tenant: any) {
+    const ok = await this.confirm.confirm({
+      title: '¿Eliminar esta empresa?',
+      message: `Se eliminará "${tenant.name}" junto con todos sus usuarios y datos. Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.http.delete(`${API}/tenants/${tenant._id}`).subscribe({
+      next: () => {
+        this.toast.success('Empresa eliminada');
+        this.load();
+      },
+      error: (err: any) => this.toast.error(err.error?.message || 'Error al eliminar'),
     });
   }
 

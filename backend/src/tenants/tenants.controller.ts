@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Request,
@@ -66,6 +67,13 @@ export class TenantsController {
   ) {
     if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
     return this.tenantsService.update(id, body);
+  }
+
+  // SUPERADMIN: eliminar tenant y todos sus datos
+  @Delete(':id')
+  removeTenant(@Param('id') id: string, @Request() req: AuthReq) {
+    if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
+    return this.tenantsService.remove(id);
   }
 
   @Get('me')
