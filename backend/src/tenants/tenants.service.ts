@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
+import { Connection, Model, Schema, SchemaType, Types } from 'mongoose';
 import { Tenant } from './tenant.schema';
 
 @Injectable()
@@ -64,7 +64,8 @@ export class TenantsService {
 
     const oid = new Types.ObjectId(id);
     for (const model of Object.values(this.connection.models)) {
-      const path = model.schema.path('tenantId');
+      const schema = model.schema as Schema;
+      const path: SchemaType | undefined = schema.path('tenantId');
       if (!path) continue;
       const value = path.instance === 'ObjectId' ? oid : id;
       await model.deleteMany({ tenantId: value }).exec();
