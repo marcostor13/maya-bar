@@ -104,9 +104,18 @@ export class WhatsAppWebhookController {
       // Acks de entrega/lectura de los mensajes que enviamos.
       for (const st of value.statuses ?? []) {
         if (st.id && st.status) {
+          // Meta acepta el envío y avisa del rechazo después, en este ack: el
+          // motivo (ventana de 24 h, número no permitido, bloqueo por país...)
+          // solo viaja aquí, así que se guarda para verlo en la bandeja.
+          const error = this.cloudError(st.errors);
+          if (error)
+            this.logger.warn(
+              `[WA] Mensaje ${st.id} a ${st.recipient_id ?? '?'} rechazado por Meta: ${error}`,
+            );
           await this.conversations.handleAck(
             st.id,
             this.cloudStatus(st.status),
+            error,
           );
         }
       }
@@ -251,6 +260,14 @@ export class WhatsAppWebhookController {
       body: ref.body,
       at: new Date(),
     };
+  }
+
+  /** `#131049 Mensaje no entregado...`: código y detalle del primer error de Meta. */
+  private cloudError(errors?: CloudStatusError[]): string | undefined {
+    const e = errors?.[0];
+    if (!e) return undefined;
+    const detail = e.error_data?.details ?? e.message ?? e.title ?? '';
+    return `#${e.code ?? '?'} ${e.title ?? ''}${detail && detail !== e.title ? ` — ${detail}` : ''}`.trim();
   }
 
   private cloudStatus(status: string): MessageStatus {
@@ -446,6 +463,13 @@ interface CloudMessage {
   };
 }
 
+interface CloudStatusError {
+  code?: number;
+  title?: string;
+  message?: string;
+  error_data?: { details?: string };
+}
+
 interface CloudBody {
   entry?: {
     changes?: {
@@ -453,7 +477,12 @@ interface CloudBody {
         metadata?: { phone_number_id?: string; display_phone_number?: string };
         contacts?: { profile?: { name?: string }; wa_id?: string }[];
         messages?: CloudMessage[];
-        statuses?: { id?: string; status?: string }[];
+        statuses?: {
+          id?: string;
+          status?: string;
+          recipient_id?: string;
+          errors?: CloudStatusError[];
+        }[];
       };
     }[];
   }[];

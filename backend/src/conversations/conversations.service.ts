@@ -1287,18 +1287,25 @@ export class ConversationsService {
   }
 
   /** Actualiza el estado de un mensaje saliente a partir del ack del proveedor. */
-  async handleAck(externalId: string, status: MessageStatus) {
+  async handleAck(externalId: string, status: MessageStatus, error?: string) {
     if (!externalId) return;
     const msg = await this.msgModel.findOne({ externalId }).exec();
     if (!msg) return;
-    const order: MessageStatus[] = ['pending', 'sent', 'delivered', 'read'];
-    // Nunca retrocedas el estado (los acks pueden llegar desordenados).
-    if (
-      msg.status !== 'failed' &&
-      order.indexOf(status) <= order.indexOf(msg.status)
-    )
-      return;
-    msg.status = status;
+    if (status === 'failed') {
+      // El rechazo del proveedor manda sobre cualquier estado previo: Meta
+      // primero confirma el envío ('sent') y después avisa de que falló.
+      msg.status = 'failed';
+      if (error) msg.error = error;
+    } else {
+      const order: MessageStatus[] = ['pending', 'sent', 'delivered', 'read'];
+      // Nunca retrocedas el estado (los acks pueden llegar desordenados).
+      if (
+        msg.status !== 'failed' &&
+        order.indexOf(status) <= order.indexOf(msg.status)
+      )
+        return;
+      msg.status = status;
+    }
     await msg.save();
     this.gateway.emitMessageUpdated(String(msg.tenantId), msg);
   }
