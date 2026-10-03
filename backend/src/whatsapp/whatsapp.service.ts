@@ -56,7 +56,13 @@ export class WhatsAppService {
     mediaType?: WaMediaType,
     replyTo?: string,
   ): Promise<string | undefined> {
-    const phone = this.formatPhone(to);
+    // WAHA identifica a parte de los contactos por su LID (`<id>@lid`) en vez
+    // de por el número: ese id se conserva tal cual, porque reducirlo a dígitos
+    // y ponerle `@c.us` apunta a un número que no existe y el mensaje se pierde.
+    const phone =
+      config.provider === 'waha' && to.endsWith('@lid')
+        ? to
+        : this.formatPhone(to);
     if (!phone) {
       this.logger.warn(`Skipping WA message — invalid phone: ${to}`);
       return undefined;
@@ -506,7 +512,7 @@ export class WhatsAppService {
       },
       body: JSON.stringify({
         session,
-        chatId: `${to}@c.us`,
+        chatId: this.wahaChatId(to),
         text: body,
         ...(replyTo ? { reply_to: replyTo } : {}),
       }),
@@ -523,7 +529,7 @@ export class WhatsAppService {
     config: WaConfig,
   ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
-    const chatId = `${to}@c.us`;
+    const chatId = this.wahaChatId(to);
     const isImage = mediaType === 'image';
     const endpoint = isImage ? 'sendImage' : 'sendFile';
     const mimetype = isImage ? 'image/jpeg' : 'video/mp4';
@@ -560,7 +566,7 @@ export class WhatsAppService {
     config: WaConfig,
   ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
-    const chatId = `${to}@c.us`;
+    const chatId = this.wahaChatId(to);
     const res = await fetch(`${config.wahaApiUrl}/api/sendVoice`, {
       method: 'POST',
       headers: {
@@ -587,7 +593,7 @@ export class WhatsAppService {
     config: WaConfig,
   ): Promise<string | undefined> {
     const session = config.wahaSession ?? 'default';
-    const chatId = `${to}@c.us`;
+    const chatId = this.wahaChatId(to);
     const filename = docUrl.split('/').pop() ?? 'documento';
     const res = await fetch(`${config.wahaApiUrl}/api/sendFile`, {
       method: 'POST',
@@ -768,6 +774,11 @@ export class WhatsAppService {
 
   private errorMessage(err: unknown): string {
     return err instanceof MetaApiError ? err.message : String(err);
+  }
+
+  /** Chat de WAHA: el LID ya es un chatId completo; un número va con `@c.us`. */
+  private wahaChatId(to: string): string {
+    return to.includes('@') ? to : `${to}@c.us`;
   }
 
   formatPhone(phone: string): string {

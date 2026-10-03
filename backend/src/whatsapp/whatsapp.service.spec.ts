@@ -238,3 +238,55 @@ describe('WhatsAppService (Cloud API)', () => {
     });
   });
 });
+
+describe('WhatsAppService (WAHA)', () => {
+  let service: WhatsAppService;
+  let fetchMock: jest.Mock;
+  const realFetch = global.fetch;
+
+  const config: WaConfig = {
+    provider: 'waha',
+    wahaApiUrl: 'https://waha.test',
+    wahaApiKey: 'key',
+    wahaSession: 'default',
+  };
+
+  beforeEach(async () => {
+    fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: 'msg1' }),
+    });
+    global.fetch = fetchMock;
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        WhatsAppService,
+        {
+          provide: MetaGraphClient,
+          useValue: { get: jest.fn(), post: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = moduleRef.get(WhatsAppService);
+  });
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  const sentChatId = () =>
+    (
+      JSON.parse(
+        (fetchMock.mock.calls[0] as [string, { body: string }])[1].body,
+      ) as { chatId: string }
+    ).chatId;
+
+  it('envía a un número como <dígitos>@c.us', async () => {
+    await service.sendMessage('+1 415 555 2671', 'hola', config);
+    expect(sentChatId()).toBe('14155552671@c.us');
+  });
+
+  it('conserva el LID tal cual en vez de convertirlo en número', async () => {
+    await service.sendMessage('123456789012345@lid', 'hola', config);
+    expect(sentChatId()).toBe('123456789012345@lid');
+  });
+});
