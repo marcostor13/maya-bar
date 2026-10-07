@@ -92,7 +92,12 @@ async function ensureApp(api, cfg, spec, check) {
   }
 
   const patch = {};
-  if (app.fqdn !== spec.domains) patch.domains = spec.domains;
+  // Los dominios que la app añade sola (dominios cortos dados de alta desde
+  // la plataforma) no están en el `.env`: se conservan, no se pisan.
+  const domains = spec.keepExtraDomains
+    ? mergeDomains(spec.domains, app.fqdn)
+    : spec.domains;
+  if (app.fqdn !== domains) patch.domains = domains;
   if (app.base_directory !== spec.baseDirectory) patch.base_directory = spec.baseDirectory;
   if (app.dockerfile_location !== '/Dockerfile') patch.dockerfile_location = '/Dockerfile';
   if (String(app.ports_exposes) !== String(spec.port)) patch.ports_exposes = spec.port;
@@ -147,6 +152,24 @@ async function ensureApp(api, cfg, spec, check) {
   }
 
   return app;
+}
+
+/** Une los dominios deseados con los que ya tenga la app, sin repetir. */
+function mergeDomains(wanted, current) {
+  const list = (value) =>
+    String(value || '')
+      .split(',')
+      .map((d) => d.trim())
+      .filter(Boolean);
+  const seen = new Set();
+  return [...list(wanted), ...list(current)]
+    .filter((d) => {
+      const key = d.toLowerCase().replace(/\/+$/, '');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(',');
 }
 
 /**
@@ -207,8 +230,20 @@ async function main() {
     domains: backendDomains,
     watchPaths: 'backend/**',
     policy: {},
+    keepExtraDomains: true,
     env: backendEnv,
-    secrets: backendSecrets(cfg, backendEnv),
+    secrets: {
+      ...backendSecrets(cfg, backendEnv),
+      // Con esto el backend da de alta él mismo los dominios cortos en el
+      // proxy: quien registra uno en la plataforma solo crea el registro A.
+      ...(cfg.coolify.backendUuid
+        ? {
+            COOLIFY_URL: cfg.coolify.url,
+            COOLIFY_TOKEN: cfg.coolify.token,
+            COOLIFY_APP_UUID: cfg.coolify.backendUuid,
+          }
+        : {}),
+    },
   }, check);
 
   const frontend = await ensureApp(api, cfg, {

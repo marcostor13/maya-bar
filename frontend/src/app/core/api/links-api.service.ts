@@ -37,7 +37,7 @@ export interface LinkInput {
   expiresAt?: string;
 }
 
-export type DomainStatus = 'pending' | 'dns_ok' | 'active';
+export type DomainStatus = 'pending' | 'dns_ok' | 'activating' | 'active';
 
 export interface ShortDomain {
   _id: string;
@@ -52,6 +52,8 @@ export interface ShortDomain {
 export interface DomainsResponse {
   serverIp: string;
   platformBase: string;
+  /** Si basta con crear el registro A: el alta en el servidor es automática. */
+  selfService: boolean;
   domains: ShortDomain[];
 }
 

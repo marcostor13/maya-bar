@@ -9,8 +9,10 @@ export type LinkChannel = (typeof LINK_CHANNELS)[number];
  * plataforma: el `Host` de la petición decide de qué empresa es el link.
  *
  * - `pending`: el DNS todavía no apunta al servidor.
- * - `dns_ok`: el DNS apunta bien, pero el servidor aún no lo sirve (falta
- *   añadirlo al proxy y emitir el certificado).
+ * - `dns_ok`: el DNS apunta bien, pero el servidor aún no lo sirve y no se
+ *   pudo pedir el alta en el proxy (hace falta hacerlo a mano).
+ * - `activating`: se pidió el alta al proxy; falta que redespliegue y emita
+ *   el certificado.
  * - `active`: responde por https; ya se puede usar.
  */
 @Schema({ timestamps: true })
@@ -23,10 +25,14 @@ export class ShortDomain extends Document {
 
   @Prop({
     type: String,
-    enum: ['pending', 'dns_ok', 'active'],
+    enum: ['pending', 'dns_ok', 'activating', 'active'],
     default: 'pending',
   })
-  status: 'pending' | 'dns_ok' | 'active';
+  status: 'pending' | 'dns_ok' | 'activating' | 'active';
+
+  /** Cuándo se pidió el alta en el proxy, para no pedirla en bucle. */
+  @Prop({ type: Date })
+  activationRequestedAt?: Date;
 
   @Prop({ default: false })
   isDefault: boolean;

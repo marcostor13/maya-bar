@@ -9,10 +9,15 @@ import {
 import { Types } from 'mongoose';
 import { LinksService } from './links.service';
 import { LinkTrackingService } from './link-tracking.service';
+import { ProxyDomainsService } from './proxy-domains.service';
 import { LinkBatch, LinkClick, ShortDomain, ShortLink } from './link.schemas';
 import { Customer } from '../customers/customer.schema';
 import { Tenant } from '../tenants/tenant.schema';
 import { ListsService } from '../lists/lists.service';
+import * as dns from 'node:dns/promises';
+
+jest.mock('node:dns/promises', () => ({ resolve4: jest.fn() }));
+const resolve4 = dns.resolve4 as unknown as jest.Mock;
 
 const query = <T>(value: T) => {
   const q: Record<string, jest.Mock> = {};
@@ -47,6 +52,7 @@ describe('LinksService', () => {
   let customers: ReturnType<typeof model>;
   const lists = { resolveCustomers: jest.fn() };
   const tracking = { refreshDomains: jest.fn() };
+  const proxy = { enabled: true, ensure: jest.fn(), remove: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -71,6 +77,7 @@ describe('LinksService', () => {
         { provide: getModelToken(Tenant.name), useValue: model() },
         { provide: ListsService, useValue: lists },
         { provide: LinkTrackingService, useValue: tracking },
+        { provide: ProxyDomainsService, useValue: proxy },
         { provide: ConfigService, useValue: { get: (k: string) => env[k] } },
       ],
     }).compile();
@@ -174,6 +181,103 @@ describe('LinksService', () => {
       await expect(
         service.addDomain(tenantId, userId, 'ir.otra.com'),
       ).rejects.toThrow(/otra cuenta/);
+    });
+
+    describe('verificación y alta automática', () => {
+      const doc = (over: Record<string, unknown> = {}) => {
+        const d: Record<string, unknown> = {
+          _id: new Types.ObjectId(),
+          tenantId: new Types.ObjectId(tenantId),
+          domain: 'ir.empresa.com',
+          status: 'pending',
+          save: jest.fn().mockResolvedValue(undefined),
+          ...over,
+        };
+        d.toObject = () => d;
+        return d;
+      };
+      const ping = (ok: boolean) =>
+        (global.fetch = jest.fn().mockResolvedValue({
+          ok,
+          text: () => Promise.resolve(ok ? 'maya-links-ok' : ''),
+        }) as never);
+
+      beforeEach(() => {
+        proxy.enabled = true;
+        proxy.ensure.mockResolvedValue('added');
+      });
+
+      it('si el DNS no apunta al servidor, no se pide nada al proxy', async () => {
+        resolve4.mockResolvedValue(['198.51.100.1']);
+        const d = doc();
+        domains.findOne.mockReturnValue(query(d));
+
+        const out = await service.verifyDomain(String(d._id), tenantId);
+
+        expect(out.status).toBe('pending');
+        expect(out.checkMessage).toContain('203.0.113.9');
+        expect(proxy.ensure).not.toHaveBeenCalled();
+      });
+
+      it('con el DNS correcto pide el alta al proxy y queda activándose', async () => {
+        resolve4.mockResolvedValue(['203.0.113.9']);
+        ping(false);
+        const d = doc();
+        domains.findOne.mockReturnValue(query(d));
+
+        const out = await service.verifyDomain(String(d._id), tenantId);
+
+        expect(proxy.ensure).toHaveBeenCalledWith('ir.empresa.com');
+        expect(out.status).toBe('activating');
+        expect(out.activationRequestedAt).toBeInstanceOf(Date);
+      });
+
+      it('mientras se activa no vuelve a pedir el alta en cada verificación', async () => {
+        resolve4.mockResolvedValue(['203.0.113.9']);
+        ping(false);
+        const d = doc({
+          status: 'activating',
+          activationRequestedAt: new Date(),
+        });
+        domains.findOne.mockReturnValue(query(d));
+
+        await service.verifyDomain(String(d._id), tenantId);
+        expect(proxy.ensure).not.toHaveBeenCalled();
+
+        // Pasado el plazo sin cuajar, se reintenta.
+        d.activationRequestedAt = new Date(Date.now() - 16 * 60 * 1000);
+        await service.verifyDomain(String(d._id), tenantId);
+        expect(proxy.ensure).toHaveBeenCalledTimes(1);
+      });
+
+      it('cuando el dominio ya responde por https pasa a activo', async () => {
+        resolve4.mockResolvedValue(['203.0.113.9']);
+        ping(true);
+        const d = doc({ status: 'activating' });
+        domains.findOne.mockReturnValue(query(d));
+
+        const out = await service.verifyDomain(String(d._id), tenantId);
+        expect(out.status).toBe('active');
+        expect(proxy.ensure).not.toHaveBeenCalled();
+      });
+
+      it('si el proxy falla o no está configurado, queda en DNS correcto con su aviso', async () => {
+        resolve4.mockResolvedValue(['203.0.113.9']);
+        ping(false);
+        proxy.ensure.mockRejectedValue(new Error('422'));
+        let d = doc();
+        domains.findOne.mockReturnValue(query(d));
+        let out = await service.verifyDomain(String(d._id), tenantId);
+        expect(out.status).toBe('dns_ok');
+        expect(out.checkMessage).toContain('automáticamente');
+
+        proxy.enabled = false;
+        d = doc();
+        domains.findOne.mockReturnValue(query(d));
+        out = await service.verifyDomain(String(d._id), tenantId);
+        expect(out.status).toBe('dns_ok');
+        expect(out.checkMessage).toContain('SHORT_LINK_DOMAINS');
+      });
     });
 
     it('no se elimina un dominio que todavía usan links', async () => {

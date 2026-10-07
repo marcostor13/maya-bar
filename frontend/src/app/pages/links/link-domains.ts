@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, output, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -15,6 +15,7 @@ type ErrorLike = { error?: { message?: string | string[] } };
 const STATUS: Record<DomainStatus, { label: string; badge: string }> = {
   pending: { label: 'Pendiente de DNS', badge: 'badge-warning' },
   dns_ok: { label: 'DNS correcto · falta activarlo', badge: 'badge-info' },
+  activating: { label: 'Activando…', badge: 'badge-info' },
   active: { label: 'Activo', badge: 'badge-success' },
 };
 
@@ -41,7 +42,10 @@ const STATUS: Record<DomainStatus, { label: string; badge: string }> = {
             </button>
             Si usas Cloudflare, déjalo sin proxy (nube gris).
           </li>
-          <li>Añádelo aquí y pulsa <strong>Verificar</strong>.</li>
+          <li>
+            Añádelo aquí. En cuanto el DNS apunte al servidor
+            {{ selfService() ? 'lo activamos solos y emitimos su certificado: suele tardar unos minutos.' : 'pulsa Verificar.' }}
+          </li>
         </ol>
       </div>
     </div>
@@ -79,7 +83,7 @@ const STATUS: Record<DomainStatus, { label: string; badge: string }> = {
               </span>
             </div>
             @if (d.checkMessage) { <p class="message" [class.ok]="d.status === 'active'">{{ d.checkMessage }}</p> }
-            @if (d.status === 'dns_ok') {
+            @if (d.status === 'dns_ok' && !selfService()) {
               <p class="hint">
                 Este paso lo hace quien administra el servidor: añadir <code>{{ d.domain }}</code> a
                 <code>SHORT_LINK_DOMAINS</code> y ejecutar <code>npm run provision</code>. Luego vuelve a verificar.
@@ -142,7 +146,7 @@ const STATUS: Record<DomainStatus, { label: string; badge: string }> = {
     @media (max-width: 600px) { .intro { flex-direction:column; } }
   `],
 })
-export class LinkDomainsComponent implements OnInit {
+export class LinkDomainsComponent implements OnInit, OnDestroy {
   private api = inject(LinksApiService);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
@@ -158,6 +162,7 @@ export class LinkDomainsComponent implements OnInit {
   domains = signal<ShortDomain[]>([]);
   serverIp = signal('');
   platformBase = signal('');
+  selfService = signal(false);
   loading = signal(true);
   adding = signal(false);
   verifying = signal<string | null>(null);
@@ -166,7 +171,36 @@ export class LinkDomainsComponent implements OnInit {
   /** Registrar o quitar dominios es de administradores; verificar, de cualquiera. */
   canManage = computed(() => this.roles.canManage() && this.permissions.canAct('campaigns', 'edit'));
 
-  ngOnInit() { this.load(); }
+  private timer: ReturnType<typeof setInterval> | null = null;
+
+  ngOnInit() {
+    this.load();
+    // Un dominio a medio activar se vuelve a comprobar solo: nadie tiene que
+    // quedarse pulsando "Verificar".
+    this.timer = setInterval(() => this.recheckPending(), 20_000);
+  }
+
+  ngOnDestroy() { if (this.timer) clearInterval(this.timer); }
+
+  private recheckPending() {
+    if (this.verifying()) return;
+    const waiting = this.domains().filter(
+      d => d.status === 'activating' || (this.selfService() && d.status !== 'active'),
+    );
+    for (const d of waiting) {
+      this.api.verifyDomain(d._id).subscribe({
+        next: updated => {
+          const was = d.status;
+          this.domains.update(list => list.map(x => (x._id === updated._id ? updated : x)));
+          if (updated.status === 'active' && was !== 'active') {
+            this.toast.success(updated.domain + ' ya está activo');
+            this.changed.emit();
+          }
+        },
+        error: () => {},
+      });
+    }
+  }
 
   private load() {
     this.api.domains().subscribe({
@@ -174,6 +208,7 @@ export class LinkDomainsComponent implements OnInit {
         this.domains.set(res.domains);
         this.serverIp.set(res.serverIp);
         this.platformBase.set(res.platformBase);
+        this.selfService.set(res.selfService);
         this.loading.set(false);
       },
       error: (err: ErrorLike) => {
@@ -184,7 +219,7 @@ export class LinkDomainsComponent implements OnInit {
   }
 
   status(d: ShortDomain) { return STATUS[d.status]; }
-  statusIcon(d: ShortDomain) { return d.status === 'active' ? CircleCheck : d.status === 'dns_ok' ? Clock : TriangleAlert; }
+  statusIcon(d: ShortDomain) { return d.status === 'active' ? CircleCheck : d.status === 'pending' ? TriangleAlert : Clock; }
 
   add() {
     const domain = this.newDomain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
@@ -194,7 +229,13 @@ export class LinkDomainsComponent implements OnInit {
       next: d => {
         this.adding.set(false);
         this.newDomain = '';
-        this.toast.success(d.status === 'active' ? 'Dominio registrado y activo' : 'Dominio registrado: falta apuntar el DNS');
+        this.toast.success(
+          d.status === 'active'
+            ? 'Dominio registrado y activo'
+            : d.status === 'activating'
+              ? 'Dominio registrado: lo estamos activando'
+              : 'Dominio registrado: falta apuntar el DNS',
+        );
         this.load();
         this.changed.emit();
       },
@@ -212,6 +253,7 @@ export class LinkDomainsComponent implements OnInit {
         this.verifying.set(null);
         this.domains.update(list => list.map(x => (x._id === updated._id ? updated : x)));
         if (updated.status === 'active') this.toast.success('Dominio activo');
+        else if (updated.status === 'activating') this.toast.success('DNS correcto: activando el dominio');
         else this.toast.error(updated.checkMessage || 'El dominio aún no está listo');
         this.changed.emit();
       },

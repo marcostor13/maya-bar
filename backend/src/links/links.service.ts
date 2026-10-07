@@ -21,6 +21,7 @@ import {
 } from './link.schemas';
 import { CreateBatchDto, CreateLinkDto, UpdateLinkDto } from './dto/link.dto';
 import { LinkTrackingService } from './link-tracking.service';
+import { ProxyDomainsService } from './proxy-domains.service';
 import { Customer } from '../customers/customer.schema';
 import { ListsService } from '../lists/lists.service';
 import { Tenant } from '../tenants/tenant.schema';
@@ -32,6 +33,8 @@ const CODE_LENGTH = 7;
 /** Ruta que responde el propio backend para saber si un dominio ya llega aquí. */
 export const PING_PATH = '/__maya-ping';
 export const PING_BODY = 'maya-links-ok';
+/** Si el alta en el proxy no cuaja en este tiempo, se vuelve a pedir. */
+const ACTIVATION_RETRY_MS = 15 * 60 * 1000;
 /** Palabras que no pueden ser alias porque son rutas del propio dominio. */
 const RESERVED = new Set(['l', 'u', 'api', 'healthz', '__maya-ping']);
 
@@ -116,6 +119,7 @@ export class LinksService {
     @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
     private lists: ListsService,
     private tracking: LinkTrackingService,
+    private proxy: ProxyDomainsService,
     config: ConfigService,
   ) {
     this.apiBase = (config.get<string>('PUBLIC_API_URL') ?? '').replace(
@@ -346,6 +350,8 @@ export class LinksService {
       /** A dónde debe apuntar el registro A del dominio. */
       serverIp: await this.expectedIp(),
       platformBase: `${this.apiBase}/l/`,
+      /** Si basta con crear el registro A (el alta en el proxy es automática). */
+      selfService: this.proxy.enabled,
       domains: rows,
     };
   }
@@ -419,12 +425,45 @@ export class LinksService {
       domain.status = 'active';
       domain.checkMessage = 'Dominio activo.';
     } else {
-      domain.status = 'dns_ok';
-      domain.checkMessage =
-        'El DNS es correcto, pero el servidor todavía no sirve este dominio. Hay que añadirlo a SHORT_LINK_DOMAINS y ejecutar el aprovisionamiento para emitir el certificado.';
+      await this.activate(domain);
     }
     await domain.save();
     return domain.toObject() as Record<string, unknown>;
+  }
+
+  /**
+   * El DNS ya apunta aquí pero el dominio aún no responde: se pide al proxy
+   * que lo sirva. Solo llega a este punto un dominio cuyo registro A apunta a
+   * este servidor, que es la prueba de que quien lo registra lo controla.
+   */
+  private async activate(domain: ShortDomain): Promise<void> {
+    if (!this.proxy.enabled) {
+      domain.status = 'dns_ok';
+      domain.checkMessage =
+        'El DNS es correcto, pero el servidor todavía no sirve este dominio. Hay que añadirlo a SHORT_LINK_DOMAINS y ejecutar el aprovisionamiento para emitir el certificado.';
+      return;
+    }
+    const requested = domain.activationRequestedAt?.getTime() ?? 0;
+    const waiting = Date.now() - requested < ACTIVATION_RETRY_MS;
+    if (domain.status === 'activating' && waiting) {
+      domain.checkMessage =
+        'DNS correcto. Estamos activando el dominio y emitiendo su certificado: suele tardar unos minutos.';
+      return;
+    }
+    try {
+      await this.proxy.ensure(domain.domain);
+      domain.status = 'activating';
+      domain.activationRequestedAt = new Date();
+      domain.checkMessage =
+        'DNS correcto. Estamos activando el dominio y emitiendo su certificado: suele tardar unos minutos.';
+    } catch (err) {
+      this.logger.error(
+        `No se pudo dar de alta ${domain.domain} en el proxy: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      domain.status = 'dns_ok';
+      domain.checkMessage =
+        'El DNS es correcto, pero no se pudo activar el dominio automáticamente. Vuelve a verificar en unos minutos.';
+    }
   }
 
   async setDefaultDomain(id: string, tenantId: string) {
@@ -449,6 +488,15 @@ export class LinksService {
       );
     await this.domainModel.deleteOne({ _id: domain._id }).exec();
     await this.tracking.refreshDomains();
+    if (this.proxy.enabled)
+      // Que falle la limpieza en el proxy no impide borrar el dominio aquí.
+      await this.proxy
+        .remove(domain.domain)
+        .catch((err) =>
+          this.logger.warn(
+            `No se pudo quitar ${domain.domain} del proxy: ${String(err)}`,
+          ),
+        );
   }
 
   private async findDomain(id: string, tenantId: string): Promise<ShortDomain> {

@@ -49,18 +49,29 @@ recrear el origen de las apps.
 ### Dominios cortos (links con seguimiento)
 
 Un dominio propio para links cortos (`ir.empresa.com/abc1234`) lo sirve el
-backend, no el frontend. Para activarlo:
+backend, no el frontend, y **se da de alta solo**: quien lo registra en
+**Links → Dominios** únicamente crea un registro **A** hacia `SERVER_IP`
+(sin proxy de Cloudflare). Cuando el DNS apunta bien, el backend:
 
-1. Registro **A** del dominio hacia `SERVER_IP`, sin proxy.
-2. Añadirlo a `SHORT_LINK_DOMAINS` en el `.env` de la raíz (varios separados
-   por comas) y ejecutar `npm run provision` y `npm run deploy:backend`:
-   `provision` lo añade a los dominios de la app del backend para que Traefik
-   lo enrute y le emita certificado.
-3. En la plataforma, **Links → Dominios → Verificar**. Pasa a *Activo* cuando
-   `https://<dominio>/__maya-ping` responde.
+1. añade el dominio a los dominios de su propia app por la API de Coolify,
+2. lanza un redespliegue para que Traefik lo enrute y emita el certificado,
+3. marca el dominio como *Activo* cuando `https://<dominio>/__maya-ping`
+   responde. Tarda unos minutos.
 
-Quitar un dominio de `SHORT_LINK_DOMAINS` deja de servirlo en el siguiente
-`provision`: sus links dejan de abrir.
+Para eso `npm run provision` le pasa al backend `COOLIFY_URL`,
+`COOLIFY_TOKEN` y `COOLIFY_APP_UUID` (su propio UUID). Sin esas variables el
+alta deja de ser automática y hay que añadir el dominio a
+`SHORT_LINK_DOMAINS` y volver a aprovisionar.
+
+Dos consecuencias a tener presentes:
+
+- **Cada alta redespliega el backend.** El despliegue es rodante, pero corta
+  las conexiones en vivo (websocket del inbox) durante el relevo.
+- **El token de Coolify vive en el contenedor del backend.** Tiene permiso de
+  escritura y despliegue sobre la instancia: trátalo como un secreto más.
+
+`provision` conserva los dominios que la app haya añadido por su cuenta; solo
+se quitan eliminándolos desde la plataforma.
 
 La geolocalización de los clics es opcional: `GEOIP_URL` en `backend/.env`
 (por ejemplo `https://ipwho.is/{ip}`). Sin ella no se envía ninguna IP a
