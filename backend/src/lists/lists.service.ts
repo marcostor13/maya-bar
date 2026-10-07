@@ -107,10 +107,39 @@ export class ListsService {
       throw new BadRequestException(
         'Solo se pueden agregar miembros manualmente a listas estáticas',
       );
-    const newIds = customerIds.map((cid) => new Types.ObjectId(cid));
+    // Solo contactos reales de esta empresa: un id ajeno o inventado se ignora.
+    const valid = customerIds.filter((cid) => Types.ObjectId.isValid(cid));
+    const owned = await this.customerModel
+      .find(
+        {
+          tenantId: list.tenantId,
+          _id: { $in: valid.map((cid) => new Types.ObjectId(cid)) },
+        },
+        { _id: 1 },
+      )
+      .lean()
+      .exec();
+    const newIds = owned.map((c) => c._id);
     const existing = new Set(list.memberIds.map((mid) => mid.toString()));
     const toAdd = newIds.filter((id) => !existing.has(id.toString()));
     list.memberIds.push(...toAdd);
+    list.memberCount = list.memberIds.length;
+    return list.save();
+  }
+
+  /** Quita varios miembros de una lista estática de una vez. */
+  async removeMembers(
+    id: string,
+    tenantId: string,
+    userId: string,
+    role: string,
+    customerIds: string[],
+  ): Promise<ContactList> {
+    const list = await this.findOne(id, tenantId, userId, role);
+    if (list.type !== 'static')
+      throw new BadRequestException('Solo listas estáticas');
+    const drop = new Set(customerIds);
+    list.memberIds = list.memberIds.filter((mid) => !drop.has(mid.toString()));
     list.memberCount = list.memberIds.length;
     return list.save();
   }

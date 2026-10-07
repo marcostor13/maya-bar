@@ -30,6 +30,20 @@ export class Customer extends Document {
   createdBy?: Types.ObjectId;
 
   /**
+   * Usuario de la plataforma que atiende al contacto. Vacío = sin asignar:
+   * cualquiera con acceso a contactos puede tomarlo. Es independiente del
+   * responsable de cada oportunidad (`Lead.ownerId`).
+   */
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  ownerId?: Types.ObjectId;
+
+  @Prop({ type: Date })
+  assignedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  assignedBy?: Types.ObjectId;
+
+  /**
    * Canal por el que entró el contacto. Se fija al crearlo y no se pisa
    * después: sirve para distinguir un alta directa de una que llegó por un
    * formulario embebido en una landing externa.
@@ -108,6 +122,9 @@ export const CustomerSchema = SchemaFactory.createForClass(Customer);
 // Filtrar los contactos de un formulario es la consulta que abre la ficha del
 // formulario: se acota por tenant para no barrer la colección entera.
 CustomerSchema.index({ tenantId: 1, formIds: 1 });
+
+// "Mis contactos" y "sin asignar" son los filtros de entrada del agente.
+CustomerSchema.index({ tenantId: 1, ownerId: 1 });
 
 // Unicidad por (email, tenant, dueño) — los impulsadores tienen su propia lista.
 // Es parcial: los contactos sin email (importados solo con teléfono) no chocan

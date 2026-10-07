@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, Plus, Trash2, Edit2, Users, Zap, List, X,
-  ChevronDown, ChevronRight, RefreshCw, Eye, UserMinus
+  ChevronDown, ChevronRight, RefreshCw, Eye, UserMinus, UserPlus, Search
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -301,7 +301,7 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
           @if (form.type === 'static') {
             <div class="info-box">
               <lucide-icon [img]="Users" [size]="16"></lucide-icon>
-              <span>Agrega contactos desde la página de <strong>Clientes</strong>: selecciona uno o varios y haz clic en "Agregar a lista".</span>
+              <span>Guarda la lista y abre <strong>Miembros</strong> para buscar y añadir contactos. También puedes hacerlo desde <strong>Clientes</strong>.</span>
             </div>
           }
         </div>
@@ -322,15 +322,65 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
           <div>
             <h2 class="drawer-title">{{ membersListName() }}</h2>
             <p style="font-size: 12px; color: var(--color-text-muted); margin: 2px 0 0;">
-              Lista estática · {{ members().length }} miembro(s)
+              {{ membersEditable() ? 'Lista estática' : 'Lista dinámica' }} · {{ members().length }} miembro(s)
             </p>
           </div>
-          <button class="btn btn-icon btn-ghost" (click)="closeMembersDrawer()">
+          <button class="btn btn-icon btn-ghost" (click)="closeMembersDrawer()" aria-label="Cerrar">
             <lucide-icon [img]="X" [size]="20"></lucide-icon>
           </button>
         </div>
+        @if (membersEditable()) {
+          <div class="members-tabs" role="tablist">
+            <button class="members-tab" role="tab" [class.active]="membersTab() === 'members'"
+              (click)="membersTab.set('members')">
+              <lucide-icon [img]="Users" [size]="14"></lucide-icon>
+              Miembros ({{ members().length }})
+            </button>
+            <button class="members-tab" role="tab" [class.active]="membersTab() === 'add'"
+              (click)="openAddTab()">
+              <lucide-icon [img]="UserPlus" [size]="14"></lucide-icon>
+              Agregar contactos
+            </button>
+          </div>
+        }
         <div class="drawer-body" style="padding: 16px 20px;">
-          @if (loadingMembers()) {
+          @if (membersTab() === 'add') {
+            <div class="picker-search">
+              <lucide-icon [img]="Search" [size]="15"></lucide-icon>
+              <input class="input" placeholder="Buscar por nombre, email, teléfono o etiqueta"
+                [ngModel]="pickerQuery()" (ngModelChange)="pickerQuery.set($event)" />
+            </div>
+            @if (loadingContacts()) {
+              <div style="display: flex; justify-content: center; padding: 40px;">
+                <lucide-icon [img]="RefreshCw" [size]="24" class="spin" style="color: var(--color-text-muted);"></lucide-icon>
+              </div>
+            } @else if (pickerResults().length === 0) {
+              <div class="empty-members">
+                <lucide-icon [img]="Users" [size]="44" style="opacity: 0.25;"></lucide-icon>
+                <p>{{ pickerQuery() ? 'Ningún contacto coincide.' : 'Todos tus contactos ya están en la lista.' }}</p>
+              </div>
+            } @else {
+              <label class="select-all-row">
+                <input type="checkbox" [checked]="allPickerSelected()" (change)="togglePickerAll()" />
+                <span>Seleccionar los {{ pickerResults().length }} que se ven</span>
+              </label>
+              <div class="members-list">
+                @for (c of pickerResults(); track c._id) {
+                  <label class="member-row pickable" [class.picked]="pickedIds().includes(c._id)">
+                    <input type="checkbox" [checked]="pickedIds().includes(c._id)" (change)="togglePicked(c._id)" />
+                    <div class="member-avatar">{{ initials(c.name) }}</div>
+                    <div class="member-info">
+                      <div class="member-name">{{ c.name }}</div>
+                      <div class="member-email">{{ c.email || c.phone || '—' }}</div>
+                    </div>
+                  </label>
+                }
+              </div>
+              @if (pickerHidden() > 0) {
+                <p class="picker-more">Hay {{ pickerHidden() }} más: afina la búsqueda para verlos.</p>
+              }
+            }
+          } @else if (loadingMembers()) {
             <div style="display: flex; justify-content: center; padding: 40px;">
               <lucide-icon [img]="RefreshCw" [size]="24" class="spin" style="color: var(--color-text-muted);"></lucide-icon>
             </div>
@@ -341,9 +391,19 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
               <p style="font-size: 12px;">Ve a <strong>Clientes</strong>, selecciona contactos y usa "Agregar a lista".</p>
             </div>
           } @else {
+            @if (membersEditable()) {
+              <label class="select-all-row">
+                <input type="checkbox" [checked]="allMembersSelected()" (change)="toggleMembersAll()" />
+                <span>Seleccionar todos</span>
+              </label>
+            }
             <div class="members-list">
               @for (m of members(); track m._id) {
-                <div class="member-row">
+                <div class="member-row" [class.picked]="memberSel().includes(m._id)">
+                  @if (membersEditable()) {
+                    <input type="checkbox" [checked]="memberSel().includes(m._id)"
+                      (change)="toggleMemberSel(m._id)" [attr.aria-label]="'Seleccionar a ' + m.name" />
+                  }
                   <div class="member-avatar">{{ initials(m.name) }}</div>
                   <div class="member-info">
                     <div class="member-name">{{ m.name }}</div>
@@ -362,26 +422,45 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
                       </div>
                     }
                   </div>
-                  <button class="btn btn-sm btn-ghost remove-btn"
-                    (click)="removeFromList(m._id)"
-                    [disabled]="removingId() === m._id"
-                    title="Quitar de la lista">
-                    @if (removingId() === m._id) {
-                      <lucide-icon [img]="RefreshCw" [size]="13" class="spin"></lucide-icon>
-                    } @else {
-                      <lucide-icon [img]="UserMinus" [size]="14"></lucide-icon>
-                    }
-                  </button>
+                  @if (membersEditable()) {
+                    <button class="btn btn-sm btn-ghost remove-btn"
+                      (click)="removeFromList(m._id)"
+                      [disabled]="removingId() === m._id"
+                      title="Quitar de la lista">
+                      @if (removingId() === m._id) {
+                        <lucide-icon [img]="RefreshCw" [size]="13" class="spin"></lucide-icon>
+                      } @else {
+                        <lucide-icon [img]="UserMinus" [size]="14"></lucide-icon>
+                      }
+                    </button>
+                  }
                 </div>
               }
             </div>
           }
         </div>
         <div class="drawer-footer">
-          <span style="font-size: 13px; color: var(--color-text-muted);">
-            {{ members().length }} contacto(s) en esta lista
-          </span>
-          <button class="btn btn-ghost" (click)="closeMembersDrawer()">Cerrar</button>
+          @if (membersTab() === 'add') {
+            <span style="font-size: 13px; color: var(--color-text-muted);">
+              {{ pickedIds().length }} seleccionado(s)
+            </span>
+            <button class="btn btn-primary" (click)="addPicked()" [disabled]="!pickedIds().length || membersBusy()">
+              <lucide-icon [img]="UserPlus" [size]="15"></lucide-icon>
+              Agregar a la lista
+            </button>
+          } @else {
+            <span style="font-size: 13px; color: var(--color-text-muted);">
+              {{ memberSel().length ? memberSel().length + ' seleccionado(s)' : members().length + ' contacto(s) en esta lista' }}
+            </span>
+            @if (memberSel().length) {
+              <button class="btn btn-danger" (click)="removeSelectedMembers()" [disabled]="membersBusy()">
+                <lucide-icon [img]="UserMinus" [size]="15"></lucide-icon>
+                Quitar seleccionados
+              </button>
+            } @else {
+              <button class="btn btn-ghost" (click)="closeMembersDrawer()">Cerrar</button>
+            }
+          }
         </div>
       </div>
     }
@@ -459,6 +538,18 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
     .mini-tag.sel { border-color: var(--color-brand); background: var(--color-brand-light); color: var(--color-brand); }
 
     /* Members drawer */
+    .members-tabs { display:flex; gap:4px; padding:0 20px; border-bottom:1px solid var(--color-border); }
+    .members-tab { display:inline-flex; align-items:center; gap:6px; padding:12px 14px; background:none; border:none;
+      border-bottom:2px solid transparent; font-family:var(--font-base); font-size:13px; font-weight:500;
+      color:var(--color-text-muted); cursor:pointer; transition:all var(--transition-fast); }
+    .members-tab.active { color:var(--color-brand); border-bottom-color:var(--color-brand); }
+    .picker-search { display:flex; align-items:center; gap:8px; margin-bottom:12px; color:var(--color-text-muted); }
+    .picker-search .input { flex:1; }
+    .select-all-row { display:flex; align-items:center; gap:10px; padding:8px 4px 12px; font-size:13px;
+      color:var(--color-text-muted); cursor:pointer; }
+    .member-row.pickable { cursor:pointer; }
+    .member-row.picked { background:var(--color-brand-light); }
+    .picker-more { font-size:12px; color:var(--color-text-muted); text-align:center; margin:12px 0 0; }
     .empty-members { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 24px; text-align: center; color: var(--color-text-muted); font-size: 14px; }
     .members-list { display: flex; flex-direction: column; gap: 2px; }
     .member-row {
@@ -514,6 +605,7 @@ export class ListsComponent implements OnInit {
   readonly X = X; readonly ChevronDown = ChevronDown;
   readonly ChevronRight = ChevronRight; readonly RefreshCw = RefreshCw;
   readonly Eye = Eye; readonly UserMinus = UserMinus;
+  readonly UserPlus = UserPlus; readonly Search = Search;
   readonly COLORS = COLORS;
   readonly PRESET_TAGS = PRESET_TAGS;
   readonly SOURCE_OPTIONS = SOURCE_OPTIONS;
@@ -534,6 +626,40 @@ export class ListsComponent implements OnInit {
   membersListId = signal<string | null>(null);
   membersListName = signal('');
   members = signal<Member[]>([]);
+
+  // Selector de contactos dentro de la lista
+  membersEditable = signal(false);
+  membersTab = signal<'members' | 'add'>('members');
+  membersBusy = signal(false);
+  memberSel = signal<string[]>([]);
+  contacts = signal<Member[]>([]);
+  loadingContacts = signal(false);
+  pickerQuery = signal('');
+  pickedIds = signal<string[]>([]);
+
+  /** Contactos que aún no están en la lista y casan con la búsqueda. */
+  private pickerMatches = computed(() => {
+    const inList = new Set(this.members().map(m => m._id));
+    const q = this.pickerQuery().trim().toLowerCase();
+    return this.contacts().filter(c =>
+      !inList.has(c._id) &&
+      (!q ||
+        c.name.toLowerCase().includes(q) ||
+        (c.email ?? '').toLowerCase().includes(q) ||
+        (c.phone ?? '').includes(q) ||
+        c.tags.some(t => t.toLowerCase().includes(q))),
+    );
+  });
+  /** Se pintan como mucho 200: con miles de contactos el DOM no aguanta más. */
+  pickerResults = computed(() => this.pickerMatches().slice(0, 200));
+  pickerHidden = computed(() => this.pickerMatches().length - this.pickerResults().length);
+  allPickerSelected = computed(() => {
+    const shown = this.pickerResults();
+    return shown.length > 0 && shown.every(c => this.pickedIds().includes(c._id));
+  });
+  allMembersSelected = computed(
+    () => this.members().length > 0 && this.memberSel().length === this.members().length,
+  );
   loadingMembers = signal(false);
   removingId = signal<string | null>(null);
 
@@ -581,6 +707,11 @@ export class ListsComponent implements OnInit {
   openMembersDrawer(l: ContactList) {
     this.membersListId.set(l._id);
     this.membersListName.set(l.name);
+    this.membersEditable.set(l.type === 'static');
+    this.membersTab.set('members');
+    this.memberSel.set([]);
+    this.pickedIds.set([]);
+    this.pickerQuery.set('');
     this.members.set([]);
     this.drawerOpen.set(false);
     this.membersDrawerOpen.set(true);
@@ -594,6 +725,86 @@ export class ListsComponent implements OnInit {
     this.http.get<Member[]>(`${API}/lists/${listId}/members`).subscribe({
       next: (data) => { this.members.set(data); this.loadingMembers.set(false); },
       error: () => { this.toast.error('Error al cargar miembros'); this.loadingMembers.set(false); },
+    });
+  }
+
+  openAddTab() {
+    this.membersTab.set('add');
+    if (this.contacts().length) return;
+    this.loadingContacts.set(true);
+    this.http.get<Member[]>(`${API}/customers`).subscribe({
+      next: data => { this.contacts.set(data); this.loadingContacts.set(false); },
+      error: () => { this.toast.error('Error al cargar contactos'); this.loadingContacts.set(false); },
+    });
+  }
+
+  togglePicked(id: string) {
+    this.pickedIds.update(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
+  }
+
+  togglePickerAll() {
+    const shown = this.pickerResults().map(c => c._id);
+    if (this.allPickerSelected()) {
+      this.pickedIds.update(ids => ids.filter(id => !shown.includes(id)));
+    } else {
+      this.pickedIds.update(ids => [...new Set([...ids, ...shown])]);
+    }
+  }
+
+  addPicked() {
+    const lid = this.membersListId();
+    const customerIds = this.pickedIds();
+    if (!lid || !customerIds.length) return;
+    this.membersBusy.set(true);
+    this.http.post<ContactList>(`${API}/lists/${lid}/members`, { customerIds }).subscribe({
+      next: list => {
+        this.membersBusy.set(false);
+        this.pickedIds.set([]);
+        this.membersTab.set('members');
+        this.lists.update(lists => lists.map(l => (l._id === lid ? { ...l, memberCount: list.memberCount } : l)));
+        this.loadMembers(lid);
+        this.toast.success(customerIds.length + ' contacto(s) agregados a la lista');
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.membersBusy.set(false);
+        this.toast.error(err.error?.message || 'Error al agregar contactos');
+      },
+    });
+  }
+
+  toggleMemberSel(id: string) {
+    this.memberSel.update(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
+  }
+
+  toggleMembersAll() {
+    this.memberSel.set(this.allMembersSelected() ? [] : this.members().map(m => m._id));
+  }
+
+  async removeSelectedMembers() {
+    const lid = this.membersListId();
+    const customerIds = this.memberSel();
+    if (!lid || !customerIds.length) return;
+    const ok = await this.confirm.confirm({
+      title: 'Quitar de la lista',
+      message: 'Se quitarán ' + customerIds.length + ' contacto(s) de la lista. Los contactos no se eliminan.',
+      confirmText: 'Quitar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.membersBusy.set(true);
+    this.http.post<ContactList>(`${API}/lists/${lid}/members/remove`, { customerIds }).subscribe({
+      next: list => {
+        this.membersBusy.set(false);
+        const gone = new Set(customerIds);
+        this.members.update(ms => ms.filter(m => !gone.has(m._id)));
+        this.memberSel.set([]);
+        this.lists.update(lists => lists.map(l => (l._id === lid ? { ...l, memberCount: list.memberCount } : l)));
+        this.toast.success(customerIds.length + ' contacto(s) quitados de la lista');
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.membersBusy.set(false);
+        this.toast.error(err.error?.message || 'Error al quitar contactos');
+      },
     });
   }
 

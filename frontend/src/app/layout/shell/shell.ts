@@ -14,7 +14,10 @@ import { DevicePermissionsService } from '../../core/device-permissions.service'
 import {
   LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight,
   Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, X, MessagesSquare,
-  LayoutTemplate, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, type LucideIconData,
+  LayoutTemplate,
+  MailPlus,
+  Link2,
+  MessageSquareText, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, type LucideIconData,
 } from 'lucide-angular';
 
 /** Una entrada del menú. La misma alimenta el lateral, la barra inferior y la hoja "Más". */
@@ -812,7 +815,10 @@ export class ShellComponent {
       { key: 'forms', label: 'Formularios', short: 'Forms', icon: FileText, route: '/forms' },
       { key: 'campaigns', label: 'Campañas', icon: Megaphone, route: '/campaigns' },
       { key: 'recovery', module: 'campaigns', label: 'Recuperar clientes', short: 'Recuperar', icon: HeartHandshake, route: '/recuperacion' },
-      { key: 'templates', label: 'Plantillas', icon: LayoutTemplate, route: '/plantillas' },
+      { key: 'links', module: 'campaigns', label: 'Links cortos', short: 'Links', icon: Link2, route: '/links' },
+      { key: 'email-templates', module: 'campaigns', label: 'Plantillas email', short: 'Emails', icon: MailPlus, route: '/plantillas-email' },
+      { key: 'message-templates', module: 'campaigns', label: 'Plantillas de texto', short: 'Textos', icon: MessageSquareText, route: '/plantillas-texto' },
+      { key: 'templates', label: 'Plantillas WhatsApp', short: 'Plantillas', icon: LayoutTemplate, route: '/plantillas' },
       { key: 'ai-agents', label: 'Agentes IA', short: 'Agentes', icon: Bot, route: '/ai-agents' },
       { key: 'inbox', label: 'Conversaciones', short: 'Chats', icon: MessagesSquare, route: '/inbox' },
       { key: 'suppression', label: 'No contactar', short: 'Bajas', icon: BanIcon, route: '/no-contactar' },

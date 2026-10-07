@@ -23,6 +23,8 @@ import { PlatformService } from '../../core/platform.service';
 import { EmailComposeComponent } from './email-compose';
 import { InboxActionsComponent, type ActionKind } from './inbox-actions';
 import { InboxFiltersComponent } from './inbox-filters';
+import { ContactCareComponent } from '../customers/contact-care';
+import type { OwnerRef } from '../../core/api/contact-care-api.service';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -156,7 +158,7 @@ const EMOJIS = [
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent],
+  imports: [FormsModule, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent],
   host: { '(document:paste)': 'onPaste($event)' },
   template: `
     <div class="inbox" [class.thread-open]="selectedId()">
@@ -983,6 +985,14 @@ const EMOJIS = [
                 <button class="btn btn-sm btn-ghost" (click)="goToLeads()">
                   <lucide-icon [img]="Target" [size]="14" [strokeWidth]="2.5"></lucide-icon> Ver en Seguimiento
                 </button>
+              </div>
+            }
+
+            @if (selected()?.customerId; as customerId) {
+              <div class="cm-field">
+                <span class="cm-label">Atención y bitácora</span>
+                <app-contact-care [customerId]="customerId" [owner]="crmOwner()"
+                  [conversationId]="selected()!._id" (ownerChanged)="crmOwner.set($event)" />
               </div>
             }
           </div>
@@ -2322,6 +2332,8 @@ export class InboxComponent implements OnInit, OnDestroy {
   contactModal = signal(false);
   savingContact = signal(false);
   crmLeads = signal<{ _id: string; title: string; stage: string }[]>([]);
+  /** Responsable del contacto vinculado a la conversación abierta. */
+  crmOwner = signal<OwnerRef | null>(null);
   contactForm = {
     name: '', phone: '', email: '', tags: '', notes: '',
     createLead: false, leadTitle: '',
@@ -2365,12 +2377,13 @@ export class InboxComponent implements OnInit, OnDestroy {
   /** Trae el contacto ya vinculado para poder revisarlo y completarlo. */
   private loadCrmCard(convId: string) {
     this.http
-      .get<{ customer: { name: string; phone?: string; email?: string; tags?: string[]; notes?: string } | null; leads: { _id: string; title: string; stage: string }[] }>(
+      .get<{ customer: { name: string; phone?: string; email?: string; tags?: string[]; notes?: string; ownerId?: OwnerRef | null } | null; leads: { _id: string; title: string; stage: string }[] }>(
         `${API}/conversations/${convId}/contact`,
       )
       .subscribe({
         next: card => {
           this.crmLeads.set(card.leads ?? []);
+          this.crmOwner.set(card.customer?.ownerId ?? null);
           if (card.customer) {
             this.contactForm = {
               ...this.contactForm,

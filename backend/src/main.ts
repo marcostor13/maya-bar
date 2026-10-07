@@ -2,6 +2,7 @@ import * as dns from 'dns';
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
@@ -16,7 +17,10 @@ async function bootstrap() {
     );
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // El límite por defecto (100 kB) se queda corto para una plantilla de email
+  // con su diseño y su HTML compilado.
+  app.useBodyParser('json', { limit: '2mb' });
   const configService = app.get(ConfigService);
 
   // whitelist recorta propiedades sin decorador en el DTO (protege contra mass-assignment

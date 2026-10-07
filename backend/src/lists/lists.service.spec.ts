@@ -306,6 +306,10 @@ describe('ListsService', () => {
       const doc = makeListDoc({ memberIds: [existing], memberCount: 1 });
       stubFindById(doc);
       const newId = new Types.ObjectId();
+      // Solo entran contactos que existen en la empresa: ambos existen.
+      customerModel.find.mockReturnValue(
+        buildQuery([{ _id: existing }, { _id: newId }]),
+      );
 
       await service.addMembers(
         doc._id.toString(),
@@ -322,6 +326,28 @@ describe('ListsService', () => {
       ]);
       expect(doc.memberCount).toBe(2);
       expect(doc.save).toHaveBeenCalled();
+    });
+
+    it('ignores ids that are not contacts of the tenant', async () => {
+      const doc = makeListDoc({ memberIds: [], memberCount: 0 });
+      stubFindById(doc);
+      const mine = new Types.ObjectId();
+      customerModel.find.mockReturnValue(buildQuery([{ _id: mine }]));
+
+      await service.addMembers(
+        doc._id.toString(),
+        tenantId,
+        userId,
+        'MANAGER',
+        [mine.toString(), new Types.ObjectId().toString(), 'no-es-un-id'],
+      );
+
+      const filter = customerModel.find.mock.calls[0][0];
+      expect(filter.tenantId.toString()).toBe(doc.tenantId.toString());
+      expect(filter._id.$in).toHaveLength(2);
+      expect(doc.memberIds.map((m: Types.ObjectId) => m.toString())).toEqual([
+        mine.toString(),
+      ]);
     });
 
     it('rejects adding members to a dynamic list', async () => {

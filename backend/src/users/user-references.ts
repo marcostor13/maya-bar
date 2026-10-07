@@ -46,6 +46,12 @@ export const USER_REFERENCES: UserReference[] = [
     label: 'Conversaciones atendidas',
   },
   { collection: 'messages', field: 'sentBy', label: 'Mensajes enviados' },
+  { collection: 'customers', field: 'ownerId', label: 'Contactos a su cargo' },
+  {
+    collection: 'contactactivities',
+    field: 'createdBy',
+    label: 'Bitácora de contactos',
+  },
 ];
 
 /** Lo que se le muestra al administrador antes de confirmar un borrado. */

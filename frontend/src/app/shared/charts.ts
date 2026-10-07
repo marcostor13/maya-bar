@@ -489,7 +489,7 @@ const HEAT = ['--chart-empty', '--seq-150', '--seq-250', '--seq-350', '--seq-450
     @if (tip(); as t) {
       <div class="viz-tip" [style.left.px]="t.x" [style.top.px]="t.y">
         <div class="viz-tip-title">{{ t.title }}</div>
-        <div class="viz-tip-row">Mensajes recibidos <b>{{ t.v }}</b></div>
+        <div class="viz-tip-row">{{ unit() }} <b>{{ t.v }}</b></div>
       </div>
     }
   `,
@@ -510,6 +510,8 @@ const HEAT = ['--chart-empty', '--seq-150', '--seq-250', '--seq-350', '--seq-450
 })
 export class HeatmapComponent {
   data = input<number[][]>([]);
+  /** Qué se está contando, para el tooltip. */
+  unit = input('Mensajes recibidos');
   readonly hours = Array.from({ length: 24 }, (_, i) => i);
   readonly days = DAYS;
   readonly heat = HEAT;

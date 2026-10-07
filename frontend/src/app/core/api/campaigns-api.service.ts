@@ -3,8 +3,13 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
+  AudiencePreview,
   Campaign,
   CampaignEstimate,
+  CampaignRecipientsPage,
+  CampaignTargeting,
+  CampaignType,
+  RecipientStatus,
   CampaignPayload,
   ContactList,
   GeneratedEmail,
@@ -58,6 +63,47 @@ export class CampaignsApiService {
     return this.http.get<{ count: number; blocked: number }>(
       `${this.base}/campaigns/preview`,
       { params },
+    );
+  }
+
+  /** A cuántos llegaría esta audiencia por este canal, ya deduplicada. */
+  audiencePreview(body: {
+    type: CampaignType;
+    targeting: CampaignTargeting;
+    recipientTags?: string[];
+    listIds?: string[];
+    customerIds?: string[];
+  }): Observable<AudiencePreview> {
+    return this.http.post<AudiencePreview>(`${this.base}/campaigns/audience-preview`, body);
+  }
+
+  /** Destinatarios de una campaña de email o SMS, con su estado. */
+  getRecipients(id: string, status?: RecipientStatus | '', page = 1): Observable<CampaignRecipientsPage> {
+    const params: Record<string, string> = { page: String(page) };
+    if (status) params['status'] = status;
+    return this.http.get<CampaignRecipientsPage>(`${this.base}/campaigns/${id}/recipients`, { params });
+  }
+
+  cancelCampaign(id: string): Observable<Campaign> {
+    return this.http.post<Campaign>(`${this.base}/campaigns/${id}/cancel`, {});
+  }
+
+  /** Si la empresa tiene un proveedor de SMS activo. */
+  smsStatus(): Observable<{ configured: boolean; name: string; from: string }> {
+    return this.http.get<{ configured: boolean; name: string; from: string }>(`${this.base}/sms-status`);
+  }
+
+  /** Contactos para elegirlos a mano como destinatarios. */
+  getContacts(): Observable<{ _id: string; name: string; email?: string; phone?: string; tags: string[] }[]> {
+    return this.http.get<{ _id: string; name: string; email?: string; phone?: string; tags: string[] }[]>(
+      `${this.base}/customers`,
+    );
+  }
+
+  /** Dominios cortos activos, para elegir con cuál salen los links. */
+  getShortDomains(): Observable<{ domains: { domain: string; status: string; isDefault: boolean }[] }> {
+    return this.http.get<{ domains: { domain: string; status: string; isDefault: boolean }[] }>(
+      `${this.base}/links/domains`,
     );
   }
 

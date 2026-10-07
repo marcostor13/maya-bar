@@ -376,6 +376,47 @@ export class MailService {
     }
   }
 
+  /** Remitente de la plataforma, usado cuando la empresa no envía con su buzón. */
+  static readonly PLATFORM_FROM =
+    'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>';
+
+  /**
+   * Envía un HTML ya armado (plantillas de email). A diferencia de
+   * `sendCampaign` no envuelve nada: el diseño es el de la plantilla.
+   * Devuelve el id del proveedor, o `mock` si no hay Resend configurado.
+   */
+  async sendHtml(params: {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+    fromName?: string;
+    replyTo?: string;
+    headers?: Record<string, string>;
+  }): Promise<string> {
+    if (!this.resend) {
+      this.logger.log(
+        `[MOCK HTML EMAIL] To: ${params.to} | Subject: ${params.subject}`,
+      );
+      return 'mock';
+    }
+    const address = MailService.PLATFORM_FROM.replace(/^.*</, '<');
+    const from = params.fromName
+      ? `${params.fromName.replace(/[<>"]/g, '')} ${address}`
+      : MailService.PLATFORM_FROM;
+    const res = await this.resend.emails.send({
+      from,
+      to: params.to,
+      subject: params.subject,
+      html: params.html,
+      ...(params.text ? { text: params.text } : {}),
+      ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+      ...(params.headers ? { headers: params.headers } : {}),
+    });
+    if (res.error) throw new Error(res.error.message);
+    return res.data?.id ?? '';
+  }
+
   async sendCampaign(params: {
     to: string;
     name: string;

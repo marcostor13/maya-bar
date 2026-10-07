@@ -4,6 +4,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { MessageTemplatesModule } from './message-templates/message-templates.module';
+import { EmailTemplatesModule } from './email-templates/email-templates.module';
+import { SmsModule } from './sms/sms.module';
+import { LinksModule } from './links/links.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TenantsModule } from './tenants/tenants.module';
@@ -91,6 +95,10 @@ import { CalendarModule } from './calendar/calendar.module';
     ProspectingModule,
     EmailAccountsModule,
     CalendarModule,
+    MessageTemplatesModule,
+    EmailTemplatesModule,
+    SmsModule,
+    LinksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

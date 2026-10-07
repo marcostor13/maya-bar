@@ -210,8 +210,13 @@ describe('ConversationsService — contacto del CRM', () => {
       buildQuery(makeConv({ customerId: customerOid })),
     );
     leads.findByCustomer.mockResolvedValue([{ title: 'Evento' }]);
+    // La ficha trae al responsable con su nombre, no solo su id.
+    const populate = jest.fn().mockResolvedValue(undefined);
+    leads.findCustomer.mockResolvedValue({ _id: customerOid, populate });
 
     const card = await service.crmCard(String(convOid), tenantId);
+
+    expect(populate).toHaveBeenCalledWith('ownerId', 'name email');
 
     expect(leads.findCustomer).toHaveBeenCalledWith(
       String(customerOid),

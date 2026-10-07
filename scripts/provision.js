@@ -184,7 +184,19 @@ async function main() {
     FRONTEND_URL: siteUrl,
     PUBLIC_API_URL: apiUrl,
     CORS_ORIGINS: `${siteUrl},https://www.${cfg.frontendDomain},http://localhost:4200`,
+    // A dónde debe apuntar el registro A de un dominio corto propio: la
+    // pantalla de Links lo muestra y lo usa para verificar el DNS.
+    ...(cfg.serverIp ? { SERVER_IP: cfg.serverIp } : {}),
   };
+
+  // Dominios cortos propios (links con seguimiento). Los sirve el backend,
+  // así que Traefik tiene que conocerlos para enrutarlos y emitirles
+  // certificado: van como dominios adicionales de esa app.
+  const shortDomains = (process.env.SHORT_LINK_DOMAINS || '')
+    .split(',')
+    .map((d) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+    .filter(Boolean);
+  const backendDomains = [apiUrl, ...shortDomains.map((d) => `https://${d}`)].join(',');
 
   const backend = await ensureApp(api, cfg, {
     name: BACKEND_NAME,
@@ -192,7 +204,7 @@ async function main() {
     repo,
     baseDirectory: '/backend',
     port: cfg.ports.backend,
-    domains: apiUrl,
+    domains: backendDomains,
     watchPaths: 'backend/**',
     policy: {},
     env: backendEnv,

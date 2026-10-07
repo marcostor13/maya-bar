@@ -15,6 +15,12 @@ import { SettingsService } from '../settings/settings.service';
 import { ListsService } from '../lists/lists.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { AiService } from '../ai/ai.service';
+import { CampaignRecipient } from './campaign-recipient.schema';
+import { CampaignSenderService } from './campaign-sender.service';
+import { EmailTemplate } from '../email-templates/email-template.schema';
+import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { SmsService } from '../sms/sms.service';
+import { LinksService } from '../links/links.service';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -96,6 +102,13 @@ describe('CampaignsService', () => {
   let service: CampaignsService;
   let campaignModel: any;
   let customerModel: any;
+  let recipientModel: any;
+  let emailTemplateModel: any;
+
+  const mockSender = { countStats: jest.fn() };
+  const mockEmailAccounts = { findOne: jest.fn() };
+  const mockSms = { requireConfig: jest.fn(), getConfig: jest.fn() };
+  const mockLinks = { createPersonalLinks: jest.fn() };
 
   const mockMail = { sendCampaign: jest.fn() };
   const mockSettings = {
@@ -117,6 +130,26 @@ describe('CampaignsService', () => {
 
     campaignModel = createMockModel();
     customerModel = createMockModel();
+    recipientModel = createMockModel();
+    recipientModel.deleteMany = jest
+      .fn()
+      .mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
+    recipientModel.updateMany = jest
+      .fn()
+      .mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
+    recipientModel.insertMany = jest.fn().mockResolvedValue([]);
+    emailTemplateModel = createMockModel();
+    emailTemplateModel.findOne = jest.fn().mockReturnValue(buildQuery(null));
+    // Por defecto nadie está de baja (conjunto vacío).
+    mockSuppression.setFor.mockResolvedValue({
+      phones: new Set(),
+      emails: new Set(),
+      empty: true,
+    });
+    mockSuppression.matches.mockReturnValue(false);
+    mockSms.requireConfig.mockResolvedValue({ ratePerMinute: 60 });
+    mockSms.getConfig.mockResolvedValue({ ratePerMinute: 60 });
+    mockLinks.createPersonalLinks.mockResolvedValue([]);
 
     mockMail.sendCampaign.mockResolvedValue(undefined);
     mockSettings.getWaDailyLimit.mockResolvedValue(50);
@@ -144,6 +177,18 @@ describe('CampaignsService', () => {
         { provide: ListsService, useValue: mockLists },
         { provide: AiService, useValue: mockAi },
         { provide: SuppressionService, useValue: mockSuppression },
+        {
+          provide: getModelToken(CampaignRecipient.name),
+          useValue: recipientModel,
+        },
+        {
+          provide: getModelToken(EmailTemplate.name),
+          useValue: emailTemplateModel,
+        },
+        { provide: CampaignSenderService, useValue: mockSender },
+        { provide: EmailAccountsService, useValue: mockEmailAccounts },
+        { provide: SmsService, useValue: mockSms },
+        { provide: LinksService, useValue: mockLinks },
       ],
     }).compile();
 
@@ -169,9 +214,10 @@ describe('CampaignsService', () => {
 
       await service.findAll(tenantId);
 
-      expect(campaignModel.find).toHaveBeenCalledWith({
-        tenantId: expect.any(Types.ObjectId),
-      });
+      expect(campaignModel.find).toHaveBeenCalledWith(
+        { tenantId: expect.any(Types.ObjectId) },
+        { html: 0 },
+      );
       expect(campaignModel.find.mock.calls[0][0].tenantId.toString()).toBe(
         tenantId,
       );
@@ -362,32 +408,27 @@ describe('CampaignsService', () => {
       expect(campaign.recipientCount).toBe(1);
     });
 
-    it('tampoco le llega el email de la campaña', async () => {
-      const bloqueadaMail = { name: 'Harta', email: 'harta@mail.com' };
-      const permitidaMail = { name: 'Ana', email: 'ana@mail.com' };
-      mockSuppression.filterAllowed.mockResolvedValue({
-        allowed: [permitidaMail],
-        blocked: 1,
+    it('en email queda omitido con su motivo, no pendiente de envío', async () => {
+      const bloqueada = makeCustomer({
+        name: 'Harta',
+        email: 'harta@mail.com',
       });
-      stubCustomers([bloqueadaMail, permitidaMail]);
-      const campaign = {
-        _id: 'k3',
-        tenantId: { toString: () => tenantId },
-        targeting: 'all',
-        listIds: [],
-        recipientTags: [],
-        type: 'email',
-        subject: 'Promo',
-        body: 'Hola {nombre}',
-        status: 'draft',
-        save: jest.fn().mockResolvedValue(undefined),
-      };
-      stubFindById(campaign);
+      const permitida = makeCustomer({ name: 'Ana', email: 'ana@mail.com' });
+      mockSuppression.matches.mockImplementation(
+        (_set: unknown, c: { email?: string }) => c.email === 'harta@mail.com',
+      );
+      stubCustomers([bloqueada, permitida]);
+      const doc = makeCampaignDoc({ targeting: 'all', type: 'email' });
+      stubFindById(doc);
 
-      await service.send('k3', tenantId);
+      await service.send(doc._id.toString(), tenantId);
 
-      const enviados = mockMail.sendCampaign.mock.calls.map((c) => c[0].to);
-      expect(enviados).toEqual(['ana@mail.com']);
+      const rows = recipientModel.insertMany.mock.calls[0][0];
+      expect(rows.map((r: any) => [r.to, r.status, r.error])).toEqual([
+        ['harta@mail.com', 'skipped', 'En la lista de no contactar'],
+        ['ana@mail.com', 'pending', undefined],
+      ]);
+      expect(doc.recipientCount).toBe(1);
     });
   });
 
@@ -452,7 +493,8 @@ describe('CampaignsService', () => {
       stubFindById(doc);
       stubCustomers([]);
 
-      await service.send(doc._id.toString(), tenantId);
+      // Sin contactos el envío se rechaza; aquí solo importa la consulta.
+      await service.send(doc._id.toString(), tenantId).catch(() => undefined);
 
       expect(mockLists.resolveCustomers).not.toHaveBeenCalled();
       expect(customerModel.find).toHaveBeenCalled();
@@ -463,7 +505,8 @@ describe('CampaignsService', () => {
       stubFindById(doc);
       stubCustomers([]);
 
-      await service.send(doc._id.toString(), tenantId);
+      // Sin contactos el envío se rechaza; aquí solo importa la consulta.
+      await service.send(doc._id.toString(), tenantId).catch(() => undefined);
 
       const filter = customerModel.find.mock.calls[0][0];
       expect(Object.keys(filter)).toEqual(['tenantId']);
@@ -478,7 +521,8 @@ describe('CampaignsService', () => {
       stubFindById(doc);
       stubCustomers([]);
 
-      await service.send(doc._id.toString(), tenantId);
+      // Sin contactos el envío se rechaza; aquí solo importa la consulta.
+      await service.send(doc._id.toString(), tenantId).catch(() => undefined);
 
       const filter = customerModel.find.mock.calls[0][0];
       expect(filter.tags).toEqual({ $in: ['vip'] });
@@ -489,7 +533,8 @@ describe('CampaignsService', () => {
       stubFindById(doc);
       stubCustomers([]);
 
-      await service.send(doc._id.toString(), tenantId);
+      // Sin contactos el envío se rechaza; aquí solo importa la consulta.
+      await service.send(doc._id.toString(), tenantId).catch(() => undefined);
 
       const filter = customerModel.find.mock.calls[0][0];
       expect(filter.tags).toBeUndefined();
@@ -530,66 +575,172 @@ describe('CampaignsService', () => {
 
   // ─── send: email ────────────────────────────────────────────────────────────
 
-  describe('send email campaign', () => {
-    it('sends personalized email to each customer and marks campaign sent', async () => {
-      const doc = makeCampaignDoc({
-        type: 'email',
-        subject: 'Oferta',
-        body: 'Hola {nombre}!',
-      });
+  describe('send email / sms campaign (en cola)', () => {
+    it('no envía en la petición: deja a cada destinatario pendiente', async () => {
+      const doc = makeCampaignDoc({ type: 'email', subject: 'Oferta' });
       stubFindById(doc);
-      stubCustomers([
-        makeCustomer({ name: 'Ana', email: 'ana@test.com' }),
-        makeCustomer({ name: 'Luis', email: 'luis@test.com' }),
-      ]);
+      const ana = makeCustomer({ name: 'Ana', email: 'ana@test.com' });
+      const luis = makeCustomer({ name: 'Luis', email: 'luis@test.com' });
+      stubCustomers([ana, luis]);
 
       await service.send(doc._id.toString(), tenantId);
 
-      expect(mockMail.sendCampaign).toHaveBeenCalledTimes(2);
-      expect(mockMail.sendCampaign).toHaveBeenCalledWith(
-        expect.objectContaining({
-          to: 'ana@test.com',
-          name: 'Ana',
-          subject: 'Oferta',
-          body: 'Hola Ana!',
-        }),
-      );
-      expect(doc.status).toBe('sent');
+      expect(mockMail.sendCampaign).not.toHaveBeenCalled();
+      const rows = recipientModel.insertMany.mock.calls[0][0];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toMatchObject({
+        campaignId: doc._id,
+        customerId: ana._id,
+        name: 'Ana',
+        to: 'ana@test.com',
+        status: 'pending',
+      });
+      expect(doc.status).toBe('sending');
       expect(doc.recipientCount).toBe(2);
-      expect(doc.sentAt).toBeInstanceOf(Date);
-      expect(doc.errorMessage).toBeUndefined();
+      expect(doc.stats).toEqual({
+        total: 2,
+        pending: 2,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+      });
     });
 
-    it('uses campaign name as subject fallback', async () => {
+    it('sin asunto no falla: el envío usará el nombre de la campaña', async () => {
       const doc = makeCampaignDoc({ subject: undefined, name: 'Mi Campaña' });
       stubFindById(doc);
       stubCustomers([makeCustomer()]);
 
       await service.send(doc._id.toString(), tenantId);
 
-      expect(mockMail.sendCampaign).toHaveBeenCalledWith(
-        expect.objectContaining({ subject: 'Mi Campaña' }),
-      );
+      expect(doc.status).toBe('sending');
     });
 
-    it('does not abort the batch on per-recipient failure and records error count', async () => {
+    it('omite a quien no tiene email y a los repetidos, con su motivo', async () => {
       const doc = makeCampaignDoc({ type: 'email' });
       stubFindById(doc);
       stubCustomers([
-        makeCustomer({ email: 'ok@test.com' }),
-        makeCustomer({ email: 'bad@test.com' }),
-        makeCustomer({ email: 'bad2@test.com' }),
+        makeCustomer({ email: 'uno@test.com' }),
+        makeCustomer({ email: undefined }),
+        makeCustomer({ email: 'UNO@test.com' }),
       ]);
-      mockMail.sendCampaign
-        .mockResolvedValueOnce(undefined)
-        .mockRejectedValueOnce(new Error('smtp down'))
-        .mockRejectedValueOnce(new Error('smtp down'));
 
       await service.send(doc._id.toString(), tenantId);
 
-      expect(mockMail.sendCampaign).toHaveBeenCalledTimes(3);
-      expect(doc.status).toBe('sent');
-      expect(doc.errorMessage).toBe('2 email(s) no se pudieron enviar');
+      const rows = recipientModel.insertMany.mock.calls[0][0];
+      expect(rows.map((r: any) => [r.status, r.error])).toEqual([
+        ['pending', undefined],
+        ['skipped', 'Sin email'],
+        ['skipped', 'Email repetido'],
+      ]);
+      expect(doc.stats).toMatchObject({ total: 3, pending: 1, skipped: 2 });
+    });
+
+    it('rechaza el envío si nadie puede recibirlo', async () => {
+      const doc = makeCampaignDoc({ type: 'email' });
+      stubFindById(doc);
+      stubCustomers([makeCustomer({ email: undefined })]);
+
+      await expect(service.send(doc._id.toString(), tenantId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(recipientModel.insertMany).not.toHaveBeenCalled();
+      expect(doc.status).toBe('draft');
+    });
+
+    it('con fecha futura queda programada en vez de enviándose', async () => {
+      const doc = makeCampaignDoc({
+        type: 'email',
+        scheduledAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      stubFindById(doc);
+      stubCustomers([makeCustomer()]);
+
+      await service.send(doc._id.toString(), tenantId);
+
+      expect(doc.status).toBe('scheduled');
+    });
+
+    it('con plantilla copia su HTML a la campaña', async () => {
+      const doc = makeCampaignDoc({
+        type: 'email',
+        body: '',
+        subject: '',
+        emailTemplateId: new Types.ObjectId(),
+      });
+      stubFindById(doc);
+      stubCustomers([makeCustomer()]);
+      emailTemplateModel.findOne.mockReturnValue(
+        buildQuery({
+          html: '<p>Hola {nombre}</p>',
+          subject: 'Del diseño',
+          preheader: 'pre',
+        }),
+      );
+
+      await service.send(doc._id.toString(), tenantId);
+
+      expect(doc.html).toBe('<p>Hola {nombre}</p>');
+      expect(doc.subject).toBe('Del diseño');
+      // La plantilla se busca dentro de la empresa, nunca solo por id.
+      expect(emailTemplateModel.findOne.mock.calls[0][0].tenantId).toBe(
+        doc.tenantId,
+      );
+    });
+
+    it('{link} exige un destino y crea un link personal por destinatario', async () => {
+      const doc = makeCampaignDoc({ type: 'sms', body: 'Mira {link}' });
+      stubFindById(doc);
+      const ana = makeCustomer();
+      stubCustomers([ana]);
+
+      await expect(service.send(doc._id.toString(), tenantId)).rejects.toThrow(
+        /indica a qué dirección/,
+      );
+
+      doc.linkUrl = 'https://tienda.com/oferta';
+      mockLinks.createPersonalLinks.mockResolvedValue([
+        { linkId: new Types.ObjectId(), shortUrl: 'https://go.x/aB3xK9p' },
+      ]);
+      await service.send(doc._id.toString(), tenantId);
+
+      expect(mockLinks.createPersonalLinks.mock.calls[0][2]).toEqual([
+        { customerId: ana._id },
+      ]);
+      expect(recipientModel.insertMany.mock.calls[0][0][0].shortUrl).toBe(
+        'https://go.x/aB3xK9p',
+      );
+    });
+
+    it('SMS: sin proveedor configurado no se encola nada', async () => {
+      const doc = makeCampaignDoc({ type: 'sms', body: 'Hola' });
+      stubFindById(doc);
+      stubCustomers([makeCustomer()]);
+      mockSms.requireConfig.mockRejectedValue(
+        new BadRequestException('No hay un proveedor de SMS activo'),
+      );
+
+      await expect(service.send(doc._id.toString(), tenantId)).rejects.toThrow(
+        /proveedor de SMS/,
+      );
+      expect(recipientModel.insertMany).not.toHaveBeenCalled();
+    });
+
+    it('SMS: el destino es el teléfono y sin teléfono se omite', async () => {
+      const doc = makeCampaignDoc({ type: 'sms', body: 'Hola {nombre}' });
+      stubFindById(doc);
+      stubCustomers([
+        makeCustomer({ phone: '+51999000111' }),
+        makeCustomer({ phone: undefined }),
+      ]);
+
+      await service.send(doc._id.toString(), tenantId);
+
+      const rows = recipientModel.insertMany.mock.calls[0][0];
+      expect(rows.map((r: any) => [r.to, r.status, r.error])).toEqual([
+        ['+51999000111', 'pending', undefined],
+        ['', 'skipped', 'Sin teléfono'],
+      ]);
     });
   });
 
@@ -766,21 +917,24 @@ describe('CampaignsService', () => {
   // ─── resend ─────────────────────────────────────────────────────────────────
 
   describe('resend', () => {
-    it('resets a sent campaign and sends again', async () => {
+    it('resets a sent campaign and queues it again', async () => {
       const doc = makeCampaignDoc({
         status: 'sent',
         sentAt: new Date('2026-01-01'),
         errorMessage: 'algo falló',
+        scheduledAt: new Date('2026-01-01'),
       });
       stubFindById(doc);
       stubCustomers([makeCustomer()]);
 
       await service.resend(doc._id.toString(), tenantId);
 
-      expect(mockMail.sendCampaign).toHaveBeenCalledTimes(1);
-      expect(doc.status).toBe('sent');
+      // Parte de cero: se borran los destinatarios del envío anterior.
+      expect(recipientModel.deleteMany).toHaveBeenCalledTimes(1);
+      expect(recipientModel.insertMany).toHaveBeenCalledTimes(1);
+      expect(doc.status).toBe('sending');
       expect(doc.errorMessage).toBeUndefined();
-      expect(doc.sentAt).toBeInstanceOf(Date);
+      expect(doc.sentAt).toBeUndefined();
     });
 
     it('rejects resend while campaign is sending', async () => {
@@ -863,8 +1017,8 @@ describe('CampaignsService', () => {
       const doc = makeCampaignDoc({ type: 'email' });
       stubFindById(doc);
       stubCustomers([
-        makeCustomer({ phone: undefined }),
-        makeCustomer({ phone: '+51111' }),
+        makeCustomer({ phone: undefined, email: 'a@test.com' }),
+        makeCustomer({ phone: '+51111', email: 'b@test.com' }),
       ]);
       mockSettings.getWaDailyLimit.mockResolvedValue(50);
 
@@ -919,7 +1073,7 @@ describe('CampaignsService', () => {
   // ─── recuperación de campañas huérfanas + cuota en vuelo ───────────────────
 
   describe('onModuleInit (campañas huérfanas)', () => {
-    it("marca como 'failed' toda campaña en 'sending' al arrancar", async () => {
+    it("marca como 'failed' las campañas de WhatsApp en 'sending' al arrancar", async () => {
       campaignModel.updateMany = jest.fn().mockReturnValue({
         exec: jest.fn().mockResolvedValue({ modifiedCount: 2 }),
       });
@@ -927,7 +1081,8 @@ describe('CampaignsService', () => {
       await service.onModuleInit();
 
       expect(campaignModel.updateMany).toHaveBeenCalledWith(
-        { status: 'sending' },
+        // Email y SMS se reanudan solos: no se tocan.
+        { status: 'sending', type: 'whatsapp' },
         { $set: expect.objectContaining({ status: 'failed' }) },
       );
     });

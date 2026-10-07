@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Customer } from './customer.schema';
 import { ContactForm } from '../forms/form.schema';
+import { ContactActivity } from './contact-activity.schema';
 import { Reservation } from '../reservations/reservation.schema';
 import { EventRegistration } from '../events/event-registration.schema';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
@@ -26,6 +27,8 @@ export class CustomersService implements OnModuleInit {
     @InjectModel(EventRegistration.name)
     private eventRegModel: Model<EventRegistration>,
     @InjectModel(ContactForm.name) private formModel: Model<ContactForm>,
+    @InjectModel(ContactActivity.name)
+    private activityModel: Model<ContactActivity>,
   ) {}
 
   /**
@@ -113,7 +116,11 @@ export class CustomersService implements OnModuleInit {
       const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       filter['$or'] = [{ name: re }, { email: re }, { phone: re }];
     }
-    return this.customerModel.find(filter).sort({ name: 1 }).exec();
+    return this.customerModel
+      .find(filter)
+      .sort({ name: 1 })
+      .populate('ownerId', 'name email')
+      .exec();
   }
 
   async create(
@@ -180,6 +187,8 @@ export class CustomersService implements OnModuleInit {
     if (isOwnerScoped(role) && customer.createdBy?.toString() !== userId)
       throw new ForbiddenException();
     await this.customerModel.findByIdAndDelete(id).exec();
+    // La bitácora no tiene sentido sin el contacto.
+    await this.activityModel.deleteMany({ customerId: customer._id }).exec();
   }
 
   async sync(tenantId: string): Promise<{ imported: number; updated: number }> {

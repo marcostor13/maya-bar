@@ -3,23 +3,25 @@ import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule, Plus, Send, Edit2, Trash2, Megaphone, Mail, MessageSquare,
   CheckCircle2, Clock, AlertCircle, Copy, Search, Image, Video, RotateCcw, Mic, FileText, HeartHandshake,
+  Smartphone, CalendarClock, ListChecks, CircleStop, Link2,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { CampaignsApiService } from '../../core/api/campaigns-api.service';
 import { Campaign, CampaignChannel, CampaignEstimate, ContactList } from '../../shared/models/campaign.model';
 import { CampaignEditorComponent } from './campaign-editor';
+import { CampaignRecipientsComponent } from './campaign-recipients';
 
 @Component({
   selector: 'app-campaigns',
   standalone: true,
-  imports: [LucideAngularModule, RouterLink, CampaignEditorComponent],
+  imports: [LucideAngularModule, RouterLink, CampaignEditorComponent, CampaignRecipientsComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
         <div>
           <h1 class="page-title">Campañas</h1>
-          <p class="page-subtitle">Email y WhatsApp para tus clientes</p>
+          <p class="page-subtitle">Email, SMS y WhatsApp para tus clientes</p>
         </div>
         <div class="header-actions">
           <a class="btn btn-secondary btn-lg" routerLink="/recuperacion">
@@ -112,13 +114,16 @@ import { CampaignEditorComponent } from './campaign-editor';
                       <span class="type-badge"
                         [class.type-email]="channelOf(c) === 'email'"
                         [class.type-wa]="channelOf(c) === 'waha'"
-                        [class.type-cloud]="channelOf(c) === 'cloudapi'">
-                        <lucide-icon [img]="channelOf(c) === 'email' ? Mail : MessageSquare" [size]="12"></lucide-icon>
+                        [class.type-cloud]="channelOf(c) === 'cloudapi'"
+                        [class.type-sms]="channelOf(c) === 'sms'">
+                        <lucide-icon [img]="channelIcon(c)" [size]="12"></lucide-icon>
                         {{ channelLabel(c) }}
                       </span>
                     </td>
                     <td class="audience-cell" data-label="Audiencia">
-                      @if (c.targeting === 'lists' && c.listIds.length) {
+                      @if (c.targeting === 'contacts') {
+                        <span class="all-label">{{ c.customerIds?.length || 0 }} contacto(s) elegidos</span>
+                      } @else if (c.targeting === 'lists' && c.listIds.length) {
                         <div class="audience-badges">
                           @for (lid of c.listIds.slice(0,2); track lid) {
                             <span class="badge-list" [style.background]="listColor(lid) + '22'" [style.color]="listColor(lid)">{{ listName(lid) }}</span>
@@ -153,13 +158,45 @@ import { CampaignEditorComponent } from './campaign-editor';
                       }
                     </td>
                     <td data-label="Destinatarios" style="text-align:right;font-weight:700;font-size:15px;color:var(--color-text-main)">
-                      {{ c.status === 'draft' ? '—' : (c.recipientCount || 0) }}
+                      @if (c.status === 'draft') {
+                        —
+                      } @else if (isQueued(c) && c.stats) {
+                        <button class="count-btn" (click)="detail.set(c)" title="Ver el detalle de envío">
+                          {{ c.stats.sent }} / {{ c.stats.total }}
+                        </button>
+                        @if (c.status === 'sending') {
+                          <div class="mini-progress"><div [style.width.%]="progressOf(c)"></div></div>
+                        }
+                      } @else {
+                        {{ c.recipientCount || 0 }}
+                      }
                     </td>
-                    <td class="date-cell" data-label="Envío">{{ c.sentAt ? formatDate(c.sentAt) : '—' }}</td>
+                    <td class="date-cell" data-label="Envío">
+                      @if (c.status === 'scheduled' && c.scheduledAt) {
+                        <span class="scheduled-at">
+                          <lucide-icon [img]="CalendarClock" [size]="12"></lucide-icon>
+                          {{ formatDate(c.scheduledAt) }}
+                        </span>
+                      } @else {
+                        {{ c.sentAt ? formatDate(c.sentAt) : '—' }}
+                      }
+                    </td>
                     <td>
                       <div class="row-actions">
-                        @if (c.status === 'sending') {
-                          <span style="font-size:12px;color:var(--color-text-muted)">Enviando...</span>
+                        @if (isQueued(c) && c.status !== 'draft') {
+                          <button class="btn btn-icon btn-ghost btn-sm" (click)="detail.set(c)" title="Detalle de envío">
+                            <lucide-icon [img]="ListChecks" [size]="14"></lucide-icon>
+                          </button>
+                        }
+                        @if (c.status === 'sending' || c.status === 'scheduled') {
+                          @if (isQueued(c)) {
+                            <button class="btn btn-sm btn-secondary" (click)="cancelCampaign(c)">
+                              <lucide-icon [img]="CircleStop" [size]="13"></lucide-icon>
+                              {{ c.status === 'scheduled' ? 'Cancelar' : 'Detener' }}
+                            </button>
+                          } @else {
+                            <span style="font-size:12px;color:var(--color-text-muted)">Enviando...</span>
+                          }
                         } @else {
                           <button class="btn btn-icon btn-ghost btn-sm" (click)="openDrawer(c)" title="Editar">
                             <lucide-icon [img]="Edit2" [size]="14"></lucide-icon>
@@ -203,6 +240,10 @@ import { CampaignEditorComponent } from './campaign-editor';
         (saved)="onEditorSaved()"
         (closed)="drawerOpen.set(false)" />
     }
+
+    @if (detail(); as d) {
+      <app-campaign-recipients [campaign]="d" (closed)="closeDetail()" />
+    }
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
@@ -225,6 +266,11 @@ import { CampaignEditorComponent } from './campaign-editor';
     .type-email { background: #EFF6FF; color: #2563EB; }
     .type-wa    { background: #F0FDF4; color: #16A34A; }
     .type-cloud { background: #F5F3FF; color: #7C3AED; }
+    .type-sms   { background: var(--color-brand-light); color: var(--color-brand); }
+    .count-btn { background:none; border:none; padding:0; font:inherit; color:var(--color-brand); cursor:pointer; text-decoration:underline; }
+    .mini-progress { height:4px; margin-top:6px; border-radius:var(--radius-pill); background:var(--color-bg-light); overflow:hidden; }
+    .mini-progress > div { height:100%; background:var(--color-brand); transition:width var(--transition-smooth); }
+    .scheduled-at { display:inline-flex; align-items:center; gap:4px; color:var(--color-brand); font-weight:600; }
 
     .status-badge {
       display: inline-flex; align-items: center; gap: 5px;
@@ -232,6 +278,7 @@ import { CampaignEditorComponent } from './campaign-editor';
     }
     .status-draft   { background: var(--color-bg-app); color: var(--color-text-muted); }
     .status-sending { background: #FEF9C3; color: #854D0E; }
+    .status-scheduled { background: var(--color-brand-light); color: var(--color-brand); }
     .status-sent    { background: #F0FDF4; color: #16A34A; }
     .status-failed  { background: #FEF2F2; color: var(--color-error); }
 
@@ -325,6 +372,8 @@ export class CampaignsComponent implements OnInit, OnDestroy {
   readonly Search = Search; readonly Image = Image; readonly Video = Video;
   readonly RotateCcw = RotateCcw; readonly Mic = Mic; readonly FileText = FileText;
   readonly HeartHandshake = HeartHandshake;
+  readonly Smartphone = Smartphone; readonly CalendarClock = CalendarClock;
+  readonly ListChecks = ListChecks; readonly CircleStop = CircleStop; readonly Link2 = Link2;
 
   campaigns = signal<Campaign[]>([]);
   availableLists = signal<ContactList[]>([]);
@@ -333,6 +382,8 @@ export class CampaignsComponent implements OnInit, OnDestroy {
   editing = signal<Campaign | null>(null);
   statusFilter = signal<'all' | 'draft' | 'sent'>('all');
   searchQuery = signal('');
+  /** Campaña cuyo detalle de envío está abierto. */
+  detail = signal<Campaign | null>(null);
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -407,11 +458,46 @@ export class CampaignsComponent implements OnInit, OnDestroy {
 
   channelOf(c: Campaign): CampaignChannel {
     if (c.type === 'email') return 'email';
+    if (c.type === 'sms') return 'sms';
     return c.waProvider === 'cloudapi' ? 'cloudapi' : 'waha';
+  }
+  channelIcon(c: Campaign) {
+    const ch = this.channelOf(c);
+    return ch === 'email' ? this.Mail : ch === 'sms' ? this.Smartphone : this.MessageSquare;
+  }
+  /** Email y SMS se envían en segundo plano y tienen detalle por destinatario. */
+  isQueued(c: Campaign): boolean { return c.type === 'email' || c.type === 'sms'; }
+  progressOf(c: Campaign): number {
+    const s = c.stats;
+    return s && s.total ? Math.round(((s.total - s.pending) / s.total) * 100) : 0;
+  }
+  closeDetail() {
+    this.detail.set(null);
+    this.load();
+  }
+  async cancelCampaign(c: Campaign) {
+    const scheduled = c.status === 'scheduled';
+    const ok = await this.confirm.confirm({
+      title: scheduled ? 'Cancelar programación' : 'Detener envío',
+      message: scheduled
+        ? `"${c.name}" volverá a borrador y no se enviará.`
+        : `Se detendrá "${c.name}". Los mensajes ya enviados no se pueden deshacer; el resto quedará sin enviar.`,
+      confirmText: scheduled ? 'Cancelar programación' : 'Detener',
+      danger: true,
+    });
+    if (!ok) return;
+    this.api.cancelCampaign(c._id).subscribe({
+      next: updated => {
+        this.campaigns.update(list => list.map(x => (x._id === updated._id ? updated : x)));
+        this.toast.success(scheduled ? 'Programación cancelada' : 'Envío detenido');
+      },
+      error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'No se pudo detener'),
+    });
   }
   channelLabel(c: Campaign): string {
     const ch = this.channelOf(c);
     if (ch === 'email') return 'Email';
+    if (ch === 'sms') return 'SMS';
     if (ch === 'cloudapi') return 'WA Cloud';
     return 'WA WAHA';
   }
@@ -439,8 +525,14 @@ export class CampaignsComponent implements OnInit, OnDestroy {
     this.api.sendCampaign(c._id).subscribe({
       next: (updated) => {
         this.campaigns.update(list => list.map(x => x._id === updated._id ? updated : x));
-        if (updated.status === 'sending') {
-          this.toast.success('Enviando por WAHA en background. Se actualizará automáticamente.');
+        if (updated.status === 'scheduled') {
+          this.toast.success('Campaña programada');
+        } else if (updated.status === 'sending') {
+          this.toast.success(
+            this.isQueued(updated)
+              ? 'Envío en marcha: se procesa por lotes y el avance se actualiza solo.'
+              : 'Enviando por WAHA en background. Se actualizará automáticamente.',
+          );
           this.startPolling();
         } else {
           this.toast.success('Campaña enviada correctamente');
@@ -464,7 +556,11 @@ export class CampaignsComponent implements OnInit, OnDestroy {
       next: (updated) => {
         this.campaigns.update(list => list.map(x => x._id === updated._id ? updated : x));
         if (updated.status === 'sending') {
-          this.toast.success('Reenviando por WAHA en background. Se actualizará automáticamente.');
+          this.toast.success(
+            this.isQueued(updated)
+              ? 'Reenvío en marcha: se procesa por lotes.'
+              : 'Reenviando por WAHA en background. Se actualizará automáticamente.',
+          );
           this.startPolling();
         } else {
           this.toast.success('Campaña reenviada');
@@ -492,6 +588,14 @@ export class CampaignsComponent implements OnInit, OnDestroy {
       const total = (e.recipientCount * price).toFixed(2);
       parts.push(`Costo estimado: ~$${total} USD · $${price.toFixed(4)} por conversación.`);
       parts.push(`Tiempo: casi inmediato (Cloud API oficial).`);
+    } else if (ch === 'email' || ch === 'sms') {
+      if (ch === 'sms' && e.smsSegments && e.smsSegments > 1) {
+        parts.push(`Cada mensaje ocupa ${e.smsSegments} SMS: se cobrarán ~${e.recipientCount * e.smsSegments} en total.`);
+      }
+      parts.push(`Tiempo estimado: ~${Math.max(1, e.estimatedMinutes)} min (se envía por lotes en segundo plano).`);
+      if (c.scheduledAt && new Date(c.scheduledAt).getTime() > Date.now()) {
+        parts.push(`Quedará programada para el ${this.formatDate(c.scheduledAt)}.`);
+      }
     } else if (ch === 'waha') {
       if (e.remaining < e.recipientCount) {
         parts.push(`Límite diario: se enviarán ${e.remaining} de ${e.recipientCount} (${e.sentToday} ya enviados hoy, límite ${e.dailyLimit}).`);
@@ -522,12 +626,12 @@ export class CampaignsComponent implements OnInit, OnDestroy {
   }
 
   statusLabel(s: string): string {
-    const map: Record<string, string> = { draft: 'Borrador', sending: 'Enviando...', sent: 'Enviada', failed: 'Error' };
+    const map: Record<string, string> = { draft: 'Borrador', scheduled: 'Programada', sending: 'Enviando...', sent: 'Enviada', failed: 'Error' };
     return map[s] ?? s;
   }
 
   statusIcon(s: string) {
-    const map: Record<string, unknown> = { draft: this.Clock, sending: this.Clock, sent: this.CheckCircle2, failed: this.AlertCircle };
+    const map: Record<string, unknown> = { draft: this.Clock, scheduled: this.CalendarClock, sending: this.Clock, sent: this.CheckCircle2, failed: this.AlertCircle };
     return (map[s] ?? this.Clock) as typeof this.Clock;
   }
 

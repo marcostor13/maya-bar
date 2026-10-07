@@ -46,6 +46,26 @@ repositorio como público (HTTPS sin credenciales). Es el caso de la instancia
 actual; si el repo pasa a privado hay que instalar una GitHub App en Coolify y
 recrear el origen de las apps.
 
+### Dominios cortos (links con seguimiento)
+
+Un dominio propio para links cortos (`ir.empresa.com/abc1234`) lo sirve el
+backend, no el frontend. Para activarlo:
+
+1. Registro **A** del dominio hacia `SERVER_IP`, sin proxy.
+2. Añadirlo a `SHORT_LINK_DOMAINS` en el `.env` de la raíz (varios separados
+   por comas) y ejecutar `npm run provision` y `npm run deploy:backend`:
+   `provision` lo añade a los dominios de la app del backend para que Traefik
+   lo enrute y le emita certificado.
+3. En la plataforma, **Links → Dominios → Verificar**. Pasa a *Activo* cuando
+   `https://<dominio>/__maya-ping` responde.
+
+Quitar un dominio de `SHORT_LINK_DOMAINS` deja de servirlo en el siguiente
+`provision`: sus links dejan de abrir.
+
+La geolocalización de los clics es opcional: `GEOIP_URL` en `backend/.env`
+(por ejemplo `https://ipwho.is/{ip}`). Sin ella no se envía ninguna IP a
+terceros y el dashboard simplemente no muestra países.
+
 MongoDB es Atlas y filtra por IP: la IP del servidor (`SERVER_IP`) tiene que
 estar en *Network Access* del cluster o el backend arranca pero responde 502.
 

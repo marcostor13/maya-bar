@@ -3,7 +3,8 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule, Mail, MessageSquare, CheckCircle2, X, Users, Zap, Edit2,
-  DollarSign, RefreshCw, Info, Wand2, Eye, Check, Upload, Paperclip,
+  DollarSign, RefreshCw, Info, Wand2, Eye, Check, Upload, Paperclip, Smartphone, Search,
+  Link2, CalendarClock, LayoutTemplate, TriangleAlert,
 } from 'lucide-angular';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ToastService } from '../../shared/toast';
@@ -13,6 +14,13 @@ import {
   ContactList, PRESET_TAGS, WaTemplate,
 } from '../../shared/models/campaign.model';
 import { CampaignMediaComponent } from './campaign-media';
+import { EmailAccountsApiService } from '../../core/api/email-accounts-api.service';
+import {
+  EmailTemplateSummary, MessagePreview, MessageTemplate, TemplateVariable, TemplatesApiService,
+} from '../../core/api/templates-api.service';
+import { VariableChipsComponent, insertAtCursor } from '../templates/variable-chips';
+import type { EmailAccount } from '../../shared/models/email.model';
+import type { AudiencePreview } from '../../shared/models/campaign.model';
 
 /** Drawer de creación/edición de campaña (email / WhatsApp WAHA / Cloud API). */
 /**
@@ -30,7 +38,7 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
 @Component({
   selector: 'app-campaign-editor',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, RouterLink, CampaignMediaComponent],
+  imports: [FormsModule, LucideAngularModule, RouterLink, CampaignMediaComponent, VariableChipsComponent],
   template: `
     <div class="overlay" (click)="close()"></div>
     <div class="drawer">
@@ -55,28 +63,126 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
         <div class="field">
           <label class="label">Canal *</label>
           <div class="channel-tabs">
-            <button type="button" class="channel-tab" [class.active]="form.channel === 'email'" (click)="setChannel('email')">
+            <button type="button" [disabled]="!!editingId()" class="channel-tab" [class.active]="form.channel === 'email'" (click)="setChannel('email')">
               <lucide-icon [img]="Mail" [size]="14"></lucide-icon>
               Email
             </button>
-            <button type="button" class="channel-tab" [class.active]="form.channel === 'waha'" (click)="setChannel('waha')">
+            <button type="button" [disabled]="!!editingId()" class="channel-tab" [class.active]="form.channel === 'waha'" (click)="setChannel('waha')">
               <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
               WhatsApp WAHA
             </button>
-            <button type="button" class="channel-tab channel-tab-cloud" [class.active]="form.channel === 'cloudapi'" (click)="setChannel('cloudapi')">
+            <button type="button" [disabled]="!!editingId()" class="channel-tab channel-tab-cloud" [class.active]="form.channel === 'cloudapi'" (click)="setChannel('cloudapi')">
               <lucide-icon [img]="Zap" [size]="14"></lucide-icon>
               Cloud API
             </button>
+            <button type="button" [disabled]="!!editingId()" class="channel-tab" [class.active]="form.channel === 'sms'" (click)="setChannel('sms')">
+              <lucide-icon [img]="Smartphone" [size]="14"></lucide-icon>
+              SMS
+            </button>
           </div>
+          @if (editingId()) {
+            <span class="hint">El canal no se puede cambiar en una campaña ya creada. Crea una nueva para otro canal.</span>
+          }
         </div>
+
+        <!-- SMS -->
+        @if (form.channel === 'sms') {
+          @if (smsStatus(); as sms) {
+            @if (!sms.configured) {
+              <div class="warn-note">
+                <lucide-icon [img]="TriangleAlert" [size]="14"></lucide-icon>
+                <span>Aún no hay un proveedor de SMS activo. Configúralo en
+                  <a routerLink="/settings">Configuración → SMS</a> para poder enviar.</span>
+              </div>
+            } @else {
+              <div class="info-note">
+                <lucide-icon [img]="Info" [size]="13"></lucide-icon>
+                Se enviará con {{ sms.name || 'tu proveedor' }}{{ sms.from ? ' desde ' + sms.from : '' }}.
+              </div>
+            }
+          }
+          <div class="field">
+            <div class="field-head">
+              <label class="label">Mensaje *</label>
+              @if (channelTemplates().length) {
+                <select class="select select-inline" (change)="useMessageTemplate($any($event.target).value); $any($event.target).value = ''"
+                  aria-label="Usar una plantilla de mensaje">
+                  <option value="">Usar plantilla…</option>
+                  @for (t of channelTemplates(); track t._id) { <option [value]="t._id">{{ t.name }}</option> }
+                </select>
+              }
+            </div>
+            <app-variable-chips [variables]="variables()" (pick)="insertToken($event, smsBody)" />
+            <textarea class="textarea" #smsBody [(ngModel)]="form.body" (ngModelChange)="onBodyChange()" rows="5"
+              maxlength="1600" placeholder="Hola {primer_nombre}, tenemos algo para ti: {link}"></textarea>
+            @if (smsPreview(); as p) {
+              <div class="counter" [class.warn]="p.sms.segments > 1">
+                <span>{{ p.sms.length }} caracteres · {{ p.sms.segments }} SMS por destinatario · {{ p.sms.encoding }}</span>
+                <span>{{ p.sms.perSegment }} por segmento</span>
+              </div>
+              @if (p.sms.encoding === 'UCS-2') {
+                <div class="warn-note">
+                  <lucide-icon [img]="TriangleAlert" [size]="14"></lucide-icon>
+                  <span>Estos caracteres reducen cada SMS a 70: {{ p.sms.unicodeChars.join(' ') }}</span>
+                </div>
+              }
+              @if (p.unknown.length) {
+                <div class="warn-note">
+                  <lucide-icon [img]="TriangleAlert" [size]="14"></lucide-icon>
+                  <span>Variables que no existen: {{ p.unknown.join(', ') }}</span>
+                </div>
+              }
+              <div class="sms-bubble">{{ p.body || '…' }}</div>
+            }
+          </div>
+        }
 
         <!-- Email: subject + editor -->
         @if (form.channel === 'email') {
           <div class="field">
             <label class="label">Asunto del email</label>
-            <input class="input" [(ngModel)]="form.subject" placeholder="Ej: ¡Oferta exclusiva para ti!" />
+            <input class="input" #subjectInput [(ngModel)]="form.subject" placeholder="Ej: ¡Oferta exclusiva para ti!" />
+            <app-variable-chips [variables]="variables()" (pick)="insertToken($event, subjectInput, 'subject')" />
           </div>
 
+          <div class="field">
+            <label class="label">Enviar desde</label>
+            <select class="select" [(ngModel)]="form.senderAccountId">
+              <option value="">Remitente de la plataforma</option>
+              @for (a of emailAccounts(); track a._id) {
+                <option [value]="a._id">{{ a.label || a.email }} · {{ a.email }}</option>
+              }
+            </select>
+            @if (!emailAccounts().length) {
+              <span class="hint">Conecta un buzón en <a routerLink="/settings">Configuración → Correo</a> para enviar con tu propia dirección.</span>
+            }
+          </div>
+
+          <div class="field">
+            <div class="field-head">
+              <label class="label">Diseño</label>
+              <a class="btn btn-ghost btn-sm" routerLink="/plantillas-email">
+                <lucide-icon [img]="LayoutTemplate" [size]="13"></lucide-icon>
+                Gestionar plantillas
+              </a>
+            </div>
+            <select class="select" [(ngModel)]="form.emailTemplateId" (ngModelChange)="onEmailTemplateChange()">
+              <option value="">Texto simple (sin plantilla)</option>
+              @for (t of emailTemplates(); track t._id) { <option [value]="t._id">{{ t.name }}</option> }
+            </select>
+            @if (form.emailTemplateId) {
+              <div class="template-actions">
+                <button type="button" class="btn btn-secondary btn-sm" (click)="previewEmailTemplate()" [disabled]="templatePreviewLoading()">
+                  <lucide-icon [img]="Eye" [size]="13"></lucide-icon>
+                  {{ templatePreviewLoading() ? 'Cargando…' : 'Vista previa' }}
+                </button>
+                <span class="hint">Se envía el diseño tal como esté guardado al pulsar "Enviar".</span>
+              </div>
+            }
+          </div>
+        }
+
+        @if (form.channel === 'email' && !form.emailTemplateId) {
           <div class="field">
             <div class="email-toolbar">
               <div class="email-mode-tabs">
@@ -119,11 +225,16 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
             }
 
             <label class="label">Cuerpo del email *</label>
-            <textarea class="textarea" [(ngModel)]="form.body" rows="8"
+            @if (channelTemplates().length) {
+              <select class="select select-inline" (change)="useMessageTemplate($any($event.target).value); $any($event.target).value = ''"
+                aria-label="Usar una plantilla de mensaje">
+                <option value="">Usar plantilla de mensaje…</option>
+                @for (t of channelTemplates(); track t._id) { <option [value]="t._id">{{ t.name }}</option> }
+              </select>
+            }
+            <app-variable-chips [variables]="variables()" (pick)="insertToken($event, emailBody)" />
+            <textarea class="textarea" #emailBody [(ngModel)]="form.body" (ngModelChange)="onBodyChange()" rows="8"
               placeholder="Hola {nombre}, tenemos algo especial para ti..."></textarea>
-            <span style="font-size:11px;color:var(--color-text-muted);margin-top:2px">
-              Usa &#123;nombre&#125; para personalizar. La vista previa usa "María" como ejemplo.
-            </span>
           </div>
         }
 
@@ -255,20 +366,54 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
         }
 
         <!-- Body: waha or cloud without template (email handled above) -->
-        @if (form.channel !== 'email' && (form.channel !== 'cloudapi' || !form.templateName)) {
+        @if (form.channel !== 'email' && form.channel !== 'sms' && (form.channel !== 'cloudapi' || !form.templateName)) {
           <div class="field">
             <label class="label">{{ form.channel === 'cloudapi' ? 'Mensaje (libre, solo dentro de ventana 24h)' : 'Mensaje *' }}</label>
-            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:6px">
-              Usa <code style="background:var(--color-bg-app);padding:1px 5px;border-radius:4px">&#123;nombre&#125;</code> para personalizar.
-            </div>
-            <textarea class="textarea" [(ngModel)]="form.body" rows="5"
+            @if (channelTemplates().length) {
+              <select class="select select-inline" (change)="useMessageTemplate($any($event.target).value); $any($event.target).value = ''"
+                aria-label="Usar una plantilla de mensaje">
+                <option value="">Usar plantilla de mensaje…</option>
+                @for (t of channelTemplates(); track t._id) { <option [value]="t._id">{{ t.name }}</option> }
+              </select>
+            }
+            <app-variable-chips [variables]="waVariables()" (pick)="insertToken($event, waBody)" />
+            <textarea class="textarea" #waBody [(ngModel)]="form.body" rows="5"
               placeholder="Hola {nombre}, tenemos algo especial para ti..."></textarea>
           </div>
         }
 
         <!-- Media (waha: full tabs · email: image/video) -->
-        @if (form.channel !== 'cloudapi') {
+        @if (form.channel !== 'cloudapi' && form.channel !== 'sms' && !form.emailTemplateId) {
           <app-campaign-media [channel]="form.channel" [(mediaUrl)]="form.mediaUrl" [(mediaType)]="form.mediaType" />
+        }
+
+        @if (form.channel === 'email' || form.channel === 'sms') {
+          <div class="field">
+            <label class="label">
+              <lucide-icon [img]="Link2" [size]="13"></lucide-icon>
+              Link con seguimiento
+            </label>
+            <input class="input" [(ngModel)]="form.linkUrl" placeholder="https://tu-sitio.com/oferta" />
+            <span class="hint">
+              Cada destinatario recibe su propio link corto donde escribas la variable "Link corto",
+              y verás quién hizo clic. Déjalo vacío si no usas link.
+            </span>
+            @if (shortDomains().length) {
+              <select class="select" [(ngModel)]="form.linkDomain" aria-label="Dominio del link corto">
+                <option value="">Dominio predeterminado</option>
+                @for (d of shortDomains(); track d) { <option [value]="d">{{ d }}</option> }
+              </select>
+            }
+          </div>
+
+          <div class="field">
+            <label class="label">
+              <lucide-icon [img]="CalendarClock" [size]="13"></lucide-icon>
+              Programar envío
+            </label>
+            <input class="input" type="datetime-local" [(ngModel)]="form.scheduledAt" />
+            <span class="hint">Vacío = se envía en cuanto pulses "Enviar". Con fecha, queda programada.</span>
+          </div>
         }
 
         <!-- Targeting -->
@@ -278,7 +423,41 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
             <button type="button" class="targeting-tab" [class.active]="form.targeting === 'all'" (click)="setTargeting('all')">Todos los clientes</button>
             <button type="button" class="targeting-tab" [class.active]="form.targeting === 'tags'" (click)="setTargeting('tags')">Por etiquetas</button>
             <button type="button" class="targeting-tab" [class.active]="form.targeting === 'lists'" (click)="setTargeting('lists')">Por listas</button>
+            <button type="button" class="targeting-tab" [class.active]="form.targeting === 'contacts'" (click)="setTargeting('contacts')">Elegir contactos</button>
           </div>
+
+          @if (form.targeting === 'contacts') {
+            <div class="picker">
+              <div class="picker-search">
+                <lucide-icon [img]="Search" [size]="14"></lucide-icon>
+                <input class="input" placeholder="Buscar por nombre, email, teléfono o etiqueta"
+                  [ngModel]="contactQuery()" (ngModelChange)="contactQuery.set($event)" />
+              </div>
+              @if (contactsLoading()) {
+                <div class="picker-empty">Cargando contactos…</div>
+              } @else if (!contactResults().length) {
+                <div class="picker-empty">Ningún contacto coincide.</div>
+              } @else {
+                <label class="picker-all">
+                  <input type="checkbox" [checked]="allContactsShownSelected()" (change)="toggleShownContacts()" />
+                  <span>Seleccionar los {{ contactResults().length }} que se ven</span>
+                  <span class="picker-count">{{ selectedContactIds().length }} elegidos</span>
+                </label>
+                <div class="picker-list">
+                  @for (c of contactResults(); track c._id) {
+                    <label class="picker-row" [class.selected]="selectedContactIds().includes(c._id)">
+                      <input type="checkbox" [checked]="selectedContactIds().includes(c._id)" (change)="toggleContact(c._id)" />
+                      <span class="picker-name">{{ c.name }}</span>
+                      <span class="picker-sub">{{ form.channel === 'email' ? (c.email || 'sin email') : (c.phone || 'sin teléfono') }}</span>
+                    </label>
+                  }
+                </div>
+                @if (contactsHidden() > 0) {
+                  <div class="picker-empty">Hay {{ contactsHidden() }} más: afina la búsqueda.</div>
+                }
+              }
+            </div>
+          }
 
           @if (form.targeting === 'tags') {
             <div class="tag-chips" style="margin-top:12px">
@@ -320,6 +499,20 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
           </div>
         }
       </div>
+
+      @if (templatePreviewDoc(); as doc) {
+        <div class="tpl-preview-overlay" (click)="templatePreviewDoc.set(null)" role="dialog" aria-modal="true" aria-label="Vista previa de la plantilla">
+          <div class="tpl-preview" (click)="$event.stopPropagation()">
+            <div class="tpl-preview-head">
+              <strong>Vista previa</strong>
+              <button class="btn btn-icon btn-ghost" (click)="templatePreviewDoc.set(null)" aria-label="Cerrar">
+                <lucide-icon [img]="X" [size]="18"></lucide-icon>
+              </button>
+            </div>
+            <iframe class="tpl-preview-frame" title="Vista previa del correo" sandbox="" [srcdoc]="doc"></iframe>
+          </div>
+        </div>
+      }
       <div class="drawer-footer">
         <button class="btn btn-ghost" (click)="close()">Cancelar</button>
         <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
@@ -369,6 +562,39 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
     .drawer-footer { padding: 20px 28px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
 
     .field { display: flex; flex-direction: column; gap: 6px; }
+    .channel-tab:disabled { opacity:.55; cursor:not-allowed; }
+    .field-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .select-inline { width:auto; max-width:220px; padding-top:6px; padding-bottom:6px; font-size:12px; }
+    .hint { font-size:11px; color:var(--color-text-muted); }
+    .hint a, .warn-note a { color:var(--color-brand); }
+    .label lucide-icon { vertical-align:-2px; margin-right:4px; }
+    .warn-note { display:flex; gap:8px; align-items:flex-start; padding:10px 12px; border-radius:var(--radius-md);
+      background:var(--color-bg-light); border:1px solid var(--color-warning); color:var(--color-text-main); font-size:12px; }
+    .warn-note lucide-icon { color:var(--color-warning); flex-shrink:0; margin-top:1px; }
+    .counter { display:flex; justify-content:space-between; font-size:12px; color:var(--color-text-muted); }
+    .counter.warn { color:var(--color-warning); }
+    .sms-bubble { align-self:flex-start; max-width:92%; background:var(--color-bg-app); border-radius:var(--radius-md);
+      padding:10px 14px; font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .template-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:4px; }
+    .picker { margin-top:12px; border:1px solid var(--color-border); border-radius:var(--radius-md); padding:12px; }
+    .picker-search { display:flex; align-items:center; gap:8px; color:var(--color-text-muted); margin-bottom:8px; }
+    .picker-search .input { flex:1; }
+    .picker-all { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--color-text-muted); padding:6px 4px; cursor:pointer; }
+    .picker-count { margin-left:auto; font-weight:600; color:var(--color-brand); }
+    .picker-list { max-height:240px; overflow-y:auto; display:flex; flex-direction:column; }
+    .picker-row { display:flex; align-items:center; gap:8px; padding:8px 4px; font-size:13px; cursor:pointer;
+      border-top:1px solid var(--color-border); }
+    .picker-row.selected { background:var(--color-brand-light); }
+    .picker-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .picker-sub { margin-left:auto; font-size:12px; color:var(--color-text-muted); white-space:nowrap; }
+    .picker-empty { font-size:12px; color:var(--color-text-muted); text-align:center; padding:12px; }
+    .tpl-preview-overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px);
+      display:flex; align-items:center; justify-content:center; z-index:120; }
+    .tpl-preview { width:calc(100% - 48px); max-width:720px; height:calc(100vh - 96px); background:var(--color-white);
+      border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden; }
+    .tpl-preview-head { display:flex; align-items:center; justify-content:space-between; padding:14px 20px;
+      border-bottom:1px solid var(--color-border); }
+    .tpl-preview-frame { flex:1; width:100%; border:0; }
     .label { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
     .form-error-box { background: #FEF2F2; border: 1px solid #FECACA; color: var(--color-error); border-radius: var(--radius-lg); padding: 12px 16px; font-size: 14px; }
 
@@ -541,6 +767,8 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   private api = inject(CampaignsApiService);
   private toast = inject(ToastService);
   private sanitizer = inject(DomSanitizer);
+  private templatesApi = inject(TemplatesApiService);
+  private emailAccountsApi = inject(EmailAccountsApiService);
 
   readonly Mail = Mail; readonly MessageSquare = MessageSquare; readonly CheckCircle2 = CheckCircle2;
   readonly X = X; readonly Users = Users; readonly Zap = Zap; readonly Edit2 = Edit2;
@@ -548,6 +776,9 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   readonly Check = Check;
   readonly Upload = Upload; readonly Paperclip = Paperclip;
   readonly Wand2 = Wand2; readonly Eye = Eye;
+  readonly Smartphone = Smartphone; readonly Search = Search; readonly Link2 = Link2;
+  readonly CalendarClock = CalendarClock; readonly LayoutTemplate = LayoutTemplate;
+  readonly TriangleAlert = TriangleAlert;
   readonly PRESET_TAGS = PRESET_TAGS;
 
   readonly CLOUD_PRICES: Record<string, number> = { MARKETING: 0.0625, UTILITY: 0.0175, AUTHENTICATION: 0.0250 };
@@ -575,6 +806,44 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   aiTopic = '';
   aiTone = 'amigable';
 
+  // Plantillas, variables, remitentes y SMS
+  variables = signal<TemplateVariable[]>([]);
+  /** WhatsApp libre no pasa por el motor nuevo: sin link corto ni baja. */
+  waVariables = computed(() => this.variables().filter(v => !['{link}', '{baja}'].includes(v.token)));
+  emailTemplates = signal<EmailTemplateSummary[]>([]);
+  messageTemplates = signal<MessageTemplate[]>([]);
+  emailAccounts = signal<EmailAccount[]>([]);
+  shortDomains = signal<string[]>([]);
+  smsStatus = signal<{ configured: boolean; name: string; from: string } | null>(null);
+  smsPreview = signal<MessagePreview | null>(null);
+  templatePreviewDoc = signal<SafeHtml | null>(null);
+  templatePreviewLoading = signal(false);
+  audience = signal<AudiencePreview | null>(null);
+
+  // Selección manual de contactos
+  contacts = signal<{ _id: string; name: string; email?: string; phone?: string; tags: string[] }[]>([]);
+  contactsLoading = signal(false);
+  contactQuery = signal('');
+  selectedContactIds = signal<string[]>([]);
+  private contactMatches = computed(() => {
+    const q = this.contactQuery().trim().toLowerCase();
+    if (!q) return this.contacts();
+    return this.contacts().filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.email ?? '').toLowerCase().includes(q) ||
+      (c.phone ?? '').includes(q) ||
+      (c.tags ?? []).some(t => t.toLowerCase().includes(q)),
+    );
+  });
+  contactResults = computed(() => this.contactMatches().slice(0, 150));
+  contactsHidden = computed(() => this.contactMatches().length - this.contactResults().length);
+  allContactsShownSelected = computed(() => {
+    const shown = this.contactResults();
+    return shown.length > 0 && shown.every(c => this.selectedContactIds().includes(c._id));
+  });
+
+  private smsTimer: ReturnType<typeof setTimeout> | null = null;
+
   form = {
     name: '',
     channel: 'email' as CampaignChannel,
@@ -588,6 +857,11 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     templateName: '',
     templateLanguage: 'es',
     templateVars: [] as string[],
+    emailTemplateId: '',
+    senderAccountId: '',
+    linkUrl: '',
+    linkDomain: '',
+    scheduledAt: '',
   };
 
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
@@ -600,9 +874,11 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     // Los excluidos se dicen en voz alta: si desaparecen sin explicación, el
     // número no cuadra con la lista y nadie se fía de él.
     const blocked = this.previewBlocked();
-    const aparte = blocked > 0
-      ? ` · ${blocked} fuera por no contactar`
-      : '';
+    const missing = this.audience()?.missing ?? 0;
+    const what = this.form.channel === 'email' ? 'email' : 'teléfono';
+    const aparte =
+      (blocked > 0 ? ` · ${blocked} fuera por no contactar` : '') +
+      (missing > 0 ? ` · ${missing} sin ${what}` : '');
     if (n === 0) return `Sin clientes en este segmento${aparte}`;
     return `${n} cliente${n !== 1 ? 's' : ''} recibirán esta campaña${aparte}`;
   });
@@ -708,7 +984,8 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   ngOnInit() {
     const c = this.campaign();
     if (c) {
-      const channel: CampaignChannel = c.type === 'email' ? 'email' : (c.waProvider === 'cloudapi' ? 'cloudapi' : 'waha');
+      const channel: CampaignChannel =
+        c.type === 'email' ? 'email' : c.type === 'sms' ? 'sms' : (c.waProvider === 'cloudapi' ? 'cloudapi' : 'waha');
       this.form = {
         name: c.name,
         channel,
@@ -722,18 +999,139 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
         templateName: c.templateName ?? '',
         templateLanguage: c.templateLanguage ?? 'es',
         templateVars: [...(c.templateVars ?? [])],
+        emailTemplateId: c.emailTemplateId ?? '',
+        senderAccountId: c.senderAccountId ?? '',
+        linkUrl: c.linkUrl ?? '',
+        linkDomain: c.linkDomain ?? '',
+        scheduledAt: c.scheduledAt ? this.toLocalInput(new Date(c.scheduledAt)) : '',
       };
+      this.selectedContactIds.set([...(c.customerIds ?? [])]);
     }
+    this.loadCatalogs();
+    if (this.form.targeting === 'contacts') this.loadContacts();
+    if (this.form.channel === 'sms') this.onBodyChange();
     this.schedulePreview();
     if (this.form.channel === 'cloudapi') this.loadTemplates();
   }
 
   ngOnDestroy() {
     if (this.previewTimer) clearTimeout(this.previewTimer);
+    if (this.smsTimer) clearTimeout(this.smsTimer);
+  }
+
+  /** Catálogos del editor. Si alguno falla, el formulario sigue siendo usable. */
+  private loadCatalogs() {
+    this.templatesApi.variables().subscribe({ next: v => this.variables.set(v), error: () => {} });
+    this.templatesApi.emailTemplates().subscribe({ next: t => this.emailTemplates.set(t), error: () => {} });
+    this.templatesApi.messageTemplates().subscribe({ next: t => this.messageTemplates.set(t), error: () => {} });
+    this.emailAccountsApi.list().subscribe({
+      next: a => this.emailAccounts.set(a.filter(x => x.active !== false)),
+      error: () => {},
+    });
+    this.api.getShortDomains().subscribe({
+      next: r => this.shortDomains.set(r.domains.filter(d => d.status === 'active').map(d => d.domain)),
+      error: () => {},
+    });
+    this.api.smsStatus().subscribe({ next: s => this.smsStatus.set(s), error: () => {} });
+  }
+
+  private toLocalInput(date: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
+      'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+  }
+
+  /** Inserta una variable en el cursor del campo y sincroniza el formulario. */
+  insertToken(token: string, el: HTMLTextAreaElement | HTMLInputElement, field: 'body' | 'subject' = 'body') {
+    this.form[field] = insertAtCursor(el, token);
+    if (field === 'body') this.onBodyChange();
+  }
+
+  /** Recalcula caracteres y segmentos del SMS (con retardo). */
+  onBodyChange() {
+    if (this.form.channel !== 'sms') return;
+    if (this.smsTimer) clearTimeout(this.smsTimer);
+    this.smsTimer = setTimeout(() => {
+      this.templatesApi.previewMessage(this.form.body).subscribe({
+        next: p => this.smsPreview.set(p),
+        error: () => {},
+      });
+    }, 300);
+  }
+
+  /**
+   * Plantillas de mensaje del canal elegido. Método y no `computed`: `form` es
+   * un objeto plano y una señal derivada no vería el cambio de canal.
+   */
+  channelTemplates(): MessageTemplate[] {
+    const channel = this.form.channel === 'email' ? 'email' : this.form.channel === 'sms' ? 'sms' : 'whatsapp';
+    return this.messageTemplates().filter(t => t.channel === channel);
+  }
+
+  useMessageTemplate(id: string) {
+    const template = this.messageTemplates().find(t => t._id === id);
+    if (!template) return;
+    this.form.body = template.body;
+    if (template.subject && this.form.channel === 'email' && !this.form.subject.trim()) this.form.subject = template.subject;
+    this.onBodyChange();
+    this.toast.success('Plantilla aplicada: puedes ajustarla antes de guardar');
+  }
+
+  onEmailTemplateChange() {
+    const template = this.emailTemplates().find(t => t._id === this.form.emailTemplateId);
+    // El asunto de la plantilla solo se propone si aún no hay uno escrito.
+    if (template?.subject && !this.form.subject.trim()) this.form.subject = template.subject;
+  }
+
+  previewEmailTemplate() {
+    if (!this.form.emailTemplateId) return;
+    this.templatePreviewLoading.set(true);
+    this.templatesApi.emailTemplate(this.form.emailTemplateId).subscribe({
+      next: tpl => {
+        this.templatePreviewLoading.set(false);
+        let html = tpl.html;
+        for (const v of this.variables()) {
+          const safe = v.example.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          html = html.split(v.token).join(safe);
+        }
+        // HTML del propio usuario, pintado en un iframe con sandbox vacío.
+        this.templatePreviewDoc.set(this.sanitizer.bypassSecurityTrustHtml(html));
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.templatePreviewLoading.set(false);
+        this.toast.error(err.error?.message || 'No se pudo cargar la plantilla');
+      },
+    });
+  }
+
+  // ── Selección manual de contactos ──
+  private loadContacts() {
+    if (this.contacts().length || this.contactsLoading()) return;
+    this.contactsLoading.set(true);
+    this.api.getContacts().subscribe({
+      next: c => { this.contacts.set(c); this.contactsLoading.set(false); },
+      error: () => { this.contactsLoading.set(false); this.toast.error('No se pudieron cargar los contactos'); },
+    });
+  }
+
+  toggleContact(id: string) {
+    this.selectedContactIds.update(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
+    this.schedulePreview();
+  }
+
+  toggleShownContacts() {
+    const shown = this.contactResults().map(c => c._id);
+    if (this.allContactsShownSelected()) {
+      this.selectedContactIds.update(ids => ids.filter(id => !shown.includes(id)));
+    } else {
+      this.selectedContactIds.update(ids => [...new Set([...ids, ...shown])]);
+    }
+    this.schedulePreview();
   }
 
   @HostListener('document:keydown.escape')
   onEsc() {
+    if (this.templatePreviewDoc()) { this.templatePreviewDoc.set(null); return; }
     if (this.emailPreviewOpen()) { this.emailPreviewOpen.set(false); return; }
     this.close();
   }
@@ -767,13 +1165,19 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   }
 
   setChannel(ch: CampaignChannel) {
+    if (this.editingId()) return;
     this.form.channel = ch;
     this.form.mediaUrl = '';
     this.form.mediaType = 'image';
     this.form.templateName = '';
     this.form.templateVars = [];
     this.selectedTemplate.set(null);
+    if (ch !== 'email') { this.form.emailTemplateId = ''; this.form.senderAccountId = ''; }
+    if (ch !== 'email' && ch !== 'sms') { this.form.linkUrl = ''; this.form.scheduledAt = ''; }
     if (ch === 'cloudapi') this.loadTemplates();
+    if (ch === 'sms') this.onBodyChange();
+    // El recuento depende del canal: email cuenta correos, el resto teléfonos.
+    this.schedulePreview();
   }
 
   selectTemplate(t: WaTemplate) {
@@ -798,7 +1202,11 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   }
   isTagSelected(tag: string) { return this.form.recipientTags.includes(tag); }
 
-  setTargeting(t: CampaignTargeting) { this.form.targeting = t; this.schedulePreview(); }
+  setTargeting(t: CampaignTargeting) {
+    this.form.targeting = t;
+    if (t === 'contacts') this.loadContacts();
+    this.schedulePreview();
+  }
 
   toggleList(id: string) {
     const idx = this.form.listIds.indexOf(id);
@@ -814,22 +1222,23 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   }
 
   private fetchPreview() {
-    if (this.form.targeting === 'all') {
-      this.api.previewCount().subscribe({
-        next: (r) => { this.previewCount.set(r.count); this.previewBlocked.set(r.blocked ?? 0); },
+    const f = this.form;
+    this.api
+      .audiencePreview({
+        type: f.channel === 'email' ? 'email' : f.channel === 'sms' ? 'sms' : 'whatsapp',
+        targeting: f.targeting,
+        recipientTags: f.targeting === 'tags' ? f.recipientTags : [],
+        listIds: f.targeting === 'lists' ? f.listIds : [],
+        customerIds: f.targeting === 'contacts' ? this.selectedContactIds() : [],
+      })
+      .subscribe({
+        next: r => {
+          this.audience.set(r);
+          this.previewCount.set(r.reachable);
+          this.previewBlocked.set(r.blocked);
+        },
         error: () => {},
       });
-    } else if (this.form.targeting === 'tags') {
-      this.api.previewCount(this.form.recipientTags).subscribe({
-        next: (r) => { this.previewCount.set(r.count); this.previewBlocked.set(r.blocked ?? 0); },
-        error: () => {},
-      });
-    } else {
-      const total = this.availableLists()
-        .filter(l => this.form.listIds.includes(l._id))
-        .reduce((s, l) => s + (l.memberCount ?? 0), 0);
-      this.previewCount.set(total);
-    }
   }
 
   generateEmailWithAI() {
@@ -857,8 +1266,15 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     this.emailPreviewOpen.set(true);
   }
 
+  /** Sustituye cada variable por su valor de muestra del catálogo. */
+  private withSamples(text: string): string {
+    let out = text;
+    for (const v of this.variables()) out = out.split(v.token).join(v.example);
+    return out;
+  }
+
   private buildEmailPreviewHtml(): string {
-    const body = (this.form.body || '').replace(/\{nombre\}/gi, 'María');
+    const body = this.withSamples(this.form.body || '');
     const escaped = body
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -891,23 +1307,43 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   save() {
     if (!this.form.name.trim()) { this.formError.set('El nombre es obligatorio'); return; }
     const isCloud = this.form.channel === 'cloudapi';
+    const isEmail = this.form.channel === 'email';
+    const isSms = this.form.channel === 'sms';
     const hasTemplate = isCloud && !!this.form.templateName;
-    if (!hasTemplate && !this.form.body.trim()) { this.formError.set('El mensaje es obligatorio'); return; }
+    const hasEmailTemplate = isEmail && !!this.form.emailTemplateId;
+    if (!hasTemplate && !hasEmailTemplate && !this.form.body.trim()) { this.formError.set('El mensaje es obligatorio'); return; }
+    if (this.form.targeting === 'contacts' && !this.selectedContactIds().length) {
+      this.formError.set('Elige al menos un contacto');
+      return;
+    }
+    const usesLink = /\{link\}/i.test(this.form.body + ' ' + this.form.subject);
+    if ((isEmail || isSms) && usesLink && !this.form.linkUrl.trim()) {
+      this.formError.set('El mensaje usa el link corto: indica a qué dirección debe llevar');
+      return;
+    }
     this.formError.set('');
     this.saving.set(true);
 
-    const isWa = this.form.channel !== 'email';
-    const body = hasTemplate ? `[Plantilla: ${this.form.templateName}]` : this.form.body;
+    const isWa = !isEmail && !isSms;
+    const body = hasTemplate ? `[Plantilla: ${this.form.templateName}]` : hasEmailTemplate ? '' : this.form.body;
+    const queued = isEmail || isSms;
 
     const payload: CampaignPayload = {
       name: this.form.name.trim(),
-      type: isWa ? 'whatsapp' : 'email',
+      type: isEmail ? 'email' : isSms ? 'sms' : 'whatsapp',
       waProvider: isWa ? (this.form.channel as 'waha' | 'cloudapi') : undefined,
-      subject: !isWa ? (this.form.subject.trim() || undefined) : undefined,
+      subject: isEmail ? this.form.subject.trim() : undefined,
       body,
       targeting: this.form.targeting,
       recipientTags: this.form.targeting === 'tags' ? this.form.recipientTags : [],
       listIds: this.form.targeting === 'lists' ? this.form.listIds : [],
+      customerIds: this.form.targeting === 'contacts' ? this.selectedContactIds() : [],
+      // Siempre se mandan (aunque vacíos) para poder quitar un valor guardado.
+      emailTemplateId: isEmail ? this.form.emailTemplateId : '',
+      senderAccountId: isEmail ? this.form.senderAccountId : '',
+      linkUrl: queued ? this.form.linkUrl.trim() : '',
+      linkDomain: queued ? this.form.linkDomain : '',
+      scheduledAt: queued && this.form.scheduledAt ? new Date(this.form.scheduledAt).toISOString() : '',
     };
     if (this.form.mediaUrl) {
       payload.mediaUrl = this.form.mediaUrl;

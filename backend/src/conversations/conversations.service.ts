@@ -794,6 +794,8 @@ export class ConversationsService {
       tenantId,
     );
     if (!customer) return { customer: null, leads: [] };
+    // La bandeja muestra quién atiende al contacto, no solo su id.
+    await customer.populate('ownerId', 'name email');
     return {
       customer,
       leads: await this.leads.findByCustomer(String(customer._id), tenantId),

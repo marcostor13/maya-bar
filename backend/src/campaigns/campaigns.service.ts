@@ -9,14 +9,28 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
-import { fillTokens } from '../shared/contact-tokens';
+import {
+  fillTokens,
+  fillTokensMultiline,
+  usesToken,
+} from '../shared/contact-tokens';
+import { CampaignRecipient } from './campaign-recipient.schema';
+import { CampaignSenderService } from './campaign-sender.service';
+import { EmailTemplate } from '../email-templates/email-template.schema';
+import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { SmsService } from '../sms/sms.service';
+import { LinksService, normalizeDestination } from '../links/links.service';
+import { smsSegments } from '../shared/sms-segments';
 import { Campaign } from './campaign.schema';
 import { SuppressionService } from '../suppression/suppression.service';
 import { Customer } from '../customers/customer.schema';
-import { MailService } from '../mail/mail.service';
 import { SettingsService } from '../settings/settings.service';
 import { ListsService } from '../lists/lists.service';
-import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
+import {
+  AudiencePreviewDto,
+  CreateCampaignDto,
+  UpdateCampaignDto,
+} from './dto/campaign.dto';
 import { AiService } from '../ai/ai.service';
 
 @Injectable()
@@ -26,13 +40,16 @@ export class CampaignsService implements OnModuleInit {
   /**
    * La cola de envío WAHA vive en memoria: si el proceso se reinicia a mitad
    * de un envío, la campaña queda en 'sending' para siempre (y update/resend
-   * la bloquean). Al arrancar, toda campaña 'sending' es huérfana por
-   * definición — se marca como fallida para poder reintentarla.
+   * la bloquean). Al arrancar, toda campaña de WhatsApp en 'sending' es
+   * huérfana por definición — se marca como fallida para poder reintentarla.
+   *
+   * Las de email y SMS no: sus destinatarios están en base de datos y el
+   * worker (`CampaignSenderService`) las retoma en la siguiente pasada.
    */
   async onModuleInit() {
     const res = await this.campaignModel
       .updateMany(
-        { status: 'sending' },
+        { status: 'sending', type: 'whatsapp' },
         {
           $set: {
             status: 'failed',
@@ -53,29 +70,90 @@ export class CampaignsService implements OnModuleInit {
     @InjectModel(Campaign.name) private campaignModel: Model<Campaign>,
     private templates: WhatsAppTemplatesService,
     @InjectModel(Customer.name) private customerModel: Model<Customer>,
-    private mail: MailService,
     private settings: SettingsService,
     private lists: ListsService,
     private ai: AiService,
     private suppression: SuppressionService,
+    @InjectModel(CampaignRecipient.name)
+    private recipientModel: Model<CampaignRecipient>,
+    @InjectModel(EmailTemplate.name)
+    private emailTemplateModel: Model<EmailTemplate>,
+    private sender: CampaignSenderService,
+    private emailAccounts: EmailAccountsService,
+    private sms: SmsService,
+    private links: LinksService,
   ) {}
 
   async findAll(tenantId: string): Promise<Campaign[]> {
+    // Sin la copia del HTML: el listado no la necesita y puede pesar mucho.
     return this.campaignModel
-      .find({ tenantId: new Types.ObjectId(tenantId) })
+      .find({ tenantId: new Types.ObjectId(tenantId) }, { html: 0 })
       .sort({ createdAt: -1 })
       .exec();
   }
 
   async create(tenantId: string, dto: CreateCampaignDto): Promise<Campaign> {
     const campaign = new this.campaignModel({
-      ...dto,
+      targeting: 'tags',
+      recipientTags: [],
+      ...this.normalize(dto),
+      type: dto.type,
       tenantId: new Types.ObjectId(tenantId),
-      targeting: dto.targeting ?? 'tags',
-      recipientTags: dto.recipientTags ?? [],
-      listIds: (dto.listIds ?? []).map((id) => new Types.ObjectId(id)),
     });
     return campaign.save();
+  }
+
+  /**
+   * Pasa el DTO a lo que guarda el esquema: ids como ObjectId, fechas como
+   * Date y cadenas vacías como "quitar el valor". Solo toca lo que viene.
+   */
+  private normalize(dto: UpdateCampaignDto): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const copy = [
+      'name',
+      'waProvider',
+      'subject',
+      'targeting',
+      'recipientTags',
+      'mediaUrl',
+      'mediaType',
+      'templateName',
+      'templateLanguage',
+      'templateVars',
+    ] as const;
+    for (const key of copy) if (dto[key] !== undefined) out[key] = dto[key];
+
+    if (dto.body !== undefined) out['body'] = dto.body;
+    const oid = (value: string, label: string) => {
+      if (!Types.ObjectId.isValid(value))
+        throw new BadRequestException(`${label} inválido`);
+      return new Types.ObjectId(value);
+    };
+    if (dto.listIds !== undefined)
+      out['listIds'] = dto.listIds.map((id) => oid(id, 'Lista'));
+    if (dto.customerIds !== undefined)
+      out['customerIds'] = dto.customerIds.map((id) => oid(id, 'Contacto'));
+    if (dto.emailTemplateId !== undefined)
+      out['emailTemplateId'] = dto.emailTemplateId
+        ? oid(dto.emailTemplateId, 'Plantilla')
+        : undefined;
+    if (dto.senderAccountId !== undefined)
+      out['senderAccountId'] = dto.senderAccountId
+        ? oid(dto.senderAccountId, 'Buzón')
+        : undefined;
+    if (dto.linkUrl !== undefined)
+      out['linkUrl'] = dto.linkUrl.trim()
+        ? normalizeDestination(dto.linkUrl)
+        : undefined;
+    if (dto.linkDomain !== undefined)
+      out['linkDomain'] = dto.linkDomain.trim().toLowerCase() || undefined;
+    if (dto.scheduledAt !== undefined) {
+      const when = dto.scheduledAt ? new Date(dto.scheduledAt) : undefined;
+      if (when && Number.isNaN(when.getTime()))
+        throw new BadRequestException('Fecha de programación inválida');
+      out['scheduledAt'] = when;
+    }
+    return out;
   }
 
   async update(
@@ -91,7 +169,11 @@ export class CampaignsService implements OnModuleInit {
       throw new BadRequestException(
         'No se puede editar una campaña mientras se envía',
       );
-    Object.assign(campaign, dto);
+    if (campaign.status === 'scheduled')
+      throw new BadRequestException(
+        'La campaña está programada: cancélala para poder editarla',
+      );
+    Object.assign(campaign, this.normalize(dto));
     return campaign.save();
   }
 
@@ -100,11 +182,13 @@ export class CampaignsService implements OnModuleInit {
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
     if (campaign.tenantId.toString() !== tenantId)
       throw new ForbiddenException();
-    if (campaign.status === 'sending')
+    if (campaign.status === 'sending' || campaign.status === 'scheduled')
       throw new BadRequestException('La campaña ya está en proceso de envío');
     campaign.status = 'draft';
     campaign.errorMessage = undefined;
     campaign.sentAt = undefined;
+    // Reenviar es enviar ahora, no volver a esperar a la fecha antigua.
+    campaign.scheduledAt = undefined;
     await campaign.save();
     return this.send(id, tenantId);
   }
@@ -115,6 +199,280 @@ export class CampaignsService implements OnModuleInit {
     if (campaign.tenantId.toString() !== tenantId)
       throw new ForbiddenException();
     await this.campaignModel.findByIdAndDelete(id).exec();
+    await this.recipientModel.deleteMany({ campaignId: campaign._id }).exec();
+  }
+
+  /** Detiene una campaña programada o en curso; lo ya enviado, enviado está. */
+  async cancel(id: string, tenantId: string): Promise<Campaign> {
+    const campaign = await this.load(id, tenantId);
+    if (campaign.type === 'whatsapp')
+      throw new BadRequestException(
+        'Las campañas de WhatsApp no se pueden detener una vez lanzadas',
+      );
+    if (campaign.status !== 'scheduled' && campaign.status !== 'sending')
+      throw new BadRequestException('La campaña no está en curso');
+    await this.recipientModel
+      .updateMany(
+        { campaignId: campaign._id, status: 'pending' },
+        { $set: { status: 'skipped', error: 'Campaña detenida' } },
+      )
+      .exec();
+    const stats = await this.sender.countStats(campaign._id);
+    campaign.stats = stats;
+    campaign.recipientCount = stats.sent;
+    // Sin ningún envío vuelve a borrador; con alguno queda como enviada.
+    campaign.status = stats.sent > 0 ? 'sent' : 'draft';
+    campaign.sentAt = stats.sent > 0 ? new Date() : undefined;
+    campaign.scheduledAt = undefined;
+    campaign.errorMessage =
+      stats.sent > 0 ? `Detenida: ${stats.skipped} sin enviar` : undefined;
+    return campaign.save();
+  }
+
+  /** Destinatarios de una campaña de email o SMS, con su estado. */
+  async recipients(
+    id: string,
+    tenantId: string,
+    opts: { status?: string; page?: number },
+  ) {
+    const campaign = await this.load(id, tenantId);
+    const filter: Record<string, unknown> = { campaignId: campaign._id };
+    if (opts.status) filter['status'] = opts.status;
+    const size = 100;
+    const page = Math.max(1, Math.floor(opts.page ?? 1));
+    const [items, total, stats] = await Promise.all([
+      this.recipientModel
+        .find(filter, {
+          name: 1,
+          to: 1,
+          status: 1,
+          error: 1,
+          sentAt: 1,
+          shortUrl: 1,
+          customerId: 1,
+        })
+        .sort({ _id: 1 })
+        .skip((page - 1) * size)
+        .limit(size)
+        .lean()
+        .exec(),
+      this.recipientModel.countDocuments(filter),
+      this.sender.countStats(campaign._id),
+    ]);
+    return { items, total, page, pageSize: size, stats };
+  }
+
+  /**
+   * Cuántos recibirían una campaña con esta audiencia, sin haberla guardado:
+   * deduplica, descuenta la lista de no contactar y a quien no tiene el dato
+   * del canal (email o teléfono).
+   */
+  async audiencePreview(
+    tenantId: string,
+    dto: AudiencePreviewDto,
+  ): Promise<{
+    total: number;
+    reachable: number;
+    blocked: number;
+    missing: number;
+  }> {
+    const audience = await this.resolveAudience(
+      {
+        targeting: dto.targeting,
+        recipientTags: dto.recipientTags ?? [],
+        listIds: (dto.listIds ?? []).map((i) => new Types.ObjectId(i)),
+        customerIds: (dto.customerIds ?? []).map((i) => new Types.ObjectId(i)),
+      },
+      tenantId,
+    );
+    const unique = [
+      ...new Map(audience.map((c) => [String(c._id), c])).values(),
+    ];
+    const { allowed, blocked } = await this.suppression.filterAllowed(
+      tenantId,
+      unique,
+    );
+    const reachable = allowed.filter((c) =>
+      dto.type === 'email' ? !!c.email : !!c.phone,
+    ).length;
+    return {
+      total: unique.length,
+      reachable,
+      blocked,
+      missing: allowed.length - reachable,
+    };
+  }
+
+  private async load(id: string, tenantId: string): Promise<Campaign> {
+    if (!Types.ObjectId.isValid(id))
+      throw new BadRequestException('Identificador inválido');
+    const campaign = await this.campaignModel
+      .findOne({ _id: id, tenantId: new Types.ObjectId(tenantId) })
+      .exec();
+    if (!campaign) throw new NotFoundException('Campaña no encontrada');
+    return campaign;
+  }
+
+  /**
+   * Email y SMS: deja a cada destinatario en `campaignrecipients` y devuelve
+   * el control. El envío real lo hace `CampaignSenderService` por lotes.
+   */
+  private async enqueue(
+    campaign: Campaign,
+    tenantId: string,
+  ): Promise<Campaign> {
+    const isEmail = campaign.type === 'email';
+    const body = campaign.body ?? '';
+
+    if (isEmail) {
+      if (campaign.emailTemplateId) {
+        const template = await this.emailTemplateModel
+          .findOne({
+            _id: campaign.emailTemplateId,
+            tenantId: campaign.tenantId,
+          })
+          .lean()
+          .exec();
+        if (!template)
+          throw new BadRequestException(
+            'La plantilla de email ya no existe. Elige otra.',
+          );
+        campaign.html = template.html;
+        campaign.preheader = template.preheader;
+        if (!campaign.subject?.trim()) campaign.subject = template.subject;
+      } else {
+        campaign.html = undefined;
+        if (!body.trim())
+          throw new BadRequestException(
+            'Escribe el mensaje o elige una plantilla de email',
+          );
+      }
+      if (campaign.senderAccountId) {
+        const account = await this.emailAccounts
+          .findOne(String(campaign.senderAccountId), tenantId)
+          .catch(() => null);
+        if (!account?.active)
+          throw new BadRequestException(
+            'El buzón remitente no está disponible. Elige otro.',
+          );
+      }
+    } else {
+      if (!body.trim())
+        throw new BadRequestException('Escribe el mensaje del SMS');
+      await this.sms.requireConfig(tenantId);
+    }
+
+    const content = `${campaign.subject ?? ''}\n${body}\n${campaign.html ?? ''}`;
+    const wantsLink = usesToken(content, 'link');
+    if (wantsLink && !campaign.linkUrl)
+      throw new BadRequestException(
+        'El mensaje usa {link}: indica a qué dirección debe llevar',
+      );
+
+    const audience = await this.resolveAudience(campaign, tenantId);
+    if (!audience.length)
+      throw new BadRequestException('La audiencia elegida no tiene contactos');
+    const suppressed = await this.suppression.setFor(tenantId);
+
+    const seenCustomers = new Set<string>();
+    const seenAddresses = new Set<string>();
+    const rows: {
+      _id: Types.ObjectId;
+      tenantId: Types.ObjectId;
+      campaignId: Types.ObjectId;
+      customerId: Types.ObjectId;
+      name: string;
+      to: string;
+      status: 'pending' | 'skipped';
+      error?: string;
+      shortUrl?: string;
+      linkId?: Types.ObjectId;
+    }[] = [];
+    for (const c of audience) {
+      const customerId = String(c._id);
+      if (seenCustomers.has(customerId)) continue;
+      seenCustomers.add(customerId);
+
+      const to = ((isEmail ? c.email : c.phone) ?? '').trim();
+      let status: 'pending' | 'skipped' = 'pending';
+      let error: string | undefined;
+      if (!to) {
+        status = 'skipped';
+        error = isEmail ? 'Sin email' : 'Sin teléfono';
+      } else if (this.suppression.matches(suppressed, c)) {
+        status = 'skipped';
+        error = 'En la lista de no contactar';
+      } else if (seenAddresses.has(to.toLowerCase())) {
+        status = 'skipped';
+        error = isEmail ? 'Email repetido' : 'Teléfono repetido';
+      } else {
+        seenAddresses.add(to.toLowerCase());
+      }
+      rows.push({
+        _id: new Types.ObjectId(),
+        tenantId: campaign.tenantId,
+        campaignId: campaign._id,
+        customerId: c._id,
+        name: c.name ?? '',
+        to,
+        status,
+        error,
+      });
+    }
+
+    const pending = rows.filter((r) => r.status === 'pending');
+    if (!pending.length)
+      throw new BadRequestException(
+        isEmail
+          ? 'Ningún contacto de la audiencia puede recibir el correo (sin email o dados de baja)'
+          : 'Ningún contacto de la audiencia puede recibir el SMS (sin teléfono o dados de baja)',
+      );
+
+    if (wantsLink) {
+      const made = await this.links.createPersonalLinks(
+        tenantId,
+        {
+          destination: campaign.linkUrl!,
+          domain: campaign.linkDomain,
+          channel: isEmail ? 'email' : 'sms',
+          campaignId: campaign._id,
+          title: campaign.name,
+          utm: {
+            source: campaign.type,
+            medium: 'campaign',
+            campaign: campaign.name,
+          },
+        },
+        pending.map((r) => ({ customerId: r.customerId })),
+      );
+      pending.forEach((r, i) => {
+        r.shortUrl = made[i].shortUrl;
+        r.linkId = made[i].linkId;
+      });
+    }
+
+    // Un reenvío parte de cero: los destinatarios del envío anterior se van.
+    await this.recipientModel.deleteMany({ campaignId: campaign._id }).exec();
+    for (let i = 0; i < rows.length; i += 1000)
+      await this.recipientModel.insertMany(rows.slice(i, i + 1000), {
+        ordered: false,
+      });
+
+    const scheduled =
+      !!campaign.scheduledAt && campaign.scheduledAt.getTime() > Date.now();
+    campaign.status = scheduled ? 'scheduled' : 'sending';
+    campaign.startedAt = scheduled ? undefined : new Date();
+    campaign.sentAt = undefined;
+    campaign.errorMessage = undefined;
+    campaign.recipientCount = pending.length;
+    campaign.stats = {
+      total: rows.length,
+      pending: pending.length,
+      sent: 0,
+      failed: 0,
+      skipped: rows.length - pending.length,
+    };
+    return campaign.save();
   }
 
   /**
@@ -150,6 +508,8 @@ export class CampaignsService implements OnModuleInit {
     sentToday: number;
     remaining: number;
     cloudApiPricePerMsg?: number;
+    /** Solo SMS: partes en que se divide el mensaje (sin variables resueltas). */
+    smsSegments?: number;
   }> {
     const campaign = await this.campaignModel.findById(id).exec();
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
@@ -157,10 +517,33 @@ export class CampaignsService implements OnModuleInit {
       throw new ForbiddenException();
 
     const customers = await this.resolveCustomers(campaign, tenantId);
-    const withPhone =
-      campaign.type === 'whatsapp'
-        ? customers.filter((c) => c.phone)
-        : customers;
+    if (campaign.type !== 'whatsapp') {
+      const isEmail = campaign.type === 'email';
+      const reachable = new Set(
+        customers
+          .map((c) =>
+            ((isEmail ? c.email : c.phone) ?? '').trim().toLowerCase(),
+          )
+          .filter(Boolean),
+      ).size;
+      const perMinute = isEmail
+        ? 60
+        : Math.min(
+            (await this.sms.getConfig(tenantId)).ratePerMinute || 60,
+            120,
+          );
+      return {
+        recipientCount: reachable,
+        estimatedMinutes: Math.ceil(reachable / perMinute),
+        dailyLimit: 0,
+        sentToday: 0,
+        remaining: reachable,
+        ...(isEmail
+          ? {}
+          : { smsSegments: smsSegments(campaign.body ?? '').segments }),
+      };
+    }
+    const withPhone = customers.filter((c) => c.phone);
     const recipientCount = withPhone.length;
 
     if (campaign.waProvider === 'cloudapi') {
@@ -200,43 +583,18 @@ export class CampaignsService implements OnModuleInit {
       throw new ForbiddenException();
     if (campaign.status === 'sent')
       throw new BadRequestException('La campaña ya fue enviada');
-    if (campaign.status === 'sending')
+    if (campaign.status === 'sending' || campaign.status === 'scheduled')
       throw new BadRequestException('La campaña ya está en proceso de envío');
+
+    // Email y SMS no se envían dentro de la petición: se encolan.
+    if (campaign.type !== 'whatsapp') return this.enqueue(campaign, tenantId);
 
     const customers = await this.resolveCustomers(campaign, tenantId);
     campaign.status = 'sending';
     campaign.recipientCount = customers.length;
     await campaign.save();
 
-    if (campaign.type === 'email') {
-      // Desde que se importan contactos, un contacto puede tener solo teléfono.
-      const withEmail = customers.filter((c) => !!c.email);
-      const results = await Promise.allSettled(
-        withEmail.map((c) =>
-          this.mail.sendCampaign({
-            to: c.email as string,
-            name: c.name,
-            subject: campaign.subject ?? campaign.name,
-            body: campaign.body.replace(/\{nombre\}/gi, c.name),
-            mediaUrl: campaign.mediaUrl,
-            mediaType:
-              campaign.mediaType === 'image' || campaign.mediaType === 'video'
-                ? campaign.mediaType
-                : undefined,
-          }),
-        ),
-      );
-      const failed = results.filter((r) => r.status === 'rejected').length;
-      const withoutEmail = customers.length - withEmail.length;
-      campaign.recipientCount = withEmail.length;
-      campaign.status = 'sent';
-      campaign.sentAt = new Date();
-      const problems = [
-        failed > 0 ? `${failed} email(s) no se pudieron enviar` : '',
-        withoutEmail > 0 ? `${withoutEmail} contacto(s) sin email` : '',
-      ].filter(Boolean);
-      if (problems.length) campaign.errorMessage = problems.join('; ');
-    } else if (campaign.waProvider === 'cloudapi') {
+    if (campaign.waProvider === 'cloudapi') {
       // Cloud API: parallel, no daily limit
       const withPhone = customers.filter(
         (c): c is Customer & { phone: string } => !!c.phone,
@@ -270,7 +628,7 @@ export class CampaignsService implements OnModuleInit {
           withPhone.map((c) =>
             this.settings.sendWhatsApp(
               c.phone,
-              campaign.body.replace(/\{nombre\}/gi, c.name),
+              fillTokensMultiline(campaign.body ?? '', c),
               tenantId,
               campaign.mediaUrl,
               campaign.mediaType,
@@ -324,7 +682,7 @@ export class CampaignsService implements OnModuleInit {
         campaign._id.toString(),
         toSend,
         tenantId,
-        campaign.body,
+        campaign.body ?? '',
         campaign.mediaUrl,
         campaign.mediaType,
         noPhone,
@@ -361,10 +719,20 @@ export class CampaignsService implements OnModuleInit {
 
   /** La audiencia bruta, tal como la define la segmentación de la campaña. */
   private async resolveAudience(
-    campaign: Campaign,
+    campaign: Pick<
+      Campaign,
+      'targeting' | 'listIds' | 'recipientTags' | 'customerIds'
+    >,
     tenantId: string,
   ): Promise<Customer[]> {
     const tid = new Types.ObjectId(tenantId);
+    if (campaign.targeting === 'contacts') {
+      if (!campaign.customerIds?.length) return [];
+      return this.customerModel
+        .find({ tenantId: tid, _id: { $in: campaign.customerIds } })
+        .lean<Customer[]>()
+        .exec();
+    }
     if (campaign.targeting === 'lists' && campaign.listIds?.length > 0) {
       return this.lists.resolveCustomers(
         campaign.listIds.map((id) => id.toString()),
@@ -432,7 +800,7 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
       const result = await Promise.allSettled([
         this.settings.sendWhatsApp(
           c.phone,
-          body.replace(/\{nombre\}/gi, c.name),
+          fillTokensMultiline(body, c),
           tenantId,
           mediaUrl,
           mediaType as 'image' | 'video' | 'audio' | 'document' | undefined,

@@ -143,6 +143,26 @@ export const routes: Routes = [
         canActivate: [moduleGuard('campaigns')],
       },
       {
+        path: 'links',
+        loadComponent: () => import('./pages/links/links').then(m => m.LinksComponent),
+        canActivate: [moduleGuard('campaigns')],
+      },
+      {
+        path: 'links/analitica',
+        loadComponent: () => import('./pages/links/link-analytics').then(m => m.LinkAnalyticsComponent),
+        canActivate: [moduleGuard('campaigns')],
+      },
+      {
+        path: 'plantillas-email',
+        loadComponent: () => import('./pages/templates/email-templates').then(m => m.EmailTemplatesComponent),
+        canActivate: [moduleGuard('campaigns')],
+      },
+      {
+        path: 'plantillas-texto',
+        loadComponent: () => import('./pages/templates/message-templates').then(m => m.MessageTemplatesComponent),
+        canActivate: [moduleGuard('campaigns')],
+      },
+      {
         path: 'plantillas',
         loadComponent: () =>
           import('./pages/whatsapp-templates/whatsapp-templates').then(m => m.WhatsappTemplatesComponent),

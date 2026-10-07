@@ -1,5 +1,6 @@
 import {
   Controller,
+  HttpCode,
   Get,
   Post,
   Patch,
@@ -120,6 +121,23 @@ export class ListsController {
   ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.listsService.addMembers(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      dto.customerIds,
+    );
+  }
+
+  @Post(':id/members/remove')
+  @HttpCode(200)
+  removeMembers(
+    @Param('id') id: string,
+    @Body() dto: AddMembersDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.listsService.removeMembers(
       id,
       req.user.tenantId,
       req.user.userId,

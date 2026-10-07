@@ -1,8 +1,47 @@
 /** Modelos de la feature de campañas (email / WhatsApp). */
 
-export type CampaignChannel = 'email' | 'waha' | 'cloudapi';
-export type CampaignTargeting = 'all' | 'tags' | 'lists';
-export type CampaignStatus = 'draft' | 'sending' | 'sent' | 'failed';
+export type CampaignChannel = 'email' | 'waha' | 'cloudapi' | 'sms';
+export type CampaignTargeting = 'all' | 'tags' | 'lists' | 'contacts';
+export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
+export type CampaignType = 'email' | 'whatsapp' | 'sms';
+
+/** Recuento por estado de los destinatarios (email y SMS). */
+export interface CampaignStats {
+  total: number;
+  pending: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+}
+
+export type RecipientStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+
+export interface CampaignRecipient {
+  _id: string;
+  customerId: string;
+  name: string;
+  to: string;
+  status: RecipientStatus;
+  error?: string;
+  sentAt?: string;
+  shortUrl?: string;
+}
+
+export interface CampaignRecipientsPage {
+  items: CampaignRecipient[];
+  total: number;
+  page: number;
+  pageSize: number;
+  stats: CampaignStats;
+}
+
+/** A cuántos llegaría una audiencia, antes de guardar la campaña. */
+export interface AudiencePreview {
+  total: number;
+  reachable: number;
+  blocked: number;
+  missing: number;
+}
 export type CampaignMediaType = 'image' | 'video' | 'audio' | 'document';
 
 export interface ContactList {
@@ -20,18 +59,27 @@ export interface CampaignEstimate {
   sentToday: number;
   remaining: number;
   cloudApiPricePerMsg?: number;
+  /** Solo SMS: partes en que se divide el mensaje. */
+  smsSegments?: number;
 }
 
 export interface Campaign {
   _id: string;
   name: string;
-  type: 'email' | 'whatsapp';
+  type: CampaignType;
   waProvider?: 'waha' | 'cloudapi';
   subject?: string;
   body: string;
   targeting: CampaignTargeting;
   recipientTags: string[];
   listIds: string[];
+  customerIds?: string[];
+  emailTemplateId?: string;
+  senderAccountId?: string;
+  linkUrl?: string;
+  linkDomain?: string;
+  scheduledAt?: string;
+  stats?: CampaignStats;
   recipientCount: number;
   status: CampaignStatus;
   sentAt?: string;
@@ -62,13 +110,20 @@ export interface WaTemplate {
 /** Body de creación/edición de campaña. */
 export interface CampaignPayload {
   name: string;
-  type: 'email' | 'whatsapp';
+  type: CampaignType;
   waProvider?: 'waha' | 'cloudapi';
   subject?: string;
   body: string;
   targeting: CampaignTargeting;
   recipientTags: string[];
   listIds: string[];
+  customerIds?: string[];
+  // Cadena vacía = quitar el valor guardado.
+  emailTemplateId?: string;
+  senderAccountId?: string;
+  linkUrl?: string;
+  linkDomain?: string;
+  scheduledAt?: string;
   mediaUrl?: string;
   mediaType?: CampaignMediaType;
   templateName?: string;

@@ -13,6 +13,13 @@ import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { AuthService } from '../../auth/auth.service';
 import { ContactImportComponent } from './contact-import/contact-import';
+import { ContactCareComponent } from './contact-care';
+import {
+  ContactCareApiService,
+  ContactOwner,
+  OwnerRef,
+} from '../../core/api/contact-care-api.service';
+import { downloadCsv } from '../../shared/csv';
 import {
   LucideAngularModule,
   Users,
@@ -40,6 +47,9 @@ import {
   Filter,
   Columns3,
   FileText,
+  UserCheck,
+  UserMinus,
+  ListX,
 } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
@@ -64,6 +74,8 @@ interface Customer {
   totalEvents: number;
   lastVisit?: string;
   createdAt: string;
+  /** Usuario que atiende al contacto; ausente = sin asignar. */
+  ownerId?: OwnerRef | null;
 }
 
 interface ListMini {
@@ -71,6 +83,8 @@ interface ListMini {
   name: string;
   color: string;
   type: string;
+  /** Miembros de las listas estáticas: de aquí sale la columna "Listas". */
+  memberIds?: string[];
 }
 
 /** Formulario del tenant, solo lo necesario para el filtro y la columna. */
@@ -111,7 +125,9 @@ const CUSTOM_PREFIX = 'cf:';
 const BASE_COLUMNS: ColumnDef[] = [
   { key: 'email',      label: 'Email',         custom: false },
   { key: 'phone',      label: 'Teléfono',      custom: false },
+  { key: 'owner',      label: 'Responsable',   custom: false },
   { key: 'tags',       label: 'Tags',          custom: false },
+  { key: 'lists',      label: 'Listas',        custom: false },
   { key: 'source',     label: 'Origen',        custom: false },
   { key: 'forms',      label: 'Formularios',   custom: false },
   { key: 'lastVisit',  label: 'Última visita', custom: false },
@@ -121,7 +137,7 @@ const BASE_COLUMNS: ColumnDef[] = [
 ];
 
 /** Lo que se ve al entrar por primera vez. */
-const DEFAULT_COLUMNS = ['phone', 'tags', 'source', 'lastVisit', 'history'];
+const DEFAULT_COLUMNS = ['phone', 'owner', 'tags', 'source', 'lastVisit', 'history'];
 
 /** Clave de localStorage donde se recuerda la elección de columnas. */
 const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
@@ -129,7 +145,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
 @Component({
   selector: 'app-customers',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule, ContactImportComponent],
+  imports: [ReactiveFormsModule, LucideAngularModule, ContactImportComponent, ContactCareComponent],
   template: `
     <div class="page animate-fade-in">
 
@@ -212,6 +228,37 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
             </button>
           }
         </div>
+
+        <div class="tag-filters" role="group" aria-label="Filtrar por responsable">
+          <button class="tag-filter-btn" [class.active]="ownerFilter() === ''" (click)="ownerFilter.set('')">
+            Cualquier responsable
+          </button>
+          <button class="tag-filter-btn" [class.active]="ownerFilter() === 'mine'" (click)="ownerFilter.set('mine')">
+            Míos ({{ mineCount() }})
+          </button>
+          <button class="tag-filter-btn" [class.active]="ownerFilter() === 'none'" (click)="ownerFilter.set('none')">
+            Sin asignar ({{ unassignedCount() }})
+          </button>
+        </div>
+
+        @if (staticLists().length > 0) {
+          <div class="form-filter">
+            <lucide-icon [img]="List" [size]="15" class="form-filter-icon"></lucide-icon>
+            <select class="select form-filter-select" [value]="selectedList()"
+              (change)="selectedList.set($any($event.target).value)" aria-label="Filtrar por lista">
+              <option value="">Todas las listas</option>
+              @for (l of staticLists(); track l._id) {
+                <option [value]="l._id">{{ l.name }} ({{ l.memberIds?.length || 0 }})</option>
+              }
+            </select>
+            @if (selectedList()) {
+              <button class="btn btn-ghost btn-sm btn-icon" (click)="selectedList.set('')"
+                aria-label="Quitar filtro de lista">
+                <lucide-icon [img]="X" [size]="14"></lucide-icon>
+              </button>
+            }
+          </div>
+        }
 
         @if (activeForms().length > 0) {
           <div class="form-filter">
@@ -310,9 +357,25 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
             <span class="bulk-count">{{ selectedIds().length }} contacto(s) seleccionado(s)</span>
           </div>
           <div class="bulk-actions">
-            <button class="btn btn-sm btn-secondary" (click)="openListPicker()">
+            <button class="btn btn-sm btn-secondary" (click)="openListPicker('add')">
               <lucide-icon [img]="UserPlus" [size]="14"></lucide-icon>
               Agregar a lista
+            </button>
+            <button class="btn btn-sm btn-secondary" (click)="openListPicker('remove')">
+              <lucide-icon [img]="ListX" [size]="14"></lucide-icon>
+              Quitar de lista
+            </button>
+            <button class="btn btn-sm btn-secondary" (click)="openBulkAssign()">
+              <lucide-icon [img]="UserCheck" [size]="14"></lucide-icon>
+              Asignar
+            </button>
+            <button class="btn btn-sm btn-secondary" (click)="openBulkTags()">
+              <lucide-icon [img]="Tag" [size]="14"></lucide-icon>
+              Etiquetar
+            </button>
+            <button class="btn btn-sm btn-secondary" (click)="exportSelection()">
+              <lucide-icon [img]="Download" [size]="14"></lucide-icon>
+              Exportar
             </button>
             <button class="btn btn-sm btn-ghost" (click)="clearSelection()">
               <lucide-icon [img]="X" [size]="14"></lucide-icon>
@@ -432,6 +495,27 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                             @if (!formsOf(c).length) { <span class="text-muted">—</span> }
                           </div>
                         }
+                        @case ('owner') {
+                          @if (c.ownerId) {
+                            <span class="badge badge-brand">{{ ownerLabel(c) }}</span>
+                          } @else {
+                            <span class="text-muted">Sin asignar</span>
+                          }
+                        }
+                        @case ('lists') {
+                          <div class="tags-cell">
+                            @for (l of listsOf(c).slice(0, 2); track l._id) {
+                              <button type="button" class="badge badge-neutral tag-badge form-chip"
+                                (click)="selectedList.set(l._id)" [title]="'Filtrar por ' + l.name">
+                                <span class="list-dot" [style.background]="l.color"></span>{{ l.name }}
+                              </button>
+                            }
+                            @if (listsOf(c).length > 2) {
+                              <span class="badge badge-neutral">+{{ listsOf(c).length - 2 }}</span>
+                            }
+                            @if (!listsOf(c).length) { <span class="text-muted">—</span> }
+                          </div>
+                        }
                         @case ('history') {
                           <div class="history-cell">
                             @if (c.totalReservations > 0) {
@@ -527,6 +611,13 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                   </dd>
                 </div>
               </dl>
+            </div>
+
+            <!-- Atención: responsable y bitácora -->
+            <div class="view-section">
+              <span class="view-section-title">Atención</span>
+              <app-contact-care [customerId]="c._id" [owner]="c.ownerId"
+                (ownerChanged)="onOwnerChanged(c, $event)" />
             </div>
 
             <!-- Etiquetas -->
@@ -758,10 +849,11 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
         <div class="modal-card" (click)="$event.stopPropagation()">
           <div class="modal-header">
             <div>
-              <h3 class="modal-title">Agregar a lista</h3>
+              <h3 class="modal-title">{{ listPickerMode() === 'add' ? 'Agregar a lista' : 'Quitar de lista' }}</h3>
               <p class="modal-sub">
                 <lucide-icon [img]="CheckSquare" [size]="13" style="vertical-align: middle;"></lucide-icon>
-                {{ selectedIds().length }} contacto(s) serán agregados
+                {{ selectedIds().length }} contacto(s)
+                {{ listPickerMode() === 'add' ? 'serán agregados' : 'se quitarán de la lista que elijas' }}
               </p>
             </div>
             <button class="btn btn-icon btn-ghost" (click)="listPickerOpen.set(false)">
@@ -776,7 +868,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
               </div>
             }
             @for (l of availableLists(); track l._id) {
-              <button class="list-pick-item" (click)="addToList(l._id)" [disabled]="addingToList()">
+              <button class="list-pick-item" (click)="applyListPick(l._id)" [disabled]="addingToList()">
                 <div class="pick-dot" [style.background]="l.color"></div>
                 <span class="pick-name">{{ l.name }}</span>
                 @if (addingToList()) {
@@ -784,6 +876,71 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                 }
               </button>
             }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- ── Asignación masiva ── -->
+    @if (bulkAssignOpen()) {
+      <div class="modal-overlay" (click)="bulkAssignOpen.set(false)" role="dialog" aria-modal="true" aria-label="Asignar contactos">
+        <div class="modal-card" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h3 class="modal-title">Asignar responsable</h3>
+              <p class="modal-sub">{{ selectedIds().length }} contacto(s) seleccionados</p>
+            </div>
+            <button class="btn btn-icon btn-ghost" (click)="bulkAssignOpen.set(false)" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="18"></lucide-icon>
+            </button>
+          </div>
+          <div class="modal-body">
+            @for (o of owners(); track o._id) {
+              <button class="list-pick-item" (click)="bulkAssign(o._id)" [disabled]="bulkBusy()">
+                <lucide-icon [img]="UserCheck" [size]="15"></lucide-icon>
+                <span class="pick-name">{{ o.name }}{{ o._id === meId() ? ' (yo)' : '' }}</span>
+                <span class="pick-count">{{ o.contacts }}</span>
+              </button>
+            }
+            <button class="list-pick-item" (click)="bulkAssign('')" [disabled]="bulkBusy()">
+              <lucide-icon [img]="UserMinus" [size]="15"></lucide-icon>
+              <span class="pick-name">Dejar sin asignar</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- ── Etiquetado masivo ── -->
+    @if (bulkTagsOpen()) {
+      <div class="modal-overlay" (click)="bulkTagsOpen.set(false)" role="dialog" aria-modal="true" aria-label="Etiquetar contactos">
+        <div class="modal-card" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h3 class="modal-title">Etiquetar</h3>
+              <p class="modal-sub">Un toque añade la etiqueta; otro toque la quita de los {{ selectedIds().length }} seleccionados.</p>
+            </div>
+            <button class="btn btn-icon btn-ghost" (click)="bulkTagsOpen.set(false)" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="18"></lucide-icon>
+            </button>
+          </div>
+          <div class="modal-body bulk-tags-body">
+            <div class="tag-filters">
+              @for (tag of bulkTagOptions(); track tag) {
+                <button class="tag-filter-btn" [class.active]="bulkTagState()[tag] === 'add'"
+                  [class.removing]="bulkTagState()[tag] === 'remove'" (click)="cycleBulkTag(tag)">
+                  {{ bulkTagPrefix(tag) }}{{ tag }}
+                </button>
+              }
+            </div>
+            <input class="input" #newTag placeholder="Nueva etiqueta y Enter"
+              (keydown.enter)="addBulkTag(newTag.value); newTag.value = ''" />
+            <div class="bulk-tags-foot">
+              <button class="btn btn-ghost btn-sm" (click)="bulkTagsOpen.set(false)">Cancelar</button>
+              <button class="btn btn-primary btn-sm" (click)="applyBulkTags()" [disabled]="bulkBusy() || !bulkTagChanges()">
+                Aplicar
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1018,6 +1175,11 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
     }
     .list-pick-item:hover:not(:disabled) { background: var(--color-bg-app); }
     .list-pick-item:disabled { opacity: 0.6; cursor: not-allowed; }
+    .pick-count { margin-left:auto; font-size:12px; color:var(--color-text-muted); }
+    .list-dot { width:8px; height:8px; border-radius:var(--radius-pill); display:inline-block; margin-right:6px; }
+    .bulk-tags-body { display:flex; flex-direction:column; gap:14px; padding:16px 20px 20px; }
+    .bulk-tags-foot { display:flex; justify-content:flex-end; gap:8px; }
+    .tag-filter-btn.removing { border-color:var(--color-error); color:var(--color-error); text-decoration:line-through; }
     .pick-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
     .pick-name { flex: 1; }
 
@@ -1081,6 +1243,7 @@ export class CustomersComponent implements OnInit {
   private auth     = inject(AuthService);
   private router   = inject(Router);
   private route    = inject(ActivatedRoute);
+  private care     = inject(ContactCareApiService);
 
   readonly Users = Users; readonly Plus = Plus; readonly Pencil = Pencil;
   readonly Trash2 = Trash2; readonly Search = Search; readonly RefreshCw = RefreshCw;
@@ -1093,6 +1256,8 @@ export class CustomersComponent implements OnInit {
   readonly StickyNote = StickyNote; readonly Database = Database;
   readonly Filter = Filter; readonly Columns3 = Columns3;
   readonly FileText = FileText;
+  readonly UserCheck = UserCheck; readonly UserMinus = UserMinus;
+  readonly ListX = ListX;
 
   readonly presetTags = PRESET_TAGS;
 
@@ -1119,7 +1284,36 @@ export class CustomersComponent implements OnInit {
   selectedIds     = signal<string[]>([]);
   availableLists  = signal<ListMini[]>([]);
   listPickerOpen  = signal(false);
+  listPickerMode  = signal<'add' | 'remove'>('add');
   addingToList    = signal(false);
+  allLists        = signal<ListMini[]>([]);
+  selectedList    = signal('');
+  ownerFilter     = signal<'' | 'mine' | 'none'>('');
+  owners          = signal<ContactOwner[]>([]);
+  bulkAssignOpen  = signal(false);
+  bulkTagsOpen    = signal(false);
+  bulkBusy        = signal(false);
+  bulkTagState    = signal<Record<string, 'add' | 'remove'>>({});
+  extraBulkTags   = signal<string[]>([]);
+
+  meId = computed(() => this.auth.currentUser()?.id ?? '');
+  staticLists = computed(() => this.allLists().filter(l => l.type === 'static'));
+  mineCount = computed(() => this.customers().filter(c => c.ownerId?._id === this.meId()).length);
+  unassignedCount = computed(() => this.customers().filter(c => !c.ownerId).length);
+
+  /** Índice contacto → listas estáticas a las que pertenece. */
+  private listsByCustomer = computed(() => {
+    const map = new Map<string, ListMini[]>();
+    for (const l of this.staticLists()) {
+      for (const id of l.memberIds ?? []) {
+        const bucket = map.get(id);
+        if (bucket) bucket.push(l); else map.set(id, [l]);
+      }
+    }
+    return map;
+  });
+
+  bulkTagChanges = computed(() => Object.keys(this.bulkTagState()).length);
 
   filteredCustomers = computed(() => {
     let list = this.customers();
@@ -1137,6 +1331,14 @@ export class CustomersComponent implements OnInit {
     // esté entre los suyos.
     const formId = this.selectedForm();
     if (formId) list = list.filter(c => (c.formIds ?? []).includes(formId));
+    const owner = this.ownerFilter();
+    if (owner === 'mine') list = list.filter(c => c.ownerId?._id === this.meId());
+    if (owner === 'none') list = list.filter(c => !c.ownerId);
+    const listId = this.selectedList();
+    if (listId) {
+      const members = new Set(this.allLists().find(l => l._id === listId)?.memberIds ?? []);
+      list = list.filter(c => members.has(c._id));
+    }
 
     // Filtros por columna: coincidencia parcial, sin distinguir mayúsculas.
     const filters = Object.entries(this.columnFilters())
@@ -1233,6 +1435,7 @@ export class CustomersComponent implements OnInit {
     if (formId) this.selectedForm.set(formId);
     this.loadForms();
     this.loadCustomers();
+    this.loadLists();
   }
 
   /** Nombres de los formularios en los que está el contacto. */
@@ -1330,14 +1533,150 @@ export class CustomersComponent implements OnInit {
 
   loadLists() {
     this.http.get<ListMini[]>(`${API}/lists`).subscribe({
-      next: data => this.availableLists.set(data.filter(l => l.type === 'static')),
+      next: data => {
+        this.allLists.set(data);
+        this.availableLists.set(data.filter(l => l.type === 'static'));
+      },
       error: () => {},
     });
   }
 
-  openListPicker() {
+  openListPicker(mode: 'add' | 'remove' = 'add') {
+    this.listPickerMode.set(mode);
     this.loadLists();
     this.listPickerOpen.set(true);
+  }
+
+  applyListPick(listId: string) {
+    if (this.listPickerMode() === 'add') this.addToList(listId);
+    else this.removeFromList(listId);
+  }
+
+  removeFromList(listId: string) {
+    this.addingToList.set(true);
+    const customerIds = this.selectedIds();
+    this.http.post(`${API}/lists/${listId}/members/remove`, { customerIds }).subscribe({
+      next: () => {
+        this.toast.success('Contactos quitados de la lista');
+        this.addingToList.set(false);
+        this.listPickerOpen.set(false);
+        this.clearSelection();
+        this.loadLists();
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.toast.error(err.error?.message || 'Error al quitar de la lista');
+        this.addingToList.set(false);
+      },
+    });
+  }
+
+  listsOf(c: Customer): ListMini[] {
+    return this.listsByCustomer().get(c._id) ?? [];
+  }
+
+  ownerLabel(c: Customer): string {
+    const o = c.ownerId;
+    if (!o) return '';
+    return (o.name || o.email || 'Usuario') + (o._id === this.meId() ? ' (yo)' : '');
+  }
+
+  /** La ficha cambió el responsable: se refleja en la tabla sin recargar. */
+  onOwnerChanged(c: Customer, owner: OwnerRef | null) {
+    const updated = { ...c, ownerId: owner };
+    this.customers.update(list => list.map(x => (x._id === c._id ? updated : x)));
+    if (this.viewing()?._id === c._id) this.viewing.set(updated);
+  }
+
+  // ── Acciones masivas ──
+  openBulkAssign() {
+    this.bulkAssignOpen.set(true);
+    this.care.owners().subscribe({
+      next: o => this.owners.set(o),
+      error: (err: { error?: { message?: string } }) =>
+        this.toast.error(err.error?.message || 'No se pudieron cargar los usuarios'),
+    });
+  }
+
+  bulkAssign(toUserId: string) {
+    this.bulkBusy.set(true);
+    this.care.bulkAssign(this.selectedIds(), toUserId).subscribe({
+      next: res => {
+        this.bulkBusy.set(false);
+        this.bulkAssignOpen.set(false);
+        this.toast.success(
+          res.updated + ' contacto(s) actualizados' + (res.skipped ? ', ' + res.skipped + ' sin cambios' : ''),
+        );
+        this.clearSelection();
+        this.loadCustomers();
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.bulkBusy.set(false);
+        this.toast.error(err.error?.message || 'No se pudo asignar');
+      },
+    });
+  }
+
+  bulkTagOptions(): string[] {
+    return [...new Set([...this.presetTags, ...this.activeTags(), ...this.extraBulkTags()])];
+  }
+
+  bulkTagPrefix(tag: string): string {
+    const state = this.bulkTagState()[tag];
+    return state === 'add' ? '+ ' : state === 'remove' ? '− ' : '';
+  }
+
+  openBulkTags() {
+    this.bulkTagState.set({});
+    this.bulkTagsOpen.set(true);
+  }
+
+  /** Sin marca → añadir → quitar → sin marca. */
+  cycleBulkTag(tag: string) {
+    const state = { ...this.bulkTagState() };
+    if (!state[tag]) state[tag] = 'add';
+    else if (state[tag] === 'add') state[tag] = 'remove';
+    else delete state[tag];
+    this.bulkTagState.set(state);
+  }
+
+  addBulkTag(raw: string) {
+    const tag = raw.trim();
+    if (!tag) return;
+    if (!this.bulkTagOptions().includes(tag)) this.extraBulkTags.update(t => [...t, tag]);
+    this.bulkTagState.update(s => ({ ...s, [tag]: 'add' }));
+  }
+
+  applyBulkTags() {
+    const state = this.bulkTagState();
+    const add = Object.keys(state).filter(t => state[t] === 'add');
+    const remove = Object.keys(state).filter(t => state[t] === 'remove');
+    this.bulkBusy.set(true);
+    this.care.bulkTags(this.selectedIds(), add, remove).subscribe({
+      next: res => {
+        this.bulkBusy.set(false);
+        this.bulkTagsOpen.set(false);
+        this.toast.success('Etiquetas actualizadas en ' + res.updated + ' contacto(s)');
+        this.clearSelection();
+        this.loadCustomers();
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.bulkBusy.set(false);
+        this.toast.error(err.error?.message || 'No se pudieron actualizar las etiquetas');
+      },
+    });
+  }
+
+  /** Exporta solo lo seleccionado, con las columnas que se están viendo. */
+  exportSelection() {
+    const ids = new Set(this.selectedIds());
+    const rows = this.customers().filter(c => ids.has(c._id));
+    const cols = this.visibleColumns().filter(col => !['email', 'phone'].includes(col.key));
+    downloadCsv(
+      ['Nombre', 'Email', 'Teléfono', ...cols.map(col => col.label)],
+      rows.map(c => [c.name, c.email ?? '', c.phone ?? '', ...cols.map(col => this.cellValue(c, col.key))]),
+      'contactos-seleccionados.csv',
+    );
+    this.toast.success(rows.length + ' contacto(s) exportados');
   }
 
   addToList(listId: string) {
@@ -1349,6 +1688,7 @@ export class CustomersComponent implements OnInit {
         this.addingToList.set(false);
         this.listPickerOpen.set(false);
         this.clearSelection();
+        this.loadLists();
       },
       error: (err: { error?: { message?: string } }) => {
         this.toast.error(err.error?.message || 'Error al agregar a lista');
@@ -1493,6 +1833,8 @@ export class CustomersComponent implements OnInit {
     switch (key) {
       case 'email':     return c.email ?? '';
       case 'phone':     return c.phone ?? '';
+      case 'owner':     return this.ownerLabel(c);
+      case 'lists':     return this.listsOf(c).map(l => l.name).join(', ');
       case 'tags':      return c.tags.join(', ');
       case 'source':    return `${this.sourceMeta(c.source).label} ${c.sourceLabel ?? ''}`.trim();
       case 'forms':     return this.formsOf(c).map(f => f.name).join(', ');
