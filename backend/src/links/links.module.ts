@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
   LinkBatch,
@@ -35,10 +35,9 @@ import { ListsModule } from '../lists/lists.module';
   ],
   controllers: [LinksController, RedirectController],
   providers: [LinksService, LinkTrackingService, ShortDomainMiddleware],
-  exports: [LinksService],
+  // El middleware se exporta para registrarlo en `main.ts` a nivel de Express:
+  // montado con `forRoutes('*')` solo corre en rutas que existen, y un link de
+  // dominio corto (`/abc1234`) es justo una ruta que no existe en la API.
+  exports: [LinksService, ShortDomainMiddleware],
 })
-export class LinksModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(ShortDomainMiddleware).forRoutes('*');
-  }
-}
+export class LinksModule {}

@@ -8,6 +8,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import type { NextFunction, Request, Response } from 'express';
 import { AllExceptionsFilter } from './shared/http-exception.filter';
+import { ShortDomainMiddleware } from './links/redirect.controller';
 
 async function bootstrap() {
   // Fail-fast: sin secreto de firma la app no debe arrancar (nunca usar un fallback).
@@ -21,6 +22,16 @@ async function bootstrap() {
   // El límite por defecto (100 kB) se queda corto para una plantilla de email
   // con su diseño y su HTML compilado.
   app.useBodyParser('json', { limit: '2mb' });
+
+  // Links cortos en dominio propio: se resuelven por `Host` antes que
+  // cualquier ruta, porque en ese dominio la API no existe.
+  const shortDomains = app.get(ShortDomainMiddleware);
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    // Un fallo aquí no debe tumbar la API: se sigue con la ruta normal.
+    shortDomains.use(req, res, next).catch(() => {
+      if (!res.headersSent) next();
+    });
+  });
   const configService = app.get(ConfigService);
 
   // whitelist recorta propiedades sin decorador en el DTO (protege contra mass-assignment
