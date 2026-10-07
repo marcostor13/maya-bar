@@ -22,7 +22,7 @@ const query = <T>(value: T) => {
   return q;
 };
 
-const model = () => ({
+const model = (): Record<string, any> => ({
   find: jest.fn(() => query([])),
   findOne: jest.fn(() => query(null)),
   findById: jest.fn(() => query(null)),
@@ -286,7 +286,10 @@ describe('LinksService', () => {
 
       const linkId = new Types.ObjectId().toString();
       const stats = await service.stats(tenantId, { linkId });
-      const match = clicks.aggregate.mock.calls[0][0][0].$match;
+      const calls = clicks.aggregate.mock.calls as unknown as [
+        { $match: Record<string, { toString(): string }> }[],
+      ][];
+      const match = calls[0][0][0].$match;
       expect(match.tenantId.toString()).toBe(tenantId);
       expect(match.linkId.toString()).toBe(linkId);
       // Sin clics devuelve ceros y una serie continua, no huecos.

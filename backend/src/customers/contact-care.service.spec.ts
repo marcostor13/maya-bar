@@ -140,7 +140,7 @@ describe('ContactCareService', () => {
       'vacaciones',
     );
 
-    expect(doc.ownerId.toString()).toBe(agent);
+    expect(String(doc.ownerId)).toBe(agent);
     const logged = activities.create.mock.calls[0][0];
     expect(logged.fromUserId.toString()).toBe(other);
     expect(logged.toUserId.toString()).toBe(agent);
