@@ -19,6 +19,7 @@ import { CampaignSenderService } from './campaign-sender.service';
 import { EmailTemplate } from '../email-templates/email-template.schema';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { SmsService } from '../sms/sms.service';
+import { ResendService } from '../resend/resend.service';
 import { LinksService, normalizeDestination } from '../links/links.service';
 import { smsSegments } from '../shared/sms-segments';
 import { Campaign } from './campaign.schema';
@@ -81,6 +82,7 @@ export class CampaignsService implements OnModuleInit {
     private sender: CampaignSenderService,
     private emailAccounts: EmailAccountsService,
     private sms: SmsService,
+    private resendAccounts: ResendService,
     private links: LinksService,
   ) {}
 
@@ -527,7 +529,10 @@ export class CampaignsService implements OnModuleInit {
           .filter(Boolean),
       ).size;
       const perMinute = isEmail
-        ? 60
+        ? campaign.senderAccountId
+          ? 60
+          : ((await this.resendAccounts.mailer(tenantId).catch(() => null))
+              ?.ratePerMinute ?? 60)
         : Math.min(
             (await this.sms.getConfig(tenantId)).ratePerMinute || 60,
             120,

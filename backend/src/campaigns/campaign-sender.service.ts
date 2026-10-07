@@ -12,6 +12,7 @@ import { MailService } from '../mail/mail.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { EmailTransportService } from '../email-accounts/email-transport.service';
 import { SmsService } from '../sms/sms.service';
+import { ResendService, TenantMailer } from '../resend/resend.service';
 import { SmsConfig } from '../sms/sms-config.schema';
 import {
   SuppressionService,
@@ -32,6 +33,8 @@ const EMAIL_BATCH = 60;
 /** Tope de SMS por pasada aunque el proveedor admita más. */
 const SMS_BATCH_MAX = 120;
 const CONCURRENCY = 5;
+/** Resend limita las peticiones por segundo: con su cuenta se va de dos en dos. */
+const RESEND_CONCURRENCY = 2;
 const MAX_ATTEMPTS = 2;
 /** Errores que merecen un segundo intento en la pasada siguiente. */
 const TRANSIENT_RE =
@@ -104,6 +107,7 @@ export class CampaignSenderService {
     private emailAccounts: EmailAccountsService,
     private transport: EmailTransportService,
     private sms: SmsService,
+    private resend: ResendService,
     private suppression: SuppressionService,
     config: ConfigService,
   ) {
@@ -258,6 +262,18 @@ export class CampaignSenderService {
       limit = Math.min(smsConfig.ratePerMinute || 60, SMS_BATCH_MAX);
     }
 
+    const sender = await this.resolveSender(campaign);
+    // Con la cuenta de Resend de la empresa el ritmo lo marca su propio límite:
+    // dos envíos a la vez, espaciados para no pasar de sus envíos por minuto.
+    let concurrency = CONCURRENCY;
+    let minChunkMs = 0;
+    if (sender.kind === 'resend') {
+      const rate = Math.min(Math.max(sender.mailer.ratePerMinute, 10), 600);
+      limit = rate;
+      concurrency = RESEND_CONCURRENCY;
+      minChunkMs = Math.ceil((RESEND_CONCURRENCY * 60_000) / rate);
+    }
+
     const batch = await this.recipientModel
       .find({ campaignId: campaign._id, status: 'pending' })
       .sort({ _id: 1 })
@@ -265,7 +281,7 @@ export class CampaignSenderService {
       .exec();
 
     if (batch.length) {
-      const [suppressed, tenant, customers, sender] = await Promise.all([
+      const [suppressed, tenant, customers] = await Promise.all([
         this.suppression.setFor(tenantId),
         this.tenantModel.findById(campaign.tenantId, { name: 1 }).lean().exec(),
         this.customerModel
@@ -278,16 +294,16 @@ export class CampaignSenderService {
           )
           .lean()
           .exec(),
-        this.resolveSender(campaign),
       ]);
       const byId = new Map(
         customers.map((c) => [String(c._id), c as TokenSource]),
       );
       const company = tenant?.name ?? '';
 
-      for (let i = 0; i < batch.length; i += CONCURRENCY) {
+      for (let i = 0; i < batch.length; i += concurrency) {
+        const startedAt = Date.now();
         await Promise.all(
-          batch.slice(i, i + CONCURRENCY).map((recipient) =>
+          batch.slice(i, i + concurrency).map((recipient) =>
             this.sendOne(campaign, recipient, {
               suppressed,
               company,
@@ -297,6 +313,9 @@ export class CampaignSenderService {
             }),
           ),
         );
+        const wait = minChunkMs - (Date.now() - startedAt);
+        if (wait > 0 && i + concurrency < batch.length)
+          await new Promise((r) => setTimeout(r, wait));
       }
     }
 
@@ -435,6 +454,14 @@ export class CampaignSenderService {
         headers,
       });
     }
+    if (env.sender.kind === 'resend')
+      return env.sender.mailer.send({
+        to: recipient.to,
+        subject,
+        html,
+        text,
+        headers,
+      });
     return this.mail.sendHtml({
       to: recipient.to,
       subject,
@@ -445,10 +472,13 @@ export class CampaignSenderService {
     });
   }
 
-  /** Buzón de la empresa elegido para la campaña, o el de la plataforma. */
+  /**
+   * Por dónde sale la campaña, en este orden: el buzón elegido en la campaña,
+   * la cuenta de Resend de la empresa, o el remitente de la plataforma.
+   */
   private async resolveSender(campaign: Campaign): Promise<Sender> {
-    if (campaign.type !== 'email' || !campaign.senderAccountId)
-      return { kind: 'platform' };
+    if (campaign.type !== 'email') return { kind: 'platform' };
+    if (!campaign.senderAccountId) return this.defaultSender(campaign);
     const account = await this.emailAccounts.findById(
       String(campaign.senderAccountId),
     );
@@ -459,15 +489,28 @@ export class CampaignSenderService {
     ) {
       // Mejor que salga por la plataforma a que la campaña se quede colgada.
       this.logger.warn(
-        `Campaña ${String(campaign._id)}: el buzón remitente ya no está disponible; se usa el de la plataforma`,
+        `Campaña ${String(campaign._id)}: el buzón remitente ya no está disponible; se usa el remitente por defecto`,
       );
-      return { kind: 'platform' };
+      return this.defaultSender(campaign);
     }
     return {
       kind: 'account',
       smtp: await this.emailAccounts.smtpConfig(account),
       from: this.emailAccounts.fromHeader(account),
     };
+  }
+
+  private async defaultSender(campaign: Campaign): Promise<Sender> {
+    const mailer = await this.resend
+      .mailer(String(campaign.tenantId))
+      .catch((err) => {
+        // Una cuenta de Resend rota no debe dejar la campaña colgada.
+        this.logger.warn(
+          `Campaña ${String(campaign._id)}: no se pudo usar la cuenta de Resend de la empresa: ${String(err)}`,
+        );
+        return null;
+      });
+    return mailer ? { kind: 'resend', mailer } : { kind: 'platform' };
   }
 
   private async mark(
@@ -519,6 +562,7 @@ export class CampaignSenderService {
 
 type Sender =
   | { kind: 'platform' }
+  | { kind: 'resend'; mailer: TenantMailer }
   | {
       kind: 'account';
       smtp: Awaited<ReturnType<EmailAccountsService['smtpConfig']>>;

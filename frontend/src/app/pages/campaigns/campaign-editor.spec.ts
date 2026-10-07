@@ -22,6 +22,7 @@ const mockApi = {
   smsStatus: vi.fn(),
   getShortDomains: vi.fn(),
   getContacts: vi.fn(),
+  resendStatus: vi.fn(),
 };
 const mockTemplatesApi = {
   variables: vi.fn(),
@@ -79,11 +80,22 @@ describe('CampaignEditorComponent', () => {
     mockApi.smsStatus.mockReturnValue(of({ configured: true, name: 'Proveedor', from: 'MAYA' }));
     mockApi.getShortDomains.mockReturnValue(of({ domains: [] }));
     mockApi.getContacts.mockReturnValue(of([]));
+    mockApi.resendStatus.mockReturnValue(of({ configured: false, from: '' }));
     mockTemplatesApi.variables.mockReturnValue(of([]));
     mockTemplatesApi.emailTemplates.mockReturnValue(of([{ _id: 'tpl1', name: 'Promo', subject: 'Del diseño' }]));
     mockTemplatesApi.messageTemplates.mockReturnValue(of([{ _id: 'm1', name: 'Recordatorio', channel: 'sms', body: 'Hola {nombre}' }]));
     mockTemplatesApi.previewMessage.mockReturnValue(of({ body: '', unknown: [], sms: { segments: 1, length: 0, perSegment: 160, encoding: 'GSM-7', unicodeChars: [] } }));
     mockEmailAccounts.list.mockReturnValue(of([]));
+  });
+
+  it('el remitente por defecto es la cuenta de Resend de la empresa si la tiene', async () => {
+    await setup();
+    expect(component.defaultSenderLabel()).toBe('Remitente de la plataforma');
+
+    mockApi.resendStatus.mockReturnValue(of({ configured: true, from: 'Mi Empresa <hola@miempresa.com>' }));
+    TestBed.resetTestingModule();
+    await setup();
+    expect(component.defaultSenderLabel()).toContain('hola@miempresa.com');
   });
 
   it('SMS: guarda con type sms, sin proveedor de WhatsApp ni asunto', async () => {

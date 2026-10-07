@@ -23,6 +23,7 @@ import { Tenant, TenantSchema } from '../tenants/tenant.schema';
 import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
 import { SmsModule } from '../sms/sms.module';
 import { LinksModule } from '../links/links.module';
+import { ResendModule } from '../resend/resend.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { LinksModule } from '../links/links.module';
     EmailAccountsModule,
     SmsModule,
     LinksModule,
+    ResendModule,
   ],
   controllers: [CampaignsController, UnsubscribeController],
   providers: [CampaignsService, CampaignSenderService],

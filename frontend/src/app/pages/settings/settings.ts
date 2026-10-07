@@ -12,6 +12,7 @@ import { MessengerSettingsComponent } from './messenger-settings';
 import { NotificationsSettingsComponent } from './notifications-settings';
 import { EmailSettingsComponent } from './email-settings';
 import { SmsSettingsComponent } from './sms-settings';
+import { ResendSettingsComponent } from './resend-settings';
 import { CalendarSettingsComponent } from './calendar-settings';
 
 type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' | 'hunterApiKey';
@@ -22,7 +23,7 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
   imports: [
     FormsModule, LucideAngularModule, WhatsappSettingsComponent,
     InstagramSettingsComponent, MessengerSettingsComponent,
-    NotificationsSettingsComponent, EmailSettingsComponent, SmsSettingsComponent, CalendarSettingsComponent,
+    NotificationsSettingsComponent, EmailSettingsComponent, SmsSettingsComponent, ResendSettingsComponent, CalendarSettingsComponent,
   ],
   template: `
     <div class="page animate-fade-in">
@@ -47,6 +48,8 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
 
       <!-- Correo electrónico -->
       <app-email-settings />
+
+      <app-resend-settings />
 
       <app-sms-settings />
 

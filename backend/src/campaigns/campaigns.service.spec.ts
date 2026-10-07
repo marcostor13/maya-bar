@@ -20,6 +20,7 @@ import { CampaignSenderService } from './campaign-sender.service';
 import { EmailTemplate } from '../email-templates/email-template.schema';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { SmsService } from '../sms/sms.service';
+import { ResendService } from '../resend/resend.service';
 import { LinksService } from '../links/links.service';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -109,6 +110,7 @@ describe('CampaignsService', () => {
   const mockEmailAccounts = { findOne: jest.fn() };
   const mockSms = { requireConfig: jest.fn(), getConfig: jest.fn() };
   const mockLinks = { createPersonalLinks: jest.fn() };
+  const resend = { mailer: jest.fn().mockResolvedValue(null) };
 
   const mockMail = { sendCampaign: jest.fn() };
   const mockSettings = {
@@ -188,6 +190,7 @@ describe('CampaignsService', () => {
         { provide: CampaignSenderService, useValue: mockSender },
         { provide: EmailAccountsService, useValue: mockEmailAccounts },
         { provide: SmsService, useValue: mockSms },
+        { provide: ResendService, useValue: resend },
         { provide: LinksService, useValue: mockLinks },
       ],
     }).compile();

@@ -8,6 +8,7 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
 import { EmailTemplatesModule } from './email-templates/email-templates.module';
 import { SmsModule } from './sms/sms.module';
 import { LinksModule } from './links/links.module';
+import { ResendModule } from './resend/resend.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TenantsModule } from './tenants/tenants.module';
@@ -99,6 +100,7 @@ import { CalendarModule } from './calendar/calendar.module';
     EmailTemplatesModule,
     SmsModule,
     LinksModule,
+    ResendModule,
   ],
   controllers: [AppController],
   providers: [AppService],

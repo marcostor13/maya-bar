@@ -93,6 +93,11 @@ export class CampaignsApiService {
     return this.http.get<{ configured: boolean; name: string; from: string }>(`${this.base}/sms-status`);
   }
 
+  /** Si la empresa envía los correos masivos con su propia cuenta de Resend. */
+  resendStatus(): Observable<{ configured: boolean; from: string }> {
+    return this.http.get<{ configured: boolean; from: string }>(`${this.base}/resend-status`);
+  }
+
   /** Contactos para elegirlos a mano como destinatarios. */
   getContacts(): Observable<{ _id: string; name: string; email?: string; phone?: string; tags: string[] }[]> {
     return this.http.get<{ _id: string; name: string; email?: string; phone?: string; tags: string[] }[]>(

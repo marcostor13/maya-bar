@@ -16,6 +16,7 @@ import { MailService } from '../mail/mail.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { EmailTransportService } from '../email-accounts/email-transport.service';
 import { SmsService } from '../sms/sms.service';
+import { ResendService } from '../resend/resend.service';
 import { SuppressionService } from '../suppression/suppression.service';
 
 const query = <T>(value: T) => {
@@ -32,6 +33,7 @@ describe('CampaignSenderService', () => {
   let recipients: Record<string, jest.Mock>;
   const mail = { sendHtml: jest.fn() };
   const sms = { requireConfig: jest.fn(), dispatch: jest.fn() };
+  const resend = { mailer: jest.fn() };
   const suppression = { setFor: jest.fn(), matches: jest.fn(), add: jest.fn() };
 
   const recipient = (over: Record<string, unknown> = {}) => {
@@ -86,6 +88,7 @@ describe('CampaignSenderService', () => {
     mail.sendHtml.mockResolvedValue('msg-1');
     sms.requireConfig.mockResolvedValue({ ratePerMinute: 30 });
     sms.dispatch.mockResolvedValue({ id: 'sms-1' });
+    resend.mailer.mockResolvedValue(null);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -107,6 +110,7 @@ describe('CampaignSenderService', () => {
         { provide: EmailAccountsService, useValue: {} },
         { provide: EmailTransportService, useValue: {} },
         { provide: SmsService, useValue: sms },
+        { provide: ResendService, useValue: resend },
         { provide: SuppressionService, useValue: suppression },
         {
           provide: ConfigService,
@@ -202,6 +206,62 @@ describe('CampaignSenderService', () => {
     expect(campaigns.updateOne.mock.calls.at(-1)![1].$set.status).toBe(
       'failed',
     );
+  });
+
+  describe('cuenta de Resend de la empresa', () => {
+    const mailer = () => ({
+      from: 'Mi Empresa <hola@miempresa.com>',
+      ratePerMinute: 300,
+      send: jest.fn().mockResolvedValue('re-1'),
+    });
+
+    it('si la empresa tiene Resend activo, sale por su cuenta y no por la plataforma', async () => {
+      const m = mailer();
+      resend.mailer.mockResolvedValue(m);
+      const r = recipient();
+      recipients.find.mockReturnValue(query([r]));
+      statsAfter({ sent: 1 });
+
+      await service.processBatch(campaign());
+
+      expect(resend.mailer).toHaveBeenCalledWith(String(tenantId));
+      expect(mail.sendHtml).not.toHaveBeenCalled();
+      const sent = m.send.mock.calls[0][0];
+      expect(sent).toMatchObject({ to: 'ana@test.com', subject: 'Hola Ana' });
+      expect(sent.headers['List-Unsubscribe']).toContain('/u/');
+      expect(r.providerId).toBe('re-1');
+      // El lote se dimensiona con el ritmo de la cuenta, no con el fijo.
+      expect(recipients.find.mock.results[0].value.limit).toHaveBeenCalledWith(
+        300,
+      );
+    });
+
+    it('un 429 de Resend deja al destinatario pendiente para la pasada siguiente', async () => {
+      const m = mailer();
+      m.send.mockRejectedValue(
+        new Error('Resend respondió 429: Too many requests'),
+      );
+      resend.mailer.mockResolvedValue(m);
+      const r = recipient();
+      recipients.find.mockReturnValue(query([r]));
+      statsAfter({ pending: 1 });
+
+      await service.processBatch(campaign());
+
+      expect(r.status).toBe('pending');
+    });
+
+    it('si la cuenta de Resend falla al cargarse, la campaña sale por la plataforma', async () => {
+      resend.mailer.mockRejectedValue(new Error('key corrupta'));
+      const r = recipient();
+      recipients.find.mockReturnValue(query([r]));
+      statsAfter({ sent: 1 });
+
+      await service.processBatch(campaign());
+
+      expect(mail.sendHtml).toHaveBeenCalledTimes(1);
+      expect(r.status).toBe('sent');
+    });
   });
 
   it('SMS: respeta el ritmo del proveedor y usa el link personal', async () => {

@@ -148,13 +148,16 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
           <div class="field">
             <label class="label">Enviar desde</label>
             <select class="select" [(ngModel)]="form.senderAccountId">
-              <option value="">Remitente de la plataforma</option>
+              <option value="">{{ defaultSenderLabel() }}</option>
               @for (a of emailAccounts(); track a._id) {
                 <option [value]="a._id">{{ a.label || a.email }} · {{ a.email }}</option>
               }
             </select>
-            @if (!emailAccounts().length) {
-              <span class="hint">Conecta un buzón en <a routerLink="/settings">Configuración → Correo</a> para enviar con tu propia dirección.</span>
+            @if (!resendFrom()) {
+              <span class="hint">
+                Para envíos masivos con tu dominio, conecta tu cuenta de Resend en
+                <a routerLink="/settings">Configuración → Correos masivos</a>.
+              </span>
             }
           </div>
 
@@ -815,6 +818,11 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   emailAccounts = signal<EmailAccount[]>([]);
   shortDomains = signal<string[]>([]);
   smsStatus = signal<{ configured: boolean; name: string; from: string } | null>(null);
+  /** Remitente de la cuenta de Resend de la empresa; vacío si no la tiene. */
+  resendFrom = signal('');
+  defaultSenderLabel = computed(() =>
+    this.resendFrom() ? 'Tu cuenta de Resend · ' + this.resendFrom() : 'Remitente de la plataforma',
+  );
   smsPreview = signal<MessagePreview | null>(null);
   templatePreviewDoc = signal<SafeHtml | null>(null);
   templatePreviewLoading = signal(false);
@@ -1033,6 +1041,10 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
       error: () => {},
     });
     this.api.smsStatus().subscribe({ next: s => this.smsStatus.set(s), error: () => {} });
+    this.api.resendStatus().subscribe({
+      next: r => this.resendFrom.set(r.configured ? r.from : ''),
+      error: () => {},
+    });
   }
 
   private toLocalInput(date: Date): string {
