@@ -45,6 +45,8 @@ class Coolify {
   createPrivateGithubApp = (body) =>
     this.post('/api/v1/applications/private-github-app', body);
 
+  createPublicApp = (body) => this.post('/api/v1/applications/public', body);
+
   updateApplication = (uuid, body) =>
     this.patch(`/api/v1/applications/${uuid}`, body);
 
@@ -55,13 +57,15 @@ class Coolify {
    * modificar, y nombra los flags `is_buildtime`/`is_runtime` (sin guion bajo
    * entre "build" y "time", a diferencia de lo que devuelve el GET de la app).
    */
-  upsertEnv(uuid, key, value, { exists = false, buildtime = true } = {}) {
+  upsertEnv(uuid, key, value, { exists = false, buildtime = true, literal = false } = {}) {
     const body = {
       key,
       value,
       is_buildtime: buildtime,
       is_runtime: true,
       is_preview: false,
+      // Sin `is_literal` Coolify interpola los `$` del valor como variables.
+      ...(literal ? { is_literal: true } : {}),
     };
     return this.request(
       exists ? 'PATCH' : 'POST',

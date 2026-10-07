@@ -1,12 +1,12 @@
 # Despliegue — Coolify + Cloudflare + GitHub Actions
 
 Monorepo con dos aplicaciones desplegadas en la misma instancia de Coolify
-(`98.87.37.45`), cada una desde su propio `Dockerfile`:
+(`52.1.145.159`), cada una desde su propio `Dockerfile`:
 
 | App        | Ruta        | Dominio                | Puerto | UUID en Coolify            |
 | ---------- | ----------- | ---------------------- | ------ | -------------------------- |
-| Backend    | `backend/`  | `api.mayacrm.site`     | 3080   | `rnpftccijri2129swfvt5y0l` |
-| Frontend   | `frontend/` | `mayacrm.site` (+`www`)| 4000   | `lt1sd98ttf38pbd9oi3jmagm` |
+| Backend    | `backend/`  | `api.mayacrm.site`     | 3080   | `kagzavwdhejydx3rvqkaxbxz` |
+| Frontend   | `frontend/` | `mayacrm.site` (+`www`)| 4000   | `szjvobvulcvabtmqw1vn2jyc` |
 
 El frontend es Angular con SSR: la imagen final ejecuta el servidor Express que
 genera `@angular/build` (`dist/frontend/server/server.mjs`), no un nginx
@@ -33,6 +33,21 @@ existen, alinea dominios, puertos, `watch_paths` y variables de entorno con el
 `.env`. También deja `is_auto_deploy_enabled: false` en ambas para que el único
 disparador de despliegues sea GitHub Actions (con el webhook de la GitHub App
 activo habría dos despliegues por cada push).
+
+Los secretos del backend (Mongo, JWT, claves de terceros, VAPID, Firebase…)
+salen de `backend/.env`: `provision` sube como variables solo-runtime todo lo
+que haya ahí, salvo lo vacío, lo que apunta a `localhost` y lo que ya deriva de
+los dominios (`PORT`, `NODE_ENV`, `FRONTEND_URL`, `PUBLIC_API_URL`,
+`CORS_ORIGINS`). Coolify no es la fuente de verdad: un secreto que solo exista
+en su panel se pierde si se pierde la instancia.
+
+Si `COOLIFY_GITHUB_APP_UUID` está vacío, las apps se crean clonando el
+repositorio como público (HTTPS sin credenciales). Es el caso de la instancia
+actual; si el repo pasa a privado hay que instalar una GitHub App en Coolify y
+recrear el origen de las apps.
+
+MongoDB es Atlas y filtra por IP: la IP del servidor (`SERVER_IP`) tiene que
+estar en *Network Access* del cluster o el backend arranca pero responde 502.
 
 La lista de no contactar (`docs/no-contactar.md`) no necesita configuración:
 crea sus índices sola al arrancar.
@@ -82,18 +97,18 @@ Repo → Settings → Secrets and variables → Actions:
 
 | Secret                   | Valor                                          |
 | ------------------------ | ---------------------------------------------- |
-| `COOLIFY_URL`            | `https://coolify.marcostorresalarcon.com`      |
+| `COOLIFY_URL`            | `https://coolify.ignia.site`      |
 | `COOLIFY_TOKEN`          | API token de Coolify (`<id>|<secreto>`)        |
-| `COOLIFY_BACKEND_UUID`   | `rnpftccijri2129swfvt5y0l`                     |
-| `COOLIFY_FRONTEND_UUID`  | `lt1sd98ttf38pbd9oi3jmagm`                     |
+| `COOLIFY_BACKEND_UUID`   | `kagzavwdhejydx3rvqkaxbxz`                     |
+| `COOLIFY_FRONTEND_UUID`  | `szjvobvulcvabtmqw1vn2jyc`                     |
 
 Con el CLI de GitHub:
 
 ```bash
-gh secret set COOLIFY_URL --body "https://coolify.marcostorresalarcon.com"
+gh secret set COOLIFY_URL --body "https://coolify.ignia.site"
 gh secret set COOLIFY_TOKEN --body "<token>"
-gh secret set COOLIFY_BACKEND_UUID --body "rnpftccijri2129swfvt5y0l"
-gh secret set COOLIFY_FRONTEND_UUID --body "lt1sd98ttf38pbd9oi3jmagm"
+gh secret set COOLIFY_BACKEND_UUID --body "kagzavwdhejydx3rvqkaxbxz"
+gh secret set COOLIFY_FRONTEND_UUID --body "szjvobvulcvabtmqw1vn2jyc"
 ```
 
 Los jobs usan el environment `production`; si tiene reglas de aprobación, el

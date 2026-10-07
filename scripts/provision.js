@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-const { config, requireDomains } = require('./lib/config');
+const path = require('path');
+const { config, requireDomains, parseDotenv } = require('./lib/config');
 const { Coolify } = require('./lib/coolify');
 
 /**
@@ -66,18 +67,17 @@ async function ensureApp(api, cfg, spec, check) {
       console.log(`[provision] FALTA la aplicación ${spec.name} (${spec.baseDirectory})`);
       return null;
     }
-    if (!cfg.coolify.githubAppUuid) {
-      throw new Error(
-        'Falta COOLIFY_GITHUB_APP_UUID: obtenlo con `npm run coolify:list` (sección GitHub Apps)',
-      );
-    }
-    console.log(`[provision] creando ${spec.name}…`);
-    const created = await api.createPrivateGithubApp({
+    // Sin GitHub App configurada el repositorio se clona como público, por
+    // HTTPS y sin credenciales (solo sirve mientras el repo sea público).
+    const viaApp = Boolean(cfg.coolify.githubAppUuid);
+    console.log(`[provision] creando ${spec.name} (${viaApp ? 'GitHub App' : 'repo público'})…`);
+    const create = viaApp ? api.createPrivateGithubApp : api.createPublicApp;
+    const created = await create({
       project_uuid: cfg.coolify.projectUuid,
       server_uuid: cfg.coolify.serverUuid,
       environment_name: cfg.coolify.environment,
-      github_app_uuid: cfg.coolify.githubAppUuid,
-      git_repository: spec.repo,
+      ...(viaApp ? { github_app_uuid: cfg.coolify.githubAppUuid } : {}),
+      git_repository: viaApp ? spec.repo : `https://github.com/${spec.repo}`,
       git_branch: cfg.github.branch,
       build_pack: 'dockerfile',
       base_directory: spec.baseDirectory,
@@ -129,7 +129,41 @@ async function ensureApp(api, cfg, spec, check) {
     console.log(`[provision] env ${spec.name}.${key} = ${value}`);
   }
 
+  // Secretos: solo runtime (como build args quedarían en las capas de la
+  // imagen), literales y sin imprimir nunca el valor.
+  for (const [key, value] of Object.entries(spec.secrets || {})) {
+    const found = current.find((e) => e.key === key);
+    if (found && found.value === value) continue;
+    if (check) {
+      console.log(`[provision] DIFIERE secreto ${spec.name}.${key} (${found ? 'valor distinto' : 'falta'})`);
+      continue;
+    }
+    await api.upsertEnv(app.uuid, key, value, {
+      exists: Boolean(found),
+      buildtime: false,
+      literal: true,
+    });
+    console.log(`[provision] secreto ${spec.name}.${key} (${value.length} caracteres)`);
+  }
+
   return app;
+}
+
+/**
+ * Secretos del backend que no se derivan de los dominios (Mongo, JWT, claves
+ * de terceros…). Coolify no es la fuente de verdad: se leen de `backend/.env`
+ * para poder reconstruir la app en una instancia nueva. Se omiten los vacíos,
+ * los que `provision` ya calcula (`managed`) y los que apuntan a localhost.
+ */
+function backendSecrets(cfg, managed) {
+  const file = parseDotenv(path.join(cfg.root, 'backend', '.env'));
+  const out = {};
+  for (const [key, value] of Object.entries(file)) {
+    if (key in managed) continue;
+    if (!value || /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(value)) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 async function main() {
@@ -144,6 +178,14 @@ async function main() {
   const siteUrl = `https://${cfg.frontendDomain}`;
   const apiUrl = `https://${cfg.backendDomain}`;
 
+  const backendEnv = {
+    PORT: cfg.ports.backend,
+    NODE_ENV: 'production',
+    FRONTEND_URL: siteUrl,
+    PUBLIC_API_URL: apiUrl,
+    CORS_ORIGINS: `${siteUrl},https://www.${cfg.frontendDomain},http://localhost:4200`,
+  };
+
   const backend = await ensureApp(api, cfg, {
     name: BACKEND_NAME,
     uuid: cfg.coolify.backendUuid,
@@ -153,13 +195,8 @@ async function main() {
     domains: apiUrl,
     watchPaths: 'backend/**',
     policy: {},
-    env: {
-      PORT: cfg.ports.backend,
-      NODE_ENV: 'production',
-      FRONTEND_URL: siteUrl,
-      PUBLIC_API_URL: apiUrl,
-      CORS_ORIGINS: `${siteUrl},https://www.${cfg.frontendDomain},http://localhost:4200`,
-    },
+    env: backendEnv,
+    secrets: backendSecrets(cfg, backendEnv),
   }, check);
 
   const frontend = await ensureApp(api, cfg, {

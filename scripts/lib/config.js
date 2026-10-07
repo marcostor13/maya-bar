@@ -9,17 +9,23 @@ const ROOT = path.join(__dirname, '..', '..');
  * archivo existe; en GitHub Actions no, y todo llega por `env:` desde secrets.
  */
 function loadDotenv() {
-  const file = path.join(ROOT, '.env');
-  if (!fs.existsSync(file)) return;
+  for (const [key, value] of Object.entries(parseDotenv(path.join(ROOT, '.env')))) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+/** Lee un archivo `.env` como objeto; devuelve `{}` si no existe. */
+function parseDotenv(file) {
+  const out = {};
+  if (!fs.existsSync(file)) return out;
   for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
     const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!m) continue;
-    const key = m[1];
-    if (process.env[key] !== undefined) continue;
     let value = m[2].trim();
     if (/^(".*"|'.*')$/s.test(value)) value = value.slice(1, -1);
-    process.env[key] = value;
+    out[m[1]] = value;
   }
+  return out;
 }
 
 function require_(key) {
@@ -85,4 +91,4 @@ function requireDomains(cfg) {
   return cfg;
 }
 
-module.exports = { config, requireDomains, rootDomain };
+module.exports = { config, requireDomains, rootDomain, parseDotenv };
