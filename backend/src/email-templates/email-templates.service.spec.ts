@@ -9,6 +9,7 @@ import { AiService } from '../ai/ai.service';
 import { MailService } from '../mail/mail.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { EmailTransportService } from '../email-accounts/email-transport.service';
+import { ResendService } from '../resend/resend.service';
 
 const query = <T>(value: T) => {
   const q: Record<string, jest.Mock> = {};
@@ -31,6 +32,7 @@ describe('EmailTemplatesService', () => {
     fromHeader: jest.fn(),
   };
   const transport = { send: jest.fn() };
+  const resend = { mailer: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -51,6 +53,7 @@ describe('EmailTemplatesService', () => {
       (a: { _id: string }) => `from-${a._id}`,
     );
     transport.send.mockResolvedValue('id');
+    resend.mailer.mockResolvedValue(null);
     const mod = await Test.createTestingModule({
       providers: [
         EmailTemplatesService,
@@ -63,6 +66,7 @@ describe('EmailTemplatesService', () => {
         { provide: MailService, useValue: mail },
         { provide: EmailAccountsService, useValue: emailAccounts },
         { provide: EmailTransportService, useValue: transport },
+        { provide: ResendService, useValue: resend },
       ],
     }).compile();
     service = mod.get(EmailTemplatesService);
@@ -246,6 +250,38 @@ describe('EmailTemplatesService', () => {
       it('la lista para elegir no incluye inactivos y pone primero el predeterminado', async () => {
         const list = await service.testSenders(tenantId);
         expect(list.map((s) => s._id)).toEqual([a2, a1]);
+      });
+    });
+
+    describe('con cuenta de Resend de la empresa', () => {
+      const mailer = { from: 'Acme <hola@acme.com>', send: jest.fn() };
+
+      beforeEach(() => {
+        mailer.send.mockResolvedValue('id');
+        resend.mailer.mockResolvedValue(mailer);
+      });
+
+      it('sin buzones, sale por Resend y no por la plataforma', async () => {
+        await service.sendTest(tenantId, dto);
+        expect(mail.sendHtml).not.toHaveBeenCalled();
+        expect(mailer.send.mock.calls[0][0]).toMatchObject({
+          to: 'yo@test.com',
+          subject: '[Prueba] Hola María Pérez',
+        });
+      });
+
+      it('con buzones, Resend se ofrece al final y se puede elegir', async () => {
+        const a1 = new Types.ObjectId().toString();
+        emailAccounts.findAll.mockResolvedValue([
+          { _id: a1, label: 'B', email: 'b@test.com', active: true },
+        ]);
+        expect(await service.testSenders(tenantId)).toMatchObject([
+          { _id: a1 },
+          { _id: 'resend', email: 'hola@acme.com' },
+        ]);
+        await service.sendTest(tenantId, { ...dto, accountId: 'resend' });
+        expect(mailer.send).toHaveBeenCalledTimes(1);
+        expect(transport.send).not.toHaveBeenCalled();
       });
     });
 

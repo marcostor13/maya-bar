@@ -327,7 +327,7 @@ const PALETTE: EmailBlockType[] = ['header', 'text', 'image', 'button', 'columns
           } @else if (testSenders().length === 1) {
             <p class="hint">Se envía desde {{ testSenders()[0].email }}.</p>
           } @else if (sendersLoaded()) {
-            <p class="hint">No hay un correo conectado: sale desde el remitente de Maya.</p>
+            <p class="hint">No hay un correo ni una cuenta de Resend conectados: sale desde el remitente de Maya.</p>
           }
           <div class="modal-actions">
             <button class="btn btn-ghost" (click)="testOpen.set(false)">Cancelar</button>

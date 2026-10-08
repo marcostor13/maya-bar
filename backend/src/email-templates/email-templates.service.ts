@@ -23,6 +23,7 @@ import { AiService } from '../ai/ai.service';
 import { MailService } from '../mail/mail.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { EmailTransportService } from '../email-accounts/email-transport.service';
+import { ResendService } from '../resend/resend.service';
 import { htmlToText } from '../campaigns/campaign-sender.service';
 import { Tenant } from '../tenants/tenant.schema';
 import {
@@ -67,6 +68,8 @@ const MAX_AI_BLOCKS = 12;
 /** Tope de pruebas por empresa: no es una vía para enviar correo en masa. */
 const MAX_TESTS_PER_WINDOW = 10;
 const TEST_WINDOW_MS = 10 * 60 * 1000;
+/** Id del remitente "cuenta de Resend de la empresa" en la lista de pruebas. */
+const RESEND_SENDER = 'resend';
 
 const str = (v: unknown, max = 600): string =>
   typeof v === 'string' ? v.trim().slice(0, max) : '';
@@ -83,6 +86,7 @@ export class EmailTemplatesService {
     private mail: MailService,
     private emailAccounts: EmailAccountsService,
     private transport: EmailTransportService,
+    private resend: ResendService,
   ) {}
 
   /** Listado ligero: sin el HTML ni el diseño, que pueden pesar mucho. */
@@ -238,10 +242,13 @@ Reglas:
     };
   }
 
-  /** Buzones activos de la empresa, el predeterminado primero. */
+  /**
+   * Remitentes propios de la empresa: sus buzones activos (el predeterminado
+   * primero) y, al final, su cuenta de Resend si la tiene activa.
+   */
   async testSenders(tenantId: string): Promise<TestSender[]> {
     const accounts = await this.emailAccounts.findAll(tenantId);
-    return accounts
+    const senders = accounts
       .filter((a) => a.active)
       .map((a) => ({
         _id: String(a._id),
@@ -250,12 +257,22 @@ Reglas:
         isDefault: a.isDefault,
       }))
       .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+    // Una cuenta de Resend rota no debe impedir probar con un buzón.
+    const mailer = await this.resend.mailer(tenantId).catch(() => null);
+    if (mailer)
+      senders.push({
+        _id: RESEND_SENDER,
+        label: 'Resend',
+        email: mailer.from.replace(/^.*<|>$/g, ''),
+        isDefault: false,
+      });
+    return senders;
   }
 
   /**
-   * Envía la plantilla a un correo con datos de ejemplo. Sale por el buzón
-   * conectado que se elija (o el predeterminado); si la empresa no tiene
-   * ninguno, por el remitente de la plataforma.
+   * Envía la plantilla a un correo con datos de ejemplo. Sale por el remitente
+   * que se elija o, sin elegir, por el primero de `testSenders`; si la empresa
+   * no tiene ninguno propio, por el remitente de la plataforma.
    */
   async sendTest(tenantId: string, dto: TestEmailTemplateDto): Promise<void> {
     const senders = await this.testSenders(tenantId);
@@ -297,10 +314,20 @@ Reglas:
     const subject = `[Prueba] ${fillTokensMultiline(dto.subject, contact, ctx)}`;
     const html = fillTokensHtml(dto.html, contact, ctx);
     try {
-      const account = sender
-        ? await this.emailAccounts.findById(sender._id)
-        : null;
-      if (account)
+      const viaResend = sender?._id === RESEND_SENDER;
+      const account =
+        sender && !viaResend
+          ? await this.emailAccounts.findById(sender._id)
+          : null;
+      const mailer = viaResend ? await this.resend.mailer(tenantId) : null;
+      if (mailer)
+        await mailer.send({
+          to: dto.to,
+          subject,
+          html,
+          text: htmlToText(html),
+        });
+      else if (account)
         await this.transport.send(
           await this.emailAccounts.smtpConfig(account),
           {

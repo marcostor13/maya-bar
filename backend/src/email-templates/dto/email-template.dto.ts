@@ -1,11 +1,11 @@
 import {
   IsEmail,
   IsIn,
-  IsMongoId,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
 } from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
@@ -89,8 +89,11 @@ export class TestEmailTemplateDto {
   @MaxLength(MAX_HTML)
   html: string;
 
-  /** Buzón conectado por el que sale; sin él se usa el predeterminado. */
+  /**
+   * Por dónde sale: el id de un buzón conectado o `resend` (la cuenta de
+   * Resend de la empresa). Sin él se usa el predeterminado.
+   */
   @IsOptional()
-  @IsMongoId()
+  @Matches(/^([a-f\d]{24}|resend)$/i)
   accountId?: string;
 }

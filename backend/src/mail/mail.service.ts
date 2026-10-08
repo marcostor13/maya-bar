@@ -114,7 +114,7 @@ export class MailService {
     if (this.resend) {
       try {
         await this.resend.emails.send({
-          from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
+          from: MailService.PLATFORM_FROM,
           to: email,
           subject,
           html,
@@ -207,7 +207,7 @@ export class MailService {
     if (this.resend) {
       try {
         await this.resend.emails.send({
-          from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
+          from: MailService.PLATFORM_FROM,
           to: data.email,
           subject,
           html,
@@ -360,7 +360,7 @@ export class MailService {
           });
         }
         await this.resend.emails.send({
-          from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
+          from: MailService.PLATFORM_FROM,
           to: data.email,
           subject,
           html,
@@ -377,8 +377,7 @@ export class MailService {
   }
 
   /** Remitente de la plataforma, usado cuando la empresa no envía con su buzón. */
-  static readonly PLATFORM_FROM =
-    'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>';
+  static readonly PLATFORM_FROM = 'Maya CRM <hola@mayacrm.site>';
 
   /**
    * Envía un HTML ya armado (plantillas de email). A diferencia de
@@ -447,7 +446,7 @@ export class MailService {
 
     if (this.resend) {
       await this.resend.emails.send({
-        from: 'Maya CRM <no_reply@mayasend.marcostorresalarcon.com>',
+        from: MailService.PLATFORM_FROM,
         to: params.to,
         subject: params.subject,
         html,
