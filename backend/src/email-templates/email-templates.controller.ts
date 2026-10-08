@@ -40,6 +40,13 @@ export class EmailTemplatesController {
     return this.service.generate(req.user.tenantId, dto);
   }
 
+  // Buzones por los que puede salir la prueba (sin datos de conexión).
+  @Get('test-senders')
+  testSenders(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.testSenders(req.user.tenantId);
+  }
+
   @Post('test')
   @HttpCode(204)
   sendTest(@Body() dto: TestEmailTemplateDto, @Request() req: AuthReq) {

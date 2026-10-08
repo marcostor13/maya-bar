@@ -7,6 +7,8 @@ import { EmailTemplate } from './email-template.schema';
 import { Tenant } from '../tenants/tenant.schema';
 import { AiService } from '../ai/ai.service';
 import { MailService } from '../mail/mail.service';
+import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { EmailTransportService } from '../email-accounts/email-transport.service';
 
 const query = <T>(value: T) => {
   const q: Record<string, jest.Mock> = {};
@@ -22,6 +24,13 @@ describe('EmailTemplatesService', () => {
   let model: Record<string, jest.Mock>;
   const ai = { chat: jest.fn(), parseJson: jest.fn() };
   const mail = { sendHtml: jest.fn() };
+  const emailAccounts = {
+    findAll: jest.fn(),
+    findById: jest.fn(),
+    smtpConfig: jest.fn(),
+    fromHeader: jest.fn(),
+  };
+  const transport = { send: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -33,6 +42,15 @@ describe('EmailTemplatesService', () => {
     };
     ai.chat.mockResolvedValue('{}');
     mail.sendHtml.mockResolvedValue('id');
+    emailAccounts.findAll.mockResolvedValue([]);
+    emailAccounts.findById.mockImplementation((id: string) =>
+      Promise.resolve({ _id: id }),
+    );
+    emailAccounts.smtpConfig.mockResolvedValue({ host: 'smtp.test' });
+    emailAccounts.fromHeader.mockImplementation(
+      (a: { _id: string }) => `from-${a._id}`,
+    );
+    transport.send.mockResolvedValue('id');
     const mod = await Test.createTestingModule({
       providers: [
         EmailTemplatesService,
@@ -43,6 +61,8 @@ describe('EmailTemplatesService', () => {
         },
         { provide: AiService, useValue: ai },
         { provide: MailService, useValue: mail },
+        { provide: EmailAccountsService, useValue: emailAccounts },
+        { provide: EmailTransportService, useValue: transport },
       ],
     }).compile();
     service = mod.get(EmailTemplatesService);
@@ -176,6 +196,57 @@ describe('EmailTemplatesService', () => {
       await expect(
         service.sendTest(new Types.ObjectId().toString(), dto),
       ).resolves.toBeUndefined();
+    });
+
+    describe('con buzones conectados', () => {
+      const a1 = new Types.ObjectId().toString();
+      const a2 = new Types.ObjectId().toString();
+      const off = new Types.ObjectId().toString();
+      const acc = (_id: string, extra: object = {}) => ({
+        _id,
+        label: 'Buzón',
+        email: `${_id}@test.com`,
+        active: true,
+        isDefault: false,
+        ...extra,
+      });
+
+      beforeEach(() => {
+        emailAccounts.findAll.mockResolvedValue([
+          acc(a1),
+          acc(a2, { isDefault: true }),
+          acc(off, { active: false }),
+        ]);
+      });
+
+      it('sin elegir, sale por el buzón predeterminado y no por la plataforma', async () => {
+        await service.sendTest(tenantId, dto);
+        expect(mail.sendHtml).not.toHaveBeenCalled();
+        const [, sent] = transport.send.mock.calls[0];
+        expect(sent.from).toBe(`from-${a2}`);
+        expect(sent.to).toBe('yo@test.com');
+        expect(sent.subject).toBe('[Prueba] Hola María Pérez');
+        expect(sent.text).toBe('María Pérez · Maya');
+      });
+
+      it('sale por el buzón elegido', async () => {
+        await service.sendTest(tenantId, { ...dto, accountId: a1 });
+        expect(transport.send.mock.calls[0][1].from).toBe(`from-${a1}`);
+      });
+
+      it('rechaza un buzón inactivo o de otra empresa', async () => {
+        for (const accountId of [off, new Types.ObjectId().toString()])
+          await expect(
+            service.sendTest(tenantId, { ...dto, accountId }),
+          ).rejects.toThrow(/ya no está disponible/);
+        expect(transport.send).not.toHaveBeenCalled();
+        expect(mail.sendHtml).not.toHaveBeenCalled();
+      });
+
+      it('la lista para elegir no incluye inactivos y pone primero el predeterminado', async () => {
+        const list = await service.testSenders(tenantId);
+        expect(list.map((s) => s._id)).toEqual([a2, a1]);
+      });
     });
 
     it('un fallo del proveedor llega como error legible', async () => {

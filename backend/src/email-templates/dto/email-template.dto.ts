@@ -1,6 +1,7 @@
 import {
   IsEmail,
   IsIn,
+  IsMongoId,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -87,4 +88,9 @@ export class TestEmailTemplateDto {
   @IsNotEmpty()
   @MaxLength(MAX_HTML)
   html: string;
+
+  /** Buzón conectado por el que sale; sin él se usa el predeterminado. */
+  @IsOptional()
+  @IsMongoId()
+  accountId?: string;
 }

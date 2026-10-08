@@ -11,7 +11,14 @@ export interface TemplateVariable {
   example: string;
 }
 
-export type MessageChannel = 'sms' | 'whatsapp' | 'email';
+export interface TestSender {
+  _id: string;
+  label: string;
+  email: string;
+  isDefault: boolean;
+}
+
+export type MessageChannel ='sms' | 'whatsapp' | 'email';
 
 export interface MessageTemplate {
   _id: string;
@@ -148,8 +155,13 @@ export class TemplatesApiService {
     return this.http.post<GeneratedEmail>(`${this.base}/email-templates/generate`, input);
   }
 
-  sendTestEmail(to: string, subject: string, html: string): Observable<void> {
-    return this.http.post<void>(`${this.base}/email-templates/test`, { to, subject, html });
+  /** Buzones conectados por los que puede salir la prueba, el predeterminado primero. */
+  testSenders(): Observable<TestSender[]> {
+    return this.http.get<TestSender[]>(`${this.base}/email-templates/test-senders`);
+  }
+
+  sendTestEmail(to: string, subject: string, html: string, accountId?: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/email-templates/test`, { to, subject, html, accountId });
   }
 
   uploadImage(file: File): Observable<{ url: string }> {

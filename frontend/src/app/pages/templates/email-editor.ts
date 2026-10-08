@@ -10,7 +10,7 @@ import {
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import {
-  EmailTemplate, EmailTemplateInput, TemplateVariable, TemplatesApiService,
+  EmailTemplate, EmailTemplateInput, TemplateVariable, TemplatesApiService, TestSender,
 } from '../../core/api/templates-api.service';
 import {
   Align, BLOCK_LABELS, BlockProps, ColumnItem, DEFAULT_SETTINGS, EmailBlock, EmailBlockType,
@@ -59,7 +59,7 @@ const PALETTE: EmailBlockType[] = ['header', 'text', 'image', 'button', 'columns
           </button>
         </div>
         <span class="bar-spacer"></span>
-        <button class="btn btn-secondary btn-sm" (click)="testOpen.set(true)">
+        <button class="btn btn-secondary btn-sm" (click)="openTest()">
           <lucide-icon [img]="Send" [size]="14"></lucide-icon> Enviar prueba
         </button>
         <button class="btn btn-primary btn-sm" (click)="save()" [disabled]="saving()">
@@ -316,6 +316,19 @@ const PALETTE: EmailBlockType[] = ['header', 'text', 'image', 'button', 'columns
           <p class="hint">Llega con datos de ejemplo en lugar de las variables.</p>
           <input class="input" #testInput type="email" [value]="testTo()" (input)="testTo.set($any($event.target).value)"
             placeholder="tu@correo.com" (keydown.enter)="sendTest()" />
+          @if (testSenders().length > 1) {
+            <label class="field"><span class="label">Enviar desde</span>
+              <select class="select" (change)="testAccountId.set($any($event.target).value)">
+                @for (s of testSenders(); track s._id) {
+                  <option [value]="s._id" [selected]="s._id === testAccountId()">{{ s.label }} · {{ s.email }}</option>
+                }
+              </select>
+            </label>
+          } @else if (testSenders().length === 1) {
+            <p class="hint">Se envía desde {{ testSenders()[0].email }}.</p>
+          } @else if (sendersLoaded()) {
+            <p class="hint">No hay un correo conectado: sale desde el remitente de Maya.</p>
+          }
           <div class="modal-actions">
             <button class="btn btn-ghost" (click)="testOpen.set(false)">Cancelar</button>
             <button class="btn btn-primary" (click)="sendTest()" [disabled]="sendingTest() || !testTo().trim()">
@@ -439,6 +452,9 @@ export class EmailEditorComponent implements OnInit, OnDestroy {
   testOpen = signal(false);
   testTo = signal('');
   sendingTest = signal(false);
+  testSenders = signal<TestSender[]>([]);
+  testAccountId = signal('');
+  sendersLoaded = signal(false);
 
   settings = computed<EmailSettings>(() => ({ ...DEFAULT_SETTINGS, ...this.design().settings }));
   selected = computed(() => this.design().blocks.find(b => b.id === this.selectedId()) ?? null);
@@ -660,11 +676,25 @@ export class EmailEditorComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Los buzones se piden al abrir: pueden haber cambiado en Ajustes. */
+  openTest() {
+    this.testOpen.set(true);
+    this.api.testSenders().subscribe({
+      next: senders => {
+        this.testSenders.set(senders);
+        if (!senders.some(s => s._id === this.testAccountId())) this.testAccountId.set(senders[0]?._id ?? '');
+        this.sendersLoaded.set(true);
+      },
+      error: () => { this.testSenders.set([]); this.testAccountId.set(''); this.sendersLoaded.set(true); },
+    });
+  }
+
   sendTest() {
     const to = this.testTo().trim();
     if (!to) return;
     this.sendingTest.set(true);
-    this.api.sendTestEmail(to, this.subject().trim() || this.name().trim() || 'Plantilla', this.html()).subscribe({
+    const subject = this.subject().trim() || this.name().trim() || 'Plantilla';
+    this.api.sendTestEmail(to, subject, this.html(), this.testAccountId() || undefined).subscribe({
       next: () => { this.sendingTest.set(false); this.testOpen.set(false); this.toast.success('Prueba enviada a ' + to); },
       error: (err: ErrorLike) => {
         this.sendingTest.set(false);

@@ -21,12 +21,23 @@ import {
 } from './dto/email-template.dto';
 import { AiService } from '../ai/ai.service';
 import { MailService } from '../mail/mail.service';
+import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { EmailTransportService } from '../email-accounts/email-transport.service';
+import { htmlToText } from '../campaigns/campaign-sender.service';
 import { Tenant } from '../tenants/tenant.schema';
 import {
   TOKEN_CATALOG,
   fillTokensHtml,
   fillTokensMultiline,
 } from '../shared/contact-tokens';
+
+/** Buzón conectado por el que puede salir una prueba. */
+export interface TestSender {
+  _id: string;
+  label: string;
+  email: string;
+  isDefault: boolean;
+}
 
 export interface GeneratedEmail {
   subject: string;
@@ -53,7 +64,7 @@ const AI_BLOCK_TYPES: EmailBlockType[] = [
 ];
 
 const MAX_AI_BLOCKS = 12;
-/** La prueba sale por el remitente de la plataforma: se limita por empresa. */
+/** Tope de pruebas por empresa: no es una vía para enviar correo en masa. */
 const MAX_TESTS_PER_WINDOW = 10;
 const TEST_WINDOW_MS = 10 * 60 * 1000;
 
@@ -70,6 +81,8 @@ export class EmailTemplatesService {
     @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
     private ai: AiService,
     private mail: MailService,
+    private emailAccounts: EmailAccountsService,
+    private transport: EmailTransportService,
   ) {}
 
   /** Listado ligero: sin el HTML ni el diseño, que pueden pesar mucho. */
@@ -225,11 +238,35 @@ Reglas:
     };
   }
 
+  /** Buzones activos de la empresa, el predeterminado primero. */
+  async testSenders(tenantId: string): Promise<TestSender[]> {
+    const accounts = await this.emailAccounts.findAll(tenantId);
+    return accounts
+      .filter((a) => a.active)
+      .map((a) => ({
+        _id: String(a._id),
+        label: a.label,
+        email: a.email,
+        isDefault: a.isDefault,
+      }))
+      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  }
+
   /**
-   * Envía la plantilla a un correo con datos de ejemplo. Sale siempre por el
-   * remitente de la plataforma: es una prueba, no un envío a clientes.
+   * Envía la plantilla a un correo con datos de ejemplo. Sale por el buzón
+   * conectado que se elija (o el predeterminado); si la empresa no tiene
+   * ninguno, por el remitente de la plataforma.
    */
   async sendTest(tenantId: string, dto: TestEmailTemplateDto): Promise<void> {
+    const senders = await this.testSenders(tenantId);
+    const sender = dto.accountId
+      ? senders.find((s) => s._id === dto.accountId)
+      : senders[0];
+    if (dto.accountId && !sender)
+      throw new BadRequestException(
+        'Esa cuenta de correo ya no está disponible',
+      );
+
     const now = Date.now();
     const recent = (this.testSends.get(tenantId) ?? []).filter(
       (t) => now - t < TEST_WINDOW_MS,
@@ -257,13 +294,30 @@ Reglas:
       link: 'https://mayacrm.site',
       baja: 'https://mayacrm.site',
     };
+    const subject = `[Prueba] ${fillTokensMultiline(dto.subject, contact, ctx)}`;
+    const html = fillTokensHtml(dto.html, contact, ctx);
     try {
-      await this.mail.sendHtml({
-        to: dto.to,
-        subject: `[Prueba] ${fillTokensMultiline(dto.subject, contact, ctx)}`,
-        html: fillTokensHtml(dto.html, contact, ctx),
-        fromName: tenant?.name,
-      });
+      const account = sender
+        ? await this.emailAccounts.findById(sender._id)
+        : null;
+      if (account)
+        await this.transport.send(
+          await this.emailAccounts.smtpConfig(account),
+          {
+            from: this.emailAccounts.fromHeader(account),
+            to: dto.to,
+            subject,
+            text: htmlToText(html),
+            html,
+          },
+        );
+      else
+        await this.mail.sendHtml({
+          to: dto.to,
+          subject,
+          html,
+          fromName: tenant?.name,
+        });
     } catch (err) {
       throw new BadRequestException(
         `No se pudo enviar la prueba: ${err instanceof Error ? err.message : String(err)}`,

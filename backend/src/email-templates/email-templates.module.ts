@@ -6,6 +6,7 @@ import { EmailTemplatesService } from './email-templates.service';
 import { Tenant, TenantSchema } from '../tenants/tenant.schema';
 import { AiModule } from '../ai/ai.module';
 import { MailModule } from '../mail/mail.module';
+import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { MailModule } from '../mail/mail.module';
     ]),
     AiModule,
     MailModule,
+    EmailAccountsModule,
   ],
   controllers: [EmailTemplatesController],
   providers: [EmailTemplatesService],
