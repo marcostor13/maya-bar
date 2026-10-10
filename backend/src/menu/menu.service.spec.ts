@@ -196,7 +196,7 @@ describe('MenuService', () => {
         new Types.ObjectId().toString(),
       ];
 
-      await service[method](tenantId, { ids });
+      await service[method](tenantId, { localId, ids });
 
       const calls = model().findOneAndUpdate.mock.calls;
       expect(calls).toHaveLength(3);
@@ -209,7 +209,7 @@ describe('MenuService', () => {
     });
 
     it('con la lista vacía no escribe nada', async () => {
-      await service[method](tenantId, { ids: [] });
+      await service[method](tenantId, { localId, ids: [] });
 
       expect(model().findOneAndUpdate).not.toHaveBeenCalled();
     });
