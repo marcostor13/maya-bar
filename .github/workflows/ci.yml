@@ -39,6 +39,14 @@ jobs:
         # Vía npm script: necesita --experimental-vm-modules para el import
         # dinámico de pdf-parse (ESM) que hace RagService.
         run: npm test -- --ci --silent
+      - name: Cache del binario de Mongo (e2e)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('backend/package-lock.json') }}
+      - name: e2e de API
+        # La app real contra una Mongo en memoria: guards, DTO, multitenancy.
+        run: npm run test:e2e -- --ci --silent
       - name: Build
         run: npm run build
 
@@ -62,3 +70,40 @@ jobs:
         # Mismo comando que corre el Dockerfile, para que un fallo de build se
         # vea aquí y no a mitad del despliegue en Coolify.
         run: node scripts/set-env.js && npx ng build frontend --configuration production
+
+  # Navegador real contra frontend + backend. Solo en PR: tarda varios minutos y
+  # no se quiere frenar cada despliegue; antes de desplegar, `npm run verify`.
+  e2e:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - name: Cache del binario de Mongo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('backend/package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: e2e de navegador
+        run: npm run e2e
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7

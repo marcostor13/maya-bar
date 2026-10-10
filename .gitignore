@@ -21,6 +21,8 @@ frontend/.angular/
 # ── Cobertura y tests ─────────────────────────────────────────
 frontend/coverage/
 backend/coverage/
+frontend/test-results/
+frontend/playwright-report/
 
 # ── Logs ──────────────────────────────────────────────────────
 *.log

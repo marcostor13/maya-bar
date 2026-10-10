@@ -4,6 +4,10 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
-  }
+    "^.+\\.ts$": "ts-jest"
+  },
+  "globalSetup": "<rootDir>/support/global-setup.js",
+  "globalTeardown": "<rootDir>/support/global-teardown.js",
+  "setupFiles": ["<rootDir>/support/setup-env.js"],
+  "testTimeout": 60000
 }

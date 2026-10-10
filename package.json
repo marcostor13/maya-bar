@@ -7,6 +7,9 @@
     "node": ">=22"
   },
   "scripts": {
+    "verify": "node scripts/verify.js",
+    "test": "node scripts/verify.js unit",
+    "test:e2e": "node scripts/verify.js e2e",
     "dns": "node scripts/dns.js",
     "dns:check": "node scripts/dns.js --check",
     "coolify:list": "node scripts/provision.js --list",

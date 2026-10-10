@@ -10,6 +10,15 @@ const raw = (subject: string) =>
 
 /** mailparser trabaja con streams: hay que dejar correr varios ciclos. */
 const flush = () => new Promise((r) => setTimeout(r, 60));
+/**
+ * Espera a que se cumpla la condición en vez de un tiempo fijo: analizar un
+ * correo es asíncrono y, con toda la suite corriendo en paralelo, 60 ms no
+ * siempre alcanzan.
+ */
+async function until(done: () => boolean, timeoutMs = 3000) {
+  const limit = Date.now() + timeoutMs;
+  while (!done() && Date.now() < limit) await flush();
+}
 
 function account(extra: Record<string, unknown> = {}) {
   return {
@@ -98,7 +107,9 @@ describe('EmailListenerService', () => {
       ],
     });
     h.imap.emit('exists', { path: 'INBOX', count: 12 });
-    await flush();
+    await until(
+      () => h.conversations.handleEmailInbound.mock.calls.length >= 2,
+    );
 
     expect(h.conversations.handleEmailInbound).toHaveBeenCalledTimes(2);
     const parsed = h.conversations.handleEmailInbound.mock.calls[0][1];

@@ -13,7 +13,9 @@
     "build:mobile": "ng build mobile --configuration production",
     "cap:sync": "npm run build:mobile && cap sync android",
     "cap:open": "cap open android",
-    "cap:run": "npm run cap:sync && cap run android"
+    "cap:run": "npm run cap:sync && cap run android",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
   },
   "private": true,
   "packageManager": "bun@1.3.2",
@@ -53,6 +55,7 @@
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.1",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.0",
     "@types/express": "^5.0.6",
     "@types/qrcode": "^1.5.6",
     "angular-eslint": "21.3.1",
