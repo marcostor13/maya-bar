@@ -171,7 +171,15 @@ export class CustomersService implements OnModuleInit {
       // `phone: ''` es un borrado explícito; no mandarlo deja el que hubiera.
       ...(dto.phone !== undefined ? { phone: formatPhone(dto.phone) } : {}),
     });
-    return customer.save();
+    try {
+      return await customer.save();
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code === 11000)
+        throw new ConflictException(
+          'Ya existe un contacto con ese email o teléfono',
+        );
+      throw err;
+    }
   }
 
   async delete(
@@ -243,14 +251,19 @@ export class CustomersService implements OnModuleInit {
     const emailList = Array.from(contacts.keys());
     await Promise.all(
       emailList.map(async (email) => {
+        // Escapado: un `+` o un `.` del correo no son operadores de la expresión.
+        const exact = new RegExp(
+          `^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+          'i',
+        );
         const [resCount, evCount] = await Promise.all([
           this.reservationModel.countDocuments({
             tenantId: tid,
-            guestEmail: { $regex: new RegExp(`^${email}$`, 'i') },
+            guestEmail: { $regex: exact },
           }),
           this.eventRegModel.countDocuments({
             tenantId: tid,
-            email: { $regex: new RegExp(`^${email}$`, 'i') },
+            email: { $regex: exact },
           }),
         ]);
         await this.customerModel.updateOne(

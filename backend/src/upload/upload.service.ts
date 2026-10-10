@@ -95,7 +95,7 @@ export class UploadService {
   private region: string;
 
   constructor(private configService: ConfigService) {
-    this.region = configService.get<string>('S3_REGION') ?? 'us-east-1';
+    this.region = configService.get<string>('S3_REGION') || 'us-east-1';
     this.bucket = configService.get<string>('S3_BUCKET') ?? '';
     this.s3 = new S3Client({
       region: this.region,

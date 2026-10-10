@@ -13,6 +13,8 @@ import { MetaApiError } from './meta-graph.client';
  * Manejo uniforme de errores:
  * - HttpException → passthrough (status y body de Nest).
  * - MetaApiError que se escape sin traducir → 502 con el mensaje de Meta.
+ * - Identificador que no es un ObjectId (BSONError / CastError de Mongoose) →
+ *   400: es un dato mal formado de quien llama, no un fallo del servidor.
  * - Cualquier otra excepción → 500 genérico, logueada con stack (el detalle
  *   interno nunca viaja al cliente).
  */
@@ -49,6 +51,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
 
+    if (isInvalidId(exception)) {
+      res.status(HttpStatus.BAD_REQUEST).json({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Identificador inválido',
+      });
+      return;
+    }
+
     this.logger.error(
       `Excepción no controlada en ${req.method} ${req.url}`,
       exception instanceof Error ? exception.stack : String(exception),
@@ -58,4 +68,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message: 'Error interno del servidor',
     });
   }
+}
+
+/**
+ * Por nombre y no con `instanceof`: `bson` puede estar cargado más de una vez
+ * (el de mongoose y el del driver) y cada copia tiene su propia clase.
+ */
+function isInvalidId(exception: unknown): boolean {
+  if (!(exception instanceof Error)) return false;
+  if (exception.name === 'BSONError') return true;
+  return (
+    exception.name === 'CastError' &&
+    (exception as { kind?: string }).kind === 'ObjectId'
+  );
 }

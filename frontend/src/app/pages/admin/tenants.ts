@@ -325,7 +325,10 @@ export class AdminTenantsComponent implements OnInit {
   load() {
     this.http.get<any[]>(`${API}/tenants`).subscribe({
       next: (data) => { this.tenants.set(data); this.loading.set(false); },
-      error: () => this.loading.set(false),
+      error: (err) => {
+        this.loading.set(false);
+        this.toast.error(err.error?.message || 'No se pudieron cargar las empresas');
+      },
     });
   }
 
@@ -396,7 +399,7 @@ export class AdminTenantsComponent implements OnInit {
         this.toast.success(next ? 'Empresa activada' : 'Empresa desactivada');
         this.load();
       },
-      error: () => this.toast.error('Error al cambiar estado'),
+      error: (err) => this.toast.error(err.error?.message || 'Error al cambiar estado'),
     });
   }
 

@@ -694,6 +694,7 @@ export class UsersComponent implements OnInit {
           this.users.update((list) => [res.user, ...list]);
           this.showDrawer.set(false);
           this.createdCredentials.set({ email: res.user.email, tempPassword: res.tempPassword });
+          this.toast.success('Usuario creado');
         },
         error: (err) => {
           this.saving.set(false);
@@ -728,7 +729,9 @@ export class UsersComponent implements OnInit {
       },
       error: (err) => {
         this.impactLoading.set(false);
-        this.deleteError.set(err.error?.message || 'No se pudo calcular el impacto');
+        const msg = err.error?.message || 'No se pudo calcular el impacto';
+        this.deleteError.set(msg);
+        this.toast.error(msg);
       },
     });
 
@@ -784,7 +787,7 @@ export class UsersComponent implements OnInit {
         this.users.update((list) => list.map((x) => (x._id === u._id ? { ...x, isActive: false } : x)));
         this.toast.success('Usuario desactivado');
       },
-      error: () => this.toast.error('Error al desactivar usuario'),
+      error: (err) => this.toast.error(err.error?.message || 'Error al desactivar usuario'),
     });
   }
 
@@ -794,7 +797,7 @@ export class UsersComponent implements OnInit {
         this.users.update((list) => list.map((x) => (x._id === u._id ? { ...x, ...updated } : x)));
         this.toast.success('Usuario activado');
       },
-      error: () => this.toast.error('Error al activar usuario'),
+      error: (err) => this.toast.error(err.error?.message || 'Error al activar usuario'),
     });
   }
 }

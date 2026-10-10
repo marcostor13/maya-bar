@@ -58,6 +58,29 @@ export class TenantsController {
     };
   }
 
+  // Las rutas `me` van ANTES de `:id`: Nest resuelve por orden de
+  // declaración y `:id` se quedaría con "me".
+  @Get('me')
+  getMyTenant(@Request() req: AuthReq) {
+    return this.tenantsService.findById(req.user.tenantId);
+  }
+
+  /**
+   * La empresa edita sus propios datos de contacto. El plan y el estado son
+   * decisiones de la plataforma: solo los cambia el SUPERADMIN por `:id`.
+   */
+  @Patch('me')
+  updateMyTenant(@Request() req: AuthReq, @Body() body: UpdateTenantDto) {
+    if (req.user.role !== 'TENANT_ADMIN') throw new ForbiddenException();
+    const { name, email, ruc, phone } = body;
+    return this.tenantsService.update(req.user.tenantId, {
+      ...(name !== undefined ? { name } : {}),
+      ...(email !== undefined ? { email } : {}),
+      ...(ruc !== undefined ? { ruc } : {}),
+      ...(phone !== undefined ? { phone } : {}),
+    });
+  }
+
   // SUPERADMIN: editar cualquier tenant
   @Patch(':id')
   updateTenant(
@@ -74,15 +97,5 @@ export class TenantsController {
   removeTenant(@Param('id') id: string, @Request() req: AuthReq) {
     if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
     return this.tenantsService.remove(id);
-  }
-
-  @Get('me')
-  getMyTenant(@Request() req: AuthReq) {
-    return this.tenantsService.findById(req.user.tenantId);
-  }
-
-  @Patch('me')
-  updateMyTenant(@Request() req: AuthReq, @Body() body: UpdateTenantDto) {
-    return this.tenantsService.update(req.user.tenantId, body);
   }
 }

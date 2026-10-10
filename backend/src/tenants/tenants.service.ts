@@ -35,7 +35,17 @@ export class TenantsService {
     trialEndsAt.setDate(trialEndsAt.getDate() + 14);
 
     const tenant = new this.tenantModel({ ...data, slug, trialEndsAt });
-    return tenant.save();
+    try {
+      return await tenant.save();
+    } catch (err: unknown) {
+      // Dos altas simultáneas pasan la comprobación de arriba; el índice único
+      // rechaza la segunda.
+      if ((err as { code?: number }).code === 11000)
+        throw new ConflictException(
+          'Email or business name already registered',
+        );
+      throw err;
+    }
   }
 
   async findById(id: string): Promise<Tenant> {
@@ -67,8 +77,10 @@ export class TenantsService {
       const schema = model.schema as Schema;
       const path: SchemaType | undefined = schema.path('tenantId');
       if (!path) continue;
-      const value = path.instance === 'ObjectId' ? oid : id;
-      await model.deleteMany({ tenantId: value }).exec();
+      // Las dos formas a la vez: `@Prop({ type: Types.ObjectId })` deja la ruta
+      // como Mixed, así que Mongoose no convierte el valor y un filtro con el
+      // id en texto no encuentra los documentos guardados como ObjectId.
+      await model.deleteMany({ tenantId: { $in: [oid, id] } }).exec();
     }
     await this.tenantModel.deleteOne({ _id: oid }).exec();
     return { deleted: true };

@@ -312,7 +312,9 @@ export class SuppressionComponent implements OnInit {
       error: err => {
         this.saving.set(false);
         const msg = err.error?.message || 'No se pudo añadir a la lista';
-        this.formError.set(Array.isArray(msg) ? msg.join(' ') : msg);
+        const text = Array.isArray(msg) ? msg.join(' ') : msg;
+        this.formError.set(text);
+        this.toast.error(text);
       },
     });
   }

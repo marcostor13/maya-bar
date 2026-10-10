@@ -34,6 +34,33 @@ describe('AllExceptionsFilter', () => {
     );
   });
 
+  it('un id que no es ObjectId responde 400, no 500', () => {
+    const bson = Object.assign(new Error('input must be a 24 character hex'), {
+      name: 'BSONError',
+    });
+    filter.catch(bson, host);
+    expect(res.status).toHaveBeenLastCalledWith(400);
+
+    const cast = Object.assign(new Error('Cast to ObjectId failed'), {
+      name: 'CastError',
+      kind: 'ObjectId',
+    });
+    filter.catch(cast, host);
+    expect(res.status).toHaveBeenLastCalledWith(400);
+    expect(res.json).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: 'Identificador inválido' }),
+    );
+  });
+
+  it('un CastError de otro tipo sigue siendo un 500', () => {
+    const cast = Object.assign(new Error('Cast to Number failed'), {
+      name: 'CastError',
+      kind: 'Number',
+    });
+    filter.catch(cast, host);
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
   it('oculta el detalle interno de errores no controlados (500 genérico)', () => {
     filter.catch(new Error('mongo password leaked'), host);
     expect(res.status).toHaveBeenCalledWith(500);

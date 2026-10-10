@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../../auth/auth.service';
+import { ToastService } from '../../shared/toast';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -209,6 +210,7 @@ export class ChangePasswordComponent {
   private http = inject(HttpClient);
   private auth = inject(AuthService);
   private router = inject(Router);
+  private toast = inject(ToastService);
 
   form = { currentPassword: '', newPassword: '', confirm: '' };
   loading = signal(false);
@@ -236,12 +238,16 @@ export class ChangePasswordComponent {
         next: (res) => {
           this.loading.set(false);
           this.auth.updateSession(res);
+          this.toast.success('Contraseña actualizada');
           const role = res.user?.role;
-          this.router.navigate([role === 'SUPERADMIN' ? '/admin/tenants' : '/dashboard']);
+          // `/inicio` reparte según los módulos del rol (un impulsador no tiene dashboard).
+          this.router.navigate([role === 'SUPERADMIN' ? '/admin/tenants' : '/inicio']);
         },
         error: (err) => {
           this.loading.set(false);
-          this.error.set(err.error?.message || 'Error al cambiar la contraseña');
+          const msg = err.error?.message || 'Error al cambiar la contraseña';
+          this.error.set(msg);
+          this.toast.error(msg);
         },
       });
   }

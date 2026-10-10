@@ -237,8 +237,14 @@ export class LoginComponent {
 
     this.auth.login(this.form.value as any).subscribe({
       next: () => this.router.navigate([this.homeRoute()]),
-      error: () => {
-        this.error.set('Credenciales incorrectas');
+      error: (err) => {
+        // Solo un 401 es culpa de los datos; lo demás (sin red, 5xx) no debe
+        // hacer creer a la persona que escribió mal su contraseña.
+        const msg = err.status === 401
+          ? (/desactivada/i.test(err.error?.message ?? '') ? err.error.message : 'Credenciales incorrectas')
+          : 'No pudimos conectar con el servidor. Inténtalo de nuevo.';
+        this.error.set(msg);
+        this.toast.error(msg);
         this.loading.set(false);
       },
     });
@@ -277,7 +283,9 @@ export class LoginComponent {
         this.form.patchValue({ email: this.forgotEmail(), password: '' });
       },
       error: (err) => {
-        this.error.set(err.error?.message || 'Código inválido o expirado');
+        const msg = err.error?.message || 'Código inválido o expirado';
+        this.error.set(msg);
+        this.toast.error(msg);
         this.loading.set(false);
       }
     });

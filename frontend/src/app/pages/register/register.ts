@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../auth/auth.service';
+import { ToastService } from '../../shared/toast';
 
 @Component({
   selector: 'app-register',
@@ -193,6 +194,7 @@ export class RegisterComponent {
   private auth = inject(AuthService);
   private router = inject(Router);
 
+  private toast = inject(ToastService);
   loading = signal(false);
   error = signal('');
 
@@ -214,7 +216,9 @@ export class RegisterComponent {
     this.auth.register(val).subscribe({
       next: () => this.router.navigate(['/onboarding']),
       error: (err) => {
-        this.error.set(err.error?.message || 'Error al crear la cuenta');
+        const msg = err.error?.message || 'Error al crear la cuenta';
+        this.error.set(msg);
+        this.toast.error(msg);
         this.loading.set(false);
       },
     });
