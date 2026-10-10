@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AiAgent } from './ai-agent.schema';
+import { AiAgent, HandoffTarget } from './ai-agent.schema';
 import { KnowledgeDoc } from './knowledge-doc.schema';
 import { AgentFile } from './agent-file.schema';
 import {
@@ -49,6 +49,36 @@ function normalizePhones(numbers?: string[]): string[] {
     .map((n) => n.replace(/\D/g, ''))
     .filter((n) => n.length >= 8);
   return [...new Set(clean)];
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Limpia los destinatarios del aviso: teléfonos en E.164 sin '+', correos en
+ * minúsculas; descarta los inválidos y los repetidos en el mismo canal.
+ */
+export function normalizeHandoffTargets(
+  targets?: HandoffTarget[],
+): HandoffTarget[] {
+  const seen = new Set<string>();
+  const out: HandoffTarget[] = [];
+  for (const t of targets ?? []) {
+    const to =
+      t.channel === 'email'
+        ? t.to.trim().toLowerCase()
+        : t.to.replace(/\D/g, '');
+    const valid = t.channel === 'email' ? EMAIL_RE.test(to) : to.length >= 8;
+    const key = `${t.channel}:${to}`;
+    if (!valid || seen.has(key)) continue;
+    seen.add(key);
+    // SMS sale siempre por el proveedor de la empresa: no hay cuenta que elegir.
+    const accountId =
+      t.channel !== 'sms' && t.accountId && Types.ObjectId.isValid(t.accountId)
+        ? t.accountId
+        : undefined;
+    out.push({ channel: t.channel, to, ...(accountId ? { accountId } : {}) });
+  }
+  return out;
 }
 
 @Injectable()
@@ -119,6 +149,7 @@ export class AiAgentsService {
       emailAccountIds: (dto.emailAccountIds ?? []).map(
         (a) => new Types.ObjectId(a),
       ),
+      handoffTargets: normalizeHandoffTargets(dto.handoffTargets),
       handoffNumbers: normalizePhones(dto.handoffNumbers),
       handoffAccountId: dto.handoffAccountId
         ? new Types.ObjectId(dto.handoffAccountId)
@@ -144,6 +175,8 @@ export class AiAgentsService {
       patch.emailAccountIds = dto.emailAccountIds.map(
         (a) => new Types.ObjectId(a),
       );
+    if (dto.handoffTargets)
+      patch.handoffTargets = normalizeHandoffTargets(dto.handoffTargets);
     if (dto.handoffNumbers)
       patch.handoffNumbers = normalizePhones(dto.handoffNumbers);
     if (dto.handoffAccountId !== undefined)
@@ -319,7 +352,7 @@ export class AiAgentsService {
     const criteria = agent.handoffInstructions?.trim()
       ? `\n\nDeriva especialmente cuando: ${agent.handoffInstructions.trim()}`
       : '';
-    return `\n\n--- DERIVAR A UNA PERSONA ---\nSi el cliente pide hablar con una persona, se molesta, reclama, o la consulta excede lo que puedes resolver, incluye el token exacto {{HANDOFF:motivo breve}} en tu respuesta.\nAl usarlo se avisa por WhatsApp a un agente humano para que entre a la plataforma y continúe el chat, y tú dejas de responder esta conversación.\nEscribe antes del token una frase avisando al cliente que lo estás derivando; el token se elimina y nunca se le muestra.${criteria}\nUsa el token una sola vez y solo cuando de verdad haga falta: una vez derivado no podrás volver a contestar.\n--- FIN DERIVAR ---`;
+    return `\n\n--- DERIVAR A UNA PERSONA ---\nSi el cliente pide hablar con una persona, se molesta, reclama, o la consulta excede lo que puedes resolver, incluye el token exacto {{HANDOFF:motivo breve}} en tu respuesta.\nAl usarlo se avisa a un agente humano para que entre a la plataforma y continúe el chat, y tú dejas de responder esta conversación.\nEscribe antes del token una frase avisando al cliente que lo estás derivando; el token se elimina y nunca se le muestra.${criteria}\nUsa el token una sola vez y solo cuando de verdad haga falta: una vez derivado no podrás volver a contestar.\n--- FIN DERIVAR ---`;
   }
 
   /** Extrae el token {{HANDOFF}} de la respuesta y devuelve texto limpio + motivo. */

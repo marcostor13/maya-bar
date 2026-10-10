@@ -106,7 +106,10 @@ export class Conversation extends Document {
   @Prop()
   escalationReason?: string;
 
-  /** Números a los que se les avisó por WhatsApp. */
+  /**
+   * A quién se avisó, con su canal ("WhatsApp +51…", "correo a@b.c"). Las
+   * derivaciones antiguas guardan solo el número de WhatsApp.
+   */
   @Prop({ type: [String], default: [] })
   escalationNotifiedTo: string[];
 }

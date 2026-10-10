@@ -44,6 +44,15 @@ interface MsAccount {
   active: boolean;
 }
 
+type HandoffChannel = 'whatsapp' | 'email' | 'sms';
+
+/** Destinatario del aviso de derivación: canal, a quién y desde qué cuenta. */
+interface HandoffTarget {
+  channel: HandoffChannel;
+  to: string;
+  accountId?: string;
+}
+
 interface Agent {
   _id: string;
   name: string;
@@ -62,6 +71,8 @@ interface Agent {
   messengerAccountIds: string[];
   emailAccountIds: string[];
   handoffEnabled: boolean;
+  handoffTargets: HandoffTarget[];
+  /** Lista anterior (solo WhatsApp): al editar se pasa a `handoffTargets`. */
   handoffNumbers: string[];
   handoffAccountId?: string;
   handoffInstructions?: string;
@@ -104,7 +115,7 @@ function blankAgent(): Agent {
     provider: 'auto', aiModel: '', temperature: 0.4, maxTokens: 800, greeting: '',
     fallbackMessage: 'Lo siento, no tengo esa información en este momento.',
     ragEnabled: true, topK: 5, accountIds: [], instagramAccountIds: [], messengerAccountIds: [], emailAccountIds: [],
-    handoffEnabled: false, handoffNumbers: [], handoffAccountId: '', handoffInstructions: '',
+    handoffEnabled: false, handoffTargets: [], handoffNumbers: [], handoffAccountId: '', handoffInstructions: '',
     handoffMessage: 'Te comunico con una persona del equipo, en un momento te escriben por acá.',
     handoffTemplateName: '', handoffTemplateLang: 'es',
     published: false,
@@ -495,7 +506,7 @@ function blankAgent(): Agent {
               <div class="field" style="flex-direction:row;align-items:center;justify-content:space-between">
                 <div>
                   <label class="field-label" style="margin:0">Derivar a una persona</label>
-                  <span class="field-hint">El agente avisa por WhatsApp a tu equipo, apaga la respuesta automática y la persona termina el chat desde la bandeja.</span>
+                  <span class="field-hint">El agente avisa a tu equipo por WhatsApp, correo o SMS, apaga la respuesta automática y la persona termina el chat desde la bandeja.</span>
                 </div>
                 <label class="switch">
                   <input type="checkbox" [(ngModel)]="form.handoffEnabled" />
@@ -505,28 +516,57 @@ function blankAgent(): Agent {
 
               @if (form.handoffEnabled) {
                 <div class="field">
-                  <label class="field-label">Números que reciben el aviso *</label>
-                  <div class="number-add">
-                    <input class="input" [(ngModel)]="newHandoffNumber" placeholder="51999888777 (código de país, sin +)"
-                      (keydown.enter)="addHandoffNumber(); $event.preventDefault()" />
-                    <button type="button" class="btn btn-secondary" (click)="addHandoffNumber()">
+                  <label class="field-label">Quién recibe el aviso *</label>
+                  <div class="target-add">
+                    <select class="select" [(ngModel)]="newTarget.channel" (ngModelChange)="newTarget.accountId = ''" aria-label="Canal del aviso">
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="email">Correo</option>
+                      <option value="sms">SMS</option>
+                    </select>
+                    <input class="input" [(ngModel)]="newTarget.to"
+                      [type]="newTarget.channel === 'email' ? 'email' : 'tel'"
+                      [placeholder]="newTarget.channel === 'email' ? 'persona@tunegocio.com' : '51999888777 (código de país, sin +)'"
+                      (keydown.enter)="addHandoffTarget(); $event.preventDefault()" />
+                    @if (newTarget.channel !== 'sms') {
+                      <select class="select" [(ngModel)]="newTarget.accountId" aria-label="Cuenta desde la que sale el aviso">
+                        <option value="">{{ newTarget.channel === 'email' ? 'Automático (buzón predeterminado)' : 'Automático (la del chat o la predeterminada)' }}</option>
+                        @if (newTarget.channel === 'whatsapp') {
+                          @for (acc of accounts(); track acc._id) {
+                            <option [value]="acc._id">{{ acc.label }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</option>
+                          }
+                        } @else {
+                          @for (acc of emailAccounts(); track acc._id) {
+                            <option [value]="acc._id">{{ acc.label }} · {{ acc.email }}</option>
+                          }
+                        }
+                      </select>
+                    }
+                    <button type="button" class="btn btn-secondary" (click)="addHandoffTarget()">
                       <lucide-icon [img]="Plus" [size]="15" [strokeWidth]="2.5"></lucide-icon> Agregar
                     </button>
                   </div>
-                  <span class="field-hint">Formato internacional sin “+”. Cada número recibe un WhatsApp con el motivo y el enlace al chat.</span>
-                  @if (form.handoffNumbers.length > 0) {
+                  <span class="field-hint">
+                    @switch (newTarget.channel) {
+                      @case ('email') { Recibe un correo con el motivo y el enlace al chat. Sale del buzón que elijas; si no tienes ninguno conectado, sale con el remitente de Maya. }
+                      @case ('sms') { Recibe un SMS corto con el cliente, el motivo y el enlace. Sale por el proveedor de Configuración → SMS. }
+                      @default { Formato internacional sin “+”. Recibe un WhatsApp con el motivo y el enlace al chat, desde la cuenta que elijas. }
+                    }
+                  </span>
+                  @if (form.handoffTargets.length > 0) {
                     <div class="number-list">
-                      @for (n of form.handoffNumbers; track n) {
+                      @for (t of form.handoffTargets; track t.channel + t.to) {
                         <span class="number-chip">
-                          <lucide-icon [img]="Phone" [size]="13" [strokeWidth]="2.4"></lucide-icon> +{{ n }}
-                          <button type="button" class="chip-x" (click)="removeHandoffNumber(n)" aria-label="Quitar número">
+                          <lucide-icon [img]="targetIcon(t)" [size]="13" [strokeWidth]="2.4"></lucide-icon>
+                          {{ targetText(t) }}
+                          @if (targetAccount(t); as acc) { <span class="chip-sub">desde {{ acc }}</span> }
+                          <button type="button" class="chip-x" (click)="removeHandoffTarget(t)" aria-label="Quitar destinatario">
                             <lucide-icon [img]="X" [size]="13" [strokeWidth]="2.6"></lucide-icon>
                           </button>
                         </span>
                       }
                     </div>
                   } @else {
-                    <span class="field-hint" style="color:var(--color-error)">Sin números el agente derivará el chat, pero nadie recibirá el aviso.</span>
+                    <span class="field-hint" style="color:var(--color-error)">Sin destinatarios el agente derivará el chat, pero nadie recibirá el aviso.</span>
                   }
                 </div>
 
@@ -544,21 +584,11 @@ function blankAgent(): Agent {
                   <span class="field-hint">Se envía solo si el agente deriva sin escribir nada.</span>
                 </div>
 
-                <div class="field">
-                  <label class="field-label">Cuenta desde la que sale el aviso</label>
-                  <select class="select" [(ngModel)]="form.handoffAccountId">
-                    <option value="">Automático (la del chat o la predeterminada)</option>
-                    @for (acc of accounts(); track acc._id) {
-                      <option [value]="acc._id">{{ acc.label }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</option>
-                    }
-                  </select>
-                </div>
-
                 <div class="field-row">
                   <div class="field">
                     <label class="field-label">Plantilla Cloud API (opcional)</label>
                     <input class="input" [(ngModel)]="form.handoffTemplateName" placeholder="nombre_de_la_plantilla" />
-                    <span class="field-hint">Solo Cloud API: hace falta si el número del equipo no escribió al negocio en las últimas 24 h. Debe tener 3 variables: cliente, motivo y enlace.</span>
+                    <span class="field-hint">Solo avisos por WhatsApp con Cloud API: hace falta si el número del equipo no escribió al negocio en las últimas 24 h. Debe tener 3 variables: cliente, motivo y enlace.</span>
                   </div>
                   <div class="field">
                     <label class="field-label">Idioma de la plantilla</label>
@@ -746,8 +776,11 @@ function blankAgent(): Agent {
     .token-chip:hover { background: var(--color-brand); color: #fff; }
 
     /* Handoff tab */
-    .number-add { display: flex; gap: 8px; align-items: center; }
-    .number-add .input { flex: 1; }
+    .target-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .target-add .select { flex: 0 0 130px; }
+    .target-add .input { flex: 1 1 200px; }
+    .target-add .input + .select { flex: 1 1 200px; }
+    .chip-sub { font-weight: 500; opacity: .75; }
     .number-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .number-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; background: var(--color-brand-light); color: var(--color-brand); border: 1px solid var(--color-brand); border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; }
     .chip-x { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; transition: background var(--transition-fast); }
@@ -872,7 +905,7 @@ export class AiAgentsComponent implements OnInit {
   uploading = signal(false);
 
   // derivación a un agente humano
-  newHandoffNumber = '';
+  newTarget: { channel: HandoffChannel; to: string; accountId: string } = { channel: 'whatsapp', to: '', accountId: '' };
 
   // agent files
   agentFiles = signal<AgentFile[]>([]);
@@ -1013,12 +1046,15 @@ export class AiAgentsComponent implements OnInit {
       messengerAccountIds: [...(a.messengerAccountIds || [])],
       emailAccountIds: [...(a.emailAccountIds || [])],
       // Los agentes creados antes de la derivación no traen estos campos.
-      handoffNumbers: [...(a.handoffNumbers || [])],
-      handoffAccountId: a.handoffAccountId || '',
+      // Los números de la lista antigua pasan a ser destinatarios de WhatsApp
+      // con la cuenta que tenía el agente; al guardar ya no se usa esa lista.
+      handoffTargets: this.mergeLegacyTargets(a),
+      handoffNumbers: [],
+      handoffAccountId: '',
       handoffMessage: a.handoffMessage || base.handoffMessage,
       handoffTemplateLang: a.handoffTemplateLang || 'es',
     };
-    this.newHandoffNumber = '';
+    this.newTarget = { channel: 'whatsapp', to: '', accountId: '' };
     this.section.set('general');
     this.docs.set([]);
     this.agentFiles.set([]);
@@ -1032,22 +1068,52 @@ export class AiAgentsComponent implements OnInit {
 
   closeDrawer() { this.drawerOpen.set(false); }
 
-  addHandoffNumber() {
-    const digits = this.newHandoffNumber.replace(/\D/g, '');
-    if (digits.length < 8) {
-      this.toast.error('Escribe el número con código de país (ej: 51999888777)');
-      return;
+  private mergeLegacyTargets(a: Agent): HandoffTarget[] {
+    const targets = (a.handoffTargets || []).map(t => ({ ...t }));
+    for (const n of a.handoffNumbers || []) {
+      if (!targets.some(t => t.channel === 'whatsapp' && t.to === n)) {
+        targets.push({ channel: 'whatsapp', to: n, ...(a.handoffAccountId ? { accountId: a.handoffAccountId } : {}) });
+      }
     }
-    if (this.form.handoffNumbers.includes(digits)) {
-      this.toast.error('Ese número ya está en la lista');
-      return;
-    }
-    this.form = { ...this.form, handoffNumbers: [...this.form.handoffNumbers, digits] };
-    this.newHandoffNumber = '';
+    return targets;
   }
 
-  removeHandoffNumber(n: string) {
-    this.form = { ...this.form, handoffNumbers: this.form.handoffNumbers.filter(x => x !== n) };
+  addHandoffTarget() {
+    const { channel, accountId } = this.newTarget;
+    const isEmail = channel === 'email';
+    const to = isEmail ? this.newTarget.to.trim().toLowerCase() : this.newTarget.to.replace(/\D/g, '');
+    if (isEmail ? !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) : to.length < 8) {
+      this.toast.error(isEmail ? 'Escribe un correo válido' : 'Escribe el número con código de país (ej: 51999888777)');
+      return;
+    }
+    if (this.form.handoffTargets.some(t => t.channel === channel && t.to === to)) {
+      this.toast.error('Ese destinatario ya está en la lista');
+      return;
+    }
+    const target: HandoffTarget = { channel, to, ...(accountId && channel !== 'sms' ? { accountId } : {}) };
+    this.form = { ...this.form, handoffTargets: [...this.form.handoffTargets, target] };
+    this.newTarget = { channel, to: '', accountId };
+  }
+
+  removeHandoffTarget(target: HandoffTarget) {
+    this.form = { ...this.form, handoffTargets: this.form.handoffTargets.filter(t => t !== target) };
+  }
+
+  targetIcon(t: HandoffTarget) {
+    return t.channel === 'email' ? Mail : t.channel === 'sms' ? MessageSquare : Phone;
+  }
+
+  targetText(t: HandoffTarget): string {
+    if (t.channel === 'email') return t.to;
+    return `${t.channel === 'sms' ? 'SMS' : 'WhatsApp'} +${t.to}`;
+  }
+
+  /** Nombre de la cuenta elegida para el aviso; vacío si es la automática. */
+  targetAccount(t: HandoffTarget): string {
+    if (!t.accountId) return '';
+    return t.channel === 'email'
+      ? this.emailAccounts().find(a => a._id === t.accountId)?.email ?? ''
+      : this.accounts().find(a => a._id === t.accountId)?.label ?? '';
   }
 
   toggleAccount(id: string) {
@@ -1086,9 +1152,9 @@ export class AiAgentsComponent implements OnInit {
       this.toast.error('Nombre y prompt son obligatorios');
       return;
     }
-    if (this.form.handoffEnabled && this.form.handoffNumbers.length === 0) {
+    if (this.form.handoffEnabled && this.form.handoffTargets.length === 0) {
       this.section.set('handoff');
-      this.toast.error('Agrega al menos un número que reciba el aviso de derivación');
+      this.toast.error('Agrega al menos un destinatario que reciba el aviso de derivación');
       return;
     }
     this.saving.set(true);

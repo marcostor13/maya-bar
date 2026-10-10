@@ -6,8 +6,25 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PartialType } from '@nestjs/mapped-types';
+import { HANDOFF_CHANNELS } from '../ai-agent.schema';
+import type { HandoffChannel } from '../ai-agent.schema';
+
+export class HandoffTargetDto {
+  @IsIn(HANDOFF_CHANNELS)
+  channel: HandoffChannel;
+
+  @IsString()
+  @IsNotEmpty()
+  to: string;
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
+}
 
 export class CreateAiAgentDto {
   @IsString()
@@ -77,6 +94,12 @@ export class CreateAiAgentDto {
   @IsOptional()
   @IsBoolean()
   handoffEnabled?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HandoffTargetDto)
+  handoffTargets?: HandoffTargetDto[];
 
   @IsOptional()
   @IsArray()

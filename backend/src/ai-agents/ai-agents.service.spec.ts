@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { AiAgentsService } from './ai-agents.service';
+import { AiAgentsService, normalizeHandoffTargets } from './ai-agents.service';
 import { AiAgent } from './ai-agent.schema';
 import { KnowledgeDoc } from './knowledge-doc.schema';
 import { AgentFile } from './agent-file.schema';
@@ -407,5 +407,54 @@ describe('AiAgentsService', () => {
       );
       expect(AiAgentsService.resolveMediaType(undefined)).toBe('document');
     });
+  });
+});
+
+describe('normalizeHandoffTargets', () => {
+  const account = String(new Types.ObjectId());
+
+  it('limpia teléfonos y correos y conserva la cuenta elegida', () => {
+    expect(
+      normalizeHandoffTargets([
+        { channel: 'whatsapp', to: '+51 999 888 777', accountId: account },
+        { channel: 'email', to: '  Jefa@X.pe ', accountId: account },
+        { channel: 'sms', to: '51-911-111-111' },
+      ]),
+    ).toEqual([
+      { channel: 'whatsapp', to: '51999888777', accountId: account },
+      { channel: 'email', to: 'jefa@x.pe', accountId: account },
+      { channel: 'sms', to: '51911111111' },
+    ]);
+  });
+
+  it('descarta inválidos y repetidos del mismo canal, no entre canales', () => {
+    expect(
+      normalizeHandoffTargets([
+        { channel: 'whatsapp', to: '123' },
+        { channel: 'email', to: 'sin-arroba' },
+        { channel: 'whatsapp', to: '51999888777' },
+        { channel: 'whatsapp', to: '+51999888777' },
+        { channel: 'sms', to: '51999888777' },
+      ]),
+    ).toEqual([
+      { channel: 'whatsapp', to: '51999888777' },
+      { channel: 'sms', to: '51999888777' },
+    ]);
+  });
+
+  it('ignora una cuenta mal formada y la de un SMS', () => {
+    expect(
+      normalizeHandoffTargets([
+        { channel: 'email', to: 'a@x.pe', accountId: 'no-es-un-id' },
+        { channel: 'sms', to: '51999888777', accountId: account },
+      ]),
+    ).toEqual([
+      { channel: 'email', to: 'a@x.pe' },
+      { channel: 'sms', to: '51999888777' },
+    ]);
+  });
+
+  it('sin lista devuelve vacío', () => {
+    expect(normalizeHandoffTargets(undefined)).toEqual([]);
   });
 });

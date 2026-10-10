@@ -523,9 +523,9 @@ const EMOJIS = [
               <span>
                 El agente IA derivó este chat a una persona{{ selected()!.escalationReason ? ': ' + selected()!.escalationReason : '' }}.
                 @if (selected()!.escalationNotifiedTo?.length) {
-                  Se avisó por WhatsApp a {{ notifiedList(selected()!) }}.
+                  Se avisó a: {{ notifiedList(selected()!) }}.
                 } @else {
-                  No se pudo avisar por WhatsApp a nadie.
+                  No se pudo avisar a nadie.
                 }
                 Continúa tú la conversación; al reactivar el agente se cierra la derivación.
               </span>
@@ -2447,9 +2447,12 @@ export class InboxComponent implements OnInit, OnDestroy {
     void this.router.navigate(['/leads']);
   }
 
-  /** Números del equipo a los que se les avisó la derivación. */
+  /**
+   * A quién del equipo se le avisó la derivación. Las derivaciones antiguas
+   * guardan solo el número de WhatsApp; las nuevas, el canal y el destinatario.
+   */
   notifiedList(c: Conv): string {
-    return (c.escalationNotifiedTo ?? []).map(n => `+${n}`).join(', ');
+    return (c.escalationNotifiedTo ?? []).map(n => /^\d+$/.test(n) ? `WhatsApp +${n}` : n).join(', ');
   }
 
   /** Etiqueta de la cuenta por la que entra la conversación. */

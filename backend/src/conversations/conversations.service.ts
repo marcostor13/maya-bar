@@ -1565,8 +1565,8 @@ export class ConversationsService {
   }
 
   /**
-   * Deriva la conversación a una persona: avisa por WhatsApp a los números
-   * configurados en el agente, apaga la respuesta automática y deja constancia
+   * Deriva la conversación a una persona: avisa a los destinatarios configurados
+   * en el agente (WhatsApp, correo o SMS), apaga la respuesta automática y deja constancia
    * en el hilo. Un fallo al avisar no impide apagar el agente — si nadie
    * responde el chat, el cliente no puede quedar hablando con un bot mudo.
    */
@@ -1597,15 +1597,15 @@ export class ConversationsService {
 
     const detail = reason ? ` Motivo: ${reason}.` : '';
     const who = notified.length
-      ? `Se avisó por WhatsApp a ${notified.map((n) => `+${n}`).join(', ')}.`
-      : `No se pudo avisar a nadie por WhatsApp${error ? ` (${error})` : ''}.`;
+      ? `Se avisó a: ${notified.join(', ')}.`
+      : `No se pudo avisar a nadie${error ? ` (${error})` : ''}.`;
     await this.systemNote(
       conv,
       `🔔 El agente IA derivó la conversación a una persona.${detail} ${who} El agente quedó apagado en este chat.`,
     );
 
     this.gateway.emitConversation(tenantId, conv);
-    // Además del WhatsApp a los números del agente, se avisa al móvil de todo
+    // Además del aviso a los destinatarios del agente, se avisa al móvil de todo
     // el equipo con acceso a la bandeja: una derivación no puede pasar de largo.
     void this.push.sendToTenant(
       tenantId,

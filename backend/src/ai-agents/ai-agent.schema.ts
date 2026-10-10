@@ -1,6 +1,17 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
+export const HANDOFF_CHANNELS = ['whatsapp', 'email', 'sms'] as const;
+export type HandoffChannel = (typeof HANDOFF_CHANNELS)[number];
+
+/** Destinatario del aviso de derivación. */
+export interface HandoffTarget {
+  channel: HandoffChannel;
+  /** Teléfono E.164 sin '+' (WhatsApp, SMS) o dirección de correo. */
+  to: string;
+  accountId?: string;
+}
+
 @Schema({ timestamps: true })
 export class AiAgent extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Tenant', required: true, index: true })
@@ -78,13 +89,34 @@ export class AiAgent extends Document {
   @Prop({ default: false })
   handoffEnabled: boolean;
 
-  /** Números que reciben el aviso por WhatsApp (E.164, sin +). */
+  /**
+   * Quién recibe el aviso y por dónde: cada destinatario con su canal y, si se
+   * quiere, la cuenta desde la que sale (WhatsApp o buzón de correo).
+   */
+  @Prop({
+    type: [
+      {
+        _id: false,
+        channel: { type: String, enum: HANDOFF_CHANNELS, required: true },
+        to: { type: String, required: true },
+        // Texto y no ObjectId: apunta a una cuenta de WhatsApp o a un buzón.
+        accountId: { type: String },
+      },
+    ],
+    default: [],
+  })
+  handoffTargets: HandoffTarget[];
+
+  /**
+   * Números que reciben el aviso por WhatsApp (E.164, sin +). Anterior a
+   * `handoffTargets`: se siguen avisando, como destinatarios de WhatsApp.
+   */
   @Prop({ type: [String], default: [] })
   handoffNumbers: string[];
 
   /**
-   * Cuenta de WhatsApp desde la que sale el aviso. Si no se indica se usa la
-   * cuenta de la conversación (si es WhatsApp) o la predeterminada del tenant.
+   * Cuenta de WhatsApp para los avisos que no fijan la suya. Si no se indica se
+   * usa la de la conversación (si es WhatsApp) o la predeterminada del tenant.
    */
   @Prop({ type: Types.ObjectId, ref: 'WhatsAppAccount' })
   handoffAccountId?: Types.ObjectId;

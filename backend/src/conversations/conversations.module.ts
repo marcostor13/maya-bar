@@ -28,6 +28,8 @@ import { UploadModule } from '../upload/upload.module';
 import { LeadsModule } from '../leads/leads.module';
 import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
 import { EmailListenerService } from './email-listener.service';
+import { MailModule } from '../mail/mail.module';
+import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
@@ -49,6 +51,8 @@ import { EmailListenerService } from './email-listener.service';
     UploadModule,
     LeadsModule,
     EmailAccountsModule,
+    MailModule,
+    SmsModule,
   ],
   controllers: [
     ConversationsController,

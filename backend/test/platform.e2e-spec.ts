@@ -334,4 +334,63 @@ describe('Empresas, eventos, campañas y entradas públicas (e2e)', () => {
       expect(res.status).toBe(401);
     });
   });
+
+  describe('agentes IA: destinatarios de la derivación', () => {
+    it('guarda destinatarios de WhatsApp, correo y SMS ya normalizados', async () => {
+      const owner = await registerTenant(app);
+      const account = '64b7f0c2a1b2c3d4e5f60718';
+
+      const created = await http()
+        .post('/ai-agents')
+        .set(bearer(owner))
+        .send({
+          name: 'Ventas',
+          systemPrompt: 'Atiende con amabilidad.',
+          handoffEnabled: true,
+          handoffTargets: [
+            { channel: 'whatsapp', to: '+51 999 888 777', accountId: account },
+            { channel: 'email', to: ' Jefa@Empresa.pe ' },
+            { channel: 'sms', to: '51911111111', accountId: account },
+            { channel: 'email', to: 'no-es-correo' },
+          ],
+        })
+        .expect(201);
+      const agent = created.body as Doc;
+      expect(agent.handoffTargets).toEqual([
+        { channel: 'whatsapp', to: '51999888777', accountId: account },
+        { channel: 'email', to: 'jefa@empresa.pe' },
+        { channel: 'sms', to: '51911111111' },
+      ]);
+
+      // Un PATCH que no toca la derivación conserva la lista.
+      const renamed = await http()
+        .patch(`/ai-agents/${agent._id}`)
+        .set(bearer(owner))
+        .send({ name: 'Ventas 2' })
+        .expect(200);
+      expect((renamed.body as Doc).handoffTargets).toHaveLength(3);
+
+      const replaced = await http()
+        .patch(`/ai-agents/${agent._id}`)
+        .set(bearer(owner))
+        .send({ handoffTargets: [{ channel: 'sms', to: '51922222222' }] })
+        .expect(200);
+      expect((replaced.body as Doc).handoffTargets).toEqual([
+        { channel: 'sms', to: '51922222222' },
+      ]);
+    });
+
+    it('rechaza un canal que no existe', async () => {
+      const owner = await registerTenant(app);
+      await http()
+        .post('/ai-agents')
+        .set(bearer(owner))
+        .send({
+          name: 'Ventas',
+          systemPrompt: 'x',
+          handoffTargets: [{ channel: 'telegram', to: '51999888777' }],
+        })
+        .expect(400);
+    });
+  });
 });
