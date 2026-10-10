@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
@@ -17,6 +21,9 @@ import {
   WhatsAppOAuthService,
   WaOAuthPublicConfig,
 } from '../whatsapp/whatsapp-oauth.service';
+
+/** Tope de cuentas por QR por empresa: cada una es una sesión viva en el servidor. */
+const MAX_MANAGED_ACCOUNTS = 5;
 
 @Injectable()
 export class WhatsAppAccountsService {
@@ -144,10 +151,20 @@ export class WhatsAppAccountsService {
   }
 
   async update(id: string, tenantId: string, dto: UpdateWhatsAppAccountDto) {
+    const current = await this.findOne(id, tenantId);
+    const patch: UpdateWhatsAppAccountDto = { ...dto };
+    if (current.managed) {
+      // La sesión es de la plataforma: si se pudiera cambiar, una empresa
+      // podría apuntar su cuenta a la sesión de otra.
+      delete patch.provider;
+      delete patch.wahaApiUrl;
+      delete patch.wahaApiKey;
+      delete patch.wahaSession;
+    }
     const doc = await this.model
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), tenantId: new Types.ObjectId(tenantId) },
-        { $set: dto },
+        { $set: patch },
         { new: true },
       )
       .exec();
@@ -162,6 +179,8 @@ export class WhatsAppAccountsService {
       .exec();
     if (!account)
       throw new NotFoundException('Cuenta de WhatsApp no encontrada');
+    if (account.managed)
+      await this.wa.deleteWahaSession(this.toConfig(account));
     await this.model.deleteOne({ _id: account._id }).exec();
     // si era la predeterminada, promueve otra
     if (account.isDefault) {
@@ -179,10 +198,11 @@ export class WhatsAppAccountsService {
 
   /** Convierte un documento de cuenta en la WaConfig que entiende WhatsAppService. */
   toConfig(account: WhatsAppAccount): WaConfig {
+    const platform = account.managed ? this.platformWaha() : null;
     return {
       provider: account.provider,
-      wahaApiUrl: account.wahaApiUrl,
-      wahaApiKey: account.wahaApiKey,
+      wahaApiUrl: account.managed ? platform?.url : account.wahaApiUrl,
+      wahaApiKey: account.managed ? platform?.key : account.wahaApiKey,
       wahaSession: account.wahaSession ?? 'default',
       waPhoneNumberId: account.waPhoneNumberId,
       waAccessToken: account.waAccessToken,
@@ -192,7 +212,63 @@ export class WhatsAppAccountsService {
 
   async status(id: string, tenantId: string): Promise<WaStatus> {
     const account = await this.findOne(id, tenantId);
-    return this.wa.getStatus(this.toConfig(account));
+    const status = await this.wa.getStatus(this.toConfig(account));
+    // Al escanear el QR se conoce el número: se guarda para mostrarlo.
+    if (
+      account.managed &&
+      status.connected &&
+      status.phoneNumber &&
+      account.phoneNumber !== status.phoneNumber
+    ) {
+      account.phoneNumber = status.phoneNumber;
+      await account.save();
+    }
+    return status;
+  }
+
+  /** WAHA de la plataforma (variables del servidor), o null si no hay. */
+  private platformWaha(): { url: string; key?: string } | null {
+    const url = this.config.get<string>('WAHA_API_URL')?.trim();
+    if (!url) return null;
+    return {
+      url: url.replace(/\/$/, ''),
+      key: this.config.get<string>('WAHA_API_KEY') || undefined,
+    };
+  }
+
+  /** ¿Se puede conectar por QR sin que la empresa traiga su propio WAHA? */
+  qrConnectConfig(): { available: boolean } {
+    return { available: !!this.platformWaha() };
+  }
+
+  /**
+   * Crea una cuenta conectada por QR en el WAHA de la plataforma, con una
+   * sesión propia. El QR se pide después con `qr()`, que también crea la
+   * sesión en WAHA y registra el webhook.
+   */
+  async connectViaQr(tenantId: string, label?: string) {
+    if (!this.platformWaha())
+      throw new BadRequestException(
+        'La conexión por QR no está configurada en el servidor',
+      );
+    const tid = new Types.ObjectId(tenantId);
+    const managed = await this.model
+      .countDocuments({ tenantId: tid, managed: true })
+      .exec();
+    if (managed >= MAX_MANAGED_ACCOUNTS)
+      throw new BadRequestException(
+        `Ya tienes ${MAX_MANAGED_ACCOUNTS} cuentas conectadas por QR. Elimina una para añadir otra.`,
+      );
+    return this.model.create({
+      tenantId: tid,
+      label: label?.trim() || 'WhatsApp (QR)',
+      provider: 'waha',
+      managed: true,
+      wahaSession: `maya_${randomBytes(8).toString('hex')}`,
+      active: true,
+      isDefault:
+        (await this.model.countDocuments({ tenantId: tid }).exec()) === 0,
+    });
   }
 
   async qr(id: string, tenantId: string) {

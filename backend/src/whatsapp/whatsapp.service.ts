@@ -385,6 +385,25 @@ export class WhatsAppService {
     }
   }
 
+  /**
+   * Cierra y borra la sesión en WAHA (desvincula el teléfono). Sin esto una
+   * cuenta eliminada seguiría conectada y consumiendo recursos del servidor.
+   */
+  async deleteWahaSession(config: WaConfig): Promise<void> {
+    if (config.provider !== 'waha' || !config.wahaApiUrl) return;
+    const session = config.wahaSession ?? 'default';
+    try {
+      await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, {
+        method: 'DELETE',
+        headers: { 'X-Api-Key': config.wahaApiKey ?? '' },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo borrar la sesión de WAHA ${session}: ${String(err)}`,
+      );
+    }
+  }
+
   async getQr(config: WaConfig): Promise<{ qrcode?: string; error?: string }> {
     if (config.provider !== 'waha')
       return { error: 'QR solo disponible con WAHA' };
@@ -719,14 +738,21 @@ export class WhatsAppService {
       const res = await fetch(`${config.wahaApiUrl}/api/sessions/${session}`, {
         headers: { 'X-Api-Key': config.wahaApiKey ?? '' },
       });
-      const data = (await res.json()) as { name?: string; status?: string };
+      const data = (await res.json()) as {
+        name?: string;
+        status?: string;
+        me?: { id?: string } | null;
+      };
       const state = data.status ?? 'UNKNOWN';
+      // `me.id` es el número vinculado ("51999888777@c.us").
+      const phoneNumber = data.me?.id?.split('@')[0].replace(/\D/g, '');
       return {
         provider: 'waha',
         configured: true,
         connected: state === 'WORKING',
         instance: session,
         state,
+        ...(phoneNumber ? { phoneNumber } : {}),
       };
     } catch (err) {
       return {

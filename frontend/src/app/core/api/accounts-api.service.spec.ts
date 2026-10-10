@@ -103,6 +103,26 @@ describe('AccountsApiService', () => {
     req.flush({ qrcode: 'abc' });
   });
 
+  it('getWaQrConfig hace GET /whatsapp-accounts/qr/config', () => {
+    service.getWaQrConfig().subscribe();
+    const req = httpMock.expectOne(`${BASE}/whatsapp-accounts/qr/config`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ available: true });
+  });
+
+  it('connectWaQr hace POST /whatsapp-accounts/qr/connect, con el nombre si se da', () => {
+    service.connectWaQr().subscribe();
+    const bare = httpMock.expectOne(`${BASE}/whatsapp-accounts/qr/connect`);
+    expect(bare.request.method).toBe('POST');
+    expect(bare.request.body).toEqual({});
+    bare.flush({});
+
+    service.connectWaQr('Ventas').subscribe();
+    const named = httpMock.expectOne(`${BASE}/whatsapp-accounts/qr/connect`);
+    expect(named.request.body).toEqual({ label: 'Ventas' });
+    named.flush({});
+  });
+
   it('testWaAccount hace POST /whatsapp-accounts/:id/test con { phone }', () => {
     service.testWaAccount('wa-1', '51999').subscribe();
     const req = httpMock.expectOne(`${BASE}/whatsapp-accounts/wa-1/test`);

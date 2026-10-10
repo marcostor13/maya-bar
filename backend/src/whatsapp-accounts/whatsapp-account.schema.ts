@@ -20,6 +20,14 @@ export class WhatsAppAccount extends Document {
   @Prop() wahaApiKey?: string;
   @Prop({ default: 'default' }) wahaSession?: string;
 
+  /**
+   * Cuenta conectada por QR en el WAHA de la plataforma: la URL y la API key
+   * salen del servidor (nunca se guardan aquí ni llegan al navegador) y la
+   * sesión la genera la plataforma.
+   */
+  @Prop({ default: false })
+  managed: boolean;
+
   // WhatsApp Cloud API
   @Prop() waPhoneNumberId?: string;
   @Prop() waAccessToken?: string;

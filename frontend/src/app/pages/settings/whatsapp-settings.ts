@@ -25,7 +25,7 @@ declare const FB: any;
         </div>
         <div>
           <h2 class="section-title">WhatsApp</h2>
-          <p class="section-desc">Conecta uno o varios números vía WAHA o Cloud API. La cuenta predeterminada se usa para campañas y envíos.</p>
+          <p class="section-desc">Conecta uno o varios números con la API oficial o escaneando un QR. La cuenta predeterminada se usa para campañas y envíos.</p>
         </div>
       </div>
 
@@ -34,6 +34,12 @@ declare const FB: any;
           <lucide-icon [img]="Smartphone" [size]="16"></lucide-icon>
           {{ connectingWa() ? 'Conectando…' : 'Conectar con WhatsApp' }}
         </button>
+        @if (qrAvailable()) {
+          <button class="btn btn-secondary" style="margin: 0 0 20px 8px" [disabled]="connectingQr()" (click)="connectWithQr()">
+            <lucide-icon [img]="QrCode" [size]="16"></lucide-icon>
+            {{ connectingQr() ? 'Preparando QR…' : 'Conectar con QR' }}
+          </button>
+        }
 
         <div class="field" style="max-width: 260px; margin-bottom: 20px;">
           <label class="label">Límite diario de mensajes</label>
@@ -61,7 +67,7 @@ declare const FB: any;
                     @if (acc.isDefault) {
                       <span class="badge-default"><lucide-icon [img]="Star" [size]="11"></lucide-icon> Predeterminada</span>
                     }
-                    <span class="account-sub">{{ acc.provider === 'waha' ? 'WAHA' : 'Cloud API' }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</span>
+                    <span class="account-sub">{{ acc.managed ? 'Conectada por QR' : acc.provider === 'waha' ? 'WAHA' : 'Cloud API' }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</span>
                   </div>
                   <div class="acc-card-actions">
                     @if (!acc.isDefault) {
@@ -191,19 +197,23 @@ declare const FB: any;
             <label class="label">Nombre de la cuenta *</label>
             <input class="input" [(ngModel)]="accForm()!.label" placeholder="Ej: Línea Reservas" />
           </div>
-          <div class="field">
-            <label class="label">Proveedor *</label>
-            <select class="select" [(ngModel)]="accForm()!.provider">
-              <option value="waha">WAHA</option>
-              <option value="cloudapi">WhatsApp Cloud API</option>
-            </select>
-          </div>
+          @if (!accForm()!.managed) {
+            <div class="field">
+              <label class="label">Proveedor *</label>
+              <select class="select" [(ngModel)]="accForm()!.provider">
+                <option value="waha">WAHA</option>
+                <option value="cloudapi">WhatsApp Cloud API</option>
+              </select>
+            </div>
+          }
           <div class="field">
             <label class="label">Número (informativo)</label>
             <input class="input" [(ngModel)]="accForm()!.phoneNumber" placeholder="+51 999 999 999" />
           </div>
 
-          @if (accForm()!.provider === 'waha') {
+          @if (accForm()!.managed) {
+            <span class="field-hint">Cuenta conectada por QR: la conexión la gestiona la plataforma.</span>
+          } @else if (accForm()!.provider === 'waha') {
             <div class="field">
               <label class="label">URL de WAHA *</label>
               <input class="input" [(ngModel)]="accForm()!.wahaApiUrl" placeholder="https://waha.midominio.com" />
@@ -357,6 +367,8 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   accForm = signal<WaAccount | null>(null);
   savingAcc = signal(false);
   connectingWa = signal(false);
+  qrAvailable = signal(false);
+  connectingQr = signal(false);
   statusMap = signal<Record<string, WaStatus>>({});
 
   private fbSdkPromise: Promise<void> | null = null;
@@ -407,6 +419,10 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
     this.loadConfig();
     this.loadAccounts();
     this.loadWaWebhookConfig();
+    this.api.getWaQrConfig().subscribe({
+      next: (c) => this.qrAvailable.set(c.available),
+      error: () => this.qrAvailable.set(false),
+    });
     window.addEventListener('message', this.waMessageListener);
   }
 
@@ -519,9 +535,36 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Crea la cuenta en el WAHA de la plataforma y abre su QR para escanearlo. */
+  connectWithQr() {
+    this.connectingQr.set(true);
+    this.api.connectWaQr().subscribe({
+      next: (acc) => {
+        this.connectingQr.set(false);
+        this.accounts.update(list => [acc, ...list]);
+        this.defaultProviderChange.emit(this.defaultProvider());
+        this.toast.success('Cuenta creada. Escanea el QR con tu WhatsApp para conectarla.');
+        this.toggleQr(acc);
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.connectingQr.set(false);
+        this.toast.error(err.error?.message || 'No se pudo preparar la conexión por QR');
+      },
+    });
+  }
+
   checkStatus(a: WaAccount) {
     this.api.getWaStatus(a._id).subscribe({
-      next: (s) => this.statusMap.update(m => ({ ...m, [a._id]: s })),
+      next: (s) => {
+        this.statusMap.update(m => ({ ...m, [a._id]: s }));
+        // QR escaneado: se cierra el panel y se refresca la cuenta (ya trae el número).
+        if (s.connected && this.qrActiveId() === a._id) {
+          this.qrActiveId.set('');
+          this.stopPolling();
+          this.toast.success('WhatsApp conectado');
+          this.loadAccounts();
+        }
+      },
       error: (err: { error?: { message?: string } }) => this.statusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err.error?.message || 'Error' } })),
     });
   }
@@ -571,11 +614,12 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
 
   private startPolling(a: WaAccount) {
     this.stopPolling();
+    let tick = 0;
     this.statusInterval = setInterval(() => {
       this.checkStatus(a);
-      if (this.statusMap()[a._id]?.connected) { this.stopPolling(); return; }
-      if (this.qrActiveId() === a._id) this.loadQr(a);
-    }, 10000);
+      // El estado se mira cada 5 s; el QR (que caduca) se renueva cada 15 s.
+      if (++tick % 3 === 0 && this.qrActiveId() === a._id) this.loadQr(a);
+    }, 5000);
   }
 
   private stopPolling() {

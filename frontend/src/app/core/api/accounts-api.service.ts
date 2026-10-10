@@ -76,6 +76,16 @@ export class AccountsApiService {
     return this.http.get<WaQr>(`${this.base}/whatsapp-accounts/${id}/qr`);
   }
 
+  /** ¿El servidor permite conectar por QR sin traer un WAHA propio? */
+  getWaQrConfig(): Observable<{ available: boolean }> {
+    return this.http.get<{ available: boolean }>(`${this.base}/whatsapp-accounts/qr/config`);
+  }
+
+  /** Crea la cuenta por QR; el código se pide después con `getWaQr`. */
+  connectWaQr(label?: string): Observable<WaAccount> {
+    return this.http.post<WaAccount>(`${this.base}/whatsapp-accounts/qr/connect`, label ? { label } : {});
+  }
+
   testWaAccount(id: string, phone: string): Observable<WaTestResult> {
     return this.http.post<WaTestResult>(`${this.base}/whatsapp-accounts/${id}/test`, { phone });
   }

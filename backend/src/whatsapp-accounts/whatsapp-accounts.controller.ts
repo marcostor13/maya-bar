@@ -53,6 +53,23 @@ export class WhatsAppAccountsController {
     return this.service.refreshOAuthToken(id, req.user.tenantId);
   }
 
+  /** ¿El servidor tiene un WAHA propio para conectar cuentas por QR? */
+  @Get('qr/config')
+  qrConfig(@Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.service.qrConnectConfig();
+  }
+
+  /** Crea la cuenta por QR; el código se pide después con `:id/qr`. */
+  @Post('qr/connect')
+  qrConnect(@Body() dto: { label?: string }, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.service.connectViaQr(
+      req.user.tenantId,
+      typeof dto?.label === 'string' ? dto.label : undefined,
+    );
+  }
+
   /** URL + verify token del webhook Cloud API a nivel de app (para pegar en Meta). */
   @Get('webhook-url')
   async webhookUrl(@Request() req: AuthReq) {

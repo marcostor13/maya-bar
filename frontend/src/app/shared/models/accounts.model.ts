@@ -23,6 +23,8 @@ export interface WaAccount {
   wahaApiUrl?: string;
   wahaApiKey?: string;
   wahaSession?: string;
+  /** Conectada por QR en el WAHA de la plataforma: sin URL ni API key propias. */
+  managed?: boolean;
   waPhoneNumberId?: string;
   waAccessToken?: string;
   waBusinessAccountId?: string;
