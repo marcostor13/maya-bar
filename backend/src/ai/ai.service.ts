@@ -165,6 +165,13 @@ export class AiService {
     const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (!match)
       throw new BadRequestException('La IA devolvió una respuesta inválida');
-    return JSON.parse(match[0]) as T;
+    try {
+      return JSON.parse(match[0]) as T;
+    } catch {
+      // Casi siempre es una respuesta cortada por el tope de tokens.
+      throw new BadRequestException(
+        'La IA devolvió una respuesta incompleta o con formato inválido',
+      );
+    }
   }
 }

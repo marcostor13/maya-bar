@@ -207,5 +207,14 @@ describe('AiService', () => {
         new BadRequestException('La IA devolvió una respuesta inválida'),
       );
     });
+
+    it('throws a readable error when the JSON is cut off', async () => {
+      const service = await makeService();
+      expect(() => service.parseJson('{"a": {"b": 1}')).toThrow(
+        new BadRequestException(
+          'La IA devolvió una respuesta incompleta o con formato inválido',
+        ),
+      );
+    });
   });
 });

@@ -340,3 +340,56 @@ describe('ProspectingResearchService.runResearch', () => {
     );
   });
 });
+
+describe('ProspectingResearchService.runMaterial', () => {
+  const prospect = () =>
+    ({
+      _id: new Types.ObjectId(),
+      tenantId: new Types.ObjectId(),
+      searchId: new Types.ObjectId(),
+      name: 'Alfa',
+      research: { state: 'done', ai: { summary: 'Clínica' } },
+      material: { state: 'running', instructions: 'Tono cercano' },
+    }) as unknown as Prospect;
+
+  it('pide diagnóstico, plan y mensajes por separado y guarda los tres', async () => {
+    const prompts: string[] = [];
+    const reply = (value: unknown) => (prompt: string) => {
+      prompts.push(prompt);
+      return value;
+    };
+    const { service, prospectUpdates, ai } = setup({
+      ai: [
+        reply({ diagnosis: { score: 40, headline: 'Web lenta' } }),
+        reply({ plan: { vision: 'Más reservas' } }),
+        reply({ outreach: { emailSubject: 'Su web' } }),
+      ],
+    });
+
+    await service.runMaterial(prospect());
+
+    expect(ai.chatMessages).toHaveBeenCalledTimes(3);
+    expect(prompts[0]).toContain('"diagnosis"');
+    expect(prompts[0]).not.toContain('"outreach"');
+    expect(prompts[0]).toContain('INDICACIONES DEL VENDEDOR: Tono cercano');
+    // el plan y los mensajes parten del diagnóstico ya hecho
+    expect(prompts[1]).toContain('Web lenta');
+    expect(prompts[2]).toContain('Web lenta');
+    expect(prospectUpdates.at(-1)).toMatchObject({
+      'material.state': 'done',
+      'material.diagnosis': { score: 40, headline: 'Web lenta' },
+      'material.plan': { vision: 'Más reservas' },
+      'material.outreach': { emailSubject: 'Su web' },
+    });
+  });
+
+  it('si una parte falla no guarda nada, para que el worker reintente', async () => {
+    const { service, prospectUpdates } = setup({
+      ai: [() => ({ diagnosis: { score: 40 } }), () => ({ plan: {} })],
+    });
+    await expect(service.runMaterial(prospect())).rejects.toThrow(
+      'sin respuesta',
+    );
+    expect(prospectUpdates).toHaveLength(0);
+  });
+});

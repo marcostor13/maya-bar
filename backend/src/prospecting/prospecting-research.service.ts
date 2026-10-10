@@ -751,21 +751,25 @@ En "people" incluye SOLO personas que aparezcan en la información con nombre re
       personas: r.people?.slice(0, 5),
     };
 
-    const result = await this.askJson<{
-      diagnosis?: Record<string, unknown>;
-      plan?: Record<string, unknown>;
-      outreach?: Record<string, unknown>;
-    }>(
-      keys,
-      'Eres un consultor senior de marketing y transformación digital. Preparas material de alto valor para abrir una relación comercial: útil por sí mismo aunque el prospecto no compre. Basas cada hallazgo en datos de la investigación, sin inventar cifras. Respondes solo JSON válido en español.',
-      `NUESTROS SERVICIOS:
+    const system =
+      'Eres un consultor senior de marketing y transformación digital. Preparas material de alto valor para abrir una relación comercial: útil por sí mismo aunque el prospecto no compre. Basas cada hallazgo en datos de la investigación, sin inventar cifras. Respondes solo JSON válido en español.';
+    const context = `NUESTROS SERVICIOS:
 ${search?.services?.slice(0, 3000) ?? 'No especificados'}
 
 INVESTIGACIÓN DEL PROSPECTO:
 ${JSON.stringify(research).slice(0, 14000)}
 
 ${prospect.material?.instructions ? `INDICACIONES DEL VENDEDOR: ${prospect.material.instructions}\n` : ''}
-Genera:
+`;
+
+    // Tres llamadas y no una: el material entero no cabe en el tope de salida
+    // de la IA y el JSON llegaba cortado a medias.
+    const { diagnosis = {} } = await this.askJson<{
+      diagnosis?: Record<string, unknown>;
+    }>(
+      keys,
+      system,
+      `${context}Genera:
 {
   "diagnosis": {
     "score": 0-100,
@@ -777,7 +781,21 @@ Genera:
        "findings": ["hallazgo con el dato que lo prueba"],
        "recommendations": ["acción concreta"]}
     ]
-  },
+  }
+}
+Incluye de 5 a 8 áreas en el diagnóstico.`,
+    );
+
+    const basis = `${context}DIAGNÓSTICO YA ELABORADO (sé coherente con él):
+${JSON.stringify(diagnosis).slice(0, 8000)}
+
+`;
+    const [{ plan = {} }, { outreach = {} }] = await Promise.all([
+      this.askJson<{ plan?: Record<string, unknown> }>(
+        keys,
+        system,
+        `${basis}Genera:
+{
   "plan": {
     "vision": "cómo se vería su presencia digital ideal en 6-12 meses",
     "quickWins": ["mejoras de impacto inmediato y bajo costo"],
@@ -785,7 +803,14 @@ Genera:
     "kpis": ["indicadores para medir la mejora"],
     "suggestedServices": [{"service":"uno de nuestros servicios","why":"qué problema suyo resuelve","outcome":"resultado esperado"}],
     "extraIdeas": ["ideas creativas adicionales que no piden, pero les ayudarían"]
-  },
+  }
+}`,
+      ),
+      this.askJson<{ outreach?: Record<string, unknown> }>(
+        keys,
+        system,
+        `${basis}Genera:
+{
   "outreach": {
     "emailSubject": "asunto que invite a abrir, sin clickbait",
     "email": "correo en frío de máx. 150 palabras que aporte valor (un hallazgo del diagnóstico) y proponga enviar el diagnóstico completo o una llamada de 15 min",
@@ -795,8 +820,9 @@ Genera:
     "followUps": ["2 mensajes de seguimiento, espaciados, cada uno aportando algo nuevo"]
   }
 }
-Incluye de 5 a 8 áreas en el diagnóstico. Firma los mensajes como [Tu nombre].`,
-    );
+Firma los mensajes como [Tu nombre].`,
+      ),
+    ]);
 
     await this.prospectModel
       .updateOne(
@@ -806,9 +832,9 @@ Incluye de 5 a 8 áreas en el diagnóstico. Firma los mensajes como [Tu nombre].
             'material.state': 'done',
             'material.generatedAt': new Date(),
             'material.error': null,
-            'material.diagnosis': result.diagnosis ?? {},
-            'material.plan': result.plan ?? {},
-            'material.outreach': result.outreach ?? {},
+            'material.diagnosis': diagnosis,
+            'material.plan': plan,
+            'material.outreach': outreach,
             'material.lockedUntil': null,
           },
         },
