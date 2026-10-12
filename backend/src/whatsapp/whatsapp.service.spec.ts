@@ -6,7 +6,7 @@ import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
  *  Las llamadas a WAHA siguen usando fetch y no se prueban aquí. */
 describe('WhatsAppService (Cloud API)', () => {
   let service: WhatsAppService;
-  let graph: { get: jest.Mock; post: jest.Mock };
+  let graph: { get: jest.Mock; post: jest.Mock; delete: jest.Mock };
 
   const config: WaConfig = {
     provider: 'cloudapi',
@@ -17,7 +17,7 @@ describe('WhatsAppService (Cloud API)', () => {
   };
 
   beforeEach(async () => {
-    graph = { get: jest.fn(), post: jest.fn() };
+    graph = { get: jest.fn(), post: jest.fn(), delete: jest.fn() };
     const moduleRef = await Test.createTestingModule({
       providers: [
         WhatsAppService,
@@ -107,6 +107,73 @@ describe('WhatsAppService (Cloud API)', () => {
       await expect(
         service.sendMessage('51999888777', 'x', config),
       ).rejects.toThrow('CloudAPI 401: token expired');
+    });
+  });
+
+  describe('setContactBlocked', () => {
+    const body = {
+      accessToken: 'tok',
+      json: {
+        messaging_product: 'whatsapp',
+        block_users: [{ user: '51999888777' }],
+      },
+    };
+
+    it('bloquea con POST a /{phoneNumberId}/block_users', async () => {
+      graph.post.mockResolvedValue({ block_users: { added_users: [{}] } });
+      await service.setContactBlocked(config, '+51 999 888 777', true);
+      expect(graph.post).toHaveBeenCalledWith('/phone1/block_users', body);
+    });
+
+    it('desbloquea con DELETE al mismo recurso', async () => {
+      graph.delete.mockResolvedValue({});
+      await service.setContactBlocked(config, '51999888777', false);
+      expect(graph.delete).toHaveBeenCalledWith('/phone1/block_users', body);
+    });
+
+    it('lanza si Meta devuelve el usuario en failed_users', async () => {
+      graph.post.mockResolvedValue({
+        block_users: {
+          failed_users: [{ errors: [{ message: 'Fuera de la ventana' }] }],
+        },
+      });
+      await expect(
+        service.setContactBlocked(config, '51999888777', true),
+      ).rejects.toThrow('Fuera de la ventana');
+    });
+
+    it('traduce el MetaApiError', async () => {
+      graph.post.mockRejectedValue(new MetaApiError('nope', 400, {}));
+      await expect(
+        service.setContactBlocked(config, '51999888777', true),
+      ).rejects.toThrow('Cloud API 400: nope');
+    });
+
+    it('en WAHA llama a /api/contacts/block con el chatId', async () => {
+      const fetchMock = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(new Response('{}', { status: 200 }));
+      await service.setContactBlocked(
+        {
+          provider: 'waha',
+          wahaApiUrl: 'http://waha',
+          wahaApiKey: 'k',
+          wahaSession: 's1',
+        },
+        '51999888777',
+        true,
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://waha/api/contacts/block',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            session: 's1',
+            contactId: '51999888777@c.us',
+          }),
+        }),
+      );
+      fetchMock.mockRestore();
     });
   });
 

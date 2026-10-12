@@ -122,6 +122,12 @@ export interface InboundMessage {
   /** Correo: asunto y cadena de Message-ID previos. */
   subject?: string;
   emailReferences?: string[];
+  /** Tipo tal como lo nombró el proveedor, para diagnosticar lo no soportado. */
+  rawType?: string;
+  /** El canal avisó de un adjunto pero no entregó el archivo. */
+  mediaUnavailable?: boolean;
+  /** Aviso del propio canal (cambio de número...): el agente IA no lo contesta. */
+  noAgent?: boolean;
 }
 
 /** Nombre del canal tal como se muestra en avisos y notificaciones. */
@@ -327,6 +333,8 @@ export class ConversationsService {
       agent?: { agentId: Types.ObjectId; accountIds: Types.ObjectId[] };
       /** Contactos con las etiquetas pedidas (vacío = ninguna coincide). */
       customerIds?: Types.ObjectId[];
+      /** Solo los chats bloqueados. */
+      blocked?: boolean;
     } = {},
   ) {
     const query: QueryFilter<Conversation> = {
@@ -344,6 +352,7 @@ export class ConversationsService {
       query.accountId = new Types.ObjectId(filters.accountId);
     if (filters.status) query.status = filters.status;
     if (filters.unread) query.unreadCount = { $gt: 0 };
+    if (filters.blocked) query.blocked = true;
     if (filters.customerIds) query.customerId = { $in: filters.customerIds };
     const and: QueryFilter<Conversation>[] = [];
     if (filters.agent) {
@@ -467,6 +476,97 @@ export class ConversationsService {
 
     this.gateway.emitConversation(tenantId, conv);
     return { conversation: conv, doNotContact: blocked };
+  }
+
+  /**
+   * Bloquea (o desbloquea) el chat. Bloqueado, sus mensajes se descartan al
+   * llegar, no se le puede escribir y entra en la lista de no contactar. En
+   * WhatsApp se bloquea además en el proveedor; si eso falla, el bloqueo en la
+   * plataforma se mantiene y se devuelve el motivo.
+   *
+   * Desbloquear no lo saca de la lista de no contactar: eso se decide aparte.
+   */
+  async setBlocked(
+    id: string,
+    tenantId: string,
+    userId: string,
+    blocked: boolean,
+    reason?: string,
+  ): Promise<{
+    conversation: Conversation;
+    blocked: boolean;
+    channelBlocked: boolean;
+    channelError?: string;
+    doNotContact?: boolean;
+  }> {
+    const conv = await this.getConversation(id, tenantId);
+
+    let channelBlocked = false;
+    let channelError: string | undefined;
+    if (conv.channel === 'whatsapp') {
+      try {
+        const account = await this.waAccounts.findById(String(conv.accountId));
+        if (!account) throw new Error('La cuenta de WhatsApp ya no existe');
+        await this.wa.setContactBlocked(
+          this.waAccounts.toConfig(account),
+          conv.chatId ?? conv.contact,
+          blocked,
+        );
+        channelBlocked = true;
+      } catch (err) {
+        channelError = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `No se pudo ${blocked ? 'bloquear' : 'desbloquear'} ${conv.contact} en WhatsApp: ${channelError}`,
+        );
+      }
+    }
+
+    let doNotContact: boolean | undefined;
+    if (blocked) {
+      conv.blocked = true;
+      conv.blockedAt = new Date();
+      conv.blockedBy = new Types.ObjectId(userId);
+      conv.blockedReason = reason?.trim() || undefined;
+      conv.blockedOnChannel = channelBlocked;
+      conv.autoReply = false;
+      conv.takenOverAt = new Date();
+      conv.unreadCount = 0;
+
+      const customer = conv.customerId
+        ? await this.leads.findCustomer(String(conv.customerId), tenantId)
+        : null;
+      const contact = {
+        phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
+        email: conv.channel === 'email' ? conv.contact : customer?.email,
+      };
+      if (contact.phone || contact.email) {
+        await this.suppression.add(tenantId, {
+          ...contact,
+          name: customer?.name ?? conv.contactName,
+          reason: conv.blockedReason ?? 'Contacto bloqueado',
+          source: 'inbox',
+          userId,
+          conversationId: String(conv._id),
+        });
+        doNotContact = true;
+      }
+    } else {
+      conv.blocked = false;
+      conv.blockedAt = undefined;
+      conv.blockedBy = undefined;
+      conv.blockedReason = undefined;
+      conv.blockedOnChannel = undefined;
+    }
+    await conv.save();
+
+    this.gateway.emitConversation(tenantId, conv);
+    return {
+      conversation: conv,
+      blocked,
+      channelBlocked,
+      ...(channelError ? { channelError } : {}),
+      ...(doNotContact ? { doNotContact } : {}),
+    };
   }
 
   async getConversation(id: string, tenantId: string): Promise<Conversation> {
@@ -814,6 +914,10 @@ export class ConversationsService {
     opts: { background?: boolean } = {},
   ) {
     const conv = await this.getConversation(id, tenantId);
+    if (conv.blocked)
+      throw new BadRequestException(
+        'Este contacto está bloqueado: desbloquéalo para escribirle.',
+      );
     const type: MessageType = dto.type ?? (dto.mediaUrl ? 'document' : 'text');
     if (type === 'text' && !dto.text?.trim())
       throw new BadRequestException('El mensaje está vacío');
@@ -1338,6 +1442,13 @@ export class ConversationsService {
       accountId,
       inbound,
     );
+    // Contacto bloqueado: no se guarda, no avisa y no despierta al agente.
+    if (conv.blocked) {
+      this.logger.log(
+        `Mensaje de ${inbound.contact} descartado: contacto bloqueado.`,
+      );
+      return;
+    }
 
     // Eco de un mensaje que el negocio envió desde su propio móvil: solo se archiva.
     const isEcho = inbound.fromMe === true;
@@ -1365,6 +1476,10 @@ export class ConversationsService {
       mimeType: media?.contentType ?? inbound.media?.mimeType,
       filename: inbound.media?.filename,
       size: media?.size,
+      // Avisó de un adjunto que no llegó (el canal no lo dio o no se pudo bajar).
+      mediaUnavailable:
+        inbound.mediaUnavailable || (!!inbound.media && !media) || undefined,
+      rawType: inbound.rawType,
       latitude: inbound.latitude,
       longitude: inbound.longitude,
       locationName: inbound.locationName,
@@ -1407,7 +1522,9 @@ export class ConversationsService {
       return;
     }
 
-    if (params.quiet || params.noAgent) return;
+    if (params.quiet || params.noAgent || inbound.noAgent) return;
+    // Lo que no se pudo interpretar no se contesta: el agente respondería a ciegas.
+    if (inbound.type === 'unsupported') return;
     if (channel === 'email' && (await this.agentEmailFlood(conv))) return;
     if (!conv.autoReply || conv.status === 'closed') return;
     // Quien pidió no recibir comunicaciones no recibe respuestas automáticas.

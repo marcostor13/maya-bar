@@ -10,7 +10,7 @@ import {
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
-  CalendarPlus, ListChecks,
+  CalendarPlus, ListChecks, ShieldBan, ShieldCheck,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -71,7 +71,23 @@ interface Msg {
   replyToId?: string;
   /** Solo correo: asunto del mensaje. */
   subject?: string;
+  /** El cliente mandó un adjunto que el canal no entregó o no se pudo bajar. */
+  mediaUnavailable?: boolean;
+  /** Tipo tal como lo nombró el proveedor; explica lo no soportado. */
+  rawType?: string;
 }
+
+/** Por qué no se puede mostrar un mensaje, según el tipo que dio WhatsApp. */
+const UNSUPPORTED_LABEL: Record<string, string> = {
+  ciphertext: 'WhatsApp aún no pudo descifrar este mensaje. Pídele al cliente que lo reenvíe.',
+  unsupported: 'WhatsApp no entrega este tipo de mensaje (encuesta, "ver una vez", mensaje editado…). Pídele al cliente que lo reenvíe.',
+};
+
+/** Nombre del adjunto que no llegó, para el aviso dentro de la burbuja. */
+const MEDIA_LABEL: Partial<Record<MsgType, string>> = {
+  image: 'una foto', video: 'un video', audio: 'un audio', voice: 'una nota de voz',
+  document: 'un documento', sticker: 'un sticker',
+};
 
 /** Cómo se resume un adjunto cuando se cita un mensaje sin texto. */
 /** Prefijo de las burbujas provisionales: aún no tienen id del servidor. */
@@ -133,6 +149,12 @@ interface Conv {
   doNotContact?: boolean;
   /** Correo: asunto del último mensaje del hilo. */
   emailSubject?: string;
+  /** Bloqueado: sus mensajes se descartan y no se le puede escribir. */
+  blocked?: boolean;
+  blockedAt?: string;
+  blockedReason?: string;
+  /** El bloqueo también quedó aplicado en WhatsApp. */
+  blockedOnChannel?: boolean;
 }
 
 /** Cuenta conectada (WhatsApp, Instagram o Messenger) por la que entran las conversaciones. */
@@ -243,7 +265,7 @@ const EMOJIS = [
               }
             </select>
           }
-          <app-inbox-filters [(status)]="filter" [(agentId)]="agentFilter" [(tags)]="tagFilter"
+          <app-inbox-filters [(status)]="filter" [(agentId)]="agentFilter" [(tags)]="tagFilter" [(blocked)]="blockedFilter"
             (serverChange)="onServerFilterChange()" />
         </div>
 
@@ -323,7 +345,12 @@ const EMOJIS = [
                       </span>
                     }
                     @if (c.status === 'closed') { <span class="tag tag-closed">Cerrado</span> }
-                    @if (c.doNotContact) {
+                    @if (c.blocked) {
+                      <span class="tag tag-blocked">
+                        <lucide-icon [img]="ShieldBan" [size]="11" [strokeWidth]="2.6"></lucide-icon>
+                        Bloqueado
+                      </span>
+                    } @else if (c.doNotContact) {
                       <span class="tag tag-blocked">
                         <lucide-icon [img]="BanIcon" [size]="11" [strokeWidth]="2.6"></lucide-icon>
                         No contactar
@@ -412,6 +439,11 @@ const EMOJIS = [
               <button class="btn-icon btn-ghost" (click)="toggleStatus()" [title]="selected()!.status === 'closed' ? 'Reabrir chat' : 'Cerrar chat'" aria-label="Cambiar estado">
                 <lucide-icon [img]="selected()!.status === 'closed' ? RefreshCw : Check" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
+              <button class="btn-icon btn-ghost" [class.danger]="!selected()!.blocked" (click)="toggleBlock()"
+                [title]="selected()!.blocked ? 'Desbloquear contacto' : 'Bloquear contacto'"
+                [attr.aria-label]="selected()!.blocked ? 'Desbloquear contacto' : 'Bloquear contacto'">
+                <lucide-icon [img]="selected()!.blocked ? ShieldCheck : ShieldBan" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+              </button>
               <button class="btn-icon btn-ghost danger" (click)="deleteConversation()" title="Eliminar conversación" aria-label="Eliminar">
                 <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
@@ -490,6 +522,16 @@ const EMOJIS = [
                   <span class="sheet-row-text">{{ selected()!.status === 'closed' ? 'Reabrir conversación' : 'Cerrar conversación' }}</span>
                 </button>
 
+                <button class="sheet-row" [class.danger]="!selected()!.blocked" (click)="threadMenu.set(false); toggleBlock()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="selected()!.blocked ? ShieldCheck : ShieldBan" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    {{ selected()!.blocked ? 'Desbloquear contacto' : 'Bloquear contacto' }}
+                    <small>{{ selected()!.blocked ? 'Vuelve a recibir sus mensajes' : 'Deja de recibir sus mensajes' }}</small>
+                  </span>
+                </button>
+
                 <button class="sheet-row danger" (click)="threadMenu.set(false); deleteConversation()">
                   <span class="sheet-row-icon">
                     <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
@@ -507,7 +549,18 @@ const EMOJIS = [
             </div>
           }
 
-          @if (selected()!.doNotContact) {
+          @if (selected()!.blocked) {
+            <div class="blocked-banner">
+              <lucide-icon [img]="ShieldBan" [size]="15" [strokeWidth]="2.4"></lucide-icon>
+              <span>
+                Contacto bloqueado{{ selected()!.blockedReason ? ' (' + selected()!.blockedReason + ')' : '' }}:
+                sus mensajes nuevos no llegan a la bandeja y no se le puede escribir.
+                @if (selected()!.channel === 'whatsapp' && !selected()!.blockedOnChannel) {
+                  No quedó bloqueado en WhatsApp: puede seguir escribiendo al número.
+                }
+              </span>
+            </div>
+          } @else if (selected()!.doNotContact) {
             <div class="blocked-banner">
               <lucide-icon [img]="BanIcon" [size]="15" [strokeWidth]="2.4"></lucide-icon>
               <span>
@@ -574,6 +627,9 @@ const EMOJIS = [
                       <span class="by-agent"><lucide-icon [img]="Bot" [size]="11" [strokeWidth]="2.4"></lucide-icon> Agente IA</span>
                     }
 
+                    @if (m.mediaUnavailable && !m.mediaUrl) {
+                      <em class="unsupported">{{ mediaUnavailableLabel(m) }}</em>
+                    } @else {
                     @switch (m.type) {
                       @case ('image') {
                         <img class="media-img" [src]="m.mediaUrl" alt="Imagen recibida" loading="lazy" (click)="lightbox.set(m.mediaUrl ?? null)" />
@@ -612,8 +668,9 @@ const EMOJIS = [
                         </a>
                       }
                       @case ('unsupported') {
-                        <em class="unsupported">Mensaje no soportado por el canal</em>
+                        <em class="unsupported">{{ unsupportedLabel(m) }}</em>
                       }
+                    }
                     }
 
                     @if (m.text && m.type !== 'location') {
@@ -653,6 +710,13 @@ const EMOJIS = [
           </div>
 
           <!-- ══ Composer ══ -->
+          @if (selected()!.blocked) {
+          <footer class="composer composer-blocked">
+            <lucide-icon [img]="ShieldBan" [size]="16" [strokeWidth]="2.4"></lucide-icon>
+            <span>No puedes escribir a un contacto bloqueado.</span>
+            <button class="btn btn-sm btn-secondary" (click)="toggleBlock()">Desbloquear</button>
+          </footer>
+          } @else {
           <footer class="composer">
             <app-inbox-actions #qa [conv]="selected()!" [draft]="draft()" [subject]="subject()"
               [attachment]="attachment()" (scheduledDraft)="onScheduledDraft()" />
@@ -775,6 +839,7 @@ const EMOJIS = [
             <input #docInput type="file" hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" (change)="onFile($event)" />
             <input #audioInput type="file" hidden accept="audio/*" (change)="onFile($event)" />
           </footer>
+          }
         }
       </section>
     </div>
@@ -1272,6 +1337,12 @@ const EMOJIS = [
       font-size: 12.5px; line-height: 1.5; color: var(--color-error);
     }
     .blocked-banner lucide-icon { flex-shrink: 0; margin-top: 1px; }
+    .composer-blocked {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; color: var(--color-text-muted);
+    }
+    .composer-blocked span { flex: 1; min-width: 0; }
+    .composer-blocked lucide-icon { flex-shrink: 0; color: var(--color-error); }
     .cls-new { display: flex; gap: 8px; align-items: center; }
     .cls-new .input { flex: 1; min-width: 0; }
     .cls-new .btn { flex-shrink: 0; }
@@ -1857,6 +1928,8 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Target = Target;
   readonly Phone = Phone;
   readonly MoreVertical = MoreVertical;
+  readonly ShieldBan = ShieldBan;
+  readonly ShieldCheck = ShieldCheck;
   readonly Tag = Tag;
   readonly CalendarPlus = CalendarPlus;
   readonly ListChecks = ListChecks;
@@ -1947,6 +2020,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   /** Filtros que resuelve el servidor: agente IA y etiquetas del contacto. */
   agentFilter = signal('');
   tagFilter = signal<string[]>([]);
+  blockedFilter = signal(false);
 
   loadingList = signal(true);
   loadingMessages = signal(false);
@@ -2098,6 +2172,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (q) params.set('q', q);
     if (this.agentFilter()) params.set('agentId', this.agentFilter());
     if (this.tagFilter().length) params.set('tags', this.tagFilter().join(','));
+    if (this.blockedFilter()) params.set('blocked', 'true');
     if (this.accountId()) params.set('accountId', this.accountId());
     // Con una cuenta concreta el canal sobra: el accountId ya lo determina.
     else if (this.box() === 'email') params.set('channel', 'email');
@@ -2564,6 +2639,58 @@ export class InboxComponent implements OnInit, OnDestroy {
         this.toast.success(status === 'closed' ? 'Conversación cerrada' : 'Conversación reabierta');
       },
       error: err => this.toast.error(err.error?.message || 'No se pudo actualizar el estado'),
+    });
+  }
+
+  unsupportedLabel(m: Msg): string {
+    return (m.rawType && UNSUPPORTED_LABEL[m.rawType])
+      || `Mensaje no soportado por el canal${m.rawType ? ` (${m.rawType})` : ''}`;
+  }
+
+  mediaUnavailableLabel(m: Msg): string {
+    return `El cliente envió ${MEDIA_LABEL[m.type] ?? 'un archivo'}, pero no se pudo descargar. Pídele que lo reenvíe.`;
+  }
+
+  /**
+   * Bloquear descarta lo que el contacto escriba, impide escribirle y lo pasa a
+   * no contactar; en WhatsApp lo bloquea también en el canal.
+   */
+  async toggleBlock() {
+    const conv = this.selected();
+    if (!conv) return;
+    const blocked = !conv.blocked;
+    const ok = await this.confirmSvc.confirm(
+      blocked
+        ? {
+            title: 'Bloquear contacto',
+            message: `Dejarás de recibir los mensajes de ${this.displayName(conv)}, no podrás escribirle y saldrá de las campañas.`
+              + (conv.channel === 'whatsapp' ? ' También se bloqueará en WhatsApp.' : ''),
+            confirmText: 'Bloquear',
+            danger: true,
+          }
+        : {
+            title: 'Desbloquear contacto',
+            message: `Volverás a recibir los mensajes de ${this.displayName(conv)}. Sigue en "No contactar" hasta que lo desmarques en Clasificar.`,
+            confirmText: 'Desbloquear',
+          },
+    );
+    if (!ok) return;
+    this.http.patch<{
+      conversation: Conv; blocked: boolean; channelBlocked: boolean;
+      channelError?: string; doNotContact?: boolean;
+    }>(`${API}/conversations/${conv._id}/block`, { blocked }).subscribe({
+      next: res => {
+        this.upsertConv({
+          ...conv, ...res.conversation,
+          doNotContact: res.doNotContact ?? conv.doNotContact,
+        });
+        if (res.channelError)
+          this.toast.error(
+            `${res.blocked ? 'Bloqueado' : 'Desbloqueado'} en la plataforma, pero no en WhatsApp: ${res.channelError}`,
+          );
+        else this.toast.success(res.blocked ? 'Contacto bloqueado' : 'Contacto desbloqueado');
+      },
+      error: err => this.toast.error(err.error?.message || 'No se pudo actualizar el bloqueo'),
     });
   }
 

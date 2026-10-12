@@ -1,5 +1,8 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
+import { getModelToken } from '@nestjs/mongoose';
+import { Types, type Model } from 'mongoose';
+import { Conversation } from '../src/conversations/conversation.schema';
 import {
   bearer,
   createApp,
@@ -298,6 +301,66 @@ describe('CRM (e2e)', () => {
         .delete(`/suppression/${entry._id}`)
         .set(bearer(owner))
         .expect(200);
+    });
+  });
+
+  describe('bloquear contacto en la bandeja', () => {
+    it('bloquea, impide escribir, lo pasa a no contactar y lo desbloquea', async () => {
+      const convs = app.get<Model<Conversation>>(
+        getModelToken(Conversation.name),
+      );
+      const conv = await convs.create({
+        tenantId: new Types.ObjectId(owner.user.tenantId as string),
+        channel: 'instagram',
+        accountId: new Types.ObjectId(),
+        contact: 'ig-bloqueo-1',
+        contactName: 'Spammer',
+      });
+      const id = String(conv._id);
+
+      // Otra empresa no puede bloquearlo.
+      await http()
+        .patch(`/conversations/${id}/block`)
+        .set(bearer(other))
+        .send({ blocked: true })
+        .expect(404);
+
+      const res = await http()
+        .patch(`/conversations/${id}/block`)
+        .set(bearer(owner))
+        .send({ blocked: true, reason: 'Spam' })
+        .expect(200);
+      expect(res.body).toMatchObject({
+        blocked: true,
+        conversation: {
+          blocked: true,
+          blockedReason: 'Spam',
+          autoReply: false,
+        },
+      });
+
+      const list = await http()
+        .get('/conversations?blocked=true')
+        .set(bearer(owner))
+        .expect(200);
+      expect((list.body as Doc[]).map((c) => c._id)).toEqual([id]);
+
+      await http()
+        .post(`/conversations/${id}/messages`)
+        .set(bearer(owner))
+        .send({ text: 'hola' })
+        .expect(400);
+
+      await http()
+        .patch(`/conversations/${id}/block`)
+        .set(bearer(owner))
+        .send({ blocked: false })
+        .expect(200);
+      const after = await http()
+        .get('/conversations?blocked=true')
+        .set(bearer(owner))
+        .expect(200);
+      expect(after.body).toEqual([]);
     });
   });
 

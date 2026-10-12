@@ -45,6 +45,11 @@ export const USER_REFERENCES: UserReference[] = [
     field: 'takenOverBy',
     label: 'Conversaciones atendidas',
   },
+  {
+    collection: 'conversations',
+    field: 'blockedBy',
+    label: 'Contactos bloqueados',
+  },
   { collection: 'messages', field: 'sentBy', label: 'Mensajes enviados' },
   { collection: 'customers', field: 'ownerId', label: 'Contactos a su cargo' },
   {

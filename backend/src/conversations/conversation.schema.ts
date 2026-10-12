@@ -112,6 +112,28 @@ export class Conversation extends Document {
    */
   @Prop({ type: [String], default: [] })
   escalationNotifiedTo: string[];
+
+  // --- Bloqueo ---
+
+  /**
+   * Contacto bloqueado: sus mensajes se descartan al llegar y desde la bandeja
+   * no se le puede escribir. En WhatsApp también se bloquea en el proveedor.
+   */
+  @Prop({ default: false, index: true })
+  blocked: boolean;
+
+  @Prop({ type: Date })
+  blockedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  blockedBy?: Types.ObjectId;
+
+  @Prop()
+  blockedReason?: string;
+
+  /** true si el bloqueo también quedó aplicado en el canal (WhatsApp). */
+  @Prop()
+  blockedOnChannel?: boolean;
 }
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);

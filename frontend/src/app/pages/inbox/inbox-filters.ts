@@ -1,6 +1,6 @@
 import { Component, computed, inject, model, output, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { LucideAngularModule, SlidersHorizontal, X, Bot, Tag, Check } from 'lucide-angular';
+import { LucideAngularModule, SlidersHorizontal, X, Bot, Tag, Check, Ban } from 'lucide-angular';
 import { silentRequest } from '../../shared/loader';
 import { environment } from '../../../environments/environment';
 
@@ -12,7 +12,7 @@ interface AgentOption { _id: string; name: string; published: boolean }
 
 /**
  * Filtros de la bandeja. El estado (no leídos, agente/manual) se aplica en el
- * cliente sobre la lista cargada; el agente IA y las etiquetas van al servidor
+ * cliente sobre la lista cargada; el agente IA, las etiquetas y los bloqueados van al servidor
  * porque cambian qué conversaciones se piden (`serverChange`).
  */
 @Component({
@@ -27,7 +27,7 @@ interface AgentOption { _id: string; name: string; published: boolean }
         }
       </div>
       <button type="button" class="f-more" [class.on]="activeCount() > 0" (click)="openPanel()"
-        aria-label="Más filtros" title="Filtrar por agente IA y etiquetas">
+        aria-label="Más filtros" title="Filtrar por agente IA, etiquetas y bloqueados">
         <lucide-icon [img]="SlidersHorizontal" [size]="15" [strokeWidth]="2.4"></lucide-icon>
         @if (activeCount() > 0) { <span class="f-badge">{{ activeCount() }}</span> }
       </button>
@@ -39,6 +39,13 @@ interface AgentOption { _id: string; name: string; published: boolean }
           <button type="button" class="f-pill" (click)="agentId.set(''); serverChange.emit()" [attr.aria-label]="'Quitar filtro de agente ' + agentName()">
             <lucide-icon [img]="Bot" [size]="12" [strokeWidth]="2.5"></lucide-icon>
             {{ agentName() }}
+            <lucide-icon [img]="X" [size]="12" [strokeWidth]="2.8"></lucide-icon>
+          </button>
+        }
+        @if (blocked()) {
+          <button type="button" class="f-pill" (click)="blocked.set(false); serverChange.emit()" aria-label="Quitar filtro de bloqueados">
+            <lucide-icon [img]="Ban" [size]="12" [strokeWidth]="2.5"></lucide-icon>
+            Bloqueados
             <lucide-icon [img]="X" [size]="12" [strokeWidth]="2.8"></lucide-icon>
           </button>
         }
@@ -88,10 +95,18 @@ interface AgentOption { _id: string; name: string; published: boolean }
               @if (knownTags().length === 0) { <small class="f-none">Aún no hay contactos etiquetados.</small> }
             </div>
             @if (draftTags().length > 1) { <small class="f-none">Se muestran los chats con cualquiera de las etiquetas elegidas.</small> }
+
+            <span class="f-label">Contactos</span>
+            <div class="f-options">
+              <button type="button" class="f-opt" [class.active]="draftBlocked()" (click)="draftBlocked.set(!draftBlocked())">
+                <lucide-icon [img]="Ban" [size]="13" [strokeWidth]="2.4"></lucide-icon>
+                Solo bloqueados
+              </button>
+            </div>
           </div>
 
           <div class="f-actions">
-            <button type="button" class="btn btn-secondary" (click)="draftAgent.set(''); draftTags.set([])">Limpiar</button>
+            <button type="button" class="btn btn-secondary" (click)="draftAgent.set(''); draftTags.set([]); draftBlocked.set(false)">Limpiar</button>
             <button type="button" class="btn btn-primary" (click)="apply()">Aplicar</button>
           </div>
         </div>
@@ -194,6 +209,8 @@ export class InboxFiltersComponent {
   status = model<InboxStatusFilter>('all');
   agentId = model('');
   tags = model<string[]>([]);
+  /** Solo los chats bloqueados. */
+  blocked = model(false);
   /** Cambió un filtro que se resuelve en el servidor: hay que volver a pedir la lista. */
   serverChange = output<void>();
 
@@ -202,6 +219,7 @@ export class InboxFiltersComponent {
   readonly Bot = Bot;
   readonly Tag = Tag;
   readonly Check = Check;
+  readonly Ban = Ban;
 
   readonly statuses: { key: InboxStatusFilter; label: string }[] = [
     { key: 'all', label: 'Todos' },
@@ -215,8 +233,9 @@ export class InboxFiltersComponent {
   panel = signal(false);
   draftAgent = signal('');
   draftTags = signal<string[]>([]);
+  draftBlocked = signal(false);
 
-  activeCount = computed(() => (this.agentId() ? 1 : 0) + this.tags().length);
+  activeCount = computed(() => (this.agentId() ? 1 : 0) + this.tags().length + (this.blocked() ? 1 : 0));
   agentName = computed(() => this.agents().find(a => a._id === this.agentId())?.name ?? 'Agente IA');
 
   constructor() {
@@ -236,6 +255,7 @@ export class InboxFiltersComponent {
   openPanel() {
     this.draftAgent.set(this.agentId());
     this.draftTags.set([...this.tags()]);
+    this.draftBlocked.set(this.blocked());
     // Las etiquetas cambian al clasificar chats: se refrescan al abrir.
     this.loadOptions();
     this.panel.set(true);
@@ -248,6 +268,7 @@ export class InboxFiltersComponent {
   apply() {
     this.agentId.set(this.draftAgent());
     this.tags.set(this.draftTags());
+    this.blocked.set(this.draftBlocked());
     this.panel.set(false);
     this.serverChange.emit();
   }
@@ -260,6 +281,7 @@ export class InboxFiltersComponent {
   clear() {
     this.agentId.set('');
     this.tags.set([]);
+    this.blocked.set(false);
     this.serverChange.emit();
   }
 }

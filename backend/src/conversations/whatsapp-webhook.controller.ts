@@ -141,6 +141,11 @@ export class WhatsAppWebhookController {
         raw,
         value.contacts?.[0]?.profile?.name,
       );
+      if (!inbound) return;
+      if (inbound.type === 'unsupported')
+        this.logger.warn(
+          `[WA] Mensaje ${raw.id ?? '?'} de tipo "${raw.type ?? '?'}" no soportado: ${this.cloudError(raw.errors) ?? 'sin detalle'}`,
+        );
       await this.conversations.handleWhatsAppInbound(account, inbound);
     } catch (err) {
       this.logger.error(
@@ -149,19 +154,26 @@ export class WhatsAppWebhookController {
     }
   }
 
+  /**
+   * Traduce el mensaje de la Cloud API. Devuelve null para lo que no es un
+   * mensaje del cliente (avisos de apertura de chat, mensajes efímeros,
+   * reacciones retiradas) y no debe aparecer en la bandeja.
+   */
   private parseCloudMessage(
     msg: CloudMessage,
     profileName?: string,
-  ): InboundMessage {
+  ): InboundMessage | null {
     const base: InboundMessage = {
       contact: msg.from ?? '',
       chatId: msg.from,
       contactName: profileName,
       externalId: msg.id,
       type: 'unsupported',
+      rawType: msg.type,
       at: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
       referral: this.cloudReferral(msg),
     };
+    if (msg.type && CLOUD_IGNORED_TYPES.has(msg.type)) return null;
 
     switch (msg.type) {
       case 'text':
@@ -235,8 +247,41 @@ export class WhatsAppWebhookController {
             '',
         };
 
+      // Sin emoji es una reacción que el cliente retiró: no hay nada que mostrar.
       case 'reaction':
-        return { ...base, type: 'text', text: msg.reaction?.emoji ?? '' };
+        return msg.reaction?.emoji
+          ? { ...base, type: 'text', text: msg.reaction.emoji }
+          : null;
+
+      case 'order': {
+        const items = (msg.order?.product_items ?? []).map(
+          (i) =>
+            `• ${i.quantity ?? 1} × ${i.product_retailer_id ?? 'producto'}` +
+            (i.item_price != null
+              ? ` (${[i.item_price, i.currency].filter(Boolean).join(' ')})`
+              : ''),
+        );
+        return {
+          ...base,
+          type: 'text',
+          text: [
+            `Pedido del catálogo (${items.length} producto${items.length === 1 ? '' : 's'}):`,
+            ...items,
+            msg.order?.text ?? '',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        };
+      }
+
+      // Aviso del propio WhatsApp, p.ej. "el cliente cambió de número".
+      case 'system':
+        return {
+          ...base,
+          type: 'text',
+          text: `Aviso de WhatsApp: ${msg.system?.body ?? 'cambio en la cuenta del cliente'}`,
+          noAgent: true,
+        };
 
       default:
         return base;
@@ -313,7 +358,11 @@ export class WhatsAppWebhookController {
       }
 
       const inbound = this.parseWahaMessage(p);
-      if (!inbound.contact) return;
+      if (!inbound?.contact) return;
+      if (inbound.type === 'unsupported')
+        this.logger.warn(
+          `[WA] Mensaje ${inbound.externalId ?? '?'} de WAHA de tipo "${inbound.rawType ?? '?'}" no soportado.`,
+        );
       // Los chats de grupo no tienen un destinatario individual al que responder.
       if (inbound.chatId?.includes('@g.us')) return;
       await this.conversations.handleWhatsAppInbound(account, inbound);
@@ -322,7 +371,12 @@ export class WhatsAppWebhookController {
     }
   }
 
-  private parseWahaMessage(p: WahaPayload): InboundMessage {
+  /**
+   * Traduce el mensaje de WAHA. Devuelve null para los avisos internos de
+   * WhatsApp (borrados, cifrado, llamadas, cambios de grupo...), que no son
+   * mensajes del cliente.
+   */
+  private parseWahaMessage(p: WahaPayload): InboundMessage | null {
     // En los ecos (fromMe) el interlocutor es el destinatario, no el remitente.
     const chatId = (p.fromMe ? p.to : p.from) ?? p.from ?? '';
     const contact = chatId
@@ -343,6 +397,22 @@ export class WhatsAppWebhookController {
     };
 
     const rawType = p.type ?? p._data?.type;
+    if (rawType && WAHA_IGNORED_TYPES.has(rawType)) return null;
+    base.rawType = rawType;
+
+    if (rawType === 'poll_creation') {
+      const options = (p._data?.pollOptions ?? [])
+        .map((o) => o.name)
+        .filter(Boolean)
+        .map((n) => `• ${n}`);
+      return {
+        ...base,
+        type: 'text',
+        text: [`Encuesta: ${p._data?.pollName ?? p.body ?? ''}`, ...options]
+          .filter(Boolean)
+          .join('\n'),
+      };
+    }
 
     if (rawType === 'location' || p.location) {
       return {
@@ -364,6 +434,17 @@ export class WhatsAppWebhookController {
         ...base,
         type: 'contact',
         text: (p.vCards ?? []).join('\n') || (p.body ?? ''),
+      };
+    }
+
+    // WAHA avisa del adjunto pero no lo descargó (descarga desactivada, archivo
+    // demasiado grande, "ver una vez"...): se guarda como lo que era, sin archivo.
+    if (p.hasMedia && !p.media?.url) {
+      return {
+        ...base,
+        type: this.wahaMediaType(rawType, mime),
+        text: p.body ?? '',
+        mediaUnavailable: true,
       };
     }
 
@@ -425,6 +506,29 @@ interface CloudMedia {
   voice?: boolean;
 }
 
+/**
+ * Lo que la Cloud API manda por el webhook de mensajes y no es un mensaje del
+ * cliente: aviso de que abrió el chat por primera vez y mensajes efímeros
+ * (desaparecen y Meta no entrega su contenido).
+ */
+const CLOUD_IGNORED_TYPES = new Set(['request_welcome', 'ephemeral']);
+
+/**
+ * Avisos internos de WhatsApp que WAHA reenvía como mensajes: borrados para
+ * todos, notificaciones de cifrado, llamadas, cambios de grupo y mensajes de
+ * protocolo (ediciones, sincronización).
+ */
+const WAHA_IGNORED_TYPES = new Set([
+  'revoked',
+  'e2e_notification',
+  'notification',
+  'notification_template',
+  'call_log',
+  'protocol',
+  'gp2',
+  'broadcast_notification',
+]);
+
 interface CloudMessage {
   from?: string;
   id?: string;
@@ -452,6 +556,18 @@ interface CloudMessage {
     list_reply?: { title?: string };
   };
   reaction?: { emoji?: string; message_id?: string };
+  order?: {
+    text?: string;
+    product_items?: {
+      product_retailer_id?: string;
+      quantity?: number;
+      item_price?: number;
+      currency?: string;
+    }[];
+  };
+  system?: { body?: string; type?: string };
+  /** Detalle de Meta cuando `type` es "unsupported". */
+  errors?: CloudStatusError[];
   /** Anuncio de origen (Click-to-WhatsApp); solo viene en el primer mensaje. */
   referral?: {
     source_url?: string;
@@ -511,6 +627,8 @@ interface WahaPayload {
     lat?: number;
     lng?: number;
     loc?: string;
+    pollName?: string;
+    pollOptions?: { name?: string }[];
   };
 }
 

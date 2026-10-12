@@ -24,6 +24,7 @@ import {
   SetTagsDto,
   SendToPipelineDto,
   DoNotContactDto,
+  BlockContactDto,
   ComposeEmailDto,
   ScheduleMessageDto,
   ConversationTaskDto,
@@ -49,6 +50,7 @@ export class ConversationsController {
     @Query('unread') unread?: string,
     @Query('agentId') agentId?: string,
     @Query('tags') tags?: string,
+    @Query('blocked') blocked?: string,
   ) {
     assertRole(req.user.role, CRM_ROLES);
     const tenantId = req.user.tenantId;
@@ -72,6 +74,7 @@ export class ConversationsController {
       unread: unread === 'true',
       agent,
       customerIds,
+      blocked: blocked === 'true',
     });
   }
 
@@ -269,6 +272,26 @@ export class ConversationsController {
   ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.setDoNotContact(
+      id,
+      req.user.tenantId,
+      req.user.userId,
+      dto.blocked,
+      dto.reason,
+    );
+  }
+
+  /**
+   * Bloquea (o desbloquea) el contacto del chat: sus mensajes se descartan, no
+   * se le puede escribir y, en WhatsApp, queda bloqueado también en el canal.
+   */
+  @Patch(':id/block')
+  block(
+    @Param('id') id: string,
+    @Body() dto: BlockContactDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.setBlocked(
       id,
       req.user.tenantId,
       req.user.userId,

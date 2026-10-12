@@ -32,6 +32,13 @@ export type WaMediaType = 'image' | 'video' | 'audio' | 'document';
  */
 const WAHA_WEBHOOK_EVENTS = ['message', 'message.any', 'message.ack'];
 
+/** Respuesta de /{phoneNumberId}/block_users de la Cloud API. */
+interface CloudBlockResult {
+  block_users?: {
+    failed_users?: { errors?: { message?: string }[] }[];
+  };
+}
+
 /** Respuesta de /{phoneNumberId}/messages de la Cloud API. */
 interface CloudSendResult {
   messages?: { id?: string }[];
@@ -241,6 +248,66 @@ export class WhatsAppService {
         `No se pudo marcar como leído: ${this.errorMessage(err)}`,
       );
     }
+  }
+
+  /**
+   * Bloquea (o desbloquea) al contacto en el propio WhatsApp: deja de poder
+   * escribirle al número del negocio. Lanza si el proveedor lo rechaza.
+   *
+   * Cloud API solo permite bloquear a quien escribió en las últimas 24 h.
+   */
+  async setContactBlocked(
+    config: WaConfig,
+    contact: string,
+    blocked: boolean,
+  ): Promise<void> {
+    if (config.provider === 'waha') {
+      if (!config.wahaApiUrl) throw new Error('WAHA no está configurado');
+      const res = await fetch(
+        `${config.wahaApiUrl}/api/contacts/${blocked ? 'block' : 'unblock'}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': config.wahaApiKey ?? '',
+          },
+          body: JSON.stringify({
+            session: config.wahaSession ?? 'default',
+            contactId: this.wahaChatId(contact),
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(`WAHA ${res.status}: ${await res.text()}`);
+      return;
+    }
+
+    if (config.provider === 'cloudapi') {
+      const path = `/${config.waPhoneNumberId}/block_users`;
+      const opts = {
+        accessToken: config.waAccessToken,
+        json: {
+          messaging_product: 'whatsapp',
+          block_users: [{ user: this.formatPhone(contact) || contact }],
+        },
+      };
+      try {
+        const data = blocked
+          ? await this.graph.post<CloudBlockResult>(path, opts)
+          : await this.graph.delete<CloudBlockResult>(path, opts);
+        const failed = data.block_users?.failed_users?.[0];
+        if (failed)
+          throw new Error(
+            failed.errors?.[0]?.message ?? 'Meta no aplicó el bloqueo',
+          );
+      } catch (err) {
+        if (err instanceof MetaApiError)
+          throw new Error(`Cloud API ${err.status}: ${err.message}`);
+        throw err;
+      }
+      return;
+    }
+
+    throw new Error('Proveedor de WhatsApp no soportado');
   }
 
   /** Indicador "escribiendo…" (solo WAHA lo expone de forma directa). */

@@ -208,6 +208,16 @@ export class DoNotContactDto {
   reason?: string;
 }
 
+export class BlockContactDto {
+  @IsBoolean()
+  blocked: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
+}
+
 /** Mensaje (o correo) que sale solo a la hora indicada. */
 export class ScheduleMessageDto extends SendMessageDto {
   @IsDateString()

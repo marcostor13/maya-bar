@@ -72,6 +72,15 @@ export class Message extends Document {
   @Prop() size?: number;
   @Prop() durationSeconds?: number;
 
+  /** El cliente mandó un adjunto, pero el canal no lo entregó o no se pudo bajar. */
+  @Prop() mediaUnavailable?: boolean;
+
+  /**
+   * Tipo tal como lo nombró el proveedor ("poll_creation", "ciphertext",
+   * "unsupported"...), para saber qué llegó cuando no se pudo interpretar.
+   */
+  @Prop() rawType?: string;
+
   /**
    * Lo que dice el adjunto en texto: transcripción de la nota de voz o del
    * audio, descripción de la imagen o del video, contenido del documento. Se
