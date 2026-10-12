@@ -141,6 +141,69 @@ describe('WhatsAppWebhookController — tipos de mensaje', () => {
       });
     });
 
+    describe('NOWEB / GOWS (sin `type`, mensaje en _data.message)', () => {
+      const noweb = (message: Record<string, unknown>, extra = {}) =>
+        waha({ body: '', _data: { message }, ...extra });
+
+      it('descarta borrados, ediciones, votos y solo metadatos', async () => {
+        await noweb({ protocolMessage: { type: 0 } });
+        await noweb({ editedMessage: { message: {} } });
+        await noweb({ pollUpdateMessage: {} });
+        await noweb({
+          senderKeyDistributionMessage: {},
+          messageContextInfo: {},
+        });
+        expect(conversations.handleWhatsAppInbound).not.toHaveBeenCalled();
+      });
+
+      it('una reacción llega como su emoji y la retirada se descarta', async () => {
+        await noweb({ reactionMessage: { text: '' } });
+        expect(conversations.handleWhatsAppInbound).not.toHaveBeenCalled();
+        await noweb({ reactionMessage: { text: '👍' } });
+        expect(received()).toMatchObject({ type: 'text', text: '👍' });
+      });
+
+      it('una encuesta llega como texto', async () => {
+        await noweb({
+          messageContextInfo: {},
+          pollCreationMessageV3: {
+            name: '¿Hora?',
+            options: [{ optionName: '20:00' }, { optionName: '21:00' }],
+          },
+        });
+        expect(received()).toMatchObject({
+          type: 'text',
+          text: 'Encuesta: ¿Hora?\n• 20:00\n• 21:00',
+        });
+      });
+
+      it('"ver una vez" llega como adjunto sin archivo', async () => {
+        await noweb({
+          viewOnceMessageV2: { message: { videoMessage: {} } },
+        });
+        expect(received()).toMatchObject({
+          type: 'video',
+          mediaUnavailable: true,
+        });
+      });
+
+      it('un texto dentro de un mensaje temporal pasa normal', async () => {
+        await noweb(
+          { ephemeralMessage: { message: { conversation: 'hola' } } },
+          { body: 'hola' },
+        );
+        expect(received()).toMatchObject({ type: 'text', text: 'hola' });
+      });
+
+      it('lo desconocido queda como no soportado con su clave', async () => {
+        await noweb({ eventMessage: { name: 'Fiesta' } });
+        expect(received()).toMatchObject({
+          type: 'unsupported',
+          rawType: 'eventMessage',
+        });
+      });
+    });
+
     it('un texto normal pasa igual que antes', async () => {
       await waha({ type: 'chat', body: 'hola' });
       expect(received()).toMatchObject({ type: 'text', text: 'hola' });

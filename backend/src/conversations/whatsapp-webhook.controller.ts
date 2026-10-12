@@ -361,7 +361,7 @@ export class WhatsAppWebhookController {
       if (!inbound?.contact) return;
       if (inbound.type === 'unsupported')
         this.logger.warn(
-          `[WA] Mensaje ${inbound.externalId ?? '?'} de WAHA de tipo "${inbound.rawType ?? '?'}" no soportado.`,
+          `[WA] Mensaje ${inbound.externalId ?? '?'} de WAHA de tipo "${inbound.rawType ?? '?'}" no soportado. Claves: ${Object.keys(p).join(',')} | _data: ${Object.keys(p._data ?? {}).join(',')}`,
         );
       // Los chats de grupo no tienen un destinatario individual al que responder.
       if (inbound.chatId?.includes('@g.us')) return;
@@ -396,9 +396,36 @@ export class WhatsAppWebhookController {
       at: p.timestamp ? new Date(p.timestamp * 1000) : new Date(),
     };
 
-    const rawType = p.type ?? p._data?.type;
+    // NOWEB y GOWS no mandan `type`: el contenido va en el mensaje de
+    // WhatsApp tal cual (`_data.message`), con una clave por tipo.
+    const proto = this.wahaProto(p);
+    const rawType = p.type ?? p._data?.type ?? proto?.key;
     if (rawType && WAHA_IGNORED_TYPES.has(rawType)) return null;
+    // Solo metadatos (claves de cifrado, contexto): no hay nada que mostrar.
+    if (proto && !proto.key && !p.body && !p.hasMedia) return null;
     base.rawType = rawType;
+
+    if (proto?.key === 'reactionMessage') {
+      const emoji = (proto.value as { text?: string } | undefined)?.text;
+      return emoji ? { ...base, type: 'text', text: emoji } : null;
+    }
+
+    if (proto?.key && /^pollCreationMessage(V\d)?$/.test(proto.key)) {
+      const poll = proto.value as
+        | { name?: string; options?: { optionName?: string }[] }
+        | undefined;
+      return {
+        ...base,
+        type: 'text',
+        text: [
+          `Encuesta: ${poll?.name ?? p.body ?? ''}`,
+          ...(poll?.options ?? [])
+            .map((o) => o.optionName)
+            .filter(Boolean)
+            .map((n) => `• ${n}`),
+        ].join('\n'),
+      };
+    }
 
     if (rawType === 'poll_creation') {
       const options = (p._data?.pollOptions ?? [])
@@ -462,8 +489,44 @@ export class WhatsAppWebhookController {
       };
     }
 
+    // "Ver una vez": WhatsApp no deja descargar el archivo.
+    if (!base.text && proto?.viewOnce) {
+      return {
+        ...base,
+        type: proto.key ? (WAHA_PROTO_MEDIA[proto.key] ?? 'image') : 'image',
+        mediaUnavailable: true,
+      };
+    }
+
     if (!base.text) return { ...base, type: 'unsupported' };
     return base;
+  }
+
+  /**
+   * Mensaje de WhatsApp dentro del payload de NOWEB/GOWS: la primera clave
+   * con contenido, quitando envoltorios (mensajes temporales, "ver una vez",
+   * documento con caption) y metadatos.
+   */
+  private wahaProto(
+    p: WahaPayload,
+  ): { key?: string; value?: unknown; viewOnce: boolean } | undefined {
+    let msg = p._data?.message ?? p._data?.Message;
+    if (!msg || typeof msg !== 'object') return undefined;
+    let viewOnce = false;
+    for (let depth = 0; depth < 4; depth++) {
+      const key = Object.keys(msg).find(
+        (k) => msg?.[k] != null && !WAHA_PROTO_META.has(k),
+      );
+      if (!key) return { viewOnce };
+      const value = msg[key] as { message?: Record<string, unknown> };
+      if (WAHA_PROTO_WRAPPERS.has(key) && value?.message) {
+        if (key.startsWith('viewOnce')) viewOnce = true;
+        msg = value.message;
+        continue;
+      }
+      return { key, value, viewOnce };
+    }
+    return { viewOnce };
   }
 
   private wahaMediaType(rawType?: string, mime?: string): MessageType {
@@ -519,6 +582,7 @@ const CLOUD_IGNORED_TYPES = new Set(['request_welcome', 'ephemeral']);
  * protocolo (ediciones, sincronización).
  */
 const WAHA_IGNORED_TYPES = new Set([
+  // WEBJS
   'revoked',
   'e2e_notification',
   'notification',
@@ -527,7 +591,41 @@ const WAHA_IGNORED_TYPES = new Set([
   'protocol',
   'gp2',
   'broadcast_notification',
+  // NOWEB / GOWS: borrados y ediciones (protocolMessage), votos cifrados,
+  // fijar o conservar mensajes y llamadas.
+  'protocolMessage',
+  'editedMessage',
+  'pollUpdateMessage',
+  'encReactionMessage',
+  'keepInChatMessage',
+  'pinInChatMessage',
+  'callLogMesssage',
+  'callLogMessage',
 ]);
+
+/** Claves del mensaje de NOWEB/GOWS que no son contenido. */
+const WAHA_PROTO_META = new Set([
+  'messageContextInfo',
+  'senderKeyDistributionMessage',
+]);
+
+/** Envoltorios de NOWEB/GOWS: el contenido real va en `.message`. */
+const WAHA_PROTO_WRAPPERS = new Set([
+  'ephemeralMessage',
+  'viewOnceMessage',
+  'viewOnceMessageV2',
+  'viewOnceMessageV2Extension',
+  'documentWithCaptionMessage',
+]);
+
+/** Tipo del adjunto según la clave del mensaje de NOWEB/GOWS. */
+const WAHA_PROTO_MEDIA: Record<string, MessageType> = {
+  imageMessage: 'image',
+  videoMessage: 'video',
+  audioMessage: 'voice',
+  documentMessage: 'document',
+  stickerMessage: 'sticker',
+};
 
 interface CloudMessage {
   from?: string;
@@ -629,6 +727,9 @@ interface WahaPayload {
     loc?: string;
     pollName?: string;
     pollOptions?: { name?: string }[];
+    /** NOWEB / GOWS: el mensaje de WhatsApp tal cual. */
+    message?: Record<string, unknown>;
+    Message?: Record<string, unknown>;
   };
 }
 
