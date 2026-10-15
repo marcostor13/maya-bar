@@ -22,7 +22,12 @@ describe('SettingsService', () => {
   let service: SettingsService;
   let configModel: { findOne: jest.Mock; findOneAndUpdate: jest.Mock };
   let wa: Record<string, jest.Mock>;
-  let accounts: { getDefault: jest.Mock; toConfig: jest.Mock };
+  let accounts: {
+    getDefault: jest.Mock;
+    findOne: jest.Mock;
+    toConfig: jest.Mock;
+  };
+  let templateModel: { find: jest.Mock };
 
   beforeEach(() => {
     configModel = {
@@ -42,12 +47,15 @@ describe('SettingsService', () => {
     };
     accounts = {
       getDefault: jest.fn().mockResolvedValue(null),
+      findOne: jest.fn().mockRejectedValue(new Error('no encontrada')),
       toConfig: jest.fn(),
     };
+    templateModel = { find: jest.fn().mockReturnValue(buildQuery([])) };
     service = new SettingsService(
       configModel as never,
       wa as never,
       accounts as never,
+      templateModel as never,
     );
   });
 
@@ -252,6 +260,66 @@ describe('SettingsService', () => {
         accountConfig(),
         header,
       );
+    });
+
+    it('sale desde la cuenta Cloud API dueña de la plantilla aunque la predeterminada sea WAHA', async () => {
+      const waha = { _id: new Types.ObjectId(), provider: 'waha' };
+      const cloud = {
+        _id: new Types.ObjectId(),
+        provider: 'cloudapi',
+        active: true,
+      };
+      accounts.getDefault.mockResolvedValue(waha);
+      accounts.findOne.mockResolvedValue(cloud);
+      accounts.toConfig.mockImplementation((a: { _id: Types.ObjectId }) =>
+        a === cloud ? accountConfig() : { provider: 'waha' },
+      );
+      templateModel.find.mockReturnValue(
+        buildQuery([{ accountId: cloud._id, language: 'es' }]),
+      );
+
+      await service.sendWhatsAppTemplate(
+        '51999888777',
+        'bienvenida',
+        'es',
+        [],
+        tenantId,
+      );
+
+      expect(accounts.findOne).toHaveBeenCalledWith(
+        String(cloud._id),
+        tenantId,
+      );
+      expect(wa.sendCloudApiTemplate).toHaveBeenCalledWith(
+        '51999888777',
+        'bienvenida',
+        'es',
+        [],
+        accountConfig(),
+        undefined,
+      );
+    });
+
+    it('usa la predeterminada si también tiene la plantilla', async () => {
+      const account = stubDefaultAccount() as Record<string, unknown>;
+      account.provider = 'cloudapi';
+      templateModel.find.mockReturnValue(
+        buildQuery([
+          { accountId: new Types.ObjectId(), language: 'es' },
+          { accountId: account._id, language: 'es' },
+        ]),
+      );
+
+      await service.sendWhatsAppTemplate(
+        '51999888777',
+        'bienvenida',
+        'es',
+        [],
+        tenantId,
+      );
+
+      expect(accounts.findOne).not.toHaveBeenCalled();
+      expect(accounts.toConfig).toHaveBeenCalledWith(account);
     });
   });
 

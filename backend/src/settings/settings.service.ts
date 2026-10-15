@@ -11,6 +11,7 @@ import {
   type TemplateHeader,
 } from '../whatsapp/whatsapp.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
+import { WaTemplate } from '../whatsapp-templates/wa-template.schema';
 
 @Injectable()
 export class SettingsService {
@@ -18,6 +19,7 @@ export class SettingsService {
     @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
     private wa: WhatsAppService,
     private accounts: WhatsAppAccountsService,
+    @InjectModel(WaTemplate.name) private templateModel: Model<WaTemplate>,
   ) {}
 
   async get(tenantId: string): Promise<TenantConfig | null> {
@@ -76,7 +78,11 @@ export class SettingsService {
     tenantId: string,
     header?: TemplateHeader,
   ): Promise<void> {
-    const config = await this.resolveConfig(tenantId);
+    const config = await this.resolveTemplateConfig(
+      tenantId,
+      templateName,
+      templateLang,
+    );
     return this.wa.sendCloudApiTemplate(
       to,
       templateName,
@@ -146,6 +152,38 @@ export class SettingsService {
         error: String(err),
       };
     }
+  }
+
+  /**
+   * Una plantilla vive en el WABA de una cuenta Cloud API concreta y solo se
+   * puede enviar desde esa cuenta. La predeterminada puede ser de WAHA (sin
+   * phone_number_id) o de otro número (Meta responde "template not found"),
+   * así que se usa la predeterminada solo si es la dueña de la plantilla.
+   */
+  private async resolveTemplateConfig(
+    tenantId: string,
+    templateName: string,
+    templateLang: string,
+  ): Promise<WaConfig> {
+    const owners = await this.templateModel
+      .find({ tenantId: new Types.ObjectId(tenantId), name: templateName })
+      .exec();
+    if (owners.length > 0) {
+      const def = await this.accounts.getDefault(tenantId);
+      if (
+        def?.provider === 'cloudapi' &&
+        owners.some((t) => String(t.accountId) === String(def._id))
+      )
+        return this.accounts.toConfig(def);
+      const owner =
+        owners.find((t) => t.language === templateLang) ?? owners[0];
+      const account = await this.accounts
+        .findOne(String(owner.accountId), tenantId)
+        .catch(() => null);
+      if (account?.active && account.provider === 'cloudapi')
+        return this.accounts.toConfig(account);
+    }
+    return this.resolveConfig(tenantId);
   }
 
   private async resolveConfig(tenantId: string): Promise<WaConfig> {
