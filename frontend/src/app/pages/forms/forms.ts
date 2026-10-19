@@ -627,7 +627,7 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
     .stat-value { font-size:28px; font-weight:800; color:var(--color-text-main); letter-spacing:-1px; font-family:var(--font-heading); }
     .stat-label { font-size:13px; color:var(--color-text-muted); font-weight:500; }
 
-    .table-wrap { background:#fff; border:1px solid var(--color-border); border-radius:16px; overflow:hidden; }
+    .table-wrap { background:#fff; border:1px solid var(--color-border); border-radius:16px; overflow-x:auto; }
     .table-wrap table { width:100%; border-collapse:collapse; }
     .table-wrap th { padding:13px 16px; text-align:left; font-size:12px; font-weight:700; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.05em; background:var(--color-bg-app); border-bottom:1px solid var(--color-border); }
     .table-wrap td { padding:14px 16px; border-bottom:1px solid var(--color-border); font-size:14px; vertical-align:middle; }

@@ -415,16 +415,16 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                     [indeterminate]="someSelected() && !allSelected()"
                     (change)="toggleAll()" />
                 </th>
-                <th>Contacto</th>
+                <th class="th-contact">Contacto</th>
                 @for (col of visibleColumns(); track col.key) {
                   <th>{{ col.label }}</th>
                 }
-                <th></th>
+                <th class="th-actions"></th>
               </tr>
               @if (filtersOpen()) {
                 <tr class="filter-row">
                   <th class="th-check"></th>
-                  <th>
+                  <th class="th-contact">
                     <input class="input input-sm" placeholder="Filtrar…"
                       [value]="columnFilters()['contact'] || ''"
                       (input)="setColumnFilter('contact', $any($event.target).value)" />
@@ -436,7 +436,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                         (input)="setColumnFilter(col.key, $any($event.target).value)" />
                     </th>
                   }
-                  <th></th>
+                  <th class="th-actions"></th>
                 </tr>
               }
             </thead>
@@ -993,7 +993,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
     .bulk-actions { display: flex; gap: 8px; }
 
     /* ── Table ── */
-    .table-wrap { background:#fff; border:1px solid var(--color-border); border-radius:16px; overflow:hidden; }
+    .table-wrap { background:#fff; border:1px solid var(--color-border); border-radius:16px; overflow-x:auto; }
     .table-wrap table { width:100%; border-collapse:collapse; }
     .table-wrap th { padding:13px 16px; text-align:left; font-size:12px; font-weight:700; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.05em; background:var(--color-bg-app); border-bottom:1px solid var(--color-border); }
     .table-wrap td { padding:14px 16px; border-bottom:1px solid var(--color-border); font-size:14px; vertical-align:middle; }
@@ -1022,6 +1022,24 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
     .row-actions { display:flex; gap:4px; }
     .btn.danger { color:var(--color-error); }
     .btn.danger:hover { background:#FEF2F2; }
+
+    /* Desktop: con muchas columnas la tabla se desplaza de lado; la casilla y
+       el contacto quedan fijos a la izquierda y las acciones a la derecha,
+       para saber siempre de quién es la fila y poder actuar sin desplazarse. */
+    @media (min-width: 769px) {
+      .th-check, .td-check { box-sizing:border-box; width:48px; min-width:48px; }
+      .th-check, .td-check, .table-wrap th.th-contact, .table-wrap td.contact-td,
+      .table-wrap th.th-actions, .table-wrap td.td-actions { position:sticky; z-index:1; }
+      .table-wrap td.td-check, .table-wrap td.contact-td, .table-wrap td.td-actions { background:var(--color-white); }
+      .th-check, .td-check { left:0; }
+      .table-wrap th.th-contact, .table-wrap td.contact-td { left:48px; min-width:220px; box-shadow:inset -1px 0 0 var(--color-border); }
+      .table-wrap th.th-actions, .table-wrap td.td-actions { right:0; box-shadow:inset 1px 0 0 var(--color-border); }
+      .table-wrap tr:hover td.td-check, .table-wrap tr:hover td.contact-td, .table-wrap tr:hover td.td-actions { background:var(--color-bg-app); }
+      .table-wrap tr.row-selected td.td-check, .table-wrap tr.row-selected td.contact-td,
+      .table-wrap tr.row-selected td.td-actions { background:var(--color-brand-light); }
+      .contact-name, .contact-email { white-space:nowrap; }
+      .row-actions { flex-wrap:nowrap; }
+    }
 
     .table-footer { padding:12px 20px; font-size:13px; color:var(--color-text-muted); background:var(--color-bg-app); border:1px solid var(--color-border); border-top:none; border-radius:0 0 16px 16px; }
 

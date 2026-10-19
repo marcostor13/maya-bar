@@ -189,7 +189,7 @@ const SOURCE_LABELS: Record<string, string> = {
     .empty-state p { margin: 0; font-size: 15px; font-weight: 600; color: var(--color-text-main); }
     .empty-state span { font-size: 13.5px; max-width: 420px; line-height: 1.55; }
 
-    .table-wrap { padding: 0; overflow: hidden; }
+    .table-wrap { padding: 0; overflow-x: auto; }
     .table-wrap:hover { transform: none; box-shadow: var(--shadow-sm); }
     table { width: 100%; border-collapse: collapse; }
     th {

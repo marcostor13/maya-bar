@@ -389,11 +389,42 @@ body {
   }
 }
 
-/* Generic horizontal-scroll wrapper for tables on narrow screens */
-.table-wrap {
+/* Contenedor de tablas: en pantallas estrechas (portátiles, ventanas
+   reducidas, tablets) la tabla se desplaza de lado dentro de su tarjeta en
+   lugar de recortarse. Las páginas que redefinen `.table-wrap` NO deben usar
+   `overflow: hidden`: bloquea el scroll horizontal. */
+.table-wrap,
+.table-card {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.table-wrap::-webkit-scrollbar,
+.table-card::-webkit-scrollbar { height: 8px; }
+.table-wrap::-webkit-scrollbar-thumb,
+.table-card::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-pill);
+}
+.table-wrap::-webkit-scrollbar-track,
+.table-card::-webkit-scrollbar-track { background: transparent; }
+
+/* Las cabeceras no se parten en dos líneas: la tabla gana ancho y se desplaza. */
+.table-wrap th,
+.table-card th { white-space: nowrap; }
+
+/* Una tarjeta que contiene una tabla no "salta" al pasar el ratón: mover
+   todo el bloque mientras se lee o se desplaza una fila marea. */
+.table-wrap.card:hover,
+.table-card.card:hover,
+.card.table-card:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
 }
 
 /* --------------------------------------------------------------------------

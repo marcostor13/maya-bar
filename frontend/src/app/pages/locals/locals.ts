@@ -152,7 +152,7 @@ const API = environment.apiUrl;
     @keyframes shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
 
     /* ── Table ── */
-    .locals-table { padding: 0; overflow: hidden; }
+    .locals-table { padding: 0; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
     th {
       text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600;
