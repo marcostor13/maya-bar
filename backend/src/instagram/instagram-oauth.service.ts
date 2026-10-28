@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
@@ -28,6 +28,8 @@ const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
 @Injectable()
 export class InstagramOAuthService {
+  private readonly logger = new Logger(InstagramOAuthService.name);
+
   constructor(
     private config: ConfigService,
     private graph: MetaGraphClient,
@@ -214,7 +216,8 @@ export class InstagramOAuthService {
         userId: data.user_id != null ? String(data.user_id) : undefined,
         username: data.username,
       };
-    } catch {
+    } catch (err) {
+      this.logger.warn(`IG /me falló: ${String(err)}`);
       return {};
     }
   }

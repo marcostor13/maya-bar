@@ -52,12 +52,19 @@ export class InstagramOAuthCallbackController {
         reason: 'Estado inválido o expirado, intenta de nuevo',
       });
 
+    let step = 'canje del código';
     try {
       const short = await this.oauth.exchangeCodeForToken(code);
+      this.logger.log(
+        `IG OAuth: código canjeado (user_id=${short.userId}, token ${short.accessToken.slice(0, 4)}…)`,
+      );
+      step = 'token de larga duración';
       let long: { accessToken: string; expiresIn: number };
       try {
         long = await this.oauth.exchangeForLongLivedToken(short.accessToken);
       } catch (err) {
+        this.logger.warn(`IG OAuth: canje a token largo falló: ${String(err)}`);
+        step = 'verificación del token corto (/me)';
         // Algunas cuentas rechazan el canje ("Unsupported request"). Si el token
         // del código funciona contra /me, se conecta con él (vence en ~1 h y se
         // puede renovar desde Ajustes) en vez de abortar la conexión.
@@ -84,11 +91,18 @@ export class InstagramOAuthCallbackController {
         );
       return redirect({ ig_oauth: 'success' });
     } catch (err) {
-      this.logger.error(`Instagram OAuth callback error: ${String(err)}`);
+      this.logger.error(
+        `Instagram OAuth callback error en ${step}: ${String(err)}`,
+      );
       const detail = err instanceof Error ? err.message : '';
+      // Meta da un token pero rechaza toda consulta cuando la cuenta es personal:
+      // la API con Instagram Login solo admite cuentas profesionales.
+      const hint = /unsupported request/i.test(detail)
+        ? '. Verifica que la cuenta de Instagram sea profesional (Empresa o Creador) y que hayas aceptado todos los permisos'
+        : '';
       return redirect({
         ig_oauth: 'error',
-        reason: `No se pudo completar la conexión con Instagram${detail ? `: ${detail}` : ''}`,
+        reason: `No se pudo completar la conexión con Instagram${detail ? `: ${detail}` : ''}${hint}`,
       });
     }
   }
