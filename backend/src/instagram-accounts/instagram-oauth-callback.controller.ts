@@ -54,9 +54,20 @@ export class InstagramOAuthCallbackController {
 
     try {
       const short = await this.oauth.exchangeCodeForToken(code);
-      const long = await this.oauth.exchangeForLongLivedToken(
-        short.accessToken,
-      );
+      let long: { accessToken: string; expiresIn: number };
+      try {
+        long = await this.oauth.exchangeForLongLivedToken(short.accessToken);
+      } catch (err) {
+        // Algunas cuentas rechazan el canje ("Unsupported request"). Si el token
+        // del código funciona contra /me, se conecta con él (vence en ~1 h y se
+        // puede renovar desde Ajustes) en vez de abortar la conexión.
+        const check = await this.oauth.fetchProfile(short.accessToken);
+        if (!check.userId) throw err;
+        this.logger.warn(
+          `Canje a token largo falló (${String(err)}); se usa el token corto`,
+        );
+        long = { accessToken: short.accessToken, expiresIn: 3600 };
+      }
       const profile = await this.oauth.fetchProfile(long.accessToken);
       const account = await this.accounts.upsertFromOAuth(decoded.tenantId, {
         userId: profile.userId || short.userId,
@@ -74,9 +85,10 @@ export class InstagramOAuthCallbackController {
       return redirect({ ig_oauth: 'success' });
     } catch (err) {
       this.logger.error(`Instagram OAuth callback error: ${String(err)}`);
+      const detail = err instanceof Error ? err.message : '';
       return redirect({
         ig_oauth: 'error',
-        reason: 'No se pudo completar la conexión con Instagram',
+        reason: `No se pudo completar la conexión con Instagram${detail ? `: ${detail}` : ''}`,
       });
     }
   }

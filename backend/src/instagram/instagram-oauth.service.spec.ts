@@ -102,6 +102,18 @@ describe('InstagramOAuthService', () => {
       expect(res).toEqual({ accessToken: 'long1', expiresIn: 5184000 });
     });
 
+    it('reintenta con la ruta versionada si Meta rechaza la sin versión', async () => {
+      graph.get
+        .mockRejectedValueOnce(
+          new MetaApiError('Unsupported request - method type: get', 400),
+        )
+        .mockResolvedValueOnce({ access_token: 'long3', expires_in: 10 });
+      const res = await service.exchangeForLongLivedToken('short1');
+      expect(res).toEqual({ accessToken: 'long3', expiresIn: 10 });
+      expect(graph.get.mock.calls[0][1].unversioned).toBe(true);
+      expect(graph.get.mock.calls[1][1].unversioned).toBe(false);
+    });
+
     it('refresca el token vigente', async () => {
       graph.get.mockResolvedValue({ access_token: 'long2', expires_in: 1000 });
       const res = await service.refreshLongLivedToken('long1');

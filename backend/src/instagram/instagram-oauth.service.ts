@@ -139,19 +139,24 @@ export class InstagramOAuthService {
   async exchangeForLongLivedToken(
     shortLivedToken: string,
   ): Promise<IgLongLivedToken> {
-    const data = await this.request<{
-      access_token?: string;
-      expires_in?: number;
-    }>('No se pudo generar el token de larga duración', () =>
-      this.graph.get('/access_token', {
-        host: IG_GRAPH_HOST,
-        unversioned: true,
-        params: {
-          grant_type: 'ig_exchange_token',
-          client_secret: this.appSecret(),
-          access_token: shortLivedToken,
+    const call = (unversioned: boolean) =>
+      this.graph.get<{ access_token?: string; expires_in?: number }>(
+        '/access_token',
+        {
+          host: IG_GRAPH_HOST,
+          unversioned,
+          params: {
+            grant_type: 'ig_exchange_token',
+            client_secret: this.appSecret(),
+            access_token: shortLivedToken,
+          },
         },
-      }),
+      );
+    // Meta responde a veces "Unsupported request - method type: get" en la ruta
+    // sin versión para ciertas cuentas; se reintenta con la ruta versionada.
+    const data = await this.request(
+      'No se pudo generar el token de larga duración',
+      () => call(true).catch(() => call(false)),
     );
     if (!data.access_token) {
       throw new BadRequestException(
