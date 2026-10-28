@@ -113,9 +113,11 @@ export class InstagramOAuthService {
 
   /** Canjea el `code` del callback por un access token de corta duración. */
   async exchangeCodeForToken(code: string): Promise<IgShortLivedToken> {
-    const data = await this.request<{
+    const raw = await this.request<{
       access_token?: string;
       user_id?: string;
+      permissions?: string | string[];
+      data?: { access_token?: string; user_id?: string; permissions?: string }[];
     }>('No se pudo canjear el código de autorización', () =>
       this.graph.post('/oauth/access_token', {
         host: IG_API_HOST,
@@ -128,6 +130,11 @@ export class InstagramOAuthService {
           code,
         },
       }),
+    );
+    // La doc de Meta muestra la respuesta envuelta en `data: [...]`; en la práctica llega plana.
+    const data = raw.data?.[0] ?? raw;
+    this.logger.log(
+      `IG OAuth: permisos concedidos = ${JSON.stringify(data.permissions ?? null)}`,
     );
     if (!data.access_token || !data.user_id) {
       throw new BadRequestException(
@@ -217,7 +224,9 @@ export class InstagramOAuthService {
         username: data.username,
       };
     } catch (err) {
-      this.logger.warn(`IG /me falló: ${String(err)}`);
+      this.logger.warn(
+        `IG /me falló: ${String(err)} ${JSON.stringify(err instanceof MetaApiError ? err.body : null)}`,
+      );
       return {};
     }
   }
