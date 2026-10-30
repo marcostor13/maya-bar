@@ -102,6 +102,9 @@ export class InstagramOAuthService {
 
   buildAuthorizeUrl(state: string): string {
     const params = new URLSearchParams({
+      // Obliga a elegir/iniciar sesión en la cuenta: sin esto Instagram usa la
+      // sesión abierta del navegador, que puede ser otra cuenta sin acceso.
+      force_reauth: 'true',
       client_id: this.appId(),
       redirect_uri: this.redirectUri(),
       response_type: 'code',
