@@ -112,3 +112,47 @@ describe('ToastComponent', () => {
     expect(el().querySelectorAll('.toast')).toHaveLength(0);
   });
 });
+
+describe('ToastService: mensajes y apilado', () => {
+  let service: ToastService;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    service = TestBed.inject(ToastService);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('une la lista de errores de validación del backend', () => {
+    service.error(['email must be an email', 'name should not be empty', 'email must be an email']);
+    expect(service.toasts()[0].message).toBe('email must be an email. name should not be empty');
+  });
+
+  it('un error sin texto útil muestra un mensaje genérico', () => {
+    service.error(undefined);
+    service.error('<html>502 Bad Gateway</html>');
+    service.error('Http failure response for /api/x: 0 Unknown Error');
+    expect(new Set(service.toasts().map((t) => t.message))).toEqual(new Set(['Ocurrió un error. Inténtalo de nuevo.']));
+  });
+
+  it('el mismo aviso repetido no se apila y reinicia su tiempo', () => {
+    const a = service.error('No se pudo enviar');
+    vi.advanceTimersByTime(4000);
+    const b = service.error('No se pudo enviar');
+    expect(b).toBe(a);
+    expect(service.toasts()).toHaveLength(1);
+    vi.advanceTimersByTime(4999);
+    expect(service.closing().has(a)).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(service.closing().has(a)).toBe(true);
+  });
+
+  it('a la vista quedan como mucho tres; sale el más antiguo', () => {
+    const first = service.info('1');
+    service.info('2');
+    service.info('3');
+    service.info('4');
+    expect(service.closing().has(first)).toBe(true);
+    vi.advanceTimersByTime(350);
+    expect(service.toasts().map((t) => t.message)).toEqual(['2', '3', '4']);
+  });
+});
