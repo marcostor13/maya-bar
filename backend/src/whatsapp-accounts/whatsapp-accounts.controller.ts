@@ -38,11 +38,18 @@ export class WhatsAppAccountsController {
 
   @Post('oauth/connect')
   oauthConnect(
-    @Body() dto: { code: string; wabaId: string; phoneNumberId: string },
+    @Body()
+    dto: {
+      code: string;
+      wabaId: string;
+      phoneNumberId?: string;
+      coexistence?: boolean;
+    },
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    if (!dto.code || !dto.wabaId || !dto.phoneNumberId)
+    // En coexistencia Meta puede no mandar phone_number_id: se busca en la WABA.
+    if (!dto.code || !dto.wabaId || (!dto.phoneNumberId && !dto.coexistence))
       throw new BadRequestException('Faltan datos del Embedded Signup');
     return this.service.connectViaOAuth(req.user.tenantId, dto);
   }

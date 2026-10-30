@@ -34,6 +34,11 @@ declare const FB: any;
           <lucide-icon [img]="Smartphone" [size]="16"></lucide-icon>
           {{ connectingWa() ? 'Conectando…' : 'Conectar con WhatsApp' }}
         </button>
+        <button class="btn btn-secondary" style="margin: 0 0 20px 8px" [disabled]="connectingWa()" (click)="connectWhatsApp(true)"
+          title="El número sigue funcionando en la app WhatsApp Business del celular y además en Maya">
+          <lucide-icon [img]="Smartphone" [size]="16"></lucide-icon>
+          Conectar número de la app WhatsApp Business
+        </button>
         @if (qrAvailable()) {
           <button class="btn btn-secondary" style="margin: 0 0 20px 8px" [disabled]="connectingQr()" (click)="connectWithQr()">
             <lucide-icon [img]="QrCode" [size]="16"></lucide-icon>
@@ -372,7 +377,8 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   statusMap = signal<Record<string, WaStatus>>({});
 
   private fbSdkPromise: Promise<void> | null = null;
-  private waSignupData: { wabaId: string; phoneNumberId: string } | null = null;
+  private waSignupData: { wabaId: string; phoneNumberId?: string } | null = null;
+  private waCoexistence = false;
   private waMessageListener = (event: MessageEvent) => {
     if (!event.origin.endsWith('facebook.com')) return;
     try {
@@ -387,6 +393,11 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
         } else {
           console.warn('WA_EMBEDDED_SIGNUP FINISH sin waba_id/phone_number_id:', data);
         }
+      } else if (data.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') {
+        // Coexistencia: Meta solo garantiza waba_id; el número lo resuelve el backend.
+        const wabaId = data.data?.waba_id;
+        if (wabaId) this.waSignupData = { wabaId, phoneNumberId: data.data?.phone_number_id };
+        else console.warn('WA_EMBEDDED_SIGNUP coexistencia sin waba_id:', data);
       } else {
         console.warn('WA_EMBEDDED_SIGNUP evento no manejado:', data);
       }
@@ -649,9 +660,11 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
     return this.fbSdkPromise;
   }
 
-  connectWhatsApp() {
+  /** `coexistence`: el número ya está en la app WhatsApp Business y seguirá ahí. */
+  connectWhatsApp(coexistence = false) {
     this.connectingWa.set(true);
     this.waSignupData = null;
+    this.waCoexistence = coexistence;
     this.api.getWaOauthConfig().subscribe({
       next: async (cfg) => {
         if (!cfg.appId || !cfg.configId) {
@@ -670,6 +683,9 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
           config_id: cfg.configId,
           response_type: 'code',
           override_default_response_type: true,
+          ...(coexistence
+            ? { extras: { setup: {}, featureType: 'whatsapp_business_app_onboarding' } }
+            : {}),
         });
       },
       error: (err: { error?: { message?: string } }) => {
@@ -692,6 +708,7 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
     }
     this.api.connectWaOauth({
       code, wabaId: this.waSignupData.wabaId, phoneNumberId: this.waSignupData.phoneNumberId,
+      ...(this.waCoexistence ? { coexistence: true } : {}),
     }).subscribe({
       next: () => {
         this.toast.success('Cuenta de WhatsApp conectada');

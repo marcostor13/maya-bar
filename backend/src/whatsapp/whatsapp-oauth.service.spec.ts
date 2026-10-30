@@ -114,6 +114,24 @@ describe('WhatsAppOAuthService', () => {
     });
   });
 
+  describe('findPhoneNumberId (coexistencia)', () => {
+    it('prefiere el número que sigue en la app WhatsApp Business', async () => {
+      graph.get.mockResolvedValue({
+        data: [{ id: 'pn-1' }, { id: 'pn-2', is_on_biz_app: true }],
+      });
+      expect(await service.findPhoneNumberId('waba-1', 'tok')).toBe('pn-2');
+      expect(graph.get).toHaveBeenCalledWith(
+        '/waba-1/phone_numbers',
+        expect.objectContaining({ accessToken: 'tok' }),
+      );
+    });
+
+    it('devuelve undefined si la WABA no tiene números', async () => {
+      graph.get.mockResolvedValue({ data: [] });
+      expect(await service.findPhoneNumberId('waba-1', 'tok')).toBeUndefined();
+    });
+  });
+
   describe('fetchPhoneNumberInfo', () => {
     it('devuelve nombre y número verificados', async () => {
       graph.get.mockResolvedValue({

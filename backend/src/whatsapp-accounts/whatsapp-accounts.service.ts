@@ -294,13 +294,29 @@ export class WhatsAppAccountsService {
   /** Crea o actualiza la cuenta Cloud API conectada vía Embedded Signup (self-service, sin pegar tokens a mano). */
   async connectViaOAuth(
     tenantId: string,
-    data: { code: string; wabaId: string; phoneNumberId: string },
+    input: {
+      code: string;
+      wabaId: string;
+      phoneNumberId?: string;
+      coexistence?: boolean;
+    },
   ) {
-    const short = await this.oauth.exchangeCodeForToken(data.code);
+    const short = await this.oauth.exchangeCodeForToken(input.code);
     const long = await this.oauth.exchangeForLongLivedToken(short.accessToken);
-    await this.oauth.registerPhoneNumber(data.phoneNumberId, long.accessToken);
+    const phoneNumberId =
+      input.phoneNumberId ||
+      (await this.oauth.findPhoneNumberId(input.wabaId, long.accessToken));
+    if (!phoneNumberId)
+      throw new BadRequestException(
+        'La cuenta de WhatsApp no tiene ningún número',
+      );
+    const data = { ...input, phoneNumberId };
+    // En coexistencia el número ya quedó registrado al vincular la app
+    // WhatsApp Business: Meta pide no volver a llamar a /register.
+    if (!input.coexistence)
+      await this.oauth.registerPhoneNumber(phoneNumberId, long.accessToken);
     const info = await this.oauth.fetchPhoneNumberInfo(
-      data.phoneNumberId,
+      phoneNumberId,
       long.accessToken,
     );
 

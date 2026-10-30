@@ -114,6 +114,27 @@ export class WhatsAppOAuthService {
     }
   }
 
+  /**
+   * En coexistencia (número que sigue en la app WhatsApp Business) Meta puede
+   * cerrar el Embedded Signup sin `phone_number_id`: se toma de la WABA,
+   * prefiriendo el número que está en la app.
+   */
+  async findPhoneNumberId(
+    wabaId: string,
+    accessToken: string,
+  ): Promise<string | undefined> {
+    const data = await this.request<{
+      data?: { id: string; is_on_biz_app?: boolean }[];
+    }>('No se pudieron leer los números de la cuenta de WhatsApp', () =>
+      this.graph.get(`/${wabaId}/phone_numbers`, {
+        accessToken,
+        params: { fields: 'id,is_on_biz_app' },
+      }),
+    );
+    const list = data.data ?? [];
+    return (list.find((p) => p.is_on_biz_app) ?? list[0])?.id;
+  }
+
   async fetchPhoneNumberInfo(
     phoneNumberId: string,
     accessToken: string,

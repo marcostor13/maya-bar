@@ -62,7 +62,10 @@ export interface WaOauthConfig {
 export interface WaOauthConnectPayload {
   code: string;
   wabaId: string;
-  phoneNumberId: string;
+  /** Puede faltar en coexistencia: el backend lo busca en la WABA. */
+  phoneNumberId?: string;
+  /** El número sigue en la app WhatsApp Business (no se re-registra). */
+  coexistence?: boolean;
 }
 
 // ── Instagram ─────────────────────────────────────────────────────────────
