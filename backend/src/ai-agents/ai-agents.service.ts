@@ -27,7 +27,9 @@ import type { AiProviderId } from '../ai/providers/ai-provider.interface';
 import { TenantConfig } from '../settings/tenant-config.schema';
 import { WaMediaType } from '../whatsapp/whatsapp.service';
 
-const HISTORY_LIMIT = 10;
+// Igual que AI_HISTORY_LIMIT de la bandeja: si el chat pasó por manual, el
+// agente tiene que ver lo que escribió la persona antes de retomar.
+const HISTORY_LIMIT = 20;
 const SEND_FILE_TOKEN = /\{\{SEND_FILE:([a-zA-Z0-9_-]+)\}\}/g;
 /** {{HANDOFF}} o {{HANDOFF:motivo breve}} — deriva el chat a una persona. */
 const HANDOFF_TOKEN = /\{\{HANDOFF(?::([^}]*))?\}\}/g;

@@ -1950,7 +1950,13 @@ export class ConversationsService {
     return `${head}\n${label}: ${msg.transcript}`;
   }
 
-  /** Historial reciente en el formato que espera el agente (excluye el mensaje actual). */
+  /**
+   * Historial reciente en el formato que espera el agente (excluye el mensaje
+   * actual). Incluye lo que escribió una persona en modo manual —desde la
+   * bandeja o desde el móvil— para que el agente retome con ese contexto. Las
+   * notas internas del sistema no se envían: no las vio el cliente y ocuparían
+   * el hueco de mensajes reales.
+   */
   private async buildAiHistory(
     conv: Conversation,
     current: Message,
@@ -1959,6 +1965,7 @@ export class ConversationsService {
       .find({
         conversationId: conv._id,
         _id: { $ne: current._id },
+        author: { $ne: 'system' },
         status: { $ne: 'failed' },
       })
       .sort({ at: -1 })

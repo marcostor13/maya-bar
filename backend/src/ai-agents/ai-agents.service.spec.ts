@@ -203,16 +203,16 @@ describe('AiAgentsService', () => {
       );
     });
 
-    it('limits history to the last 10 turns', async () => {
-      const history = Array.from({ length: 15 }, (_, i) => ({
+    it('limits history to the last 20 turns', async () => {
+      const history = Array.from({ length: 25 }, (_, i) => ({
         role: 'user' as const,
         content: `msg ${i}`,
       }));
       await service.generateAnswer(makeAgent(), 'hola', history);
 
       const messages = mockAi.chatMessages.mock.calls[0][0];
-      // 1 system + 10 history + 1 user actual
-      expect(messages).toHaveLength(12);
+      // 1 system + 20 history + 1 user actual
+      expect(messages).toHaveLength(22);
       expect(messages[1].content).toBe('msg 5');
     });
 

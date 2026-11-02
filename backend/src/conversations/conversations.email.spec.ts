@@ -70,7 +70,8 @@ function setup(
           .filter(
             (m) =>
               String(m.conversationId) === String(f.conversationId) &&
-              m._id !== f._id?.$ne,
+              m._id !== f._id?.$ne &&
+              (!f.author?.$ne || m.author !== f.author.$ne),
           )
           .reverse(),
       ),
@@ -445,5 +446,47 @@ describe('ConversationsService — correo', () => {
       { text: 'Hola' },
     );
     expect(h.emailTransport.send.mock.calls[0][1].headers).toBeUndefined();
+  });
+
+  it('al volver al agente, ve lo que la persona escribió en manual (sin notas internas)', async () => {
+    const h = setup();
+    await h.service.handleEmailInbound(h.account as never, email());
+    await flush();
+    const conv = h.convs[0];
+    await h.service.sendManual(
+      String(conv._id),
+      String(h.account.tenantId),
+      new Types.ObjectId().toString(),
+      { text: 'Le hago un 20% de descuento si cierra hoy' },
+    );
+    expect(conv.autoReply).toBe(false);
+    h.msgs.push(
+      Object.assign(
+        {
+          _id: new Types.ObjectId(),
+          conversationId: conv._id,
+          direction: 'out',
+          author: 'system',
+          type: 'text',
+          text: 'Nota interna del equipo',
+          status: 'sent',
+        },
+        { save: jest.fn() },
+      ),
+    );
+
+    conv.autoReply = true;
+    await h.service.handleEmailInbound(
+      h.account as never,
+      email({ messageId: '<in-2@cliente.pe>', text: '¿Sigue en pie?' }),
+    );
+    await flush();
+
+    const history = h.agents.generateAnswer.mock.calls.at(-1)[2];
+    expect(history).toContainEqual({
+      role: 'assistant',
+      content: 'Le hago un 20% de descuento si cierra hoy',
+    });
+    expect(JSON.stringify(history)).not.toContain('Nota interna');
   });
 });
