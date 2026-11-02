@@ -120,7 +120,11 @@ export class InstagramOAuthService {
       access_token?: string;
       user_id?: string;
       permissions?: string | string[];
-      data?: { access_token?: string; user_id?: string; permissions?: string }[];
+      data?: {
+        access_token?: string;
+        user_id?: string;
+        permissions?: string;
+      }[];
     }>('No se pudo canjear el código de autorización', () =>
       this.graph.post('/oauth/access_token', {
         host: IG_API_HOST,
