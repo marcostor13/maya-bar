@@ -50,6 +50,35 @@ describe('WhatsAppService (Cloud API)', () => {
       );
     });
 
+    it('a un usuario con username (BSUID) le escribe por `recipient`, no por `to`', async () => {
+      graph.post.mockResolvedValue({});
+      await service.sendMessage('PE.1502576394655843', 'hola', config);
+      const json = (graph.post.mock.calls[0] as [string, { json: object }])[1]
+        .json;
+      expect(json).toEqual({
+        messaging_product: 'whatsapp',
+        recipient: 'PE.1502576394655843',
+        type: 'text',
+        text: { body: 'hola' },
+      });
+    });
+
+    it('una plantilla a un BSUID también va por `recipient`', async () => {
+      graph.post.mockResolvedValue({});
+      await service.sendCloudApiTemplate(
+        'US.ENT.506847293015824',
+        'hola',
+        'es',
+        [],
+        config,
+      );
+      const json = (
+        graph.post.mock.calls[0] as [string, { json: Record<string, unknown> }]
+      )[1].json;
+      expect(json.recipient).toBe('US.ENT.506847293015824');
+      expect(json.to).toBeUndefined();
+    });
+
     it('envía imagen con caption', async () => {
       graph.post.mockResolvedValue({});
       await service.sendMessage(

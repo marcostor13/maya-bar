@@ -46,6 +46,59 @@ describe('WhatsAppWebhookController — tipos de mensaje', () => {
     });
 
   describe('Cloud API', () => {
+    const cloudRaw = (value: Record<string, unknown>) =>
+      controller.handleCloud('acc1', {
+        entry: [{ changes: [{ value }] }],
+      });
+
+    it('un usuario con username sin teléfono llega por su BSUID', async () => {
+      await cloudRaw({
+        contacts: [
+          {
+            user_id: 'PE.1502576394655843',
+            profile: { username: 'farma.cliente' },
+          },
+        ],
+        messages: [
+          {
+            from_user_id: 'PE.1502576394655843',
+            id: 'wamid.2',
+            type: 'text',
+            text: { body: 'Hola' },
+          },
+        ],
+      });
+      expect(received()).toMatchObject({
+        contact: 'PE.1502576394655843',
+        chatId: 'PE.1502576394655843',
+        contactName: 'farma.cliente',
+        text: 'Hola',
+      });
+    });
+
+    it('si vienen teléfono y BSUID, el contacto sigue siendo el teléfono', async () => {
+      await cloudRaw({
+        contacts: [{ wa_id: '51999888777', user_id: 'PE.1' }],
+        messages: [
+          {
+            from: '51999888777',
+            from_user_id: 'PE.1',
+            id: 'wamid.3',
+            type: 'text',
+            text: { body: 'x' },
+          },
+        ],
+      });
+      expect(received()?.contact).toBe('51999888777');
+    });
+
+    it('sin ningún identificador del remitente no llega al servicio', async () => {
+      await cloudRaw({
+        messages: [{ id: 'wamid.4', type: 'text', text: { body: 'x' } }],
+      });
+      expect(conversations.handleWhatsAppInbound).not.toHaveBeenCalled();
+    });
+
     it('descarta request_welcome y ephemeral', async () => {
       await cloud({ type: 'request_welcome' });
       await cloud({ type: 'ephemeral' });

@@ -780,7 +780,7 @@ export class WhatsAppService {
         `/${config.waPhoneNumberId}/messages`,
         {
           accessToken: config.waAccessToken,
-          json: { messaging_product: 'whatsapp', ...payload },
+          json: { messaging_product: 'whatsapp', ...toRecipient(payload) },
         },
       );
       return data.messages?.[0]?.id;
@@ -875,9 +875,29 @@ export class WhatsAppService {
   }
 
   formatPhone(phone: string): string {
+    // Un BSUID (usuario con username, sin teléfono compartido) se usa tal cual:
+    // reducirlo a dígitos lo convierte en un número que no existe.
+    if (isBsuid(phone)) return phone.trim();
     const digits = phone.replace(/\D/g, '');
     return digits.length >= 8 ? digits : '';
   }
+}
+
+/**
+ * BSUID de WhatsApp: país ISO + "." + id (p. ej. "PE.1502576394655843" o el
+ * de portafolio "US.ENT.5068..."). Lo manda Meta en vez del teléfono cuando el
+ * usuario tiene username y no compartió su número con el negocio.
+ */
+export function isBsuid(value: string | undefined | null): boolean {
+  return !!value && /^[A-Z]{2}\.(ENT\.)?[A-Za-z0-9]{1,128}$/.test(value.trim());
+}
+
+/** Meta solo acepta teléfonos en `to`; un BSUID va en `recipient`. */
+function toRecipient(payload: object): object {
+  const { to, ...rest } = payload as { to?: unknown };
+  return typeof to === 'string' && isBsuid(to)
+    ? { ...rest, recipient: to.trim() }
+    : payload;
 }
 
 /** Cabecera de la plantilla, tal como hay que reproducirla en cada envío. */

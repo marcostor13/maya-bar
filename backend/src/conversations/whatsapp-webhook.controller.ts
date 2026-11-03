@@ -137,11 +137,19 @@ export class WhatsAppWebhookController {
         return;
       }
 
+      const sender = value.contacts?.[0];
       const inbound = this.parseCloudMessage(
         raw,
-        value.contacts?.[0]?.profile?.name,
+        sender?.profile?.name ?? sender?.profile?.username,
+        sender,
       );
       if (!inbound) return;
+      if (!inbound.contact) {
+        this.logger.warn(
+          `[WA] Mensaje ${raw.id ?? '?'} sin remitente identificable — descartado. Claves: ${Object.keys(raw).join(',')} | contacto: ${Object.keys(sender ?? {}).join(',')}`,
+        );
+        return;
+      }
       if (inbound.type === 'unsupported')
         this.logger.warn(
           `[WA] Mensaje ${raw.id ?? '?'} de tipo "${raw.type ?? '?'}" no soportado: ${this.cloudError(raw.errors) ?? 'sin detalle'}`,
@@ -162,10 +170,16 @@ export class WhatsAppWebhookController {
   private parseCloudMessage(
     msg: CloudMessage,
     profileName?: string,
+    sender?: CloudContact,
   ): InboundMessage | null {
+    // Quien usa username de WhatsApp puede llegar sin teléfono (`from`): solo
+    // con su BSUID (`from_user_id`, p. ej. "PE.1502576394655843"). Ese id es
+    // el contacto y a él se responde (el envío lo manda en `recipient`).
+    const contact =
+      msg.from ?? sender?.wa_id ?? msg.from_user_id ?? sender?.user_id ?? '';
     const base: InboundMessage = {
-      contact: msg.from ?? '',
-      chatId: msg.from,
+      contact,
+      chatId: contact || undefined,
       contactName: profileName,
       externalId: msg.id,
       type: 'unsupported',
@@ -627,8 +641,18 @@ const WAHA_PROTO_MEDIA: Record<string, MessageType> = {
   stickerMessage: 'sticker',
 };
 
+/** Remitente en `value.contacts`. Con username, `wa_id` puede faltar. */
+interface CloudContact {
+  wa_id?: string;
+  /** BSUID: id del usuario para este portafolio de negocio. */
+  user_id?: string;
+  profile?: { name?: string; username?: string };
+}
+
 interface CloudMessage {
   from?: string;
+  /** BSUID del remitente; único identificador si no se comparte el teléfono. */
+  from_user_id?: string;
   id?: string;
   timestamp?: string;
   type?: string;
@@ -689,7 +713,7 @@ interface CloudBody {
     changes?: {
       value?: {
         metadata?: { phone_number_id?: string; display_phone_number?: string };
-        contacts?: { profile?: { name?: string }; wa_id?: string }[];
+        contacts?: CloudContact[];
         messages?: CloudMessage[];
         statuses?: {
           id?: string;
