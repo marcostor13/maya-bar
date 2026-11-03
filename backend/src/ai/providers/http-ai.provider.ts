@@ -22,6 +22,9 @@ const OPENAI_FIXED_TEMPERATURE = /^(gpt-5|o\d)/i;
 const CLAUDE_ACCEPTS_TEMPERATURE =
   /^claude-(3[-.]|haiku-4-5|(sonnet|opus)-4(-[0-6])?(-\d{8})?$)/i;
 
+/** Tope mínimo para Claude con razonamiento: el thinking sale del mismo `max_tokens`. */
+const CLAUDE_THINKING_MIN_TOKENS = 2048;
+
 /** Respuesta del endpoint de modelos: `data` en OpenAI/DeepSeek/Anthropic, `models` en Gemini. */
 interface ModelListResponse {
   data?: { id?: string }[];
@@ -121,6 +124,8 @@ export class HttpAiProvider implements AiChatProvider {
       .join('\n\n');
     const turns = req.messages.filter((m) => m.role !== 'system');
     const model = req.model ?? 'claude-haiku-4-5';
+    const legacy = CLAUDE_ACCEPTS_TEMPERATURE.test(model);
+    const maxTokens = req.maxTokens ?? DEFAULT_MAX_TOKENS;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: this.signal(req),
@@ -131,10 +136,12 @@ export class HttpAiProvider implements AiChatProvider {
       },
       body: JSON.stringify({
         model,
-        max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-        temperature: CLAUDE_ACCEPTS_TEMPERATURE.test(model)
-          ? req.temperature
-          : undefined,
+        // En los modelos que razonan (los que ya no aceptan temperature) el
+        // razonamiento consume del mismo tope: con 800 la respuesta podía quedar vacía.
+        max_tokens: legacy
+          ? maxTokens
+          : Math.max(maxTokens, CLAUDE_THINKING_MIN_TOKENS),
+        temperature: legacy ? req.temperature : undefined,
         system: system || undefined,
         messages: turns.map((m) => ({ role: m.role, content: m.content })),
       }),
@@ -143,10 +150,15 @@ export class HttpAiProvider implements AiChatProvider {
       throw new BadRequestException(
         `${this.errorLabel(req)} API error: ${await res.text()}`,
       );
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const data = await res.json();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    return String(data?.content?.[0]?.text ?? '');
+    // Los modelos con razonamiento (Sonnet/Opus 5.x) devuelven primero un bloque
+    // `thinking` vacío; la respuesta va en los bloques `text` que siguen.
+    const data = (await res.json()) as {
+      content?: { type?: string; text?: string }[];
+    };
+    return (data?.content ?? [])
+      .filter((b) => b.type === 'text' || (b.type === undefined && b.text))
+      .map((b) => b.text ?? '')
+      .join('');
   }
 
   private async callGemini(req: AiChatRequest): Promise<string> {

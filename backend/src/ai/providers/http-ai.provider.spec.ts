@@ -282,6 +282,27 @@ describe('HttpAiProvider', () => {
       expect('temperature' in lastFetchCall(fetchSpy).body).toBe(sent);
     });
 
+    it('ignora el bloque thinking y une los bloques de texto', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({
+          content: [
+            { type: 'thinking', thinking: '' },
+            { type: 'text', text: 'Hola, ' },
+            { type: 'text', text: 'soy Fari.' },
+          ],
+        }),
+      );
+      const result = await provider.chat({
+        provider: 'claude',
+        apiKey: 'ck',
+        model: 'claude-sonnet-5-5',
+        maxTokens: 800,
+        messages: userMessages,
+      });
+      expect(result).toBe('Hola, soy Fari.');
+      expect(lastFetchCall(fetchSpy).body.max_tokens).toBe(2048);
+    });
+
     it('throws BadRequestException with Claude label on error', async () => {
       fetchSpy.mockResolvedValue(mockResponse({}, false, 'overloaded'));
       await expect(
