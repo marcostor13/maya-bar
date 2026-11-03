@@ -238,6 +238,14 @@ export class LoginComponent {
     this.auth.login(this.form.value as any).subscribe({
       next: () => this.router.navigate([this.homeRoute()]),
       error: (err) => {
+        // Cuenta registrada que no confirmó su correo: a la pantalla del código,
+        // que le manda uno nuevo al llegar.
+        if (err.status === 401 && err.error?.code === 'EMAIL_NOT_VERIFIED') {
+          this.loading.set(false);
+          this.toast.warning(err.error.message);
+          this.router.navigate(['/register'], { state: { verifyEmail: this.form.value.email } });
+          return;
+        }
         // Solo un 401 es culpa de los datos; lo demás (sin red, 5xx) no debe
         // hacer creer a la persona que escribió mal su contraseña.
         const msg = err.status === 401

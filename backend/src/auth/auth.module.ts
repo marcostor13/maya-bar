@@ -11,6 +11,8 @@ import { TenantsModule } from '../tenants/tenants.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MailModule } from '../mail/mail.module';
 import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { TurnstileService } from './turnstile.service';
 
 @Module({
   imports: [
@@ -18,6 +20,15 @@ import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
     TenantsModule,
     MailModule,
     PassportModule,
+    // Límite por IP de las rutas de /auth. El tope por defecto (60/min) solo
+    // lo notan los bots; cada ruta sensible fija el suyo con @Throttle. Las
+    // pruebas lo saltan: registran decenas de cuentas desde la misma IP.
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 60 }],
+      errorMessage:
+        'Demasiados intentos. Espera unos minutos y vuelve a probar.',
+      skipIf: () => process.env.NODE_ENV === 'test',
+    }),
     MongooseModule.forFeature([
       { name: RefreshToken.name, schema: RefreshTokenSchema },
     ]),
@@ -33,7 +44,7 @@ import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, JwtStrategy, ActiveUserCache],
+  providers: [AuthService, JwtStrategy, ActiveUserCache, TurnstileService],
   controllers: [AuthController],
   exports: [ActiveUserCache],
 })

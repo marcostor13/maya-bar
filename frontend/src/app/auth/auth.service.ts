@@ -52,10 +52,23 @@ export class AuthService {
     phone?: string;
     ownerName: string;
     ownerPassword: string;
+    captchaToken?: string;
   }): Observable<any> {
+    // Con verificación de correo activa el alta no trae sesión: llega
+    // `{ verificationRequired, email }` y la sesión sale de verifyEmail().
     return this.http.post(`${this.apiUrl}/auth/register`, data).pipe(
+      tap((res: any) => { if (res?.access_token) this.saveSession(res); }),
+    );
+  }
+
+  verifyEmail(email: string, code: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/auth/verify-email`, { email, code }).pipe(
       tap((res: any) => this.saveSession(res)),
     );
+  }
+
+  resendVerification(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.apiUrl}/auth/resend-verification`, { email });
   }
 
   logout() {

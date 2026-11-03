@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MinLength,
 } from 'class-validator';
 
@@ -38,6 +39,25 @@ export class RegisterTenantDto {
   @IsString()
   @MinLength(8)
   ownerPassword!: string;
+
+  /** Token del widget de Cloudflare Turnstile. */
+  @IsOptional()
+  @IsString()
+  captchaToken?: string;
+}
+
+export class VerifyEmailDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @Matches(/^\s*\d{6}\s*$/, { message: 'El código tiene 6 dígitos' })
+  code!: string;
+}
+
+export class ResendVerificationDto {
+  @IsEmail()
+  email!: string;
 }
 
 export class ChangePasswordDto {

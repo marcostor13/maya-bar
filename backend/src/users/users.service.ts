@@ -132,6 +132,7 @@ export class UsersService implements OnModuleInit {
     tenantId?: string | Types.ObjectId;
     localIds?: Types.ObjectId[];
     mustChangePassword?: boolean;
+    emailVerified?: boolean;
   }): Promise<User> {
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     // Forzar ObjectId: un tenantId string se guardaba como string y rompía

@@ -6,7 +6,9 @@ import { Observable, catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
 
 /** Peticiones que NO deben reintentarse: son las que gestionan la sesión. */
-const SIN_REINTENTO = ['/auth/login', '/auth/refresh', '/auth/register'];
+const SIN_REINTENTO = [
+  '/auth/login', '/auth/refresh', '/auth/register', '/auth/verify-email', '/auth/resend-verification',
+];
 
 const conToken = (req: HttpRequest<unknown>, token: string | null) =>
   token

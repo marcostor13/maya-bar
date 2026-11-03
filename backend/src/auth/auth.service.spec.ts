@@ -9,6 +9,9 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { MailService } from '../mail/mail.service';
+import { createHash } from 'crypto';
+
+const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -34,8 +37,9 @@ function makeUserDoc(overrides: Partial<Record<string, unknown>> = {}) {
   };
   return {
     ...plain,
+    save: jest.fn().mockResolvedValue(undefined),
     toObject: jest.fn().mockReturnValue({ ...plain }),
-  };
+  } as Record<string, any>;
 }
 
 // ─── tests ───────────────────────────────────────────────────────────────────
@@ -52,8 +56,12 @@ describe('AuthService', () => {
     saveResetCode: jest.fn(),
     resetPassword: jest.fn(),
   };
-  const tenantsService = { create: jest.fn() };
-  const mailService = { sendPasswordResetEmail: jest.fn() };
+  const tenantsService = { create: jest.fn(), remove: jest.fn() };
+  const mailService = {
+    isConfigured: false,
+    sendPasswordResetEmail: jest.fn(),
+    sendEmailVerificationEmail: jest.fn(),
+  };
   const jwtService = { sign: jest.fn().mockReturnValue('signed.jwt.token') };
   // El modelo de refresh tokens: login emite uno en cada sesión.
   const refreshTokenModel = {
@@ -66,6 +74,7 @@ describe('AuthService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     jwtService.sign.mockReturnValue('signed.jwt.token');
+    mailService.isConfigured = false;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -191,6 +200,10 @@ describe('AuthService', () => {
   // ─── registerTenant ────────────────────────────────────────────────────────
 
   describe('registerTenant', () => {
+    beforeEach(() => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(null);
+    });
+
     it('creates the tenant and a TENANT_ADMIN user bound to it', async () => {
       const tenant = { _id: tenantOid, name: 'Bar Maya' };
       tenantsService.create.mockResolvedValue(tenant);
@@ -219,8 +232,170 @@ describe('AuthService', () => {
         role: 'TENANT_ADMIN',
         tenantId: tenantOid,
       });
+      if (!('access_token' in result)) throw new Error('sin sesión');
       expect(result.access_token).toBe('signed.jwt.token');
       expect(result.user.email).toBe('owner@bar.com');
+    });
+
+    const signup = {
+      name: 'Bar Maya',
+      email: 'owner@bar.com',
+      ownerName: 'Owner',
+      ownerPassword: PASSWORD,
+    };
+
+    it('con correo configurado no abre sesión: crea la cuenta sin confirmar y manda el código', async () => {
+      mailService.isConfigured = true;
+      tenantsService.create.mockResolvedValue({ _id: tenantOid });
+      const owner = makeUserDoc({
+        email: 'owner@bar.com',
+        emailVerified: false,
+      });
+      usersService.create.mockResolvedValue(owner);
+
+      const result = await service.registerTenant(signup);
+
+      expect(usersService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ emailVerified: false }),
+      );
+      expect(result).toEqual({
+        verificationRequired: true,
+        email: 'owner@bar.com',
+      });
+      expect(refreshTokenModel.create).not.toHaveBeenCalled();
+      const [to, code] = mailService.sendEmailVerificationEmail.mock
+        .calls[0] as [string, string];
+      expect(to).toBe('owner@bar.com');
+      expect(code).toMatch(/^\d{6}$/);
+      // En la base solo queda el hash del código.
+      expect(owner.emailVerificationCodeHash).toBe(sha256(code));
+      expect(owner.emailVerificationAttempts).toBe(0);
+      expect(owner.save).toHaveBeenCalled();
+    });
+
+    it('descarta un registro anterior sin confirmar con el mismo email', async () => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(
+        makeUserDoc({ emailVerified: false, tenantId: tenantOid }),
+      );
+      tenantsService.create.mockResolvedValue({ _id: tenantOid });
+      usersService.create.mockResolvedValue(makeUserDoc());
+
+      await service.registerTenant(signup);
+
+      expect(tenantsService.remove).toHaveBeenCalledWith(String(tenantOid));
+    });
+
+    it('nunca descarta una cuenta confirmada o creada por un administrador', async () => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(makeUserDoc());
+      tenantsService.create.mockRejectedValue(new Error('conflict'));
+
+      await expect(service.registerTenant(signup)).rejects.toThrow('conflict');
+      expect(tenantsService.remove).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── verificación de correo ────────────────────────────────────────────────
+
+  describe('validateUser con correo sin confirmar', () => {
+    it('rechaza el login con el código EMAIL_NOT_VERIFIED', async () => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(
+        makeUserDoc({ emailVerified: false }),
+      );
+      const err = (await service
+        .validateUser('user@test.com', PASSWORD)
+        .catch((e: unknown) => e)) as UnauthorizedException;
+      expect(err).toBeInstanceOf(UnauthorizedException);
+      expect(err.getResponse()).toMatchObject({ code: 'EMAIL_NOT_VERIFIED' });
+    });
+
+    it('no revela que falta confirmar si la contraseña es incorrecta', async () => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(
+        makeUserDoc({ emailVerified: false }),
+      );
+      await expect(
+        service.validateUser('user@test.com', 'mala'),
+      ).resolves.toBeNull();
+    });
+  });
+
+  describe('verifyEmail', () => {
+    const pending = (overrides: Record<string, unknown> = {}) =>
+      makeUserDoc({
+        emailVerified: false,
+        emailVerificationCodeHash: sha256('123456'),
+        emailVerificationExpires: new Date(Date.now() + 60_000),
+        emailVerificationAttempts: 0,
+        ...overrides,
+      });
+
+    it('con el código correcto confirma la cuenta y abre sesión', async () => {
+      const user = pending();
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(user);
+
+      const result = await service.verifyEmail('user@test.com', ' 123456 ');
+
+      expect(user.emailVerified).toBe(true);
+      expect(user.emailVerificationCodeHash).toBeUndefined();
+      expect(user.save).toHaveBeenCalled();
+      expect(result.access_token).toBe('signed.jwt.token');
+    });
+
+    it('un código incorrecto suma un intento y al quinto invalida el código', async () => {
+      const user = pending({ emailVerificationAttempts: 3 });
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(user);
+
+      await expect(
+        service.verifyEmail('user@test.com', '000000'),
+      ).rejects.toThrow(BadRequestException);
+      expect(user.emailVerificationAttempts).toBe(4);
+      expect(user.emailVerificationCodeHash).toBe(sha256('123456'));
+
+      await expect(
+        service.verifyEmail('user@test.com', '000000'),
+      ).rejects.toThrow(BadRequestException);
+      expect(user.emailVerificationCodeHash).toBeUndefined();
+      // Ni el código correcto vale ya.
+      await expect(
+        service.verifyEmail('user@test.com', '123456'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rechaza un código caducado', async () => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(
+        pending({ emailVerificationExpires: new Date(Date.now() - 1000) }),
+      );
+      await expect(
+        service.verifyEmail('user@test.com', '123456'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('no sirve para cuentas ya confirmadas ni inexistentes', async () => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(
+        pending({ emailVerified: undefined }),
+      );
+      await expect(
+        service.verifyEmail('user@test.com', '123456'),
+      ).rejects.toThrow(BadRequestException);
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(null);
+      await expect(service.verifyEmail('x@test.com', '123456')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(refreshTokenModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resendVerification', () => {
+    it('manda un código nuevo solo a cuentas sin confirmar, con la misma respuesta siempre', async () => {
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(makeUserDoc());
+      const verified = await service.resendVerification('user@test.com');
+      expect(mailService.sendEmailVerificationEmail).not.toHaveBeenCalled();
+
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(
+        makeUserDoc({ emailVerified: false }),
+      );
+      const pendingRes = await service.resendVerification('user@test.com');
+      expect(mailService.sendEmailVerificationEmail).toHaveBeenCalledTimes(1);
+      expect(pendingRes).toEqual(verified);
     });
   });
 

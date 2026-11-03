@@ -1,26 +1,53 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, PLATFORM_ID, inject, signal, viewChild } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
+import { TurnstileComponent } from '../../shared/turnstile';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-register',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, TurnstileComponent],
   template: `
     <div class="register-page">
       <div class="register-card card animate-fade-in">
         <div class="register-header">
           <img src="/logo.png?v=2" alt="Maya CRM" class="logo-img" />
-          <h1>Empieza gratis</h1>
-          <p>14 días de prueba, sin tarjeta de crédito.</p>
+          @if (pendingEmail()) {
+            <h1>Revisa tu correo</h1>
+            <p>Enviamos un código de 6 dígitos a <strong>{{ pendingEmail() }}</strong>.</p>
+          } @else {
+            <h1>Empieza gratis</h1>
+            <p>14 días de prueba, sin tarjeta de crédito.</p>
+          }
         </div>
 
         @if (error()) {
           <div class="alert-error">{{ error() }}</div>
         }
 
+        @if (pendingEmail()) {
+          <form (submit)="$event.preventDefault(); onVerify()" class="register-form verify-form">
+            <div class="form-group">
+              <label for="verify-code">Código de verificación</label>
+              <input id="verify-code" class="input code-input" name="code" [value]="code()"
+                (input)="code.set($any($event.target).value)" inputmode="numeric"
+                autocomplete="one-time-code" maxlength="6" placeholder="000000" autofocus />
+            </div>
+            <button type="submit" class="btn btn-primary submit-btn" [disabled]="loading() || !codeValid()">
+              @if (loading()) { Verificando... } @else { Confirmar y entrar }
+            </button>
+            <div class="verify-actions">
+              <button type="button" class="btn btn-ghost btn-sm" (click)="onResend()" [disabled]="resending()">
+                Reenviar código
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="useOtherEmail()">Usar otro correo</button>
+            </div>
+          </form>
+        } @else {
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="register-form">
           <div class="form-section">
             <h3 class="form-section-title">Tu negocio</h3>
@@ -56,10 +83,15 @@ import { ToastService } from '../../shared/toast';
             </div>
           </div>
 
-          <button type="submit" class="btn btn-primary submit-btn" [disabled]="loading() || form.invalid">
+          @if (siteKey) {
+            <app-turnstile [siteKey]="siteKey" (token)="captchaToken.set($event)" />
+          }
+
+          <button type="submit" class="btn btn-primary submit-btn" [disabled]="loading() || form.invalid || (!!siteKey && !captchaToken())">
             @if (loading()) { Creando cuenta... } @else { Crear cuenta gratis }
           </button>
         </form>
+        }
 
         <p class="login-link">
           ¿Ya tienes cuenta? <a routerLink="/login">Inicia sesión</a>
@@ -147,6 +179,25 @@ import { ToastService } from '../../shared/toast';
       margin-top: 8px;
     }
 
+    .code-input {
+      text-align: center;
+      font-size: 24px;
+      letter-spacing: 8px;
+      font-family: monospace;
+    }
+
+    .verify-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    app-turnstile {
+      display: block;
+      margin: 8px 0 4px;
+    }
+
     .submit-btn:disabled {
       opacity: 0.6;
       cursor: not-allowed;
@@ -193,10 +244,19 @@ export class RegisterComponent {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
   private router = inject(Router);
-
   private toast = inject(ToastService);
+
+  /** Vacía en las pruebas (y en cualquier entorno sin captcha): el widget no se pinta. */
+  readonly siteKey = environment.turnstileSiteKey;
+  private turnstile = viewChild(TurnstileComponent);
+
   loading = signal(false);
+  resending = signal(false);
   error = signal('');
+  captchaToken = signal<string | null>(null);
+  /** Con valor, la pantalla pide el código enviado a este correo. */
+  pendingEmail = signal('');
+  code = signal('');
 
   form = this.fb.group({
     name: ['', Validators.required],
@@ -207,20 +267,86 @@ export class RegisterComponent {
     ownerPassword: ['', [Validators.required, Validators.minLength(8)]],
   });
 
+  constructor() {
+    // El login manda aquí a quien intenta entrar sin haber confirmado: se le
+    // envía un código nuevo y se le pide directamente.
+    if (isPlatformBrowser(inject(PLATFORM_ID))) {
+      const email = (history.state as { verifyEmail?: string } | null)?.verifyEmail;
+      if (email) {
+        this.pendingEmail.set(email);
+        this.onResend();
+      }
+    }
+  }
+
+  codeValid() {
+    return /^\d{6}$/.test(this.code().trim());
+  }
+
   onSubmit() {
     if (this.form.invalid) return;
+    if (this.siteKey && !this.captchaToken()) return;
     this.loading.set(true);
     this.error.set('');
 
     const val = this.form.value as any;
-    this.auth.register(val).subscribe({
-      next: () => this.router.navigate(['/onboarding']),
+    const body = this.siteKey ? { ...val, captchaToken: this.captchaToken() } : val;
+    this.auth.register(body).subscribe({
+      next: (res: any) => {
+        this.loading.set(false);
+        if (res?.verificationRequired) {
+          this.pendingEmail.set(res.email ?? val.email);
+          this.toast.success('Te enviamos un código a tu correo');
+          return;
+        }
+        this.router.navigate(['/onboarding']);
+      },
       error: (err) => {
         const msg = err.error?.message || 'Error al crear la cuenta';
         this.error.set(msg);
         this.toast.error(msg);
         this.loading.set(false);
+        // El token del captcha ya se gastó: hace falta uno nuevo para reintentar.
+        this.turnstile()?.reset();
       },
     });
+  }
+
+  onVerify() {
+    if (!this.codeValid()) return;
+    this.loading.set(true);
+    this.error.set('');
+    this.auth.verifyEmail(this.pendingEmail(), this.code().trim()).subscribe({
+      next: () => {
+        this.toast.success('Correo confirmado');
+        this.router.navigate(['/onboarding']);
+      },
+      error: (err) => {
+        const msg = err.error?.message || 'No pudimos confirmar el código';
+        this.error.set(msg);
+        this.toast.error(msg);
+        this.loading.set(false);
+      },
+    });
+  }
+
+  onResend() {
+    this.resending.set(true);
+    this.auth.resendVerification(this.pendingEmail()).subscribe({
+      next: (res) => {
+        this.toast.success(res?.message || 'Código enviado');
+        this.resending.set(false);
+      },
+      error: (err) => {
+        this.toast.error(err.error?.message || 'No pudimos reenviar el código');
+        this.resending.set(false);
+      },
+    });
+  }
+
+  useOtherEmail() {
+    this.pendingEmail.set('');
+    this.code.set('');
+    this.error.set('');
   }
 }

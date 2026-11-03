@@ -12,6 +12,12 @@ import { ShortDomainMiddleware } from './links/redirect.controller';
  * desincronice.
  */
 export function configureApp(app: NestExpressApplication): void {
+  // La API corre detrás de un único proxy (Traefik en Coolify). Sin esto
+  // `req.ip` es la IP de Traefik y el límite por IP de /auth sería uno solo
+  // para todo el mundo. Con 1 se toma la IP que añadió Traefik, no la que
+  // pueda inventarse el cliente en X-Forwarded-For.
+  app.set('trust proxy', 1);
+
   // El límite por defecto (100 kB) se queda corto para una plantilla de email
   // con su diseño y su HTML compilado.
   app.useBodyParser('json', { limit: '2mb' });

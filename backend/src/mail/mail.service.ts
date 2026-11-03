@@ -85,8 +85,45 @@ export class MailService {
     }
   }
 
+  /** Hay proveedor de correo: sin él los códigos solo se escriben en el log. */
+  get isConfigured(): boolean {
+    return this.resend !== null;
+  }
+
   async sendPasswordResetEmail(email: string, code: string) {
-    const subject = 'Recuperación de contraseña - Maya CRM';
+    await this.sendCodeEmail({
+      email,
+      code,
+      subject: 'Recuperación de contraseña - Maya CRM',
+      title: 'Recuperar contraseña',
+      intro:
+        'Utiliza el siguiente código para restablecer tu acceso. Expira en 15 minutos.',
+      footer:
+        'Si no solicitaste este cambio, puedes ignorar este mensaje de seguridad.',
+    });
+  }
+
+  async sendEmailVerificationEmail(email: string, code: string) {
+    await this.sendCodeEmail({
+      email,
+      code,
+      subject: 'Confirma tu correo - Maya CRM',
+      title: 'Confirma tu correo',
+      intro:
+        'Escribe este código en Maya CRM para activar tu cuenta. Expira en 30 minutos.',
+      footer: 'Si no creaste una cuenta en Maya CRM, ignora este mensaje.',
+    });
+  }
+
+  private async sendCodeEmail(params: {
+    email: string;
+    code: string;
+    subject: string;
+    title: string;
+    intro: string;
+    footer: string;
+  }) {
+    const { email, code, subject, title, intro, footer } = params;
     const html = `
       <div style="font-family: 'Inter', Arial, sans-serif; background-color: #f9fafb; padding: 40px 20px;">
         <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
@@ -94,9 +131,9 @@ export class MailService {
             <div style="margin-bottom: 24px;">
               <img src="cid:logo" alt="Maya CRM" style="height: 48px; width: auto;" />
             </div>
-            <h2 style="color: #111827; font-size: 22px; font-weight: 700; margin-bottom: 12px;">Recuperar contraseña</h2>
+            <h2 style="color: #111827; font-size: 22px; font-weight: 700; margin-bottom: 12px;">${title}</h2>
             <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
-              Utiliza el siguiente código para restablecer tu acceso. Expira en 15 minutos.
+              ${intro}
             </p>
             
             <div style="background-color: #fdf2f4; border: 2px dashed #fecdd3; padding: 24px; border-radius: 16px; margin-bottom: 32px;">
@@ -104,7 +141,7 @@ export class MailService {
             </div>
             
             <p style="color: #9ca3af; font-size: 13px;">
-              Si no solicitaste este cambio, puedes ignorar este mensaje de seguridad.
+              ${footer}
             </p>
           </div>
         </div>
@@ -129,13 +166,13 @@ export class MailService {
               ]
             : [],
         });
-        this.logger.log(`Password reset email sent to ${email}`);
+        this.logger.log(`${subject} → ${email}`);
       } catch (error) {
         this.logger.error(`Failed to send email to ${email}`, error);
       }
     } else {
       this.logger.log(`[MOCK EMAIL] To: ${email} | Subject: ${subject}`);
-      this.logger.log(`[MOCK EMAIL] Content: Your reset code is ${code}`);
+      this.logger.log(`[MOCK EMAIL] Content: code ${code}`);
     }
   }
 

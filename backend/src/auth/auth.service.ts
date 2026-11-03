@@ -1,17 +1,19 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { MailService } from '../mail/mail.service';
 import { RefreshToken } from './refresh-token.schema';
+import type { User } from '../users/user.schema';
 
 /** Cuánto dura la sesión sin volver a escribir la contraseña. */
 const REFRESH_TOKEN_TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 días
@@ -21,8 +23,17 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/** Vigencia del código que confirma el correo de una cuenta nueva. */
+const EMAIL_CODE_TTL_MS = 30 * 60 * 1000;
+/** Intentos fallidos con un mismo código antes de invalidarlo. */
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
+const GENERIC_RESEND_MESSAGE =
+  'Si la cuenta está pendiente de confirmar, te enviamos un código nuevo.';
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private jwtService: JwtService,
     private usersService: UsersService,
@@ -53,6 +64,15 @@ export class AuthService {
       throw new UnauthorizedException(
         'Tu cuenta está desactivada. Contacta con el administrador de tu empresa.',
       );
+
+    // Como el aviso de cuenta desactivada, solo se revela con la contraseña
+    // correcta. El código permite al frontend llevar a la pantalla del código.
+    if (user.emailVerified === false)
+      throw new UnauthorizedException({
+        statusCode: 401,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Confirma tu correo para entrar. Te enviamos un código.',
+      });
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _pw, ...result } = (
@@ -176,6 +196,13 @@ export class AuthService {
     return this.login((updatedUser as any).toObject());
   }
 
+  /**
+   * Alta pública de una empresa. Con proveedor de correo, la cuenta nace sin
+   * confirmar: no hay sesión hasta que se escribe el código enviado al correo,
+   * así un bot no obtiene una cuenta usable con un email inventado. Sin
+   * proveedor (desarrollo y pruebas) no hay forma de entregar el código y se
+   * entra directo, como antes.
+   */
   async registerTenant(data: {
     name: string;
     ruc?: string;
@@ -184,6 +211,9 @@ export class AuthService {
     ownerName: string;
     ownerPassword: string;
   }) {
+    await this.discardPendingRegistration(data.email);
+    const mustVerify = this.mailService.isConfigured;
+
     const tenant = await this.tenantsService.create({
       name: data.name,
       email: data.email,
@@ -197,10 +227,85 @@ export class AuthService {
       name: data.ownerName,
       role: 'TENANT_ADMIN',
       tenantId: tenant._id,
+      ...(mustVerify ? { emailVerified: false } : {}),
     });
+
+    if (mustVerify) {
+      await this.sendVerificationCode(user);
+      return { verificationRequired: true, email: user.email };
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     return this.login((user as any).toObject());
+  }
+
+  /**
+   * Quien se registra y nunca confirma deja su email ocupado. Si vuelve a
+   * registrarse con él, se descarta el intento anterior (empresa y usuario):
+   * nunca pudo entrar, así que no tiene datos. Una cuenta confirmada o creada
+   * por un administrador no se toca.
+   */
+  private async discardPendingRegistration(email: string): Promise<void> {
+    const existing = await this.usersService.findOneByEmailAnyStatus(email);
+    if (!existing || existing.emailVerified !== false || !existing.tenantId)
+      return;
+    await this.tenantsService.remove(String(existing.tenantId));
+  }
+
+  private async sendVerificationCode(user: User): Promise<void> {
+    const code = randomInt(100000, 1000000).toString();
+    user.emailVerificationCodeHash = hashToken(code);
+    user.emailVerificationExpires = new Date(Date.now() + EMAIL_CODE_TTL_MS);
+    user.emailVerificationAttempts = 0;
+    await user.save();
+    await this.mailService.sendEmailVerificationEmail(user.email, code);
+  }
+
+  /** Canjea el código del correo por la primera sesión de la cuenta. */
+  async verifyEmail(email: string, code: string, userAgent?: string) {
+    const invalid = new BadRequestException(
+      'El código es inválido o ha expirado',
+    );
+    const user = await this.usersService.findOneByEmailAnyStatus(email);
+    if (
+      !user ||
+      user.emailVerified !== false ||
+      !user.emailVerificationCodeHash ||
+      !user.emailVerificationExpires ||
+      user.emailVerificationExpires < new Date()
+    )
+      throw invalid;
+
+    if (hashToken(code.trim()) !== user.emailVerificationCodeHash) {
+      user.emailVerificationAttempts =
+        (user.emailVerificationAttempts ?? 0) + 1;
+      // Seis dígitos se adivinan a fuerza de intentos: con el tope, el código
+      // muere antes y hay que pedir otro (que también tiene límite por IP).
+      if (user.emailVerificationAttempts >= EMAIL_CODE_MAX_ATTEMPTS)
+        user.emailVerificationCodeHash = undefined;
+      await user.save();
+      throw invalid;
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationCodeHash = undefined;
+    user.emailVerificationExpires = undefined;
+    user.emailVerificationAttempts = undefined;
+    await user.save();
+    this.logger.log(`Correo confirmado: ${user.email}`);
+
+    const plano = (
+      user as unknown as { toObject: () => Record<string, any> }
+    ).toObject();
+    return this.login(plano, userAgent);
+  }
+
+  /** Respuesta idéntica exista o no la cuenta: no sirve para enumerar emails. */
+  async resendVerification(email: string) {
+    const user = await this.usersService.findOneByEmailAnyStatus(email);
+    if (user && user.emailVerified === false)
+      await this.sendVerificationCode(user);
+    return { message: GENERIC_RESEND_MESSAGE };
   }
 
   async forgotPassword(email: string) {

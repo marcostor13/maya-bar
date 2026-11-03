@@ -61,6 +61,25 @@ export class User extends Document {
 
   @Prop()
   resetPasswordExpires?: Date;
+
+  /**
+   * Solo vale `false` en una cuenta creada por el registro público que aún no
+   * confirmó su correo: esa no puede entrar. Las cuentas anteriores y las que
+   * crea un administrador no tienen el campo y entran como siempre.
+   */
+  @Prop()
+  emailVerified?: boolean;
+
+  /** Hash SHA-256 del código enviado; el código en claro solo va en el correo. */
+  @Prop()
+  emailVerificationCodeHash?: string;
+
+  @Prop()
+  emailVerificationExpires?: Date;
+
+  /** Intentos fallidos con el código vigente; al llegar al tope se invalida. */
+  @Prop()
+  emailVerificationAttempts?: number;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

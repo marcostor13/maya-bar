@@ -112,6 +112,18 @@ describe('LoginComponent', () => {
       expect(TestBed.inject(AuthService).isAuthenticated()).toBe(false);
     });
 
+    it('con el correo sin confirmar lleva a la pantalla del código con ese email', () => {
+      fillLogin();
+      submit();
+      http.expectOne((r) => r.url.endsWith('/auth/login')).flush(
+        { code: 'EMAIL_NOT_VERIFIED', message: 'Confirma tu correo para entrar.' },
+        { status: 401, statusText: 'Unauthorized' },
+      );
+      expect(toast.warning).toHaveBeenCalledWith('Confirma tu correo para entrar.');
+      expect(router.navigate).toHaveBeenCalledWith(['/register'], { state: { verifyEmail: 'ana@x.pe' } });
+      expect(TestBed.inject(AuthService).isAuthenticated()).toBe(false);
+    });
+
     it('el mensaje de error se limpia al reintentar', () => {
       fillLogin();
       submit();
