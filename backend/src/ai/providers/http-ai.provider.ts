@@ -14,6 +14,14 @@ const DEFAULT_MAX_TOKENS = 1024;
  */
 const OPENAI_FIXED_TEMPERATURE = /^(gpt-5|o\d)/i;
 
+/**
+ * Claude solo acepta `temperature` hasta la generación 4.6 (Haiku 4.5, Sonnet/Opus
+ * ≤ 4.6, familia 3). Desde Opus 4.7 y en toda la 5.x responde
+ * "`temperature` is deprecated for this model", así que se omite.
+ */
+const CLAUDE_ACCEPTS_TEMPERATURE =
+  /^claude-(3[-.]|haiku-4-5|(sonnet|opus)-4(-[0-6])?(-\d{8})?$)/i;
+
 /** Respuesta del endpoint de modelos: `data` en OpenAI/DeepSeek/Anthropic, `models` en Gemini. */
 interface ModelListResponse {
   data?: { id?: string }[];
@@ -112,6 +120,7 @@ export class HttpAiProvider implements AiChatProvider {
       .map((m) => m.content)
       .join('\n\n');
     const turns = req.messages.filter((m) => m.role !== 'system');
+    const model = req.model ?? 'claude-haiku-4-5';
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: this.signal(req),
@@ -121,9 +130,11 @@ export class HttpAiProvider implements AiChatProvider {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: req.model ?? 'claude-haiku-4-5',
+        model,
         max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-        temperature: req.temperature,
+        temperature: CLAUDE_ACCEPTS_TEMPERATURE.test(model)
+          ? req.temperature
+          : undefined,
         system: system || undefined,
         messages: turns.map((m) => ({ role: m.role, content: m.content })),
       }),

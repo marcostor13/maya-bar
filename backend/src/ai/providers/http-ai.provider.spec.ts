@@ -258,6 +258,29 @@ describe('HttpAiProvider', () => {
       expect('temperature' in body).toBe(false);
     });
 
+    it.each([
+      ['claude-haiku-4-5', true],
+      ['claude-sonnet-4-6', true],
+      ['claude-opus-4-1-20250805', true],
+      ['claude-opus-4-7', false],
+      ['claude-opus-4-8', false],
+      ['claude-sonnet-5', false],
+      ['claude-opus-5', false],
+      ['claude-sonnet-5-5', false],
+      ['claude-haiku-5-5', false],
+      ['claude-fable-5-1', false],
+    ])('temperature en %s: se envía = %s', async (model, sent) => {
+      fetchSpy.mockResolvedValue(mockResponse({ content: [{ text: 'ok' }] }));
+      await provider.chat({
+        provider: 'claude',
+        apiKey: 'ck',
+        model,
+        temperature: 0.7,
+        messages: userMessages,
+      });
+      expect('temperature' in lastFetchCall(fetchSpy).body).toBe(sent);
+    });
+
     it('throws BadRequestException with Claude label on error', async () => {
       fetchSpy.mockResolvedValue(mockResponse({}, false, 'overloaded'));
       await expect(
