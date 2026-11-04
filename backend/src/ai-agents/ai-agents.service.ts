@@ -28,6 +28,9 @@ import { TenantConfig } from '../settings/tenant-config.schema';
 import { WaMediaType } from '../whatsapp/whatsapp.service';
 import { normalizeStoreUrl, WooStoreService } from './store/woo-store.service';
 import { StoreToolSession } from './store/store-tools';
+import { formatForChat, storeUrlsIn } from './chat-links';
+import { LinksService } from '../links/links.service';
+import type { LinkChannel } from '../links/link.schemas';
 
 // Igual que AI_HISTORY_LIMIT de la bandeja: si el chat pasó por manual, el
 // agente tiene que ver lo que escribió la persona antes de retomar.
@@ -112,6 +115,7 @@ export class AiAgentsService {
     private rag: RagService,
     private ai: AiService,
     private store: WooStoreService,
+    private links: LinksService,
   ) {}
 
   /** Lee las API keys de IA configuradas por el tenant. */
@@ -385,7 +389,7 @@ export class AiAgentsService {
       agent.storeCartMode === 'multi'
         ? 'El link de pago admite varios productos a la vez.'
         : 'El link de pago carga un producto por link; si son varios, la herramienta devuelve un link por producto.';
-    return `\n\n--- TIENDA ONLINE EN VIVO (${agent.storeUrl}) ---\nTienes herramientas que consultan la tienda en tiempo real: buscar_producto (precio, stock, link e id), enviar_foto_producto (foto con pie de foto), generar_link_pago (checkout con el pedido cargado)${agent.handoffEnabled ? ' y derivar_a_humano' : ''}.\nLlámalas directamente, sin avisar antes al cliente que vas a revisar. Precios, stock, links e ids salen SOLO de lo que devuelven en esta respuesta: nunca los inventes ni los recuerdes de mensajes anteriores. Si el cliente pregunta por varios productos, búscalos todos a la vez.\n${cart}\nSi buscar_producto devuelve error web_no_responde, no adivines: comparte link_busqueda y ofrece un asesor.\n--- FIN TIENDA ---`;
+    return `\n\n--- TIENDA ONLINE EN VIVO (${agent.storeUrl}) ---\nTienes herramientas que consultan la tienda en tiempo real: buscar_producto (precio, stock, link e id), enviar_foto_producto (foto con pie de foto), generar_link_pago (checkout con el pedido cargado)${agent.handoffEnabled ? ' y derivar_a_humano' : ''}.\nLlámalas directamente, sin avisar antes al cliente que vas a revisar. Precios, stock, links e ids salen SOLO de lo que devuelven en esta respuesta: nunca los inventes ni los recuerdes de mensajes anteriores. Si el cliente pregunta por varios productos, búscalos todos a la vez.\n${cart}\nSi buscar_producto devuelve error web_no_responde, no adivines: comparte link_busqueda y ofrece un asesor.\nLinks: pega la URL completa tal como la devuelve la herramienta, sola en su línea y sin formato (nada de [texto](url), asteriscos ni signos pegados): el sistema la acorta y el cliente solo toca para abrirla.\n--- FIN TIENDA ---`;
   }
 
   /** Extrae el token {{HANDOFF}} de la respuesta y devuelve texto limpio + motivo. */
@@ -435,6 +439,53 @@ export class AiAgentsService {
       .trim();
 
     return { text, filesToSend };
+  }
+
+  /**
+   * Cambia los links de la tienda por links cortos de la plataforma: el de
+   * WooCommerce con UTM es larguísimo y en el chat se ve como ruido. Además
+   * así se cuentan los clics. Si algo falla, el link original sigue sirviendo.
+   */
+  private async shortenStoreLinks(
+    agent: AiAgent,
+    text: string,
+    channel?: string,
+  ): Promise<string> {
+    const urls = storeUrlsIn(text, normalizeStoreUrl(agent.storeUrl!));
+    if (!urls.length) return text;
+    const linkChannel: LinkChannel =
+      channel === 'whatsapp' || channel === 'email' || channel === 'sms'
+        ? channel
+        : 'other';
+    const short = await Promise.all(
+      urls.map((destination) =>
+        this.links
+          .createPersonalLinks(
+            String(agent.tenantId),
+            {
+              destination,
+              channel: linkChannel,
+              title: `Agente IA · ${agent.name}`,
+            },
+            [{}],
+          )
+          .then(([l]) => (/^https:\/\//.test(l.shortUrl) ? l.shortUrl : null))
+          .catch((err: unknown) => {
+            this.logger.warn(
+              `No se pudo acortar ${destination}: ${String(err)}`,
+            );
+            return null;
+          }),
+      ),
+    );
+    // Primero las URLs más largas: una puede ser prefijo de otra.
+    const pairs = urls
+      .map((u, i) => [u, short[i]] as const)
+      .filter((p): p is readonly [string, string] => !!p[1])
+      .sort((a, b) => b[0].length - a[0].length);
+    let out = text;
+    for (const [long, s] of pairs) out = out.split(long).join(s);
+    return out;
   }
 
   async generateAnswer(
@@ -525,6 +576,9 @@ export class AiAgentsService {
     );
     // Al derivar, el texto puede quedar vacío: ahí habla el mensaje de derivación.
     let reply = text || (handoff ? '' : agent.fallbackMessage);
+    if (options.channel !== 'email') reply = formatForChat(reply);
+    if (agent.storeUrl)
+      reply = await this.shortenStoreLinks(agent, reply, options.channel);
 
     // Fotos de producto: con una sola, la respuesta viaja como su pie de foto
     // (un solo mensaje, como pide el agente). Con varias, cada foto lleva el

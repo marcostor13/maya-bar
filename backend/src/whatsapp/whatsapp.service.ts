@@ -716,7 +716,8 @@ export class WhatsAppService {
     return this.postCloudApiMessage(config, 'CloudAPI', {
       to,
       type: 'text',
-      text: { body },
+      // Con un link, WhatsApp muestra su tarjeta (título e imagen de la página).
+      text: /https?:\/\//.test(body) ? { body, preview_url: true } : { body },
       // Así es como Cloud API enlaza una respuesta con el mensaje citado.
       ...(replyTo ? { context: { message_id: replyTo } } : {}),
     });

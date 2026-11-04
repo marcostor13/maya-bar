@@ -18,6 +18,7 @@ import { EMBEDDINGS_PROVIDER } from '../ai/providers/ai-provider.interface';
 import { HttpEmbeddingsProvider } from '../ai/providers/http-embeddings.provider';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WooStoreService } from './store/woo-store.service';
+import { LinksModule } from '../links/links.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { WooStoreService } from './store/woo-store.service';
     ]),
     AiModule,
     WhatsAppModule,
+    LinksModule,
   ],
   // Los webhooks de WhatsApp/Instagram viven ahora en ConversationsModule:
   // así el módulo de agentes no depende de las conversaciones (evita el ciclo).

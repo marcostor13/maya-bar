@@ -10,6 +10,7 @@ import { TenantConfig } from '../settings/tenant-config.schema';
 import { RagService } from './rag.service';
 import { AiService } from '../ai/ai.service';
 import { WooStoreService } from './store/woo-store.service';
+import { LinksService } from '../links/links.service';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ const mockAi = {
 };
 
 const mockStore = { search: jest.fn() };
+const mockLinks = { createPersonalLinks: jest.fn() };
 
 const dolopak = {
   id: 8667,
@@ -125,6 +127,7 @@ describe('AiAgentsService', () => {
         { provide: RagService, useValue: mockRag },
         { provide: AiService, useValue: mockAi },
         { provide: WooStoreService, useValue: mockStore },
+        { provide: LinksService, useValue: mockLinks },
       ],
     }).compile();
 
@@ -575,6 +578,39 @@ describe('AiAgentsService', () => {
         reason: 'reclamo: Ana, pedido 123 no llegó',
       });
       expect(r.reply).toBe('Le comunico con un asesor.');
+    });
+
+    it('acorta los links de la tienda y limpia el Markdown para el chat', async () => {
+      let n = 0;
+      mockLinks.createPersonalLinks.mockImplementation(() =>
+        Promise.resolve([{ shortUrl: `https://api.mayacrm.site/l/c${++n}` }]),
+      );
+      const pay =
+        'https://farmacenter.com.pe/checkout/?add-to-cart=8667&quantity=2&utm_source=agente_ia&utm_medium=whatsapp';
+      modelCalls(
+        [],
+        `**Dolopak** listo.\n[Pagar aquí](${pay})\nO mira https://farmacenter.com.pe/producto/dolopak/. Otra web: https://google.com`,
+      );
+      const r = await service.generateAnswer(storeAgent(), 'pagar', [], {
+        channel: 'whatsapp',
+      });
+      expect(r.reply).toBe(
+        '*Dolopak* listo.\nPagar aquí: https://api.mayacrm.site/l/c1\nO mira https://api.mayacrm.site/l/c2. Otra web: https://google.com',
+      );
+      expect(mockLinks.createPersonalLinks).toHaveBeenCalledTimes(2);
+      expect(mockLinks.createPersonalLinks.mock.calls[0][1]).toMatchObject({
+        destination: pay,
+        channel: 'whatsapp',
+      });
+    });
+
+    it('si no se puede acortar, deja el link original', async () => {
+      mockLinks.createPersonalLinks.mockRejectedValue(new Error('mongo caído'));
+      modelCalls([], 'Pague aquí: https://farmacenter.com.pe/checkout/?x=1');
+      const r = await service.generateAnswer(storeAgent(), 'pagar');
+      expect(r.reply).toBe(
+        'Pague aquí: https://farmacenter.com.pe/checkout/?x=1',
+      );
     });
 
     it('no guarda una tienda que no sea https pública', async () => {
