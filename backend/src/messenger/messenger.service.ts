@@ -23,6 +23,9 @@ const SUBSCRIBED_FIELDS = [
   'message_reads',
 ].join(',');
 
+/** Permisos sin los que no se pueden enviar DMs ni suscribir el webhook. */
+const REQUIRED_SCOPES = ['pages_messaging', 'pages_manage_metadata'];
+
 /**
  * Messenger (DMs de una Página de Facebook) sobre la Meta Graph API.
  *
@@ -139,7 +142,15 @@ export class MessengerService {
     }
   }
 
-  async getStatus(config: MsConfig): Promise<MsStatus> {
+  /**
+   * @param appAccessToken `APP_ID|APP_SECRET`. Con él se usa /debug_token, que no
+   * pide ningún permiso de la Página; leer la Página o sus edges puede exigir
+   * pages_read_engagement (error #100) aunque el token sirva para enviar.
+   */
+  async getStatus(
+    config: MsConfig,
+    appAccessToken?: string,
+  ): Promise<MsStatus> {
     if (!config.pageId || !config.pageAccessToken) {
       return {
         configured: false,
@@ -147,6 +158,7 @@ export class MessengerService {
         error: 'Faltan Page ID o Access Token',
       };
     }
+    if (appAccessToken) return this.debugToken(config, appAccessToken);
     try {
       // Leer el nodo de la Página (GET /{page-id}?fields=name) exige
       // pages_read_engagement o Page Public Metadata Access. subscribed_apps solo
@@ -154,6 +166,57 @@ export class MessengerService {
       await this.graph.get(`/${config.pageId}/subscribed_apps`, {
         accessToken: config.pageAccessToken,
       });
+      return { configured: true, connected: true };
+    } catch (err) {
+      return {
+        configured: true,
+        connected: false,
+        error: this.errorMessage(err),
+      };
+    }
+  }
+
+  private async debugToken(
+    config: MsConfig,
+    appAccessToken: string,
+  ): Promise<MsStatus> {
+    try {
+      const { data } = await this.graph.get<{
+        data?: {
+          is_valid?: boolean;
+          profile_id?: string;
+          scopes?: string[];
+          error?: { message?: string };
+        };
+      }>('/debug_token', {
+        params: {
+          input_token: String(config.pageAccessToken),
+          access_token: appAccessToken,
+        },
+      });
+      if (!data?.is_valid)
+        return {
+          configured: true,
+          connected: false,
+          error:
+            data?.error?.message ||
+            'El token de la Página no es válido. Vuelve a conectar con Facebook.',
+        };
+      if (data.profile_id && data.profile_id !== config.pageId)
+        return {
+          configured: true,
+          connected: false,
+          error: `El token es de otra Página (${data.profile_id}), no de ${config.pageId}.`,
+        };
+      const missing = REQUIRED_SCOPES.filter(
+        (s) => !(data.scopes ?? []).includes(s),
+      );
+      if (missing.length)
+        return {
+          configured: true,
+          connected: false,
+          error: `Faltan permisos: ${missing.join(', ')}. Vuelve a conectar y acepta todos los permisos.`,
+        };
       return { configured: true, connected: true };
     } catch (err) {
       return {

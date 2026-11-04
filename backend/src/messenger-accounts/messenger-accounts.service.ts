@@ -138,7 +138,12 @@ export class MessengerAccountsService {
 
   async status(id: string, tenantId: string): Promise<MsStatus> {
     const account = await this.findOne(id, tenantId);
-    const status = await this.ms.getStatus(this.toConfig(account));
+    const appId = this.config.get<string>('FACEBOOK_APP_ID');
+    const appSecret = this.config.get<string>('FACEBOOK_APP_SECRET');
+    const status = await this.ms.getStatus(
+      this.toConfig(account),
+      appId && appSecret ? `${appId}|${appSecret}` : undefined,
+    );
     return status.connected
       ? { ...status, name: status.name ?? account.pageName }
       : status;

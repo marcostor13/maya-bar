@@ -133,6 +133,55 @@ describe('MessengerService', () => {
       expect(res).toEqual({ configured: true, connected: true });
     });
 
+    describe('con token de app (debug_token)', () => {
+      const appToken = 'APP|SECRET';
+      const debug = (data: object) => graph.get.mockResolvedValue({ data });
+
+      it('conectado si el token es válido, de la Página y con los permisos', async () => {
+        debug({
+          is_valid: true,
+          profile_id: config.pageId,
+          scopes: ['pages_messaging', 'pages_manage_metadata'],
+        });
+        const res = await service.getStatus(config, appToken);
+        expect(graph.get).toHaveBeenCalledWith('/debug_token', {
+          params: {
+            input_token: config.pageAccessToken,
+            access_token: appToken,
+          },
+        });
+        expect(res).toEqual({ configured: true, connected: true });
+      });
+
+      it('lista los permisos que faltan', async () => {
+        debug({
+          is_valid: true,
+          profile_id: config.pageId,
+          scopes: ['pages_messaging'],
+        });
+        const res = await service.getStatus(config, appToken);
+        expect(res.connected).toBe(false);
+        expect(res.error).toContain('pages_manage_metadata');
+      });
+
+      it('desconectado si el token no es válido', async () => {
+        debug({ is_valid: false, error: { message: 'Session expired' } });
+        const res = await service.getStatus(config, appToken);
+        expect(res).toEqual({
+          configured: true,
+          connected: false,
+          error: 'Session expired',
+        });
+      });
+
+      it('desconectado si el token es de otra Página', async () => {
+        debug({ is_valid: true, profile_id: 'OTRA', scopes: [] });
+        const res = await service.getStatus(config, appToken);
+        expect(res.connected).toBe(false);
+        expect(res.error).toContain('OTRA');
+      });
+    });
+
     it('desconectado con el mensaje de error de Meta', async () => {
       graph.get.mockRejectedValue(
         new MetaApiError('Unsupported get request', 400),
