@@ -9,6 +9,7 @@ import { AgentFile } from './agent-file.schema';
 import { TenantConfig } from '../settings/tenant-config.schema';
 import { RagService } from './rag.service';
 import { AiService } from '../ai/ai.service';
+import { WooStoreService } from './store/woo-store.service';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,23 @@ const mockRag = {
 
 const mockAi = {
   chatMessages: jest.fn(),
+};
+
+const mockStore = { search: jest.fn() };
+
+const dolopak = {
+  id: 8667,
+  nombre: 'Dolopak (Paracetamol 500mg) Tab – Caja x100un (B)',
+  precio: 'S/ 40.00',
+  precio_regular: null,
+  disponible: true,
+  stock_bajo: null,
+  requiere_receta: false,
+  link: 'https://farmacenter.com.pe/product/dolopak/',
+  tiene_foto: true,
+  precioNum: 40,
+  moneda: 'S/',
+  foto: 'https://farmacenter.com.pe/wp-content/uploads/dolopak-1024x768.png',
 };
 
 function buildQuery(result: unknown) {
@@ -106,6 +124,7 @@ describe('AiAgentsService', () => {
         { provide: getModelToken(TenantConfig.name), useValue: configModel },
         { provide: RagService, useValue: mockRag },
         { provide: AiService, useValue: mockAi },
+        { provide: WooStoreService, useValue: mockStore },
       ],
     }).compile();
 
@@ -338,6 +357,248 @@ describe('AiAgentsService', () => {
       await expect(service.generateAnswer(makeAgent(), 'hola')).rejects.toThrow(
         'openai API error: boom',
       );
+    });
+  });
+
+  // ─── tienda online ─────────────────────────────────────────────────────────
+
+  describe('tienda online (herramientas)', () => {
+    type Run = (c: {
+      name: string;
+      input: Record<string, unknown>;
+    }) => Promise<any>;
+    const storeAgent = (o: Record<string, unknown> = {}) =>
+      makeAgent({ storeUrl: 'https://farmacenter.com.pe', ...o });
+
+    /** Simula al modelo: ejecuta las llamadas indicadas y devuelve `reply`. */
+    function modelCalls(
+      calls: { name: string; input: Record<string, unknown> }[],
+      reply = '',
+      results: unknown[] = [],
+    ) {
+      mockAi.chatMessages.mockImplementation(
+        async (_m: unknown, opts: { runTool: Run }) => {
+          for (const c of calls) results.push(await opts.runTool(c));
+          return reply;
+        },
+      );
+      return results;
+    }
+
+    beforeEach(() => mockStore.search.mockResolvedValue([dolopak]));
+
+    it('sin tienda no ofrece herramientas', async () => {
+      await service.generateAnswer(makeAgent(), 'hola');
+      expect(mockAi.chatMessages.mock.calls[0][1].tools).toBeUndefined();
+    });
+
+    it('con tienda ofrece las herramientas y las explica en el prompt', async () => {
+      await service.generateAnswer(
+        storeAgent({ handoffEnabled: true }),
+        'hola',
+      );
+      const [messages, opts] = mockAi.chatMessages.mock.calls[0];
+      expect(opts.tools.map((t: { name: string }) => t.name)).toEqual([
+        'buscar_producto',
+        'enviar_foto_producto',
+        'generar_link_pago',
+        'derivar_a_humano',
+      ]);
+      expect(messages[0].content).toContain('TIENDA ONLINE EN VIVO');
+    });
+
+    it('buscar_producto no le pasa al modelo la URL interna de la foto', async () => {
+      const results = modelCalls(
+        [{ name: 'buscar_producto', input: { consulta: 'dolopak' } }],
+        'ok',
+      );
+      await service.generateAnswer(storeAgent(), 'dolopak?');
+      expect(mockStore.search).toHaveBeenCalledWith(
+        'https://farmacenter.com.pe',
+        'dolopak',
+      );
+      expect(results[0].productos[0]).toMatchObject({
+        id: 8667,
+        precio: 'S/ 40.00',
+        disponible: true,
+      });
+      expect(results[0].productos[0].foto).toBeUndefined();
+    });
+
+    it('si la web no responde devuelve el link de búsqueda', async () => {
+      mockStore.search.mockRejectedValue(new Error('web_no_responde'));
+      const results = modelCalls([
+        { name: 'buscar_producto', input: { consulta: 'losartan 50' } },
+      ]);
+      await service.generateAnswer(storeAgent(), 'losartan');
+      expect(results[0]).toEqual({
+        error: 'web_no_responde',
+        link_busqueda:
+          'https://farmacenter.com.pe/?s=losartan%2050&post_type=product',
+      });
+    });
+
+    it('con una foto, la respuesta viaja como su pie en un solo mensaje', async () => {
+      const results = modelCalls(
+        [
+          { name: 'buscar_producto', input: { consulta: 'dolopak' } },
+          { name: 'enviar_foto_producto', input: { producto_id: 8667 } },
+          { name: 'enviar_foto_producto', input: { producto_id: 8667 } },
+        ],
+        'Dolopak S/ 40.00',
+      );
+      const r = await service.generateAnswer(storeAgent(), 'dolopak?');
+      expect(results[1].enviado).toBe(true);
+      expect(results[2]).toEqual({ enviado: false, motivo: 'ya_enviada' });
+      expect(r.reply).toBe('');
+      expect(r.filesToSend).toEqual([
+        {
+          url: dolopak.foto,
+          name: dolopak.nombre,
+          contentType: 'image/png',
+          caption: 'Dolopak S/ 40.00',
+        },
+      ]);
+    });
+
+    it('con varias fotos, cada una lleva su nombre y la respuesta va aparte', async () => {
+      mockStore.search.mockResolvedValue([
+        dolopak,
+        { ...dolopak, id: 2, nombre: 'Panadol', foto: 'https://x/p.jpg' },
+      ]);
+      modelCalls(
+        [
+          { name: 'buscar_producto', input: { consulta: 'paracetamol' } },
+          { name: 'enviar_foto_producto', input: { producto_id: 8667 } },
+          { name: 'enviar_foto_producto', input: { producto_id: 2 } },
+        ],
+        'Tenemos dos opciones',
+      );
+      const r = await service.generateAnswer(storeAgent(), 'paracetamol');
+      expect(r.reply).toBe('Tenemos dos opciones');
+      expect(
+        r.filesToSend.map((f) => [f.name, f.caption, f.contentType]),
+      ).toEqual([
+        [dolopak.nombre, '', 'image/png'],
+        ['Panadol', '', 'image/jpeg'],
+      ]);
+    });
+
+    it('no envía la foto de un producto que no buscó', async () => {
+      const results = modelCalls([
+        { name: 'enviar_foto_producto', input: { producto_id: 1 } },
+      ]);
+      const r = await service.generateAnswer(storeAgent(), 'hola');
+      expect(results[0].enviado).toBe(false);
+      expect(r.filesToSend).toEqual([]);
+    });
+
+    it('link de pago nativo de WooCommerce para un producto', async () => {
+      const results = modelCalls([
+        { name: 'buscar_producto', input: { consulta: 'dolopak' } },
+        {
+          name: 'generar_link_pago',
+          input: { items: [{ id: 8667, cantidad: 2 }] },
+        },
+      ]);
+      await service.generateAnswer(storeAgent(), 'quiero 2', [], {
+        channel: 'whatsapp',
+      });
+      expect(results[1]).toEqual({
+        link: 'https://farmacenter.com.pe/checkout/?add-to-cart=8667&quantity=2&utm_source=agente_ia&utm_medium=whatsapp',
+        resumen: [`2 × ${dolopak.nombre} – S/ 80.00`],
+      });
+    });
+
+    it('link de pago con varios productos cuando la tienda tiene el snippet', async () => {
+      mockStore.search.mockResolvedValue([
+        dolopak,
+        { ...dolopak, id: 8658, nombre: 'Panadol', precioNum: 12.5 },
+      ]);
+      const results = modelCalls([
+        { name: 'buscar_producto', input: { consulta: 'paracetamol' } },
+        {
+          name: 'generar_link_pago',
+          input: {
+            items: [
+              { id: 8667, cantidad: 2 },
+              { id: 8658, cantidad: 1 },
+            ],
+          },
+        },
+      ]);
+      await service.generateAnswer(
+        storeAgent({ storeCartMode: 'multi' }),
+        'los dos',
+        [],
+        { channel: 'whatsapp' },
+      );
+      expect(results[1].link).toBe(
+        'https://farmacenter.com.pe/?fc_pedido=8667:2,8658:1&utm_source=agente_ia&utm_medium=whatsapp',
+      );
+      expect(results[1].resumen[1]).toBe('1 × Panadol – S/ 12.50');
+    });
+
+    it('rechaza el link de pago de un id no buscado o agotado', async () => {
+      mockStore.search.mockResolvedValue([{ ...dolopak, disponible: false }]);
+      const results = modelCalls([
+        {
+          name: 'generar_link_pago',
+          input: { items: [{ id: 8667, cantidad: 1 }] },
+        },
+        { name: 'buscar_producto', input: { consulta: 'dolopak' } },
+        {
+          name: 'generar_link_pago',
+          input: { items: [{ id: 8667, cantidad: 1 }] },
+        },
+      ]);
+      await service.generateAnswer(storeAgent(), 'lo quiero');
+      expect(results[0].error[0]).toContain('no salió de buscar_producto');
+      expect(results[2].error[0]).toContain('agotado');
+    });
+
+    it('derivar_a_humano deriva con motivo y resumen', async () => {
+      modelCalls(
+        [
+          {
+            name: 'derivar_a_humano',
+            input: { motivo: 'reclamo', resumen: 'Ana, pedido 123 no llegó' },
+          },
+        ],
+        'Le comunico con un asesor.',
+      );
+      const r = await service.generateAnswer(
+        storeAgent({ handoffEnabled: true }),
+        'mi pedido no llega',
+      );
+      expect(r.handoff).toEqual({
+        reason: 'reclamo: Ana, pedido 123 no llegó',
+      });
+      expect(r.reply).toBe('Le comunico con un asesor.');
+    });
+
+    it('no guarda una tienda que no sea https pública', async () => {
+      await expect(
+        service.update(agentOid.toString(), tenantOid.toString(), {
+          storeUrl: 'http://localhost:3000',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('normaliza la URL de la tienda y la borra con vacío', async () => {
+      agentModel.findOneAndUpdate.mockReturnValue(buildQuery(makeAgent()));
+      await service.update(agentOid.toString(), tenantOid.toString(), {
+        storeUrl: ' https://farmacenter.com.pe/tienda/ ',
+      });
+      expect(agentModel.findOneAndUpdate.mock.calls[0][1].$set.storeUrl).toBe(
+        'https://farmacenter.com.pe',
+      );
+      await service.update(agentOid.toString(), tenantOid.toString(), {
+        storeUrl: '',
+      });
+      expect(
+        agentModel.findOneAndUpdate.mock.calls[1][1].$set.storeUrl,
+      ).toBeNull();
     });
   });
 

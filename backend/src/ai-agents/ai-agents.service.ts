@@ -26,6 +26,8 @@ import {
 import type { AiProviderId } from '../ai/providers/ai-provider.interface';
 import { TenantConfig } from '../settings/tenant-config.schema';
 import { WaMediaType } from '../whatsapp/whatsapp.service';
+import { normalizeStoreUrl, WooStoreService } from './store/woo-store.service';
+import { StoreToolSession } from './store/store-tools';
 
 // Igual que AI_HISTORY_LIMIT de la bandeja: si el chat pasó por manual, el
 // agente tiene que ver lo que escribió la persona antes de retomar.
@@ -38,6 +40,21 @@ export interface AgentFileSend {
   url: string;
   contentType?: string;
   name: string;
+  /**
+   * Solo en fotos de producto de la tienda (van antes del texto). Con texto, es
+   * el mensaje del agente; vacío, el pie es el nombre del producto.
+   */
+  caption?: string;
+}
+
+/** WhatsApp admite pies de foto de hasta 1024 caracteres. */
+const MAX_CAPTION = 1024;
+
+/** '' quita la tienda; cualquier otra cosa tiene que ser una URL https pública. */
+function storePatch(dto: CreateAiAgentDto | UpdateAiAgentDto) {
+  if (dto.storeUrl === undefined) return {};
+  const url = dto.storeUrl.trim();
+  return { storeUrl: url ? normalizeStoreUrl(url) : undefined };
 }
 
 /** El agente pidió que una persona tome la conversación. */
@@ -94,6 +111,7 @@ export class AiAgentsService {
     @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
     private rag: RagService,
     private ai: AiService,
+    private store: WooStoreService,
   ) {}
 
   /** Lee las API keys de IA configuradas por el tenant. */
@@ -156,6 +174,7 @@ export class AiAgentsService {
       handoffAccountId: dto.handoffAccountId
         ? new Types.ObjectId(dto.handoffAccountId)
         : undefined,
+      ...storePatch(dto),
       tenantId: new Types.ObjectId(tenantId),
       createdBy: new Types.ObjectId(userId),
     });
@@ -185,6 +204,8 @@ export class AiAgentsService {
       patch.handoffAccountId = dto.handoffAccountId
         ? new Types.ObjectId(dto.handoffAccountId)
         : null;
+    if (dto.storeUrl !== undefined)
+      patch.storeUrl = storePatch(dto).storeUrl ?? null;
     const doc = await this.agentModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), tenantId: this.tenantMatch(tenantId) },
@@ -354,7 +375,17 @@ export class AiAgentsService {
     const criteria = agent.handoffInstructions?.trim()
       ? `\n\nDeriva especialmente cuando: ${agent.handoffInstructions.trim()}`
       : '';
-    return `\n\n--- DERIVAR A UNA PERSONA ---\nSi el cliente pide hablar con una persona, se molesta, reclama, o la consulta excede lo que puedes resolver, incluye el token exacto {{HANDOFF:motivo breve}} en tu respuesta.\nAl usarlo se avisa a un agente humano para que entre a la plataforma y continúe el chat, y tú dejas de responder esta conversación.\nEscribe antes del token una frase avisando al cliente que lo estás derivando; el token se elimina y nunca se le muestra.${criteria}\nUsa el token una sola vez y solo cuando de verdad haga falta: una vez derivado no podrás volver a contestar.\n--- FIN DERIVAR ---`;
+    return `\n\n--- DERIVAR A UNA PERSONA ---\nSi el cliente pide hablar con una persona, se molesta, reclama, o la consulta excede lo que puedes resolver, incluye el token exacto {{HANDOFF:motivo breve}} en tu respuesta${agent.storeUrl ? ' (o usa la herramienta derivar_a_humano, que además deja un resumen)' : ''}.\nAl usarlo se avisa a un agente humano para que entre a la plataforma y continúe el chat, y tú dejas de responder esta conversación.\nEscribe antes del token una frase avisando al cliente que lo estás derivando; el token se elimina y nunca se le muestra.${criteria}\nUsa el token una sola vez y solo cuando de verdad haga falta: una vez derivado no podrás volver a contestar.\n--- FIN DERIVAR ---`;
+  }
+
+  /** Le dice al agente que tiene la tienda en vivo y cómo usar sus herramientas. */
+  private buildStorePromptSection(agent: AiAgent): string {
+    if (!agent.storeUrl) return '';
+    const cart =
+      agent.storeCartMode === 'multi'
+        ? 'El link de pago admite varios productos a la vez.'
+        : 'El link de pago carga un producto por link; si son varios, la herramienta devuelve un link por producto.';
+    return `\n\n--- TIENDA ONLINE EN VIVO (${agent.storeUrl}) ---\nTienes herramientas que consultan la tienda en tiempo real: buscar_producto (precio, stock, link e id), enviar_foto_producto (foto con pie de foto), generar_link_pago (checkout con el pedido cargado)${agent.handoffEnabled ? ' y derivar_a_humano' : ''}.\nLlámalas directamente, sin avisar antes al cliente que vas a revisar. Precios, stock, links e ids salen SOLO de lo que devuelven en esta respuesta: nunca los inventes ni los recuerdes de mensajes anteriores. Si el cliente pregunta por varios productos, búscalos todos a la vez.\n${cart}\nSi buscar_producto devuelve error web_no_responde, no adivines: comparte link_busqueda y ofrece un asesor.\n--- FIN TIENDA ---`;
   }
 
   /** Extrae el token {{HANDOFF}} de la respuesta y devuelve texto limpio + motivo. */
@@ -410,7 +441,7 @@ export class AiAgentsService {
     agent: AiAgent,
     userMessage: string,
     history: { role: 'user' | 'assistant'; content: string }[] = [],
-    options: { channelHint?: string } = {},
+    options: { channelHint?: string; channel?: string } = {},
   ): Promise<{
     reply: string;
     sources: number;
@@ -446,8 +477,18 @@ export class AiAgentsService {
           : '',
       this.buildFilesPromptSection(agentFiles),
       this.buildHandoffPromptSection(agent),
+      this.buildStorePromptSection(agent),
       options.channelHint ? `\n\n${options.channelHint}` : '',
     ].join('');
+
+    const storeTools = agent.storeUrl
+      ? new StoreToolSession(this.store, {
+          storeUrl: agent.storeUrl,
+          cartMode: agent.storeCartMode ?? 'native',
+          channel: options.channel ?? 'chat',
+          handoffEnabled: agent.handoffEnabled,
+        })
+      : null;
 
     const messages: ChatMessage[] = [
       { role: 'system', content: system },
@@ -469,20 +510,41 @@ export class AiAgentsService {
       temperature: agent.temperature,
       maxTokens: agent.maxTokens,
       apiKeys,
+      ...(storeTools
+        ? { tools: storeTools.tools, runTool: storeTools.run }
+        : {}),
     });
 
     const rawReply = raw.trim() || agent.fallbackMessage;
-    const { text: withoutHandoff, handoff } = this.parseHandoffToken(
-      rawReply,
-      agent,
-    );
+    const { text: withoutHandoff, handoff: tokenHandoff } =
+      this.parseHandoffToken(rawReply, agent);
+    const handoff = tokenHandoff ?? storeTools?.handoff ?? null;
     const { text, filesToSend } = this.parseFileTokens(
       withoutHandoff,
       agentFiles,
     );
     // Al derivar, el texto puede quedar vacío: ahí habla el mensaje de derivación.
-    const reply = text || (handoff ? '' : agent.fallbackMessage);
-    return { reply, sources, filesToSend, handoff };
+    let reply = text || (handoff ? '' : agent.fallbackMessage);
+
+    // Fotos de producto: con una sola, la respuesta viaja como su pie de foto
+    // (un solo mensaje, como pide el agente). Con varias, cada foto lleva el
+    // nombre del producto y la respuesta va después en su propio mensaje.
+    const single =
+      storeTools?.photos.length === 1 && reply.length <= MAX_CAPTION;
+    const photos: AgentFileSend[] = (storeTools?.photos ?? []).map((p) => ({
+      url: p.url,
+      name: p.name,
+      contentType: /\.png(\?|$)/i.test(p.url) ? 'image/png' : 'image/jpeg',
+      caption: single ? reply : '',
+    }));
+    if (single) reply = '';
+
+    return {
+      reply,
+      sources,
+      filesToSend: [...photos, ...filesToSend],
+      handoff,
+    };
   }
 
   /**
@@ -531,11 +593,17 @@ export class AiAgentsService {
     const last = [...messages].reverse().find((m) => m.role === 'user');
     if (!last) throw new BadRequestException('No hay mensaje del usuario');
     const history = messages.slice(0, messages.lastIndexOf(last));
-    const { reply, sources, filesToSend, handoff } = await this.generateAnswer(
-      agent,
-      last.content,
-      history,
-    );
+    const answer = await this.generateAnswer(agent, last.content, history, {
+      channel: 'prueba',
+    });
+    const { sources, filesToSend, handoff } = answer;
+    // El pie de la foto es parte de lo que lee el cliente: se muestra con el texto.
+    const reply = [
+      ...filesToSend.map((f) => f.caption).filter(Boolean),
+      answer.reply,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
     // Lo que se simula (archivos que se enviarían, derivación) va APARTE del
     // texto: pegarlo al mensaje hacía creer que el agente se lo dice al cliente,
     // y en el playground es justo lo que se está evaluando. La interfaz lo pinta
@@ -544,7 +612,9 @@ export class AiAgentsService {
       reply: reply || (handoff ? agent.handoffMessage : reply),
       sources,
       handoff: handoff ? { reason: handoff.reason ?? null } : null,
-      files: filesToSend.map((f) => f.name),
+      files: filesToSend.map((f) =>
+        f.caption !== undefined ? `Foto: ${f.name}` : f.name,
+      ),
     };
   }
 

@@ -386,6 +386,188 @@ describe('HttpAiProvider', () => {
     });
   });
 
+  describe('chatWithTools', () => {
+    const tools = [
+      {
+        name: 'buscar_producto',
+        description: 'busca',
+        parameters: { type: 'object', properties: {} },
+      },
+    ];
+    const bodyOf = (i: number) =>
+      JSON.parse(
+        (fetchSpy.mock.calls[i] as [string, RequestInit])[1].body as string,
+      ) as Record<string, any>;
+
+    it('Claude: ejecuta las llamadas en paralelo y devuelve el turno con thinking', async () => {
+      const thinking = { type: 'thinking', thinking: '', signature: 'sig' };
+      fetchSpy
+        .mockResolvedValueOnce(
+          mockResponse({
+            stop_reason: 'tool_use',
+            content: [
+              thinking,
+              {
+                type: 'tool_use',
+                id: 't1',
+                name: 'buscar_producto',
+                input: { consulta: 'a' },
+              },
+              {
+                type: 'tool_use',
+                id: 't2',
+                name: 'buscar_producto',
+                input: { consulta: 'b' },
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockResponse({
+            stop_reason: 'end_turn',
+            content: [
+              { type: 'thinking', thinking: '' },
+              { type: 'text', text: 'listo' },
+            ],
+          }),
+        );
+      const runTool = jest
+        .fn()
+        .mockImplementation((c: { input: { consulta: string } }) =>
+          c.input.consulta === 'b'
+            ? Promise.reject(new Error('caída'))
+            : Promise.resolve({ ok: c.input.consulta }),
+        );
+
+      const out = await provider.chatWithTools({
+        provider: 'claude',
+        apiKey: 'ck',
+        model: 'claude-sonnet-5-5',
+        maxTokens: 800,
+        messages: [{ role: 'system', content: 'sys' }, ...userMessages],
+        tools,
+        runTool,
+      });
+
+      expect(out).toBe('listo');
+      expect(runTool).toHaveBeenCalledTimes(2);
+      const first = bodyOf(0);
+      expect(first.tools[0]).toEqual({
+        name: 'buscar_producto',
+        description: 'busca',
+        input_schema: { type: 'object', properties: {} },
+      });
+      expect(first.system).toEqual([
+        { type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } },
+      ]);
+      const second = bodyOf(1);
+      expect(second.messages[1]).toEqual({
+        role: 'assistant',
+        content: expect.arrayContaining([thinking]),
+      });
+      expect(second.messages[2].content).toEqual([
+        { type: 'tool_result', tool_use_id: 't1', content: '{"ok":"a"}' },
+        {
+          type: 'tool_result',
+          tool_use_id: 't2',
+          content: '{"error":"caída"}',
+          is_error: true,
+        },
+      ]);
+    });
+
+    it('Claude: al agotar las vueltas exige la respuesta sin herramientas', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({
+          stop_reason: 'tool_use',
+          content: [
+            { type: 'tool_use', id: 't', name: 'buscar_producto', input: {} },
+          ],
+        }),
+      );
+      await provider.chatWithTools({
+        provider: 'claude',
+        apiKey: 'ck',
+        maxTokens: 800,
+        messages: userMessages,
+        tools,
+        runTool: jest.fn().mockResolvedValue({}),
+        maxRounds: 1,
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(bodyOf(1).tool_choice).toEqual({ type: 'none' });
+    });
+
+    it('OpenAI: responde tool_calls con mensajes role=tool', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(
+          mockResponse({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'c1',
+                      type: 'function',
+                      function: {
+                        name: 'buscar_producto',
+                        arguments: '{"consulta":"x"}',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockResponse({ choices: [{ message: { content: 'hecho' } }] }),
+        );
+      const runTool = jest.fn().mockResolvedValue({ productos: [] });
+
+      const out = await provider.chatWithTools({
+        provider: 'openai',
+        apiKey: 'ok',
+        model: 'gpt-5-mini',
+        maxTokens: 800,
+        messages: userMessages,
+        tools,
+        runTool,
+      });
+
+      expect(out).toBe('hecho');
+      expect(runTool).toHaveBeenCalledWith({
+        name: 'buscar_producto',
+        input: { consulta: 'x' },
+      });
+      expect(bodyOf(0).tools[0].type).toBe('function');
+      expect(bodyOf(1).messages.at(-1)).toEqual({
+        role: 'tool',
+        tool_call_id: 'c1',
+        content: '{"productos":[]}',
+      });
+    });
+
+    it('Gemini responde sin herramientas', async () => {
+      fetchSpy.mockResolvedValue(
+        mockResponse({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }),
+      );
+      const runTool = jest.fn();
+      const out = await provider.chatWithTools({
+        provider: 'gemini',
+        apiKey: 'gk',
+        maxTokens: 100,
+        messages: userMessages,
+        tools,
+        runTool,
+      });
+      expect(out).toBe('g');
+      expect(runTool).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listModels', () => {
     it('lists Claude models from the Anthropic endpoint', async () => {
       fetchSpy.mockResolvedValue(

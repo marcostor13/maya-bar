@@ -1645,26 +1645,36 @@ export class ConversationsService {
         agent,
         userMessage,
         history,
-        conv.channel === 'email' ? { channelHint: EMAIL_CHANNEL_HINT } : {},
+        {
+          channel: conv.channel,
+          ...(conv.channel === 'email'
+            ? { channelHint: EMAIL_CHANNEL_HINT }
+            : {}),
+        },
       );
 
       conv.agentId = agent._id;
       await conv.save();
+
+      const sendFile = (file: (typeof filesToSend)[number]) =>
+        this.sendFromAgent(conv, {
+          type: this.typeFromMime(file.contentType),
+          text: file.caption || file.name,
+          mediaUrl: file.url,
+          mimeType: file.contentType,
+          filename: file.name,
+        });
+      // Las fotos de producto llevan el mensaje en el pie: van antes del texto.
+      for (const file of filesToSend.filter((f) => f.caption !== undefined))
+        await sendFile(file);
 
       // Al derivar siempre se le dice algo al cliente, aunque la IA no escribiera.
       const text = reply || (handoff ? agent.handoffMessage : '');
       if (text) {
         await this.sendFromAgent(conv, { type: 'text', text });
       }
-      for (const file of filesToSend) {
-        await this.sendFromAgent(conv, {
-          type: this.typeFromMime(file.contentType),
-          text: file.name,
-          mediaUrl: file.url,
-          mimeType: file.contentType,
-          filename: file.name,
-        });
-      }
+      for (const file of filesToSend.filter((f) => f.caption === undefined))
+        await sendFile(file);
 
       if (handoff) {
         await this.escalateToHuman(conv, agent, handoff.reason, userMessage);

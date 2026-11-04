@@ -17,6 +17,7 @@ import { AiModule } from '../ai/ai.module';
 import { EMBEDDINGS_PROVIDER } from '../ai/providers/ai-provider.interface';
 import { HttpEmbeddingsProvider } from '../ai/providers/http-embeddings.provider';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { WooStoreService } from './store/woo-store.service';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
     AiAgentsService,
     RagService,
     EmbeddingsService,
+    WooStoreService,
     { provide: EMBEDDINGS_PROVIDER, useClass: HttpEmbeddingsProvider },
   ],
   exports: [AiAgentsService],

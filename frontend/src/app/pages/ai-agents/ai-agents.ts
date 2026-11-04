@@ -7,7 +7,7 @@ import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail,
+  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail, ShoppingCart,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 
@@ -79,6 +79,9 @@ interface Agent {
   handoffMessage: string;
   handoffTemplateName?: string;
   handoffTemplateLang?: string;
+  /** Tienda WooCommerce que el agente consulta en vivo ('' = sin tienda). */
+  storeUrl?: string;
+  storeCartMode?: 'native' | 'multi';
   published: boolean;
 }
 
@@ -107,7 +110,34 @@ interface AgentFile {
   contentType?: string;
 }
 
-type Section = 'general' | 'channels' | 'knowledge' | 'files' | 'handoff' | 'advanced';
+type Section = 'general' | 'channels' | 'knowledge' | 'files' | 'store' | 'handoff' | 'advanced';
+
+/** Snippet de WooCommerce para el link de pago con varios productos. */
+const CART_SNIPPET = `<?php
+// Link de pago del agente IA: /?fc_pedido=ID:CANT,ID:CANT
+add_action('wp_loaded', function () {
+    if (empty($_GET['fc_pedido']) || is_admin() || !function_exists('WC') || !WC()->cart) return;
+
+    if (WC()->session && !WC()->session->has_session()) {
+        WC()->session->set_customer_session_cookie(true);
+    }
+    WC()->cart->empty_cart();
+
+    $pares = explode(',', sanitize_text_field(wp_unslash($_GET['fc_pedido'])));
+    foreach (array_slice($pares, 0, 20) as $par) {
+        [$id, $cant] = array_pad(explode(':', $par), 2, 1);
+        $id = absint($id);
+        $cant = min(99, max(1, absint($cant)));
+        $p = wc_get_product($id);
+        if ($p && $p->is_purchasable() && $p->is_in_stock()) {
+            WC()->cart->add_to_cart($id, $cant);
+        }
+    }
+    $utm = array_intersect_key($_GET, array_flip(['utm_source', 'utm_medium', 'utm_campaign']));
+    wp_safe_redirect(add_query_arg(array_map('sanitize_text_field', $utm), wc_get_checkout_url()));
+    exit;
+}, 20);
+`;
 
 function blankAgent(): Agent {
   return {
@@ -118,6 +148,7 @@ function blankAgent(): Agent {
     handoffEnabled: false, handoffTargets: [], handoffNumbers: [], handoffAccountId: '', handoffInstructions: '',
     handoffMessage: 'Te comunico con una persona del equipo, en un momento te escriben por acá.',
     handoffTemplateName: '', handoffTemplateLang: 'es',
+    storeUrl: '', storeCartMode: 'native',
     published: false,
   };
 }
@@ -598,6 +629,41 @@ function blankAgent(): Agent {
               }
             }
 
+            <!-- TIENDA -->
+            @if (section() === 'store') {
+              <p class="field-hint" style="margin-bottom:16px">
+                Conecta una tienda WooCommerce y el agente consultará en vivo el precio, el stock y la foto de cada producto,
+                y podrá enviar el link de pago con el pedido cargado. Usa la API pública de la tienda: no hacen falta claves.
+              </p>
+              <div class="field">
+                <label class="field-label">URL de la tienda</label>
+                <input class="input" [(ngModel)]="form.storeUrl" placeholder="https://mitienda.com" />
+                <span class="field-hint">Déjala vacía para que el agente no consulte ninguna tienda.</span>
+              </div>
+              @if (form.storeUrl?.trim()) {
+                <div class="field">
+                  <label class="field-label">Link de pago</label>
+                  <select class="select" [(ngModel)]="form.storeCartMode">
+                    <option value="native">Un producto por link (funciona en cualquier WooCommerce)</option>
+                    <option value="multi">Varios productos en un link (requiere el snippet en la tienda)</option>
+                  </select>
+                  @if (form.storeCartMode === 'multi') {
+                    <span class="field-hint">
+                      La tienda debe tener instalado el snippet que atiende <span class="alias-code">?fc_pedido=ID:CANT,ID:CANT</span>:
+                      vacía el carrito, carga esos productos y abre el checkout. Sin él, el link no carga nada.
+                    </span>
+                    <button type="button" class="btn btn-sm btn-secondary" style="align-self:flex-start;margin-top:8px" (click)="copyCartSnippet()">
+                      <lucide-icon [img]="Copy" [size]="14" [strokeWidth]="2"></lucide-icon> Copiar snippet de WordPress
+                    </button>
+                  }
+                </div>
+                <p class="field-hint">
+                  Herramientas que recibe el agente: buscar_producto, enviar_foto_producto, generar_link_pago
+                  @if (form.handoffEnabled) { y derivar_a_humano }. Explícale en el prompt cuándo usarlas.
+                </p>
+              }
+            }
+
             <!-- AVANZADO -->
             @if (section() === 'advanced') {
               <div class="field">
@@ -878,13 +944,14 @@ export class AiAgentsComponent implements OnInit {
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
   readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Mail = Mail; readonly Settings = Settings;
-  readonly PhoneForwarded = PhoneForwarded;
+  readonly PhoneForwarded = PhoneForwarded; readonly ShoppingCart = ShoppingCart;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
     { key: 'general', label: 'General', icon: Bot },
     { key: 'channels', label: 'Canales', icon: Smartphone },
     { key: 'knowledge', label: 'Conocimiento', icon: BookOpen },
     { key: 'files', label: 'Archivos', icon: Paperclip },
+    { key: 'store', label: 'Tienda', icon: ShoppingCart },
     { key: 'handoff', label: 'Derivación', icon: PhoneForwarded },
     { key: 'advanced', label: 'Avanzado', icon: Sparkles },
   ];
@@ -1053,6 +1120,8 @@ export class AiAgentsComponent implements OnInit {
       handoffAccountId: '',
       handoffMessage: a.handoffMessage || base.handoffMessage,
       handoffTemplateLang: a.handoffTemplateLang || 'es',
+      storeUrl: a.storeUrl || '',
+      storeCartMode: a.storeCartMode || 'native',
     };
     this.newTarget = { channel: 'whatsapp', to: '', accountId: '' };
     this.section.set('general');
@@ -1174,6 +1243,16 @@ export class AiAgentsComponent implements OnInit {
       },
       error: (err) => { this.toast.error(err?.error?.message || 'Error al guardar'); this.saving.set(false); },
     });
+  }
+
+  /** Snippet para la tienda: atiende /?fc_pedido=ID:CANT,… y abre el checkout. */
+  async copyCartSnippet() {
+    try {
+      await navigator.clipboard.writeText(CART_SNIPPET);
+      this.toast.success('Snippet copiado: pégalo en WordPress con el plugin Code Snippets');
+    } catch {
+      this.toast.error('No se pudo copiar el snippet');
+    }
   }
 
   async remove(a: Agent) {

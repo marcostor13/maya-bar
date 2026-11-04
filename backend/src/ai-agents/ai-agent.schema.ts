@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { STORE_CART_MODES } from './store/store-tools';
+import type { StoreCartMode } from './store/store-tools';
 
 export const HANDOFF_CHANNELS = ['whatsapp', 'email', 'sms'] as const;
 export type HandoffChannel = (typeof HANDOFF_CHANNELS)[number];
@@ -142,6 +144,21 @@ export class AiAgent extends Document {
 
   @Prop({ default: 'es' })
   handoffTemplateLang: string;
+
+  // ------------------------------------------------------------------
+  // Tienda online (WooCommerce): precio, stock, fotos y link de pago en vivo
+  // ------------------------------------------------------------------
+
+  /** https://mitienda.com — con ella el agente recibe las herramientas de tienda. */
+  @Prop()
+  storeUrl?: string;
+
+  /**
+   * native: link de WooCommerce de un producto. multi: link `?fc_pedido=` con
+   * varios productos, que requiere el snippet instalado en la tienda.
+   */
+  @Prop({ type: String, enum: STORE_CART_MODES, default: 'native' })
+  storeCartMode: StoreCartMode;
 
   @Prop({ default: false })
   published: boolean;

@@ -12,6 +12,8 @@ import { Type } from 'class-transformer';
 import { PartialType } from '@nestjs/mapped-types';
 import { HANDOFF_CHANNELS } from '../ai-agent.schema';
 import type { HandoffChannel } from '../ai-agent.schema';
+import { STORE_CART_MODES } from '../store/store-tools';
+import type { StoreCartMode } from '../store/store-tools';
 
 export class HandoffTargetDto {
   @IsIn(HANDOFF_CHANNELS)
@@ -125,6 +127,15 @@ export class CreateAiAgentDto {
   @IsOptional()
   @IsString()
   handoffTemplateLang?: string;
+
+  /** Vacío desactiva las herramientas de tienda. */
+  @IsOptional()
+  @IsString()
+  storeUrl?: string;
+
+  @IsOptional()
+  @IsIn(STORE_CART_MODES)
+  storeCartMode?: StoreCartMode;
 
   @IsOptional()
   @IsBoolean()

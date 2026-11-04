@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { AI_CHAT_PROVIDER } from './providers/ai-provider.interface';
 import type {
   AiChatProvider,
+  AiTool,
+  AiToolCall,
   ChatMessage,
 } from './providers/ai-provider.interface';
 
-export type { ChatMessage };
+export type { AiTool, AiToolCall, ChatMessage };
 
 type AiProvider = 'deepseek' | 'claude' | 'openai' | 'gemini' | 'auto';
 
@@ -26,6 +28,9 @@ interface AiOptions {
   apiKeys?: AiApiKeys;
   /** Tiempo máximo de la llamada; sin él, espera lo que tarde el proveedor. */
   timeoutMs?: number;
+  /** Herramientas que el modelo puede llamar antes de responder. */
+  tools?: AiTool[];
+  runTool?: (call: AiToolCall) => Promise<unknown>;
 }
 
 @Injectable()
@@ -139,7 +144,7 @@ export class AiService {
     const keys = this.resolveKeys(options.apiKeys);
     const resolved = this.resolveProvider(provider, keys);
 
-    return this.chatProvider.chat({
+    const req = {
       provider: resolved,
       apiKey: keys[resolved],
       model,
@@ -147,7 +152,14 @@ export class AiService {
       temperature,
       messages,
       timeoutMs: options.timeoutMs,
-    });
+    };
+    if (options.tools?.length && options.runTool)
+      return this.chatProvider.chatWithTools({
+        ...req,
+        tools: options.tools,
+        runTool: options.runTool,
+      });
+    return this.chatProvider.chat(req);
   }
 
   /** Modelos que la API key del tenant puede usar hoy en ese proveedor. */
