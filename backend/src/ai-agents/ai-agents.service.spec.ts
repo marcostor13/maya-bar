@@ -374,7 +374,7 @@ describe('AiAgentsService', () => {
     function modelCalls(
       calls: { name: string; input: Record<string, unknown> }[],
       reply = '',
-      results: unknown[] = [],
+      results: any[] = [],
     ) {
       mockAi.chatMessages.mockImplementation(
         async (_m: unknown, opts: { runTool: Run }) => {
