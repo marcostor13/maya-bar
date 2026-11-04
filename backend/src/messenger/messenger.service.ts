@@ -148,11 +148,13 @@ export class MessengerService {
       };
     }
     try {
-      const data = await this.graph.get<{ name?: string }>(
-        `/${config.pageId}`,
-        { accessToken: config.pageAccessToken, params: { fields: 'name' } },
-      );
-      return { configured: true, connected: true, name: data.name };
+      // Leer el nodo de la Página (GET /{page-id}?fields=name) exige
+      // pages_read_engagement o Page Public Metadata Access. subscribed_apps solo
+      // pide pages_manage_metadata, que ya hace falta para el webhook.
+      await this.graph.get(`/${config.pageId}/subscribed_apps`, {
+        accessToken: config.pageAccessToken,
+      });
+      return { configured: true, connected: true };
     } catch (err) {
       return {
         configured: true,

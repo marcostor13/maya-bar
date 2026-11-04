@@ -123,14 +123,14 @@ describe('MessengerService', () => {
       expect(res).toMatchObject({ configured: false, connected: false });
     });
 
-    it('conectado con el nombre de la página', async () => {
-      graph.get.mockResolvedValue({ name: 'Mi Bar' });
+    it('conectado si el token puede leer subscribed_apps (sin pages_read_engagement)', async () => {
+      graph.get.mockResolvedValue({ data: [] });
       const res = await service.getStatus(config);
-      expect(res).toEqual({
-        configured: true,
-        connected: true,
-        name: 'Mi Bar',
-      });
+      expect(graph.get).toHaveBeenCalledWith(
+        `/${config.pageId}/subscribed_apps`,
+        { accessToken: config.pageAccessToken },
+      );
+      expect(res).toEqual({ configured: true, connected: true });
     });
 
     it('desconectado con el mensaje de error de Meta', async () => {

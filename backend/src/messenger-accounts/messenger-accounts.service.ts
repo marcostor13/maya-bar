@@ -138,7 +138,10 @@ export class MessengerAccountsService {
 
   async status(id: string, tenantId: string): Promise<MsStatus> {
     const account = await this.findOne(id, tenantId);
-    return this.ms.getStatus(this.toConfig(account));
+    const status = await this.ms.getStatus(this.toConfig(account));
+    return status.connected
+      ? { ...status, name: status.name ?? account.pageName }
+      : status;
   }
 
   async subscribeWebhook(id: string, tenantId: string) {
