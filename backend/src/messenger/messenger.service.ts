@@ -143,14 +143,11 @@ export class MessengerService {
   }
 
   /**
-   * @param appAccessToken `APP_ID|APP_SECRET`. Con él se usa /debug_token, que no
-   * pide ningún permiso de la Página; leer la Página o sus edges puede exigir
-   * pages_read_engagement (error #100) aunque el token sirva para enviar.
+   * Valida el token con /debug_token usando el propio token como llave: no pide
+   * permisos de la Página (leerla exige pages_read_engagement, error #100) y
+   * sirve también con tokens generados en otra app de Meta.
    */
-  async getStatus(
-    config: MsConfig,
-    appAccessToken?: string,
-  ): Promise<MsStatus> {
+  async getStatus(config: MsConfig): Promise<MsStatus> {
     if (!config.pageId || !config.pageAccessToken) {
       return {
         configured: false,
@@ -158,40 +155,19 @@ export class MessengerService {
         error: 'Faltan Page ID o Access Token',
       };
     }
-    if (appAccessToken) return this.debugToken(config, appAccessToken);
-    try {
-      // Leer el nodo de la Página (GET /{page-id}?fields=name) exige
-      // pages_read_engagement o Page Public Metadata Access. subscribed_apps solo
-      // pide pages_manage_metadata, que ya hace falta para el webhook.
-      await this.graph.get(`/${config.pageId}/subscribed_apps`, {
-        accessToken: config.pageAccessToken,
-      });
-      return { configured: true, connected: true };
-    } catch (err) {
-      return {
-        configured: true,
-        connected: false,
-        error: this.errorMessage(err),
-      };
-    }
-  }
-
-  private async debugToken(
-    config: MsConfig,
-    appAccessToken: string,
-  ): Promise<MsStatus> {
     try {
       const { data } = await this.graph.get<{
         data?: {
           is_valid?: boolean;
+          application?: string;
           profile_id?: string;
           scopes?: string[];
           error?: { message?: string };
         };
       }>('/debug_token', {
         params: {
-          input_token: String(config.pageAccessToken),
-          access_token: appAccessToken,
+          input_token: config.pageAccessToken,
+          access_token: config.pageAccessToken,
         },
       });
       if (!data?.is_valid)
@@ -215,7 +191,7 @@ export class MessengerService {
         return {
           configured: true,
           connected: false,
-          error: `Faltan permisos: ${missing.join(', ')}. Vuelve a conectar y acepta todos los permisos.`,
+          error: `Al token${data.application ? ` (app "${data.application}")` : ''} le faltan permisos: ${missing.join(', ')}. Vuelve a conectar con Facebook y acepta todos los permisos.`,
         };
       return { configured: true, connected: true };
     } catch (err) {
