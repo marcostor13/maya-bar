@@ -67,6 +67,12 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/onboarding/onboarding').then(m => m.OnboardingComponent),
     canActivate: [authGuard],
   },
+  // Legales públicas: Meta las pide en la app y en la revisión.
+  ...(['privacy', 'terms', 'deletion'] as const).map((doc) => ({
+    path: { privacy: 'privacidad', terms: 'terminos', deletion: 'eliminacion-datos' }[doc],
+    data: { doc },
+    loadComponent: () => import('./pages/legal/legal').then(m => m.LegalComponent),
+  })),
   {
     path: 'e/:slug',
     loadComponent: () =>

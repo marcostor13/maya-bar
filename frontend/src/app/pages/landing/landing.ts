@@ -571,6 +571,12 @@ const DESCRIPTION =
           <a href="#preguntas">Preguntas frecuentes</a>
           <a [href]="waDemo()" target="_blank" rel="noopener">Hablar por WhatsApp</a>
         </nav>
+        <nav class="footer-links" aria-label="Legal">
+          <h3>Legal</h3>
+          <a routerLink="/privacidad">Política de privacidad</a>
+          <a routerLink="/terminos">Términos del servicio</a>
+          <a routerLink="/eliminacion-datos">Eliminación de datos</a>
+        </nav>
       </div>
       <div class="lp-wrap footer-bottom">
         <span>© {{ year }} Maya CRM. Todos los derechos reservados.</span>
@@ -1172,7 +1178,7 @@ const DESCRIPTION =
       .lp-footer { background: var(--color-text-main); color: rgba(255, 255, 255, 0.66); }
       .footer-inner {
         display: grid;
-        grid-template-columns: 2fr 1fr 1fr;
+        grid-template-columns: 2fr 1fr 1fr 1fr;
         gap: 40px;
         padding-top: 56px;
         padding-bottom: 40px;

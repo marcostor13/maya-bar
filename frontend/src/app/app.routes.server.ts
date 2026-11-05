@@ -8,5 +8,9 @@ import { RenderMode, ServerRoute } from '@angular/ssr';
  */
 export const serverRoutes: ServerRoute[] = [
   { path: '', renderMode: RenderMode.Prerender },
+  // Legales: Meta y sus revisores deben leerlas sin ejecutar JavaScript.
+  { path: 'privacidad', renderMode: RenderMode.Prerender },
+  { path: 'terminos', renderMode: RenderMode.Prerender },
+  { path: 'eliminacion-datos', renderMode: RenderMode.Prerender },
   { path: '**', renderMode: RenderMode.Client },
 ];

@@ -8,6 +8,18 @@ test.describe('Acceso', () => {
     await expect(page).toHaveTitle(/Maya/i);
   });
 
+  test('las páginas legales son públicas (las pide Meta)', async ({ page }) => {
+    for (const [path, title] of [
+      ['/privacidad', 'Política de privacidad'],
+      ['/terminos', 'Términos del servicio'],
+      ['/eliminacion-datos', 'Eliminación de datos'],
+    ]) {
+      await page.goto(path);
+      await expect(page).toHaveURL(new RegExp(path));
+      await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+    }
+  });
+
   test('una ruta privada sin sesión lleva al login', async ({ page }) => {
     await page.goto('/customers');
     await expect(page).toHaveURL(/\/login/);
