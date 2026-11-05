@@ -165,6 +165,17 @@ describe('MessengerService', () => {
       });
     });
 
+    it('desconectado si el token no es de Página (usuario del sistema)', async () => {
+      debug({
+        is_valid: true,
+        type: 'SYSTEM_USER',
+        scopes: ['pages_messaging', 'pages_manage_metadata'],
+      });
+      const res = await service.getStatus(config);
+      expect(res.connected).toBe(false);
+      expect(res.error).toContain('SYSTEM_USER');
+    });
+
     it('desconectado si el token es de otra Página', async () => {
       debug({ is_valid: true, profile_id: 'OTRA', scopes: [] });
       const res = await service.getStatus(config);

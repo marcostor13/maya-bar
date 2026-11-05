@@ -159,6 +159,7 @@ export class MessengerService {
       const { data } = await this.graph.get<{
         data?: {
           is_valid?: boolean;
+          type?: string;
           application?: string;
           profile_id?: string;
           scopes?: string[];
@@ -177,6 +178,15 @@ export class MessengerService {
           error:
             data?.error?.message ||
             'El token de la Página no es válido. Vuelve a conectar con Facebook.',
+        };
+      // /{page-id}/messages solo acepta tokens de Página: con uno de usuario o de
+      // usuario del sistema Meta responde "(#100) El identificador de la página
+      // de la solicitud no coincide…" y no sale ningún mensaje.
+      if (data.type && data.type !== 'PAGE')
+        return {
+          configured: true,
+          connected: false,
+          error: `El token es de tipo ${data.type}, no de Página: así no se pueden enviar mensajes. Genera el token de la Página (Messenger > Configuración de la API > Generar tokens de acceso) y pégalo aquí.`,
         };
       if (data.profile_id && data.profile_id !== config.pageId)
         return {
