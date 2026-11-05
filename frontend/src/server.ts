@@ -95,6 +95,15 @@ app.get('/', (_req, res, next) => {
   );
 });
 
+// Legales prerenderizadas (`app.routes.server.ts`): `express.static` con
+// `index: false` no abre `privacidad/index.html`, así que se sirven a mano.
+app.get(['/privacidad', '/terminos', '/eliminacion-datos'], (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+  res.sendFile(join(req.path.slice(1), 'index.html'), { root: browserDistFolder }, (err) =>
+    err ? next() : undefined,
+  );
+});
+
 app.use(
   express.static(browserDistFolder, {
     maxAge: '1y',
