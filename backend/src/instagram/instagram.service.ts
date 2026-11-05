@@ -47,7 +47,8 @@ export class InstagramService {
 
     if (mediaUrl && mediaType) {
       await this.sendAttachment(to, mediaUrl, mediaType, config);
-      return;
+      // Los adjuntos de Instagram no llevan pie: el texto va en otro mensaje.
+      if (!body.trim()) return;
     }
 
     await this.post(config, {

@@ -59,7 +59,15 @@ export class MessengerService {
     }
 
     if (mediaUrl && mediaType) {
-      return this.sendAttachment(to, mediaUrl, mediaType, config);
+      // Los adjuntos de Messenger no llevan pie: el texto va en otro mensaje.
+      const id = await this.sendAttachment(to, mediaUrl, mediaType, config);
+      if (body.trim())
+        await this.post(config, {
+          recipient: { id: to },
+          messaging_type: 'RESPONSE',
+          message: { text: body },
+        });
+      return id;
     }
 
     return this.post(config, {

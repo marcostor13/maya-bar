@@ -65,6 +65,36 @@ describe('MessengerService', () => {
       expect(payload.message.attachment.payload.url).toBe('https://x/y.pdf');
     });
 
+    it('manda el pie de foto como un segundo mensaje de texto', async () => {
+      graph.post
+        .mockResolvedValueOnce({ message_id: 'mid.foto' })
+        .mockResolvedValueOnce({ message_id: 'mid.texto' });
+      const id = await service.sendMessage(
+        'PSID1',
+        'Paracetamol S/ 15',
+        config,
+        'https://x/p.jpg',
+        'image',
+      );
+      expect(id).toBe('mid.foto');
+      expect(graph.post).toHaveBeenCalledTimes(2);
+      const second = (graph.post.mock.calls[1] as [string, { json: any }])[1]
+        .json;
+      expect(second.message).toEqual({ text: 'Paracetamol S/ 15' });
+    });
+
+    it('sin pie de foto manda solo el adjunto', async () => {
+      graph.post.mockResolvedValue({});
+      await service.sendMessage(
+        'PSID1',
+        '  ',
+        config,
+        'https://x/p.jpg',
+        'image',
+      );
+      expect(graph.post).toHaveBeenCalledTimes(1);
+    });
+
     it('propaga el error de Meta', async () => {
       graph.post.mockRejectedValue(new MetaApiError('token expired', 401));
       await expect(service.sendMessage('PSID1', 'x', config)).rejects.toThrow(

@@ -1001,6 +1001,9 @@ export class ConversationsService {
       : undefined;
     // El caption viaja como cuerpo; para documentos se usa el nombre si no hay texto.
     const body = msg.text || (msg.mediaUrl ? (msg.filename ?? '') : '');
+    // Messenger e Instagram mandan el texto aparte del adjunto: sin texto, no
+    // se repite el nombre del archivo como mensaje.
+    const metaBody = msg.text ?? '';
 
     // Para citar hace falta el id del mensaje EN EL PROVEEDOR, no el nuestro.
     // Si el citado no lo tiene (por ejemplo, uno que falló al enviarse), se
@@ -1040,7 +1043,7 @@ export class ConversationsService {
       const msConfig: MsConfig = this.msAccounts.toConfig(msAccount);
       return this.ms.sendMessage(
         conv.contact,
-        body,
+        metaBody,
         msConfig,
         msg.mediaUrl,
         mediaType,
@@ -1053,7 +1056,7 @@ export class ConversationsService {
     const igConfig: IgConfig = this.igAccounts.toConfig(igAccount);
     await this.ig.sendMessage(
       conv.contact,
-      body,
+      metaBody,
       igConfig,
       msg.mediaUrl,
       mediaType,
