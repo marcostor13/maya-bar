@@ -10,8 +10,9 @@ import {
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
-  CalendarPlus, ListChecks, ShieldBan, ShieldCheck,
+  CalendarPlus, ListChecks, ShieldBan, ShieldCheck, Users, UserCheck, UserMinus, Hand,
 } from 'lucide-angular';
+import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { AppChromeService } from '../../shared/app-chrome';
@@ -137,6 +138,10 @@ interface Conv {
   lastMessageDirection: 'in' | 'out';
   unreadCount: number;
   autoReply: boolean;
+  /** Vendedor que atiende el chat; solo él puede escribir. */
+  takenOverBy?: string | null;
+  takenOverByName?: string | null;
+  takenOverAt?: string;
   status: 'open' | 'closed';
   customerId?: string;
   escalated?: boolean;
@@ -170,7 +175,12 @@ interface InboxAccount {
   unread: number;
 }
 
-type Filter = 'all' | 'unread' | 'auto' | 'manual';
+type Filter = 'all' | 'unread' | 'auto' | 'mine' | 'unassigned';
+
+/** Persona del equipo a la que se puede asignar un chat. */
+interface TeamMember { _id: string; name: string; role: string }
+
+const SUPERVISOR_ROLES = ['SUPERADMIN', 'TENANT_ADMIN', 'MANAGER'];
 
 const EMOJIS = [
   '😀', '😂', '🥰', '😍', '😊', '👍', '🙏', '👏', '🔥', '🎉',
@@ -265,7 +275,7 @@ const EMOJIS = [
               }
             </select>
           }
-          <app-inbox-filters [(status)]="filter" [(agentId)]="agentFilter" [(tags)]="tagFilter" [(blocked)]="blockedFilter"
+          <app-inbox-filters [(status)]="filter" [counts]="assignmentCounts()" [(agentId)]="agentFilter" [(tags)]="tagFilter" [(blocked)]="blockedFilter"
             (serverChange)="onServerFilterChange()" />
         </div>
 
@@ -334,12 +344,20 @@ const EMOJIS = [
                       <span class="tag tag-ai">
                         <lucide-icon [img]="Bot" [size]="11" [strokeWidth]="2.4"></lucide-icon> Agente IA
                       </span>
-                    } @else {
+                    } @else if (isMine(c)) {
                       <span class="tag tag-manual">
-                        <lucide-icon [img]="UserRound" [size]="11" [strokeWidth]="2.4"></lucide-icon> Manual
+                        <lucide-icon [img]="UserCheck" [size]="11" [strokeWidth]="2.4"></lucide-icon> Tú
+                      </span>
+                    } @else if (c.takenOverBy) {
+                      <span class="tag tag-owner" [title]="'Lo atiende ' + (c.takenOverByName || 'otra persona')">
+                        <lucide-icon [img]="UserRound" [size]="11" [strokeWidth]="2.4"></lucide-icon> {{ c.takenOverByName || 'Otro vendedor' }}
+                      </span>
+                    } @else {
+                      <span class="tag tag-queue">
+                        <lucide-icon [img]="Hand" [size]="11" [strokeWidth]="2.4"></lucide-icon> Sin asignar
                       </span>
                     }
-                    @if (c.escalated) {
+                    @if (c.escalated && !c.takenOverBy) {
                       <span class="tag tag-handoff">
                         <lucide-icon [img]="PhoneForwarded" [size]="11" [strokeWidth]="2.4"></lucide-icon> Derivado
                       </span>
@@ -421,6 +439,13 @@ const EMOJIS = [
                   {{ selected()!.autoReply ? 'Agente IA' : 'Manual' }}
                 </span>
               </label>
+              @if (!selected()!.autoReply) {
+                <button class="owner-chip" [class.mine]="isMine(selected()!)" [class.free]="!selected()!.takenOverBy"
+                  (click)="openAssign()" title="Quién atiende este chat: tomar, transferir o liberar">
+                  <lucide-icon [img]="selected()!.takenOverBy ? UserCheck : Hand" [size]="14" [strokeWidth]="2.4"></lucide-icon>
+                  <span>{{ ownerLabel(selected()!) }}</span>
+                </button>
+              }
               <button class="btn btn-sm btn-secondary" (click)="openClassify()" title="Clasificar y enviar a seguimiento">
                 <lucide-icon [img]="Tag" [size]="14" [strokeWidth]="2.5"></lucide-icon>
                 <span>Clasificar</span>
@@ -477,6 +502,16 @@ const EMOJIS = [
                   />
                   <span class="ai-track"><span class="ai-knob"></span></span>
                 </label>
+
+                <button class="sheet-row" (click)="threadMenu.set(false); openAssign()">
+                  <span class="sheet-row-icon">
+                    <lucide-icon [img]="Users" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                  <span class="sheet-row-text">
+                    Asignación
+                    <small>{{ selected()!.autoReply ? 'Lo atiende el agente IA' : ownerLabel(selected()!) }}</small>
+                  </span>
+                </button>
 
                 <button class="sheet-row" (click)="threadMenu.set(false); openAction('call')">
                   <span class="sheet-row-icon">
@@ -570,23 +605,40 @@ const EMOJIS = [
             </div>
           }
 
-          @if (selected()!.escalated) {
+          @if (!selected()!.autoReply && !selected()!.takenOverBy) {
             <div class="handoff-banner">
-              <lucide-icon [img]="PhoneForwarded" [size]="14" [strokeWidth]="2.4"></lucide-icon>
+              <lucide-icon [img]="selected()!.escalated ? PhoneForwarded : Hand" [size]="14" [strokeWidth]="2.4"></lucide-icon>
               <span>
-                El agente IA derivó este chat a una persona{{ selected()!.escalationReason ? ': ' + selected()!.escalationReason : '' }}.
-                @if (selected()!.escalationNotifiedTo?.length) {
-                  Se avisó a: {{ notifiedList(selected()!) }}.
+                @if (selected()!.escalated) {
+                  El agente IA derivó este chat a una persona{{ selected()!.escalationReason ? ': ' + selected()!.escalationReason : '' }}.
+                  @if (selected()!.escalationNotifiedTo?.length) {
+                    Se avisó a: {{ notifiedList(selected()!) }}.
+                  } @else {
+                    No se pudo avisar a nadie.
+                  }
                 } @else {
-                  No se pudo avisar a nadie.
+                  Nadie atiende este chat y el agente IA está apagado.
                 }
-                Continúa tú la conversación; al reactivar el agente se cierra la derivación.
+                Tómalo para responder: el resto del equipo lo verá como tuyo.
               </span>
+              <button class="btn btn-sm btn-primary banner-btn" [disabled]="assigning()" (click)="take()">Tomar conversación</button>
             </div>
-          } @else if (!selected()!.autoReply) {
+          } @else if (isMine(selected()!)) {
             <div class="manual-banner">
+              <lucide-icon [img]="UserCheck" [size]="14" [strokeWidth]="2.4"></lucide-icon>
+              <span>Atiendes tú este chat. El agente IA no responde hasta que se lo devuelvas.</span>
+              <button class="btn btn-sm btn-ghost banner-btn" (click)="openAssign()">Transferir o liberar</button>
+            </div>
+          } @else if (selected()!.takenOverBy) {
+            <div class="owner-banner">
               <lucide-icon [img]="UserRound" [size]="14" [strokeWidth]="2.4"></lucide-icon>
-              Estás respondiendo manualmente. El agente IA no contestará este chat hasta que lo reactives.
+              <span>
+                Lo atiende <strong>{{ selected()!.takenOverByName || 'otro vendedor' }}</strong>{{ selected()!.takenOverAt ? ' desde ' + sinceLabel(selected()!.takenOverAt!) : '' }}.
+                Puedes leer la conversación, pero solo esa persona puede responder.
+              </span>
+              @if (supervisor()) {
+                <button class="btn btn-sm btn-secondary banner-btn" (click)="openAssign()">Reasignar</button>
+              }
             </div>
           }
 
@@ -716,6 +768,14 @@ const EMOJIS = [
             <span>No puedes escribir a un contacto bloqueado.</span>
             <button class="btn btn-sm btn-secondary" (click)="toggleBlock()">Desbloquear</button>
           </footer>
+          } @else if (ownedByOther(selected()!)) {
+          <footer class="composer composer-blocked composer-readonly">
+            <lucide-icon [img]="UserRound" [size]="16" [strokeWidth]="2.4"></lucide-icon>
+            <span>Solo {{ selected()!.takenOverByName || 'quien lo atiende' }} puede responder este chat.</span>
+            @if (supervisor()) {
+              <button class="btn btn-sm btn-secondary" [disabled]="assigning()" (click)="take(true)">Tomarlo yo</button>
+            }
+          </footer>
           } @else {
           <footer class="composer">
             <app-inbox-actions #qa [conv]="selected()!" [draft]="draft()" [subject]="subject()"
@@ -806,7 +866,7 @@ const EMOJIS = [
                 #composerInput
                 class="textarea composer-input"
                 rows="1"
-                [placeholder]="isEmail() ? 'Escribe tu respuesta… (Ctrl + Enter para enviar)' : 'Escribe un mensaje…'"
+                [placeholder]="composerPlaceholder()"
                 [ngModel]="draft()"
                 (ngModelChange)="onDraftChange($event)"
                 (keydown)="onKeydown($event)"
@@ -981,6 +1041,66 @@ const EMOJIS = [
     @if (lightbox(); as url) {
       <div class="overlay" (click)="lightbox.set(null)">
         <img class="lightbox-img" [src]="url" alt="Imagen ampliada" (click)="$event.stopPropagation()" />
+      </div>
+    }
+
+    <!-- ══ Asignación del chat ══ -->
+    @if (assignOpen() && selected(); as c) {
+      <div class="overlay" (click)="assignOpen.set(false)" (keydown.escape)="assignOpen.set(false)" role="dialog" aria-modal="true" aria-labelledby="assign-title">
+        <div class="contact-modal card" (click)="$event.stopPropagation()">
+          <div class="cm-head">
+            <div>
+              <h2 id="assign-title">Asignación</h2>
+              <p class="cm-sub">
+                @if (c.autoReply) { Lo atiende el agente IA. }
+                @else if (isMine(c)) { Lo atiendes tú. }
+                @else if (c.takenOverBy) { Lo atiende {{ c.takenOverByName || 'otro vendedor' }}. }
+                @else { Nadie lo atiende todavía. }
+              </p>
+            </div>
+            <button class="btn-icon btn-ghost" (click)="assignOpen.set(false)" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.4"></lucide-icon>
+            </button>
+          </div>
+
+          <div class="cm-body">
+            @if (canManage(c)) {
+              <span class="cm-label">{{ c.takenOverBy ? 'Transferir a' : 'Asignar a' }}</span>
+              <div class="team-list">
+                @for (m of team(); track m._id) {
+                  <button type="button" class="team-row" [class.current]="m._id === c.takenOverBy"
+                    [disabled]="assigning() || m._id === c.takenOverBy" (click)="assignTo(m)">
+                    <span class="team-avatar">{{ m.name.charAt(0).toUpperCase() }}</span>
+                    <span class="team-name">{{ m.name }}{{ m._id === me() ? ' (tú)' : '' }}</span>
+                    @if (m._id === c.takenOverBy) { <span class="team-now">Lo atiende</span> }
+                  </button>
+                } @empty {
+                  <p class="cls-hint">No hay más personas con acceso a la bandeja.</p>
+                }
+              </div>
+            } @else {
+              <p class="cls-hint">Solo {{ c.takenOverByName || 'quien lo atiende' }} o un supervisor pueden cambiar la asignación.</p>
+            }
+          </div>
+
+          <div class="cm-actions assign-actions">
+            @if (canManage(c) && c.takenOverBy) {
+              <button class="btn btn-secondary" [disabled]="assigning()" (click)="release()">
+                <lucide-icon [img]="UserMinus" [size]="15" [strokeWidth]="2.4"></lucide-icon> Liberar
+              </button>
+            }
+            @if (canManage(c) && !c.autoReply) {
+              <button class="btn btn-secondary" [disabled]="assigning()" (click)="returnToAi()">
+                <lucide-icon [img]="Bot" [size]="15" [strokeWidth]="2.4"></lucide-icon> Devolver al agente IA
+              </button>
+            }
+            @if (!isMine(c) && (!c.takenOverBy || supervisor())) {
+              <button class="btn btn-primary" [disabled]="assigning()" (click)="take(!!c.takenOverBy)">
+                <lucide-icon [img]="UserCheck" [size]="15" [strokeWidth]="2.4"></lucide-icon> Tomarlo yo
+              </button>
+            }
+          </div>
+        </div>
       </div>
     }
 
@@ -1244,6 +1364,47 @@ const EMOJIS = [
     .tag-ai { background: rgba(139, 92, 246, 0.12); color: var(--color-ai); }
     .tag-manual { background: rgba(16, 185, 129, 0.12); color: var(--color-success); }
     .tag-handoff { background: rgba(245, 158, 11, 0.14); color: #B45309; }
+    .tag-owner { background: rgba(59, 130, 246, 0.12); color: #1D4ED8; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tag-queue { background: rgba(239, 68, 68, 0.12); color: var(--color-error); }
+    .owner-chip {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 200px;
+      padding: 6px 12px; border-radius: var(--radius-pill); border: 1px solid var(--color-border);
+      background: var(--color-bg-light); color: var(--color-text); font-size: 12.5px; font-weight: 600;
+      cursor: pointer; transition: background .15s ease;
+    }
+    .owner-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .owner-chip.mine { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.3); color: #047857; }
+    .owner-chip.free { background: rgba(239,68,68,.08); border-color: rgba(239,68,68,.3); color: var(--color-error); }
+    .owner-chip:hover { filter: brightness(.97); }
+    .owner-banner {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 24px;
+      background: rgba(59, 130, 246, 0.08);
+      color: #1E40AF;
+      font-size: 12.5px; font-weight: 500; line-height: 1.5;
+      border-bottom: 1px solid rgba(59, 130, 246, 0.18);
+      flex-shrink: 0;
+    }
+    .owner-banner span, .manual-banner span, .handoff-banner span { flex: 1; min-width: 0; }
+    .banner-btn { flex-shrink: 0; }
+    .composer-readonly lucide-icon { color: #1D4ED8; }
+    .team-list { display: flex; flex-direction: column; gap: 6px; }
+    .team-row {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border);
+      background: var(--color-bg-white, #fff); cursor: pointer; text-align: left; font: inherit;
+    }
+    .team-row:hover:not(:disabled) { background: var(--color-bg-light); }
+    .team-row:disabled { cursor: default; opacity: .75; }
+    .team-row.current { border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.06); }
+    .team-avatar {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 13px; font-weight: 700;
+      background: var(--color-brand-light); color: var(--color-brand);
+    }
+    .team-name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; }
+    .team-now { font-size: 11px; font-weight: 600; color: var(--color-success); }
+    .assign-actions { flex-wrap: wrap; }
     .tag-crm { background: var(--color-brand-light); color: var(--color-brand); }
     .tag-blocked { background: #FEF2F2; color: var(--color-error); }
     .tag-closed { background: var(--color-bg-light); color: var(--color-text-muted); }
@@ -1891,8 +2052,13 @@ export class InboxComponent implements OnInit, OnDestroy {
   private push = inject(PushService);
   private nativePush = inject(NativePushService);
   private destroyRef = inject(DestroyRef);
+  private auth = inject(AuthService);
 
   readonly MessagesSquare = MessagesSquare;
+  readonly Users = Users;
+  readonly UserCheck = UserCheck;
+  readonly UserMinus = UserMinus;
+  readonly Hand = Hand;
   readonly Send = Send;
   readonly Reply = Reply;
   readonly Sparkles = Sparkles;
@@ -2081,10 +2247,29 @@ export class InboxComponent implements OnInit, OnDestroy {
     return this.conversations().filter(c => {
       if (f === 'unread') return c.unreadCount > 0;
       if (f === 'auto') return c.autoReply;
-      if (f === 'manual') return !c.autoReply;
+      if (f === 'mine') return this.isMine(c);
+      if (f === 'unassigned') return !c.autoReply && !c.takenOverBy;
       return true;
     });
   });
+
+  /** Usuario conectado y si supervisa la bandeja (puede reasignar chats ajenos). */
+  me = computed(() => this.auth.currentUser()?.id ?? '');
+  supervisor = computed(() => SUPERVISOR_ROLES.includes(this.auth.currentUser()?.role ?? ''));
+
+  /** Contadores de las pestañas "Mías" y "Sin asignar" sobre la lista cargada. */
+  assignmentCounts = computed(() => {
+    let mine = 0, unassigned = 0;
+    for (const c of this.conversations()) {
+      if (this.isMine(c)) mine++;
+      else if (!c.autoReply && !c.takenOverBy && c.status !== 'closed') unassigned++;
+    }
+    return { mine, unassigned };
+  });
+
+  team = signal<TeamMember[]>([]);
+  assignOpen = signal(false);
+  assigning = signal(false);
 
   /** Mensajes agrupados por día para los separadores del hilo. */
   groupedMessages = computed(() => {
@@ -2625,8 +2810,116 @@ export class InboxComponent implements OnInit, OnDestroy {
         this.upsertConv(updated);
         this.toast.success(enabled ? 'El agente IA vuelve a responder este chat' : 'Tomaste el control del chat');
       },
-      error: err => this.toast.error(err.error?.message || 'No se pudo cambiar el modo de respuesta'),
+      error: err => {
+        (event.target as HTMLInputElement).checked = !enabled;
+        this.toast.error(err.error?.message || 'No se pudo cambiar el modo de respuesta');
+        if (err.status === 409) this.refreshSelected();
+      },
     });
+  }
+
+  // ── Asignación ──
+
+  isMine(c: Conv): boolean {
+    return !!c.takenOverBy && c.takenOverBy === this.me();
+  }
+
+  ownedByOther(c: Conv): boolean {
+    return !!c.takenOverBy && c.takenOverBy !== this.me();
+  }
+
+  /** Puede transferir, liberar o devolver a la IA: si es suyo, está libre o supervisa. */
+  canManage(c: Conv): boolean {
+    return !this.ownedByOther(c) || this.supervisor();
+  }
+
+  ownerLabel(c: Conv): string {
+    if (this.isMine(c)) return 'Lo atiendes tú';
+    if (c.takenOverBy) return c.takenOverByName || 'Otro vendedor';
+    return 'Sin asignar';
+  }
+
+  sinceLabel(iso: string): string {
+    const d = new Date(iso);
+    const today = new Date().toDateString() === d.toDateString();
+    return today
+      ? `las ${d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`
+      : `el ${d.toLocaleDateString('es', { day: 'numeric', month: 'short' })}`;
+  }
+
+  composerPlaceholder(): string {
+    if (this.isEmail()) return 'Escribe tu respuesta… (Ctrl + Enter para enviar)';
+    const c = this.selected();
+    if (c && !c.takenOverBy) return 'Escribe un mensaje… (al enviarlo, el chat pasa a ser tuyo)';
+    return 'Escribe un mensaje…';
+  }
+
+  openAssign() {
+    this.assignOpen.set(true);
+    if (this.team().length) return;
+    this.http.get<TeamMember[]>(`${API}/conversations/team`, { context: silentRequest() }).subscribe({
+      next: list => this.team.set(list),
+      error: () => this.team.set([]),
+    });
+  }
+
+  /** Aplica una acción de asignación y refleja el resultado (o el conflicto). */
+  private assignAction(path: string, body: object, ok: string) {
+    const conv = this.selected();
+    if (!conv || this.assigning()) return;
+    this.assigning.set(true);
+    this.http.post<Conv>(`${API}/conversations/${conv._id}/${path}`, body).subscribe({
+      next: updated => {
+        this.assigning.set(false);
+        this.assignOpen.set(false);
+        this.upsertConv(updated);
+        this.toast.success(ok);
+      },
+      error: err => {
+        this.assigning.set(false);
+        this.toast.error(err.error?.message || 'No se pudo cambiar la asignación');
+        // Otro se adelantó: se trae el estado real para que la pantalla no mienta.
+        if (err.status === 409) this.refreshSelected();
+      },
+    });
+  }
+
+  take(force = false) {
+    this.assignAction('take', { force }, 'Tomaste la conversación');
+  }
+
+  release() {
+    this.assignAction('release', {}, 'Conversación liberada: queda sin asignar');
+  }
+
+  assignTo(m: TeamMember) {
+    this.assignAction('assign', { userId: m._id },
+      m._id === this.me() ? 'Tomaste la conversación' : `Conversación asignada a ${m.name}`);
+  }
+
+  returnToAi() {
+    const conv = this.selected();
+    if (!conv || this.assigning()) return;
+    this.assigning.set(true);
+    this.http.patch<Conv>(`${API}/conversations/${conv._id}/auto-reply`, { enabled: true }).subscribe({
+      next: updated => {
+        this.assigning.set(false);
+        this.assignOpen.set(false);
+        this.upsertConv(updated);
+        this.toast.success('El agente IA vuelve a responder este chat');
+      },
+      error: err => {
+        this.assigning.set(false);
+        this.toast.error(err.error?.message || 'No se pudo devolver al agente IA');
+      },
+    });
+  }
+
+  private refreshSelected() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.http.get<Conv>(`${API}/conversations/${id}`, { context: silentRequest() })
+      .subscribe({ next: conv => this.upsertConv(conv) });
   }
 
   toggleStatus() {
@@ -2827,7 +3120,8 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.emojiOpen.set(false);
     this.scrollToBottom();
     // Escribir manualmente pausa al agente en el backend: reflejarlo ya.
-    if (conv.autoReply) this.upsertConv({ ...conv, autoReply: false });
+    if (conv.autoReply || !conv.takenOverBy)
+      this.upsertConv({ ...conv, autoReply: false, takenOverBy: this.me(), takenOverByName: this.auth.currentUser()?.name ?? null });
 
     this.http.post<Msg>(`${API}/conversations/${conv._id}/messages`, body, { context: silentRequest() }).subscribe({
       next: msg => this.replaceTemp(tempId, msg),

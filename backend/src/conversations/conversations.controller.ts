@@ -29,7 +29,10 @@ import {
   ScheduleMessageDto,
   ConversationTaskDto,
   CompleteTaskDto,
+  TakeConversationDto,
+  AssignConversationDto,
 } from './dto/conversation.dto';
+import { ConversationAssignmentService } from './conversation-assignment.service';
 import { InboxToolsService } from './inbox-tools.service';
 
 @Controller('conversations')
@@ -38,6 +41,7 @@ export class ConversationsController {
   constructor(
     private service: ConversationsService,
     private tools: InboxToolsService,
+    private assignment: ConversationAssignmentService,
   ) {}
 
   @Get()
@@ -51,6 +55,7 @@ export class ConversationsController {
     @Query('agentId') agentId?: string,
     @Query('tags') tags?: string,
     @Query('blocked') blocked?: string,
+    @Query('assigned') assigned?: string,
   ) {
     assertRole(req.user.role, CRM_ROLES);
     const tenantId = req.user.tenantId;
@@ -75,6 +80,10 @@ export class ConversationsController {
       agent,
       customerIds,
       blocked: blocked === 'true',
+      assigned:
+        assigned && ['me', 'unassigned', 'ai', 'others'].includes(assigned)
+          ? { mode: assigned, userId: req.user.userId }
+          : undefined,
     });
   }
 
@@ -97,6 +106,13 @@ export class ConversationsController {
   tags(@Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.availableTags(req.user.tenantId);
+  }
+
+  /** Vendedores con acceso a la bandeja, para asignar chats. */
+  @Get('team')
+  team(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.assignment.team(req.user.tenantId);
   }
 
   @Get('unread-count')
@@ -330,6 +346,48 @@ export class ConversationsController {
     return this.service.markRead(id, req.user.tenantId);
   }
 
+  /** Tomar el chat. `force` (supervisores) se lo quita a quien lo tenga. */
+  @Post(':id/take')
+  take(
+    @Param('id') id: string,
+    @Body() dto: TakeConversationDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.assignment.take(
+      id,
+      req.user.tenantId,
+      { userId: req.user.userId, role: req.user.role },
+      dto.force === true,
+    );
+  }
+
+  /** Devolver el chat a la cola sin asignar. */
+  @Post(':id/release')
+  release(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.assignment.release(id, req.user.tenantId, {
+      userId: req.user.userId,
+      role: req.user.role,
+    });
+  }
+
+  /** Asignar o transferir el chat a otra persona del equipo. */
+  @Post(':id/assign')
+  assign(
+    @Param('id') id: string,
+    @Body() dto: AssignConversationDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.assignment.assign(
+      id,
+      req.user.tenantId,
+      { userId: req.user.userId, role: req.user.role },
+      dto.userId,
+    );
+  }
+
   /** Enciende/apaga la respuesta automática del agente en esta conversación. */
   @Patch(':id/auto-reply')
   autoReply(
@@ -340,12 +398,10 @@ export class ConversationsController {
     assertRole(req.user.role, CRM_ROLES);
     if (typeof dto.enabled !== 'boolean')
       throw new BadRequestException('Falta el valor de "enabled"');
-    return this.service.setAutoReply(
-      id,
-      req.user.tenantId,
-      dto.enabled,
-      req.user.userId,
-    );
+    return this.service.setAutoReply(id, req.user.tenantId, dto.enabled, {
+      userId: req.user.userId,
+      role: req.user.role,
+    });
   }
 
   @Patch(':id/status')

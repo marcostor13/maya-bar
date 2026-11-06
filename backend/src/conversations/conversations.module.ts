@@ -8,6 +8,8 @@ import { MessengerWebhookController } from './messenger-webhook.controller';
 import { ConversationsService } from './conversations.service';
 import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
+import { ConversationAssignmentService } from './conversation-assignment.service';
+import { User, UserSchema } from '../users/user.schema';
 import { Conversation, ConversationSchema } from './conversation.schema';
 import { Message, MessageSchema } from './message.schema';
 import {
@@ -39,6 +41,7 @@ import { SmsModule } from '../sms/sms.module';
       { name: Message.name, schema: MessageSchema },
       { name: ScheduledMessage.name, schema: ScheduledMessageSchema },
       { name: Customer.name, schema: CustomerSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     WhatsAppModule,
     WhatsAppAccountsModule,
@@ -64,6 +67,7 @@ import { SmsModule } from '../sms/sms.module';
     ConversationsService,
     ConversationsGateway,
     HandoffService,
+    ConversationAssignmentService,
     EmailListenerService,
     InboxToolsService,
   ],

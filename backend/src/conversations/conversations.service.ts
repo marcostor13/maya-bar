@@ -43,6 +43,11 @@ import {
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
+import {
+  ConversationAssignmentService,
+  isSupervisor,
+  type Actor,
+} from './conversation-assignment.service';
 import { LeadsService } from '../leads/leads.service';
 import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
@@ -232,6 +237,7 @@ export class ConversationsService {
     private suppression: SuppressionService,
     private emailAccounts: EmailAccountsService,
     private emailTransport: EmailTransportService,
+    private assignment: ConversationAssignmentService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -335,6 +341,11 @@ export class ConversationsService {
       customerIds?: Types.ObjectId[];
       /** Solo los chats bloqueados. */
       blocked?: boolean;
+      /**
+       * Por quién la atiende: `me` (las mías), `unassigned` (en cola: sin IA y
+       * sin dueño), `ai` (las atiende el agente IA) u `others` (de otro vendedor).
+       */
+      assigned?: { mode: string; userId: string };
     } = {},
   ) {
     const query: QueryFilter<Conversation> = {
@@ -353,6 +364,16 @@ export class ConversationsService {
     if (filters.status) query.status = filters.status;
     if (filters.unread) query.unreadCount = { $gt: 0 };
     if (filters.blocked) query.blocked = true;
+    if (filters.assigned) {
+      const me = new Types.ObjectId(filters.assigned.userId);
+      if (filters.assigned.mode === 'me') query.takenOverBy = me;
+      else if (filters.assigned.mode === 'unassigned') {
+        query.autoReply = false;
+        query.takenOverBy = null;
+      } else if (filters.assigned.mode === 'ai') query.autoReply = true;
+      else if (filters.assigned.mode === 'others')
+        query.takenOverBy = { $nin: [null, me] };
+    }
     if (filters.customerIds) query.customerId = { $in: filters.customerIds };
     const and: QueryFilter<Conversation>[] = [];
     if (filters.agent) {
@@ -656,28 +677,40 @@ export class ConversationsService {
     return conv;
   }
 
-  /** Enciende/apaga la respuesta automática del agente para esta conversación. */
+  /**
+   * Enciende/apaga la respuesta automática del agente para esta conversación.
+   * Apagarla es tomar el chat; encenderla lo devuelve al agente y lo saca de la
+   * cola. Si otro vendedor lo atiende, solo él o un supervisor pueden hacerlo.
+   */
   async setAutoReply(
     id: string,
     tenantId: string,
     enabled: boolean,
-    userId?: string,
+    actor: Actor,
   ) {
     const conv = await this.getConversation(id, tenantId);
-    conv.autoReply = enabled;
+    this.assignment.assertCanControl(conv, actor);
+    if (!enabled)
+      return this.assignment.take(
+        id,
+        tenantId,
+        actor,
+        isSupervisor(actor.role),
+      );
+    if (conv.autoReply) return conv;
+    conv.autoReply = true;
     // Reactivar el agente cierra la derivación: ya nadie tiene que entrar a atenderla.
-    if (enabled) {
-      conv.escalated = false;
-      conv.escalationReason = undefined;
-      conv.escalatedAt = undefined;
-    }
-    conv.takenOverBy = enabled
-      ? undefined
-      : userId
-        ? new Types.ObjectId(userId)
-        : undefined;
-    conv.takenOverAt = enabled ? undefined : new Date();
+    conv.escalated = false;
+    conv.escalationReason = undefined;
+    conv.escalatedAt = undefined;
+    conv.takenOverBy = undefined;
+    conv.takenOverByName = undefined;
+    conv.takenOverAt = undefined;
     await conv.save();
+    await this.assignment.note(
+      conv,
+      `${await this.assignment.nameOf(actor.userId)} devolvió la conversación al agente IA.`,
+    );
     this.gateway.emitConversation(tenantId, conv);
     return conv;
   }
@@ -913,7 +946,7 @@ export class ConversationsService {
     dto: SendMessageDto,
     opts: { background?: boolean } = {},
   ) {
-    const conv = await this.getConversation(id, tenantId);
+    let conv = await this.getConversation(id, tenantId);
     if (conv.blocked)
       throw new BadRequestException(
         'Este contacto está bloqueado: desbloquéalo para escribirle.',
@@ -924,12 +957,13 @@ export class ConversationsService {
     if (type !== 'text' && !dto.mediaUrl)
       throw new BadRequestException('Falta la URL del archivo');
 
-    // Escribir manualmente pausa al agente: quien contesta es la persona.
-    if (conv.autoReply && dto.pauseAgent !== false) {
-      conv.autoReply = false;
-      conv.takenOverBy = new Types.ObjectId(userId);
-      conv.takenOverAt = new Date();
-    }
+    // Solo escribe quien atiende el chat. Si nadie lo atiende, escribir es
+    // tomarlo (y pausa al agente: quien contesta es la persona). Con
+    // `pauseAgent: false` se responde sin quitarle el chat al agente.
+    const actor: Actor = { userId, role: '' };
+    if (!(conv.autoReply && dto.pauseAgent === false))
+      conv = await this.assignment.ensureWriter(conv, actor);
+    else this.assignment.assertCanControl(conv, actor);
 
     const msg = await this.msgModel.create({
       tenantId: conv.tenantId,
@@ -1306,11 +1340,9 @@ export class ConversationsService {
         type: 'text',
       },
     );
-    // Quien escribe es una persona: el agente no se mete en este hilo hasta
-    // que alguien lo reactive.
-    conv.autoReply = false;
-    conv.takenOverBy = new Types.ObjectId(userId);
-    conv.takenOverAt = new Date();
+    // Quien escribe es una persona: `sendManual` le asigna el hilo y apaga el
+    // agente (o falla si ya lo atiende otro vendedor).
+    this.assignment.assertCanControl(conv, { userId, role: '' });
     conv.emailSubject = dto.subject.trim();
     await conv.save();
     return this.sendManual(String(conv._id), tenantId, userId, {
@@ -1551,7 +1583,7 @@ export class ConversationsService {
     msg: Message,
   ): Promise<void> {
     try {
-      await this.nativePush.sendToTenantModule(conv.tenantId, 'inbox', {
+      const payload = {
         // Mismo texto y mismo destino que la notificación web: quien tenga los
         // dos canales debe ver el mismo aviso, no dos redacciones distintas.
         title: `${this.displayContact(conv)} · ${CHANNEL_LABEL[conv.channel]}`,
@@ -1564,7 +1596,16 @@ export class ConversationsService {
           conversationId: String(conv._id),
           channel: conv.channel,
         },
-      });
+      };
+      // Un chat con dueño solo le avisa a él: al resto del equipo no le toca.
+      if (conv.takenOverBy)
+        await this.nativePush.sendToUser(conv.takenOverBy, payload);
+      else
+        await this.nativePush.sendToTenantModule(
+          conv.tenantId,
+          'inbox',
+          payload,
+        );
     } catch (err) {
       this.logger.warn(
         `No se pudo notificar el mensaje entrante: ${(err as Error).message}`,
@@ -1718,6 +1759,7 @@ export class ConversationsService {
     conv.escalationReason = reason;
     conv.escalationNotifiedTo = notified;
     conv.takenOverBy = undefined;
+    conv.takenOverByName = undefined;
     conv.takenOverAt = new Date();
     await conv.save();
 
@@ -1759,17 +1801,25 @@ export class ConversationsService {
   private async notifyInbound(conv: Conversation, msg: Message) {
     const who = this.displayContact(conv);
     const channel = CHANNEL_LABEL[conv.channel];
-    await this.push.sendToTenant(
-      String(conv.tenantId),
-      {
-        title: `${who} · ${channel}`,
-        body: this.previewOf(msg) || 'Nuevo mensaje',
-        url: `/inbox?c=${String(conv._id)}`,
-        tag: `conversation-${String(conv._id)}`,
-        conversationId: String(conv._id),
-      },
-      { moduleKey: 'inbox' },
-    );
+    const payload = {
+      title: `${who} · ${channel}`,
+      body: this.previewOf(msg) || 'Nuevo mensaje',
+      url: `/inbox?c=${String(conv._id)}`,
+      tag: `conversation-${String(conv._id)}`,
+      conversationId: String(conv._id),
+    };
+    // Un chat con dueño solo le avisa a él: al resto del equipo no le toca.
+    if (conv.takenOverBy) {
+      await this.push
+        .sendToUser(String(conv.takenOverBy), payload)
+        .catch((err: unknown) =>
+          this.logger.warn(`Push al vendedor del chat falló: ${String(err)}`),
+        );
+      return;
+    }
+    await this.push.sendToTenant(String(conv.tenantId), payload, {
+      moduleKey: 'inbox',
+    });
   }
 
   /** Cómo se nombra al contacto fuera de la bandeja: su nombre o el id del canal. */

@@ -72,8 +72,17 @@ export class Conversation extends Document {
   @Prop({ default: true })
   autoReply: boolean;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  /**
+   * Vendedor que atiende el chat. Solo él puede escribir; el resto del equipo
+   * lo ve en solo lectura. Vacío con `autoReply` en false = chat en cola, sin
+   * asignar.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   takenOverBy?: Types.ObjectId;
+
+  /** Nombre de quien lo atiende, copiado al asignar para no consultar usuarios en cada lista. */
+  @Prop()
+  takenOverByName?: string;
 
   @Prop({ type: Date })
   takenOverAt?: Date;

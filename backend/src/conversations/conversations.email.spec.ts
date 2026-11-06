@@ -2,6 +2,24 @@ import { Types } from 'mongoose';
 import { ConversationsService } from './conversations.service';
 import type { ParsedEmail } from '../email-accounts/email-message';
 
+/** Asignación simulada: escribir le da el chat a quien escribe. */
+const fakeAssignment = {
+  ensureWriter: jest.fn(
+    (
+      conv: { autoReply: boolean; takenOverBy?: unknown },
+      actor: { userId: string },
+    ) => {
+      conv.autoReply = false;
+      conv.takenOverBy = new Types.ObjectId(actor.userId);
+      return Promise.resolve(conv);
+    },
+  ),
+  assertCanControl: jest.fn(),
+  take: jest.fn(),
+  note: jest.fn().mockResolvedValue(undefined),
+  nameOf: jest.fn().mockResolvedValue('Ana'),
+};
+
 type Doc = Record<string, any> & { _id: Types.ObjectId; save: jest.Mock };
 
 /**
@@ -131,8 +149,14 @@ function setup(
     emitConversation: jest.fn(),
     emitTyping: jest.fn(),
   };
-  const push = { sendToTenant: jest.fn().mockResolvedValue(1) };
-  const nativePush = { sendToTenantModule: jest.fn().mockResolvedValue(1) };
+  const push = {
+    sendToTenant: jest.fn().mockResolvedValue(1),
+    sendToUser: jest.fn().mockResolvedValue(1),
+  };
+  const nativePush = {
+    sendToTenantModule: jest.fn().mockResolvedValue(1),
+    sendToUser: jest.fn().mockResolvedValue(1),
+  };
   const uploads = {
     uploadBuffer: jest.fn(
       (_b: Buffer, type: string, _f: string, name: string) =>
@@ -169,6 +193,7 @@ function setup(
     suppression as never,
     emailAccounts as never,
     emailTransport as never,
+    fakeAssignment as never,
   );
   return {
     service,

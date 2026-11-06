@@ -343,6 +343,8 @@ export class DashboardAnalyticsService {
         ...convScope,
         escalated: true,
         status: 'open',
+        // Derivadas que nadie ha tomado todavía.
+        takenOverBy: null,
       }),
     ]);
 

@@ -1,4 +1,4 @@
-import { Component, computed, inject, model, output, signal } from '@angular/core';
+import { Component, computed, inject, input, model, output, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { LucideAngularModule, SlidersHorizontal, X, Bot, Tag, Check, Ban } from 'lucide-angular';
 import { silentRequest } from '../../shared/loader';
@@ -6,7 +6,7 @@ import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
 
-export type InboxStatusFilter = 'all' | 'unread' | 'auto' | 'manual';
+export type InboxStatusFilter = 'all' | 'unread' | 'auto' | 'mine' | 'unassigned';
 
 interface AgentOption { _id: string; name: string; published: boolean }
 
@@ -23,7 +23,12 @@ interface AgentOption { _id: string; name: string; published: boolean }
     <div class="f-row">
       <div class="f-status" role="group" aria-label="Estado">
         @for (s of statuses; track s.key) {
-          <button type="button" class="f-seg" [class.active]="status() === s.key" (click)="status.set(s.key)">{{ s.label }}</button>
+          <button type="button" class="f-seg" [class.active]="status() === s.key" (click)="status.set(s.key)">
+            {{ s.label }}
+            @if (countFor(s.key); as n) {
+              <span class="f-count" [class.alert]="s.key === 'unassigned'">{{ n > 99 ? '99+' : n }}</span>
+            }
+          </button>
         }
       </div>
       <button type="button" class="f-more" [class.on]="activeCount() > 0" (click)="openPanel()"
@@ -129,6 +134,12 @@ interface AgentOption { _id: string; name: string; published: boolean }
     }
     .f-seg:hover { color: var(--color-text-main); }
     .f-seg.active { background: var(--color-white); color: var(--color-brand); box-shadow: var(--shadow-sm); }
+    .f-count {
+      display: inline-block; min-width: 16px; margin-left: 3px; padding: 0 5px;
+      border-radius: var(--radius-pill); background: var(--color-border); color: var(--color-text-main);
+      font-size: 10.5px; line-height: 16px; text-align: center;
+    }
+    .f-count.alert { background: var(--color-error); color: #fff; }
     .f-more {
       flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
       height: 34px; min-width: 34px; padding: 0 9px; justify-content: center;
@@ -223,10 +234,20 @@ export class InboxFiltersComponent {
 
   readonly statuses: { key: InboxStatusFilter; label: string }[] = [
     { key: 'all', label: 'Todos' },
-    { key: 'unread', label: 'No leídos' },
+    { key: 'mine', label: 'Míos' },
+    { key: 'unassigned', label: 'Sin asignar' },
     { key: 'auto', label: 'Con IA' },
-    { key: 'manual', label: 'Manual' },
+    { key: 'unread', label: 'No leídos' },
   ];
+
+  /** Chats propios y en cola, para el contador de cada pestaña. */
+  counts = input<{ mine: number; unassigned: number }>({ mine: 0, unassigned: 0 });
+
+  countFor(key: InboxStatusFilter): number {
+    if (key === 'mine') return this.counts().mine;
+    if (key === 'unassigned') return this.counts().unassigned;
+    return 0;
+  }
 
   agents = signal<AgentOption[]>([]);
   knownTags = signal<string[]>([]);

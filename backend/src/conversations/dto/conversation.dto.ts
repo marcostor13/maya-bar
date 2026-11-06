@@ -124,6 +124,18 @@ export class AutoReplyDto {
   enabled: boolean;
 }
 
+export class TakeConversationDto {
+  /** Supervisor: quitarle el chat a quien lo tiene. */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
+}
+
+export class AssignConversationDto {
+  @IsMongoId()
+  userId: string;
+}
+
 export class StatusDto {
   @IsIn(['open', 'closed'])
   status: 'open' | 'closed';

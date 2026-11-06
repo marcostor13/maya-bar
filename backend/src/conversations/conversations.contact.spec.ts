@@ -21,6 +21,25 @@ import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
 import { LeadsService } from '../leads/leads.service';
+import { ConversationAssignmentService } from './conversation-assignment.service';
+
+/** Asignación simulada: escribir le da el chat a quien escribe. */
+const fakeAssignment = {
+  ensureWriter: jest.fn(
+    (
+      conv: { autoReply: boolean; takenOverBy?: unknown },
+      actor: { userId: string },
+    ) => {
+      conv.autoReply = false;
+      conv.takenOverBy = new Types.ObjectId(actor.userId);
+      return Promise.resolve(conv);
+    },
+  ),
+  assertCanControl: jest.fn(),
+  take: jest.fn(),
+  note: jest.fn().mockResolvedValue(undefined),
+  nameOf: jest.fn().mockResolvedValue('Ana'),
+};
 
 const tenantId = new Types.ObjectId().toString();
 const userId = new Types.ObjectId().toString();
@@ -99,6 +118,7 @@ describe('ConversationsService — contacto del CRM', () => {
         },
         { provide: EmailAccountsService, useValue: {} },
         { provide: EmailTransportService, useValue: {} },
+        { provide: ConversationAssignmentService, useValue: fakeAssignment },
         {
           provide: SuppressionService,
           useValue: {
@@ -269,6 +289,7 @@ describe('ConversationsService — clasificación y seguimiento', () => {
         },
         { provide: EmailAccountsService, useValue: {} },
         { provide: EmailTransportService, useValue: {} },
+        { provide: ConversationAssignmentService, useValue: fakeAssignment },
         {
           provide: SuppressionService,
           useValue: {
