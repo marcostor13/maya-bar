@@ -78,6 +78,23 @@ La verificación del negocio en Meta ya está **aprobada**.
 - Commit `89ce038` (pie de foto como mensaje aparte en Messenger/Instagram)
   desplegado.
 
+## 2c. Maya IA como proveedor de tecnología (en curso, 2026-11-05)
+
+- Solicitud `1443840707570729`: `whatsapp_business_management`,
+  `whatsapp_business_messaging`, `instagram_business_basic`,
+  `instagram_business_manage_messages`, `pages_show_list`,
+  `pages_manage_metadata`, `pages_messaging`. Se quitaron comentarios,
+  estadísticas, publicación, utility messaging, Human Agent,
+  `business_management` y `pages_read_engagement` (también del OAuth, `0cb638b`).
+- Hecho: URLs legales, dominios `mayacrm.site`/`api.mayacrm.site` y sitio web en
+  Configuración > Básica; llamadas de prueba (todas en verde); descripciones en
+  inglés de los 7 permisos; instrucciones para revisores (con marcadores
+  `<<REVIEWER_EMAIL>>`/`<<REVIEWER_PASSWORD>>`) y "Facebook Login: Sí".
+- Falta: cuenta de prueba para el revisor; videos (Embedded Signup + envío por
+  WhatsApp, Instagram Login + DM, Facebook Login + Messenger); "Tratamiento de
+  datos"; casillas de uso permitido; enviar. Después: método de pago en WhatsApp
+  y pasar la app a modo Activo.
+
 ## 3. Por qué no se puede conectar cualquier Página hoy
 
 - La app está en **modo Desarrollo**. En ese modo, Messenger solo entrega al
