@@ -31,7 +31,7 @@ describe('AccountsApiService', () => {
   });
 
   it('updateSettings hace PUT /settings con el body', () => {
-    const body = { waDailyLimit: 80, openaiApiKey: 'sk-x' };
+    const body = { openaiApiKey: 'sk-x' };
     service.updateSettings(body).subscribe();
     const req = httpMock.expectOne(`${BASE}/settings`);
     expect(req.request.method).toBe('PUT');
@@ -96,33 +96,6 @@ describe('AccountsApiService', () => {
     req.flush({ connected: true });
   });
 
-  it('getWaQr hace GET /whatsapp-accounts/:id/qr', () => {
-    service.getWaQr('wa-1').subscribe();
-    const req = httpMock.expectOne(`${BASE}/whatsapp-accounts/wa-1/qr`);
-    expect(req.request.method).toBe('GET');
-    req.flush({ qrcode: 'abc' });
-  });
-
-  it('getWaQrConfig hace GET /whatsapp-accounts/qr/config', () => {
-    service.getWaQrConfig().subscribe();
-    const req = httpMock.expectOne(`${BASE}/whatsapp-accounts/qr/config`);
-    expect(req.request.method).toBe('GET');
-    req.flush({ available: true });
-  });
-
-  it('connectWaQr hace POST /whatsapp-accounts/qr/connect, con el nombre si se da', () => {
-    service.connectWaQr().subscribe();
-    const bare = httpMock.expectOne(`${BASE}/whatsapp-accounts/qr/connect`);
-    expect(bare.request.method).toBe('POST');
-    expect(bare.request.body).toEqual({});
-    bare.flush({});
-
-    service.connectWaQr('Ventas').subscribe();
-    const named = httpMock.expectOne(`${BASE}/whatsapp-accounts/qr/connect`);
-    expect(named.request.body).toEqual({ label: 'Ventas' });
-    named.flush({});
-  });
-
   it('testWaAccount hace POST /whatsapp-accounts/:id/test con { phone }', () => {
     service.testWaAccount('wa-1', '51999').subscribe();
     const req = httpMock.expectOne(`${BASE}/whatsapp-accounts/wa-1/test`);
@@ -155,9 +128,8 @@ describe('AccountsApiService', () => {
     req.flush({});
   });
 
-  it('waWebhookUrl construye la URL según el provider', () => {
-    expect(service.waWebhookUrl({ _id: 'wa-1', provider: 'waha' })).toBe(`${BASE}/wa/webhook/waha/wa-1`);
-    expect(service.waWebhookUrl({ _id: 'wa-2', provider: 'cloudapi' })).toBe(`${BASE}/wa/webhook/cloud/wa-2`);
+  it('waWebhookUrl construye la URL de Cloud API de la cuenta', () => {
+    expect(service.waWebhookUrl({ _id: 'wa-2' })).toBe(`${BASE}/wa/webhook/cloud/wa-2`);
   });
 
   // ── Cuentas Instagram ────────────────────────────────────────────────────

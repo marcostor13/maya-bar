@@ -15,7 +15,6 @@ import {
   WaAccountPayload,
   WaOauthConfig,
   WaOauthConnectPayload,
-  WaQr,
   WaStatus,
   WaTemplate,
   WaTemplateAccount,
@@ -72,20 +71,6 @@ export class AccountsApiService {
     return this.http.get<WaStatus>(`${this.base}/whatsapp-accounts/${id}/status`);
   }
 
-  getWaQr(id: string): Observable<WaQr> {
-    return this.http.get<WaQr>(`${this.base}/whatsapp-accounts/${id}/qr`);
-  }
-
-  /** ¿El servidor permite conectar por QR sin traer un WAHA propio? */
-  getWaQrConfig(): Observable<{ available: boolean }> {
-    return this.http.get<{ available: boolean }>(`${this.base}/whatsapp-accounts/qr/config`);
-  }
-
-  /** Crea la cuenta por QR; el código se pide después con `getWaQr`. */
-  connectWaQr(label?: string): Observable<WaAccount> {
-    return this.http.post<WaAccount>(`${this.base}/whatsapp-accounts/qr/connect`, label ? { label } : {});
-  }
-
   testWaAccount(id: string, phone: string): Observable<WaTestResult> {
     return this.http.post<WaTestResult>(`${this.base}/whatsapp-accounts/${id}/test`, { phone });
   }
@@ -103,9 +88,8 @@ export class AccountsApiService {
   }
 
   /** URL del webhook entrante de una cuenta WhatsApp (informativa, se muestra en la UI). */
-  waWebhookUrl(acc: Pick<WaAccount, '_id' | 'provider'>): string {
-    const kind = acc.provider === 'waha' ? 'waha' : 'cloud';
-    return `${this.base}/wa/webhook/${kind}/${acc._id}`;
+  waWebhookUrl(acc: Pick<WaAccount, '_id'>): string {
+    return `${this.base}/wa/webhook/cloud/${acc._id}`;
   }
 
   /** URL + verify token del webhook Cloud API a nivel de app, tal como los resuelve el servidor. */

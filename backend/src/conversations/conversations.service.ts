@@ -90,7 +90,7 @@ interface AiHistoryTurn {
 export interface InboundMedia {
   /** Cloud API: id de media a resolver contra Graph. */
   cloudMediaId?: string;
-  /** WAHA / Instagram / Messenger: URL directa de descarga. */
+  /** Instagram / Messenger: URL directa de descarga. */
   downloadUrl?: string;
   mimeType?: string;
   filename?: string;
@@ -258,7 +258,7 @@ export class ConversationsService {
         _id: String(a._id),
         channel: 'whatsapp' as const,
         label: a.label,
-        detail: a.phoneNumber || (a.provider === 'waha' ? 'WAHA' : 'Cloud API'),
+        detail: a.phoneNumber || 'Cloud API',
         active: a.active,
         isDefault: !!a.isDefault,
         ...withCounts(String(a._id)),
@@ -1162,10 +1162,6 @@ export class ConversationsService {
       downloadMedia: (media) => this.downloadWhatsAppMedia(media, config),
       resolveAgent: () =>
         this.agents.findPublishedByAccount(String(account._id)),
-      typing: inbound.chatId
-        ? (on: boolean) =>
-            this.wa.setTyping(config, inbound.chatId as string, on)
-        : undefined,
     });
   }
 
@@ -2080,8 +2076,6 @@ export class ConversationsService {
   private downloadWhatsAppMedia(media: InboundMedia, config: WaConfig) {
     if (media.cloudMediaId)
       return this.wa.downloadCloudMedia(media.cloudMediaId, config);
-    if (media.downloadUrl)
-      return this.wa.downloadWahaMedia(media.downloadUrl, config);
     return Promise.resolve(null);
   }
 

@@ -1,6 +1,7 @@
 /** Modelos de la feature de campañas (email / WhatsApp). */
 
-export type CampaignChannel = 'email' | 'waha' | 'cloudapi' | 'sms';
+/** `cloudapi` es WhatsApp (API oficial de Meta). */
+export type CampaignChannel = 'email' | 'cloudapi' | 'sms';
 export type CampaignTargeting = 'all' | 'tags' | 'lists' | 'contacts';
 export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
 export type CampaignType = 'email' | 'whatsapp' | 'sms';
@@ -67,7 +68,6 @@ export interface Campaign {
   _id: string;
   name: string;
   type: CampaignType;
-  waProvider?: 'waha' | 'cloudapi';
   subject?: string;
   body: string;
   targeting: CampaignTargeting;
@@ -111,7 +111,6 @@ export interface WaTemplate {
 export interface CampaignPayload {
   name: string;
   type: CampaignType;
-  waProvider?: 'waha' | 'cloudapi';
   subject?: string;
   body: string;
   targeting: CampaignTargeting;

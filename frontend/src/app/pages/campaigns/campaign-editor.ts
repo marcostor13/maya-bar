@@ -2,7 +2,7 @@ import { Component, HostListener, OnDestroy, OnInit, computed, inject, input, ou
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
-  LucideAngularModule, Mail, MessageSquare, CheckCircle2, X, Users, Zap, Edit2,
+  LucideAngularModule, Mail, MessageSquare, CheckCircle2, X, Users, Edit2,
   DollarSign, RefreshCw, Info, Wand2, Eye, Check, Upload, Paperclip, Smartphone, Search,
   Link2, CalendarClock, LayoutTemplate, TriangleAlert,
 } from 'lucide-angular';
@@ -22,7 +22,7 @@ import { VariableChipsComponent, insertAtCursor } from '../templates/variable-ch
 import type { EmailAccount } from '../../shared/models/email.model';
 import type { AudiencePreview } from '../../shared/models/campaign.model';
 
-/** Drawer de creación/edición de campaña (email / WhatsApp WAHA / Cloud API). */
+/** Drawer de creación/edición de campaña (email / WhatsApp Cloud API / SMS). */
 /**
  * De dónde sale el valor de cada hueco de la plantilla. El token es lo que se
  * guarda en `templateVars`; el backend lo sustituye por el dato de cada
@@ -67,13 +67,9 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
               <lucide-icon [img]="Mail" [size]="14"></lucide-icon>
               Email
             </button>
-            <button type="button" [disabled]="!!editingId()" class="channel-tab" [class.active]="form.channel === 'waha'" (click)="setChannel('waha')">
-              <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
-              WhatsApp WAHA
-            </button>
             <button type="button" [disabled]="!!editingId()" class="channel-tab channel-tab-cloud" [class.active]="form.channel === 'cloudapi'" (click)="setChannel('cloudapi')">
-              <lucide-icon [img]="Zap" [size]="14"></lucide-icon>
-              Cloud API
+              <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
+              WhatsApp
             </button>
             <button type="button" [disabled]="!!editingId()" class="channel-tab" [class.active]="form.channel === 'sms'" (click)="setChannel('sms')">
               <lucide-icon [img]="Smartphone" [size]="14"></lucide-icon>
@@ -368,7 +364,7 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
           }
         }
 
-        <!-- Body: waha or cloud without template (email handled above) -->
+        <!-- Body: WhatsApp sin plantilla (email va arriba) -->
         @if (form.channel !== 'email' && form.channel !== 'sms' && (form.channel !== 'cloudapi' || !form.templateName)) {
           <div class="field">
             <label class="label">{{ form.channel === 'cloudapi' ? 'Mensaje (libre, solo dentro de ventana 24h)' : 'Mensaje *' }}</label>
@@ -385,8 +381,8 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
           </div>
         }
 
-        <!-- Media (waha: full tabs · email: image/video) -->
-        @if (form.channel !== 'cloudapi' && form.channel !== 'sms' && !form.emailTemplateId) {
+        <!-- Media (WhatsApp sin plantilla: todas las pestañas · email: imagen/video) -->
+        @if (form.channel !== 'sms' && !form.emailTemplateId && (form.channel !== 'cloudapi' || !form.templateName)) {
           <app-campaign-media [channel]="form.channel" [(mediaUrl)]="form.mediaUrl" [(mediaType)]="form.mediaType" />
         }
 
@@ -774,7 +770,7 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
   private emailAccountsApi = inject(EmailAccountsApiService);
 
   readonly Mail = Mail; readonly MessageSquare = MessageSquare; readonly CheckCircle2 = CheckCircle2;
-  readonly X = X; readonly Users = Users; readonly Zap = Zap; readonly Edit2 = Edit2;
+  readonly X = X; readonly Users = Users; readonly Edit2 = Edit2;
   readonly DollarSign = DollarSign; readonly RefreshCw = RefreshCw; readonly Info = Info;
   readonly Check = Check;
   readonly Upload = Upload; readonly Paperclip = Paperclip;
@@ -993,7 +989,7 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     const c = this.campaign();
     if (c) {
       const channel: CampaignChannel =
-        c.type === 'email' ? 'email' : c.type === 'sms' ? 'sms' : (c.waProvider === 'cloudapi' ? 'cloudapi' : 'waha');
+        c.type === 'email' ? 'email' : c.type === 'sms' ? 'sms' : 'cloudapi';
       this.form = {
         name: c.name,
         channel,
@@ -1336,14 +1332,12 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     this.formError.set('');
     this.saving.set(true);
 
-    const isWa = !isEmail && !isSms;
     const body = hasTemplate ? `[Plantilla: ${this.form.templateName}]` : hasEmailTemplate ? '' : this.form.body;
     const queued = isEmail || isSms;
 
     const payload: CampaignPayload = {
       name: this.form.name.trim(),
       type: isEmail ? 'email' : isSms ? 'sms' : 'whatsapp',
-      waProvider: isWa ? (this.form.channel as 'waha' | 'cloudapi') : undefined,
       subject: isEmail ? this.form.subject.trim() : undefined,
       body,
       targeting: this.form.targeting,

@@ -12,8 +12,8 @@ import { CampaignChannel, CampaignMediaType } from '../../shared/models/campaign
   standalone: true,
   imports: [LucideAngularModule],
   template: `
-    <!-- WAHA: expanded media section -->
-    @if (channel() === 'waha') {
+    <!-- WhatsApp (mensaje libre): imagen, audio o documento -->
+    @if (channel() === 'cloudapi') {
       <div class="field">
         <label class="label">Multimedia (opcional)</label>
         <div class="media-tabs">
@@ -91,10 +91,6 @@ import { CampaignChannel, CampaignMediaType } from '../../shared/models/campaign
               </label>
             </div>
           }
-          <div class="info-note" style="margin-top:10px">
-            <lucide-icon [img]="Info" [size]="12"></lucide-icon>
-            WAHA gratuito enviará el audio como enlace de texto. WAHA Plus lo envía como nota de voz nativa.
-          </div>
         }
 
         @if (mediaTab() === 'document') {
@@ -114,10 +110,6 @@ import { CampaignChannel, CampaignMediaType } from '../../shared/models/campaign
               <span style="font-size:11px;color:var(--color-text-muted)">PDF, Word, Excel, ZIP y más · hasta 200 MB</span>
             </label>
           }
-          <div class="info-note" style="margin-top:10px">
-            <lucide-icon [img]="Info" [size]="12"></lucide-icon>
-            WAHA gratuito enviará el documento como enlace de texto. WAHA Plus lo envía como archivo adjunto nativo.
-          </div>
         }
       </div>
     }

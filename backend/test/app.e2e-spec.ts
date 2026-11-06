@@ -20,7 +20,7 @@ const PUBLIC_ROUTES: RegExp[] = [
   /^GET \/$/,
   /^POST \/auth\/(login|refresh|logout|register|forgot-password|reset-password|verify-email|resend-verification)$/,
   /^(GET|POST|PATCH) \/public\//,
-  // Webhooks de Meta/WAHA: se autentican con verify token o firma, no con JWT.
+  // Webhooks de Meta: se autentican con verify token o firma, no con JWT.
   /^(GET|POST) \/(wa|ig|messenger)\/webhook/,
   // Vuelta de los proveedores OAuth: la sesión viaja en el `state` firmado.
   /^GET \/(calendar|email-accounts)\/oauth\/:provider\/callback$/,

@@ -4,8 +4,7 @@
  *
  * Los espacios son solo presentación: todos los puntos de envío de WhatsApp
  * pasan por `WhatsAppService.formatPhone`, que deja únicamente los dígitos
- * (`51999999999`), que es lo que aceptan tanto WAHA (`<digitos>@c.us`) como la
- * Cloud API de Meta. Por eso guardar el número formateado es seguro.
+ * (`51999999999`), que es lo que acepta la Cloud API de Meta. Por eso guardar el número formateado es seguro.
  */
 
 import { toText } from './to-text';

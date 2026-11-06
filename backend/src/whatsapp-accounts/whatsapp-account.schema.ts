@@ -9,24 +9,11 @@ export class WhatsAppAccount extends Document {
   @Prop({ required: true })
   label: string; // nombre legible de la cuenta
 
-  @Prop({ required: true, enum: ['waha', 'cloudapi'] })
+  @Prop({ required: true, enum: ['cloudapi'] })
   provider: string;
 
   @Prop()
   phoneNumber?: string; // número visible (informativo)
-
-  // WAHA
-  @Prop() wahaApiUrl?: string;
-  @Prop() wahaApiKey?: string;
-  @Prop({ default: 'default' }) wahaSession?: string;
-
-  /**
-   * Cuenta conectada por QR en el WAHA de la plataforma: la URL y la API key
-   * salen del servidor (nunca se guardan aquí ni llegan al navegador) y la
-   * sesión la genera la plataforma.
-   */
-  @Prop({ default: false })
-  managed: boolean;
 
   // WhatsApp Cloud API
   @Prop() waPhoneNumberId?: string;

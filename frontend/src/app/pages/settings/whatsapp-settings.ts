@@ -1,9 +1,9 @@
-import { Component, inject, signal, computed, OnInit, OnDestroy, HostListener, output } from '@angular/core';
+import { Component, inject, signal, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, MessageSquare, CheckCircle2, RefreshCw, Save, WifiOff,
-  QrCode, Eye, EyeOff, Plus, Trash2, Smartphone, Pencil, Star, Webhook, Link, Copy,
+  Eye, EyeOff, Plus, Trash2, Smartphone, Pencil, Star, Link, Copy,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -25,7 +25,7 @@ declare const FB: any;
         </div>
         <div>
           <h2 class="section-title">WhatsApp</h2>
-          <p class="section-desc">Conecta uno o varios números con la API oficial o escaneando un QR. La cuenta predeterminada se usa para campañas y envíos.</p>
+          <p class="section-desc">Conecta uno o varios números con la API oficial de WhatsApp (Cloud API). La cuenta predeterminada se usa para campañas y envíos.</p>
         </div>
       </div>
 
@@ -39,20 +39,6 @@ declare const FB: any;
           <lucide-icon [img]="Smartphone" [size]="16"></lucide-icon>
           Conectar número de la app WhatsApp Business
         </button>
-        @if (qrAvailable()) {
-          <button class="btn btn-secondary" style="margin: 0 0 20px 8px" [disabled]="connectingQr()" (click)="connectWithQr()">
-            <lucide-icon [img]="QrCode" [size]="16"></lucide-icon>
-            {{ connectingQr() ? 'Preparando QR…' : 'Conectar con QR' }}
-          </button>
-        }
-
-        <div class="field" style="max-width: 260px; margin-bottom: 20px;">
-          <label class="label">Límite diario de mensajes</label>
-          <input class="input" type="number" [(ngModel)]="dailyLimit" min="1" max="500" placeholder="50"
-            (change)="saveDailyLimit()" />
-          <span class="field-hint">Aplica a todo el tenant. 50 para números nuevos, hasta 150 con historial.</span>
-        </div>
-
         @if (accountsLoading()) {
           <div class="loading-row">
             <lucide-icon [img]="RefreshCw" [size]="20" class="spin"></lucide-icon> Cargando cuentas…
@@ -72,7 +58,7 @@ declare const FB: any;
                     @if (acc.isDefault) {
                       <span class="badge-default"><lucide-icon [img]="Star" [size]="11"></lucide-icon> Predeterminada</span>
                     }
-                    <span class="account-sub">{{ acc.managed ? 'Conectada por QR' : acc.provider === 'waha' ? 'WAHA' : 'Cloud API' }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</span>
+                    <span class="account-sub">Cloud API{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}</span>
                   </div>
                   <div class="acc-card-actions">
                     @if (!acc.isDefault) {
@@ -85,22 +71,12 @@ declare const FB: any;
                         <lucide-icon [img]="RefreshCw" [size]="14" style="color: var(--color-brand);"></lucide-icon>
                       </button>
                     }
-                    @if (acc.provider === 'cloudapi') {
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="configureWebhook(acc)" [disabled]="webhookLoading() === acc._id" title="Suscribir webhook">
-                        <lucide-icon [img]="Link" [size]="14" [class.spin]="webhookLoading() === acc._id"></lucide-icon>
-                      </button>
-                    }
+                    <button class="btn btn-sm btn-ghost btn-icon" (click)="configureWebhook(acc)" [disabled]="webhookLoading() === acc._id" title="Suscribir webhook">
+                      <lucide-icon [img]="Link" [size]="14" [class.spin]="webhookLoading() === acc._id"></lucide-icon>
+                    </button>
                     <button class="btn btn-sm btn-ghost btn-icon" (click)="checkStatus(acc)" title="Verificar estado">
                       <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
                     </button>
-                    @if (acc.provider === 'waha') {
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="toggleQr(acc)" title="Conectar (QR)">
-                        <lucide-icon [img]="QrCode" [size]="14"></lucide-icon>
-                      </button>
-                      <button class="btn btn-sm btn-ghost btn-icon" (click)="configureWebhook(acc)" [disabled]="webhookLoading() === acc._id" title="Reconfigurar webhook">
-                        <lucide-icon [img]="Webhook" [size]="14" [class.spin]="webhookLoading() === acc._id"></lucide-icon>
-                      </button>
-                    }
                     <button class="btn btn-sm btn-ghost btn-icon" (click)="toggleTest(acc)" title="Probar envío">
                       <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
                     </button>
@@ -131,25 +107,6 @@ declare const FB: any;
                   </div>
                 }
 
-                <!-- QR panel -->
-                @if (qrActiveId() === acc._id) {
-                  <div class="acc-panel">
-                    <p class="panel-hint">WhatsApp → Dispositivos vinculados → Vincular un dispositivo → escanea:</p>
-                    @if (qrLoading()) {
-                      <div class="qr-placeholder">
-                        <lucide-icon [img]="RefreshCw" [size]="28" class="spin" style="color: var(--color-text-muted);"></lucide-icon>
-                      </div>
-                    } @else if (qrMap()[acc._id]) {
-                      <img [src]="qrMap()[acc._id]" alt="QR WhatsApp" class="qr-image" />
-                    } @else if (qrError()) {
-                      <div class="error-box">{{ qrError() }}</div>
-                    }
-                    <button class="btn btn-secondary btn-sm" (click)="loadQr(acc)" style="margin-top: 12px;">
-                      <lucide-icon [img]="RefreshCw" [size]="13"></lucide-icon> Actualizar QR
-                    </button>
-                  </div>
-                }
-
                 <!-- Test panel -->
                 @if (testActiveId() === acc._id) {
                   <div class="acc-panel">
@@ -163,7 +120,7 @@ declare const FB: any;
                     </div>
                     @if (testResult()) {
                       <div [class]="testResult()!.success ? 'success-box' : 'error-box'" style="margin-top:10px;font-size:13px">
-                        @if (testResult()!.success) { ✅ Enviado a {{ testResult()!.formattedPhone }}&#64;c.us }
+                        @if (testResult()!.success) { ✅ Enviado a {{ testResult()!.formattedPhone }} }
                         @else { ❌ {{ testResult()!.error }} }
                       </div>
                     }
@@ -178,7 +135,7 @@ declare const FB: any;
                   </button>
                 </div>
 
-                @if (acc.provider === 'cloudapi' && acc.waVerifyToken) {
+                @if (acc.waVerifyToken) {
                   <div class="webhook-hint">
                     <span>Verify token:</span>
                     <code>{{ acc.waVerifyToken }}</code>
@@ -193,7 +150,7 @@ declare const FB: any;
         }
 
         <button class="btn btn-ghost" style="margin-top: 16px;" (click)="newAccount()">
-          <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir manualmente (WAHA / avanzado)
+          <lucide-icon [img]="Plus" [size]="16"></lucide-icon> Añadir manualmente (avanzado)
         </button>
       } @else {
         <!-- Account form -->
@@ -202,63 +159,31 @@ declare const FB: any;
             <label class="label">Nombre de la cuenta *</label>
             <input class="input" [(ngModel)]="accForm()!.label" placeholder="Ej: Línea Reservas" />
           </div>
-          @if (!accForm()!.managed) {
-            <div class="field">
-              <label class="label">Proveedor *</label>
-              <select class="select" [(ngModel)]="accForm()!.provider">
-                <option value="waha">WAHA</option>
-                <option value="cloudapi">WhatsApp Cloud API</option>
-              </select>
-            </div>
-          }
           <div class="field">
             <label class="label">Número (informativo)</label>
             <input class="input" [(ngModel)]="accForm()!.phoneNumber" placeholder="+51 999 999 999" />
           </div>
-
-          @if (accForm()!.managed) {
-            <span class="field-hint">Cuenta conectada por QR: la conexión la gestiona la plataforma.</span>
-          } @else if (accForm()!.provider === 'waha') {
-            <div class="field">
-              <label class="label">URL de WAHA *</label>
-              <input class="input" [(ngModel)]="accForm()!.wahaApiUrl" placeholder="https://waha.midominio.com" />
+          <div class="field">
+            <label class="label">Phone Number ID *</label>
+            <input class="input" [(ngModel)]="accForm()!.waPhoneNumberId" placeholder="1234567890" />
+          </div>
+          <div class="field">
+            <label class="label">Access Token *</label>
+            <div class="input-wrap">
+              <input class="input" [type]="showToken() ? 'text' : 'password'" [(ngModel)]="accForm()!.waAccessToken" placeholder="EAAG…" />
+              <button class="eye-btn" (click)="showToken.set(!showToken())" type="button">
+                <lucide-icon [img]="showToken() ? EyeOff : Eye" [size]="16"></lucide-icon>
+              </button>
             </div>
-            <div class="field">
-              <label class="label">API Key</label>
-              <div class="input-wrap">
-                <input class="input" [type]="showKey() ? 'text' : 'password'" [(ngModel)]="accForm()!.wahaApiKey" placeholder="X-Api-Key" />
-                <button class="eye-btn" (click)="showKey.set(!showKey())" type="button">
-                  <lucide-icon [img]="showKey() ? EyeOff : Eye" [size]="16"></lucide-icon>
-                </button>
-              </div>
-            </div>
-            <div class="field">
-              <label class="label">Nombre de sesión</label>
-              <input class="input" [(ngModel)]="accForm()!.wahaSession" placeholder="default" />
-            </div>
-          } @else {
-            <div class="field">
-              <label class="label">Phone Number ID *</label>
-              <input class="input" [(ngModel)]="accForm()!.waPhoneNumberId" placeholder="1234567890" />
-            </div>
-            <div class="field">
-              <label class="label">Access Token *</label>
-              <div class="input-wrap">
-                <input class="input" [type]="showToken() ? 'text' : 'password'" [(ngModel)]="accForm()!.waAccessToken" placeholder="EAAG…" />
-                <button class="eye-btn" (click)="showToken.set(!showToken())" type="button">
-                  <lucide-icon [img]="showToken() ? EyeOff : Eye" [size]="16"></lucide-icon>
-                </button>
-              </div>
-            </div>
-            <div class="field">
-              <label class="label">WhatsApp Business Account ID</label>
-              <input class="input" [(ngModel)]="accForm()!.waBusinessAccountId" placeholder="(opcional, para plantillas)" />
-            </div>
-            <div class="field">
-              <label class="label">Verify Token (webhook)</label>
-              <input class="input" [(ngModel)]="accForm()!.waVerifyToken" placeholder="token-secreto-para-meta" />
-            </div>
-          }
+          </div>
+          <div class="field">
+            <label class="label">WhatsApp Business Account ID</label>
+            <input class="input" [(ngModel)]="accForm()!.waBusinessAccountId" placeholder="(opcional, para plantillas)" />
+          </div>
+          <div class="field">
+            <label class="label">Verify Token (webhook)</label>
+            <input class="input" [(ngModel)]="accForm()!.waVerifyToken" placeholder="token-secreto-para-meta" />
+          </div>
         </div>
 
         <div class="section-footer" style="justify-content: space-between;">
@@ -308,8 +233,6 @@ declare const FB: any;
     .acc-panel { margin-top: 14px; padding: 16px; background: var(--color-bg-app); border-radius: var(--radius-lg); }
     .panel-hint { font-size: 12px; color: var(--color-text-muted); margin: 0 0 12px; }
     .test-row { display: flex; align-items: center; gap: 8px; }
-    .qr-placeholder { width: 220px; height: 220px; border: 2px dashed var(--color-border); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; }
-    .qr-image { width: 220px; height: 220px; border-radius: var(--radius-lg); border: 4px solid var(--color-white); box-shadow: var(--shadow-lg); }
 
     .webhook-hint { margin-top: 14px; font-size: 11px; color: var(--color-text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .webhook-hint code { background: var(--color-bg-app); padding: 3px 8px; border-radius: 6px; font-size: 11px; word-break: break-all; }
@@ -331,7 +254,6 @@ declare const FB: any;
       .test-row { flex-direction: column; align-items: stretch; }
       .section-footer { flex-wrap: wrap; gap: 10px; }
       .section-footer > .btn { flex: 1; justify-content: center; }
-      .qr-image, .qr-placeholder { max-width: 100%; height: auto; aspect-ratio: 1 / 1; }
     }
 
     @media (max-width: 480px) {
@@ -351,7 +273,6 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   readonly RefreshCw = RefreshCw;
   readonly Save = Save;
   readonly WifiOff = WifiOff;
-  readonly QrCode = QrCode;
   readonly Eye = Eye;
   readonly EyeOff = EyeOff;
   readonly Plus = Plus;
@@ -359,12 +280,8 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   readonly Smartphone = Smartphone;
   readonly Pencil = Pencil;
   readonly Star = Star;
-  readonly Webhook = Webhook;
   readonly Link = Link;
   readonly Copy = Copy;
-
-  /** Emite el provider de la cuenta predeterminada ('' si no hay) tras cada carga de cuentas. */
-  defaultProviderChange = output<string>();
 
   // Accounts
   accounts = signal<WaAccount[]>([]);
@@ -372,8 +289,6 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   accForm = signal<WaAccount | null>(null);
   savingAcc = signal(false);
   connectingWa = signal(false);
-  qrAvailable = signal(false);
-  connectingQr = signal(false);
   statusMap = signal<Record<string, WaStatus>>({});
 
   private fbSdkPromise: Promise<void> | null = null;
@@ -406,63 +321,27 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
     }
   };
 
-  qrMap = signal<Record<string, string>>({});
-  qrActiveId = signal('');
-  qrLoading = signal(false);
-  qrError = signal('');
   testActiveId = signal('');
   testPhone = '';
   testLoading = signal(false);
   testResult = signal<WaTestResult | null>(null);
-  showKey = signal(false);
   showToken = signal(false);
   webhookLoading = signal('');
   waWebhookConfig = signal<WebhookConfig>({});
 
-  defaultProvider = computed(() => this.accounts().find(a => a.isDefault)?.provider ?? '');
-
-  // Daily limit
-  dailyLimit = 50;
-
-  private statusInterval: ReturnType<typeof setInterval> | null = null;
-
   ngOnInit() {
-    this.loadConfig();
     this.loadAccounts();
     this.loadWaWebhookConfig();
-    this.api.getWaQrConfig().subscribe({
-      next: (c) => this.qrAvailable.set(c.available),
-      error: () => this.qrAvailable.set(false),
-    });
     window.addEventListener('message', this.waMessageListener);
   }
 
   ngOnDestroy() {
-    this.stopPolling();
     window.removeEventListener('message', this.waMessageListener);
   }
 
   @HostListener('document:keydown.escape')
   onEsc() {
     if (this.accForm()) this.accForm.set(null);
-  }
-
-  // ---- Config (daily limit) ----
-  loadConfig() {
-    this.api.getSettings().subscribe({
-      next: (cfg) => {
-        if (!cfg) return;
-        this.dailyLimit = cfg.waDailyLimit ?? 50;
-      },
-      error: () => {},
-    });
-  }
-
-  saveDailyLimit() {
-    this.api.updateSettings({ waDailyLimit: Number(this.dailyLimit) || 50 }).subscribe({
-      next: () => this.toast.success('Límite diario guardado'),
-      error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'Error al guardar'),
-    });
   }
 
   // ---- Accounts ----
@@ -472,21 +351,19 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
       next: (a) => {
         this.accounts.set(a);
         this.accountsLoading.set(false);
-        this.defaultProviderChange.emit(this.defaultProvider());
       },
       error: () => this.accountsLoading.set(false),
     });
   }
 
-  newAccount() { this.accForm.set(blankWaAccount()); this.showKey.set(false); this.showToken.set(false); }
-  editAccount(a: WaAccount) { this.accForm.set({ ...a }); this.showKey.set(false); this.showToken.set(false); }
+  newAccount() { this.accForm.set(blankWaAccount()); this.showToken.set(false); }
+  editAccount(a: WaAccount) { this.accForm.set({ ...a }); this.showToken.set(false); }
 
   /** URL propia de la cuenta. Usa la base pública que reporta el servidor; si no está, cae al apiUrl del frontend. */
   webhookUrl(a: WaAccount): string {
     const global = this.waWebhookConfig().url;
     if (!global) return this.api.waWebhookUrl(a);
-    const kind = a.provider === 'waha' ? 'waha' : 'cloud';
-    return `${global.replace(/\/cloud$/, `/${kind}`)}/${a._id}`;
+    return `${global}/${a._id}`;
   }
 
   loadWaWebhookConfig() {
@@ -546,69 +423,15 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Crea la cuenta en el WAHA de la plataforma y abre su QR para escanearlo. */
-  connectWithQr() {
-    this.connectingQr.set(true);
-    this.api.connectWaQr().subscribe({
-      next: (acc) => {
-        this.connectingQr.set(false);
-        this.accounts.update(list => [acc, ...list]);
-        this.defaultProviderChange.emit(this.defaultProvider());
-        this.toast.success('Cuenta creada. Escanea el QR con tu WhatsApp para conectarla.');
-        this.toggleQr(acc);
-      },
-      error: (err: { error?: { message?: string } }) => {
-        this.connectingQr.set(false);
-        this.toast.error(err.error?.message || 'No se pudo preparar la conexión por QR');
-      },
-    });
-  }
-
   checkStatus(a: WaAccount) {
     this.api.getWaStatus(a._id).subscribe({
-      next: (s) => {
-        this.statusMap.update(m => ({ ...m, [a._id]: s }));
-        // QR escaneado: se cierra el panel y se refresca la cuenta (ya trae el número).
-        if (s.connected && this.qrActiveId() === a._id) {
-          this.qrActiveId.set('');
-          this.stopPolling();
-          this.toast.success('WhatsApp conectado');
-          this.loadAccounts();
-        }
-      },
+      next: (s) => this.statusMap.update(m => ({ ...m, [a._id]: s })),
       error: (err: { error?: { message?: string } }) => this.statusMap.update(m => ({ ...m, [a._id]: { connected: false, error: err.error?.message || 'Error' } })),
-    });
-  }
-
-  toggleQr(a: WaAccount) {
-    if (this.qrActiveId() === a._id) { this.qrActiveId.set(''); this.stopPolling(); return; }
-    this.testActiveId.set('');
-    this.qrActiveId.set(a._id);
-    this.loadQr(a);
-    this.startPolling(a);
-  }
-
-  loadQr(a: WaAccount) {
-    this.qrLoading.set(true);
-    this.qrError.set('');
-    this.api.getWaQr(a._id).subscribe({
-      next: (r) => {
-        this.qrLoading.set(false);
-        if (r.qrcode) {
-          const src = r.qrcode.startsWith('data:') ? r.qrcode : `data:image/png;base64,${r.qrcode}`;
-          this.qrMap.update(m => ({ ...m, [a._id]: src }));
-        } else {
-          this.qrError.set(r.error ?? 'No se pudo obtener el QR');
-        }
-      },
-      error: () => { this.qrLoading.set(false); this.qrError.set('Error al conectar con WAHA'); },
     });
   }
 
   toggleTest(a: WaAccount) {
     if (this.testActiveId() === a._id) { this.testActiveId.set(''); return; }
-    this.qrActiveId.set('');
-    this.stopPolling();
     this.testActiveId.set(a._id);
     this.testResult.set(null);
   }
@@ -621,20 +444,6 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
       next: (r) => { this.testResult.set(r); this.testLoading.set(false); },
       error: (err: { error?: { message?: string } }) => { this.testResult.set({ success: false, formattedPhone: this.testPhone, error: err.error?.message || 'Error de red' }); this.testLoading.set(false); },
     });
-  }
-
-  private startPolling(a: WaAccount) {
-    this.stopPolling();
-    let tick = 0;
-    this.statusInterval = setInterval(() => {
-      this.checkStatus(a);
-      // El estado se mira cada 5 s; el QR (que caduca) se renueva cada 15 s.
-      if (++tick % 3 === 0 && this.qrActiveId() === a._id) this.loadQr(a);
-    }, 5000);
-  }
-
-  private stopPolling() {
-    if (this.statusInterval) { clearInterval(this.statusInterval); this.statusInterval = null; }
   }
 
   renewWaToken(a: WaAccount) {

@@ -64,7 +64,7 @@ describe('HandoffService', () => {
     jest.clearAllMocks();
     mockAccounts.findById.mockResolvedValue({ _id: accountOid });
     mockAccounts.getDefault.mockResolvedValue(null);
-    mockAccounts.toConfig.mockReturnValue({ provider: 'waha' });
+    mockAccounts.toConfig.mockReturnValue({ provider: 'cloudapi' });
     mockWa.sendMessage.mockResolvedValue('wamid.1');
     mockEmailAccounts.findById.mockResolvedValue(null);
     mockEmailAccounts.findAll.mockResolvedValue([]);
@@ -341,7 +341,7 @@ describe('HandoffService', () => {
         Promise.resolve({ _id: id, tenantId: tenantOid }),
       );
       mockAccounts.toConfig.mockImplementation((a: { _id: string }) => ({
-        provider: 'waha',
+        provider: 'cloudapi',
         session: a._id,
       }));
 
@@ -365,11 +365,11 @@ describe('HandoffService', () => {
 
       expect(mockWa.sendMessage).toHaveBeenCalledTimes(2);
       expect(mockWa.sendMessage.mock.calls[0][2]).toEqual({
-        provider: 'waha',
+        provider: 'cloudapi',
         session: String(other),
       });
       expect(mockWa.sendMessage.mock.calls[1][2]).toEqual({
-        provider: 'waha',
+        provider: 'cloudapi',
         session: String(accountOid),
       });
     });

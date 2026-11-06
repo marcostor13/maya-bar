@@ -102,7 +102,7 @@ export class Message extends Document {
   @Prop({ type: [String], default: undefined })
   emailReferences?: string[];
 
-  /** id del mensaje en el proveedor (wamid / id de WAHA) — usado para los acks. */
+  /** id del mensaje en el proveedor (wamid de WhatsApp, mid de Meta) — usado para los acks. */
   @Prop({ index: true })
   externalId?: string;
 

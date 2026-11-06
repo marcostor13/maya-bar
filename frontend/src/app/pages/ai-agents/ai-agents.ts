@@ -16,7 +16,7 @@ const API = environment.apiUrl;
 interface WaAccount {
   _id: string;
   label: string;
-  provider: 'waha' | 'cloudapi';
+  provider: 'cloudapi';
   phoneNumber?: string;
   active: boolean;
 }
@@ -329,7 +329,7 @@ function blankAgent(): Agent {
                     <div class="account-info">
                       <span class="account-label">{{ acc.label }}</span>
                       <span class="account-sub">
-                        {{ acc.provider === 'waha' ? 'WAHA' : 'Cloud API' }}{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}
+                        Cloud API{{ acc.phoneNumber ? ' · ' + acc.phoneNumber : '' }}
                       </span>
                     </div>
                     @if (!acc.active) { <span class="badge badge-muted">Inactiva</span> }

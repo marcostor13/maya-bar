@@ -7,13 +7,7 @@ export class TenantConfig extends Document {
   tenantId: Types.ObjectId;
 
   @Prop({ default: 'none' })
-  whatsappProvider: string; // 'none' | 'waha' | 'cloudapi'
-
-  // WAHA
-  @Prop() wahaApiUrl?: string;
-  @Prop() wahaApiKey?: string;
-  @Prop({ default: 'default' }) wahaSession?: string;
-  @Prop({ default: 50 }) waDailyLimit?: number;
+  whatsappProvider: string; // 'none' | 'cloudapi'
 
   // WhatsApp Cloud API
   @Prop() waPhoneNumberId?: string;

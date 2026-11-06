@@ -11,24 +11,12 @@ export class CreateWhatsAppAccountDto {
   @IsNotEmpty()
   label: string;
 
-  @IsIn(['waha', 'cloudapi'])
-  provider: 'waha' | 'cloudapi';
+  @IsIn(['cloudapi'])
+  provider: 'cloudapi';
 
   @IsOptional()
   @IsString()
   phoneNumber?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaApiUrl?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaApiKey?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaSession?: string;
 
   @IsOptional()
   @IsString()
@@ -57,24 +45,12 @@ export class UpdateWhatsAppAccountDto {
   label?: string;
 
   @IsOptional()
-  @IsIn(['waha', 'cloudapi'])
-  provider?: 'waha' | 'cloudapi';
+  @IsIn(['cloudapi'])
+  provider?: 'cloudapi';
 
   @IsOptional()
   @IsString()
   phoneNumber?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaApiUrl?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaApiKey?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaSession?: string;
 
   @IsOptional()
   @IsString()

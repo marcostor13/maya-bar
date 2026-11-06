@@ -38,7 +38,7 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
       <app-notifications-settings />
 
       <!-- WhatsApp Accounts Card -->
-      <app-whatsapp-settings (defaultProviderChange)="onWaProviderChange($event)" />
+      <app-whatsapp-settings />
 
       <!-- Instagram Accounts Card -->
       <app-instagram-settings />
@@ -239,8 +239,6 @@ export class SettingsComponent implements OnInit {
   savingProspecting = signal(false);
 
   /** Provider de la cuenta WhatsApp predeterminada, reportado por la sección de WhatsApp. */
-  defaultProvider = signal('');
-
   // AI keys
   aiKeys: TenantSettings = { openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', claudeApiKey: '' };
   showAiKey = signal<Record<string, boolean>>({});
@@ -249,10 +247,6 @@ export class SettingsComponent implements OnInit {
 
   ngOnInit() {
     this.loadConfig();
-  }
-
-  onWaProviderChange(provider: string) {
-    this.defaultProvider.set(provider);
   }
 
   // ---- Config (AI keys) ----

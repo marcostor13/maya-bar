@@ -33,7 +33,7 @@ export class Conversation extends Document {
   @Prop({ required: true, index: true })
   contact: string;
 
-  /** chatId crudo del proveedor (ej. 5219991234567@c.us) para responder sin reconstruirlo. */
+  /** chatId crudo del proveedor (ej. 5219991234567) para responder sin reconstruirlo. */
   @Prop()
   chatId?: string;
 

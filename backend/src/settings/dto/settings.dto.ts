@@ -1,25 +1,9 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class SaveSettingsDto {
   @IsOptional()
   @IsString()
   whatsappProvider?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaApiUrl?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaApiKey?: string;
-
-  @IsOptional()
-  @IsString()
-  wahaSession?: string;
-
-  @IsOptional()
-  @IsNumber()
-  waDailyLimit?: number;
 
   @IsOptional()
   @IsString()

@@ -42,7 +42,7 @@ describe('CampaignsApiService', () => {
 
   it('updateCampaign hace PATCH /campaigns/:id con el body', () => {
     const body: CampaignPayload = {
-      name: 'Editada', type: 'whatsapp', waProvider: 'waha', body: 'Msg',
+      name: 'Editada', type: 'whatsapp', body: 'Msg',
       targeting: 'all', recipientTags: [], listIds: [],
     };
     service.updateCampaign('c-1', body).subscribe();

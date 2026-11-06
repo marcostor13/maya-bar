@@ -281,14 +281,14 @@ describe('ImpulsadorService', () => {
 
     it('si el proveedor falla, el error se propaga y no se informa como enviado', async () => {
       stubOwnedReg();
-      settings.sendWhatsApp.mockRejectedValue(new Error('WAHA caído'));
+      settings.sendWhatsApp.mockRejectedValue(new Error('Meta caído'));
 
       await expect(
         service.sendDirectMessage('x', userId, tenantId, {
           channel: 'whatsapp',
           body: 'Hola',
         }),
-      ).rejects.toThrow('WAHA caído');
+      ).rejects.toThrow('Meta caído');
     });
   });
 

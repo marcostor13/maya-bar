@@ -87,18 +87,21 @@ describe('WhatsAppTemplatesService', () => {
       accounts.findAll.mockResolvedValue([
         cloudAccount,
         { ...cloudAccount, _id: 'x', label: 'Sin token', waAccessToken: '' },
-        { ...cloudAccount, _id: 'y', label: 'WAHA', provider: 'waha' },
+        { ...cloudAccount, _id: 'y', label: 'Antigua', provider: 'legacy' },
       ]);
       const list = await service.listAccounts(tenantId);
-      expect(list).toHaveLength(2); // la de WAHA se descarta
+      expect(list).toHaveLength(2); // la que no es de Cloud API se descarta
       expect(list[0].ready).toBe(true);
       expect(list[1].ready).toBe(false);
     });
   });
 
   describe('resolución de cuenta', () => {
-    it('rechaza cuentas WAHA', async () => {
-      accounts.findOne.mockResolvedValue({ ...cloudAccount, provider: 'waha' });
+    it('rechaza cuentas que no son de Cloud API', async () => {
+      accounts.findOne.mockResolvedValue({
+        ...cloudAccount,
+        provider: 'legacy',
+      });
       await expect(
         service.create(tenantId, {
           accountId,

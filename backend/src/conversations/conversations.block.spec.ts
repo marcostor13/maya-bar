@@ -64,7 +64,7 @@ describe('ConversationsService — bloquear contacto', () => {
     wa = { setContactBlocked: jest.fn().mockResolvedValue(undefined) };
     waAccounts = {
       findById: jest.fn().mockResolvedValue({ _id: 'acc', active: true }),
-      toConfig: jest.fn().mockReturnValue({ provider: 'waha' }),
+      toConfig: jest.fn().mockReturnValue({ provider: 'cloudapi' }),
     };
     suppression = {
       isSuppressed: jest.fn().mockResolvedValue(false),
@@ -124,7 +124,7 @@ describe('ConversationsService — bloquear contacto', () => {
     );
 
     expect(wa.setContactBlocked).toHaveBeenCalledWith(
-      { provider: 'waha' },
+      { provider: 'cloudapi' },
       '51999888777@c.us',
       true,
     );
@@ -152,7 +152,7 @@ describe('ConversationsService — bloquear contacto', () => {
   it('si WhatsApp rechaza el bloqueo, queda bloqueado en la plataforma y devuelve el motivo', async () => {
     const conv = makeConv();
     convModel.findOne.mockReturnValue(buildQuery(conv));
-    wa.setContactBlocked.mockRejectedValue(new Error('WAHA 500: caído'));
+    wa.setContactBlocked.mockRejectedValue(new Error('Cloud API 500: caído'));
 
     const res = await service.setBlocked(
       String(convOid),
@@ -165,7 +165,7 @@ describe('ConversationsService — bloquear contacto', () => {
     expect(conv.blockedOnChannel).toBe(false);
     expect(res).toMatchObject({
       channelBlocked: false,
-      channelError: 'WAHA 500: caído',
+      channelError: 'Cloud API 500: caído',
     });
   });
 
@@ -197,7 +197,7 @@ describe('ConversationsService — bloquear contacto', () => {
     await service.setBlocked(String(convOid), tenantId, userId, false);
 
     expect(wa.setContactBlocked).toHaveBeenCalledWith(
-      { provider: 'waha' },
+      { provider: 'cloudapi' },
       '51999888777',
       false,
     );

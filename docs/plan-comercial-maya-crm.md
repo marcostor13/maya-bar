@@ -51,7 +51,7 @@ _Fecha: 2026-09-28. Fuentes de mercado y competencia al final. Cifras con (?) no
 | Listas estáticas y dinámicas | Completo | Las reglas dinámicas conservan campos de hostelería: conviene generalizarlas |
 | Formularios públicos con autorespuesta WA/email | Completo | |
 | Campañas WhatsApp (QR con límite diario / Cloud API con plantillas) y email (Resend) | Completo | El estimador tiene fijo US$0,0625 por mensaje: debería usar la tarifa por país |
-| Conectores WhatsApp: WAHA (QR) + Cloud API con Embedded Signup | Completo | El QR es la opción barata del plan Inicia |
+| Conector WhatsApp: Cloud API con Embedded Signup | Completo | Solo la API oficial de Meta (WAHA/QR se retiró el 2026-11-06) |
 | Plantillas Meta | Completo | |
 | Agentes IA: RAG, multimodelo, voz, imagen, video, PDF escaneado, handoff | Completo | **Diferenciador principal** |
 | Bandeja unificada WA + IG + Messenger + email | Completo | |

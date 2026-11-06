@@ -39,7 +39,7 @@ export class CampaignsService implements OnModuleInit {
   private readonly logger = new Logger(CampaignsService.name);
 
   /**
-   * La cola de envío WAHA vive en memoria: si el proceso se reinicia a mitad
+   * El envío de WhatsApp corre dentro del proceso: si el proceso se reinicia a mitad
    * de un envío, la campaña queda en 'sending' para siempre (y update/resend
    * la bloquean). Al arrancar, toda campaña de WhatsApp en 'sending' es
    * huérfana por definición — se marca como fallida para poder reintentarla.
@@ -113,7 +113,6 @@ export class CampaignsService implements OnModuleInit {
     const out: Record<string, unknown> = {};
     const copy = [
       'name',
-      'waProvider',
       'subject',
       'targeting',
       'recipientTags',
@@ -551,33 +550,13 @@ export class CampaignsService implements OnModuleInit {
     const withPhone = customers.filter((c) => c.phone);
     const recipientCount = withPhone.length;
 
-    if (campaign.waProvider === 'cloudapi') {
-      return {
-        recipientCount,
-        estimatedMinutes: 0,
-        dailyLimit: 0,
-        sentToday: 0,
-        remaining: recipientCount,
-        cloudApiPricePerMsg: 0.0625,
-      };
-    }
-
-    const dailyLimit = await this.settings.getWaDailyLimit(tenantId);
-    const sentToday =
-      campaign.type === 'whatsapp' ? await this.countWaSentToday(tenantId) : 0;
-    const remaining = Math.max(0, dailyLimit - sentToday);
-    const willSend =
-      campaign.type === 'whatsapp'
-        ? Math.min(recipientCount, remaining)
-        : recipientCount;
-    const estimatedMinutes = Math.ceil((willSend * 45) / 60);
-
     return {
       recipientCount,
-      estimatedMinutes,
-      dailyLimit,
-      sentToday,
-      remaining,
+      estimatedMinutes: 0,
+      dailyLimit: 0,
+      sentToday: 0,
+      remaining: recipientCount,
+      cloudApiPricePerMsg: 0.0625,
     };
   }
 
@@ -599,8 +578,8 @@ export class CampaignsService implements OnModuleInit {
     campaign.recipientCount = customers.length;
     await campaign.save();
 
-    if (campaign.waProvider === 'cloudapi') {
-      // Cloud API: parallel, no daily limit
+    {
+      // Cloud API: en paralelo, sin límite diario.
       const withPhone = customers.filter(
         (c): c is Customer & { phone: string } => !!c.phone,
       );
@@ -637,7 +616,6 @@ export class CampaignsService implements OnModuleInit {
               tenantId,
               campaign.mediaUrl,
               campaign.mediaType,
-              'cloudapi',
             ),
           ),
         );
@@ -660,41 +638,6 @@ export class CampaignsService implements OnModuleInit {
           `${customers.length - withPhone.length} sin teléfono (omitidos)`,
         );
       if (errors.length > 0) campaign.errorMessage = errors.join(' · ');
-    } else {
-      // WAHA: sequential + daily limit — processed async to avoid HTTP timeout
-      const withPhone = customers.filter(
-        (c): c is Customer & { phone: string } => !!c.phone,
-      );
-      const dailyLimit = await this.settings.getWaDailyLimit(tenantId);
-      const sentToday = await this.countWaSentToday(tenantId);
-      const remaining = Math.max(0, dailyLimit - sentToday);
-
-      if (remaining <= 0) {
-        campaign.status = 'sent';
-        campaign.sentAt = new Date();
-        campaign.errorMessage = `Límite diario de ${dailyLimit} mensajes WA alcanzado. No se envió ningún mensaje.`;
-        return campaign.save();
-      }
-
-      const toSend = withPhone.slice(0, remaining);
-      const noPhone = customers.length - withPhone.length;
-      const skippedByLimit = withPhone.length - toSend.length;
-      campaign.recipientCount = toSend.length;
-      await campaign.save();
-
-      // Fire-and-forget: process in background so HTTP response returns immediately
-      void this.runWahaQueue(
-        campaign._id.toString(),
-        toSend,
-        tenantId,
-        campaign.body ?? '',
-        campaign.mediaUrl,
-        campaign.mediaType,
-        noPhone,
-        skippedByLimit,
-      );
-
-      return campaign;
     }
 
     return campaign.save();
@@ -786,83 +729,6 @@ Responde ÚNICAMENTE con JSON válido sin texto adicional:
 
     const text = await this.ai.chat(prompt, { maxTokens: 700 });
     return this.ai.parseJson<{ subject: string; body: string }>(text);
-  }
-
-  private async runWahaQueue(
-    campaignId: string,
-
-    toSend: (Customer & { phone: string })[],
-    tenantId: string,
-    body: string,
-    mediaUrl: string | undefined,
-    mediaType: string | undefined,
-    noPhone: number,
-    skippedByLimit: number,
-  ): Promise<void> {
-    const results: PromiseSettledResult<void>[] = [];
-    for (let i = 0; i < toSend.length; i++) {
-      const c = toSend[i];
-      const result = await Promise.allSettled([
-        this.settings.sendWhatsApp(
-          c.phone,
-          fillTokensMultiline(body, c),
-          tenantId,
-          mediaUrl,
-          mediaType as 'image' | 'video' | 'audio' | 'document' | undefined,
-          'waha',
-        ),
-      ]);
-      results.push(result[0]);
-
-      if (result[0].status === 'rejected') {
-        this.logger.error(`WA failed for ${c.phone}: ${result[0].reason}`);
-      }
-
-      if (i < toSend.length - 1) {
-        const delay = 30000 + Math.floor(Math.random() * 30000);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-
-    const campaign = await this.campaignModel.findById(campaignId).exec();
-    if (!campaign) return;
-
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    const firstError: unknown = results.find(
-      (r) => r.status === 'rejected',
-    )?.reason;
-    campaign.status = 'sent';
-    campaign.sentAt = new Date();
-
-    const errors: string[] = [];
-    if (failed > 0)
-      errors.push(
-        `${failed} mensaje(s) fallaron${firstError ? ': ' + stringifyError(firstError) : ''}`,
-      );
-    if (noPhone > 0) errors.push(`${noPhone} sin teléfono (omitidos)`);
-    if (skippedByLimit > 0)
-      errors.push(`${skippedByLimit} omitidos por límite diario`);
-    if (errors.length > 0) campaign.errorMessage = errors.join(' · ');
-
-    await campaign.save();
-  }
-
-  private async countWaSentToday(tenantId: string): Promise<number> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    // Cuenta lo enviado hoy Y lo que está en vuelo: una campaña 'sending'
-    // ya reservó su cuota aunque todavía no tenga sentAt.
-    const campaigns = await this.campaignModel
-      .find({
-        tenantId: new Types.ObjectId(tenantId),
-        type: 'whatsapp',
-        $or: [
-          { status: 'sent', sentAt: { $gte: startOfDay } },
-          { status: 'sending' },
-        ],
-      })
-      .exec();
-    return campaigns.reduce((sum, c) => sum + (c.recipientCount ?? 0), 0);
   }
 }
 

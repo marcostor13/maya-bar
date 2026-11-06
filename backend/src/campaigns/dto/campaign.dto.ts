@@ -19,10 +19,6 @@ export class CreateCampaignDto {
   type: 'email' | 'whatsapp' | 'sms';
 
   @IsOptional()
-  @IsIn(['waha', 'cloudapi'])
-  waProvider?: 'waha' | 'cloudapi';
-
-  @IsOptional()
   @IsString()
   subject?: string;
 

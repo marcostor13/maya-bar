@@ -98,7 +98,7 @@ describe('CampaignEditorComponent', () => {
     expect(component.defaultSenderLabel()).toContain('hola@miempresa.com');
   });
 
-  it('SMS: guarda con type sms, sin proveedor de WhatsApp ni asunto', async () => {
+  it('SMS: guarda con type sms y sin asunto', async () => {
     await setup();
     component.form.name = 'Aviso';
     component.setChannel('sms');
@@ -107,7 +107,6 @@ describe('CampaignEditorComponent', () => {
 
     const payload = mockApi.createCampaign.mock.calls[0][0] as CampaignPayload;
     expect(payload.type).toBe('sms');
-    expect(payload.waProvider).toBeUndefined();
     expect(payload.subject).toBeUndefined();
     expect(payload.body).toBe('Hola {nombre}');
   });
@@ -200,7 +199,6 @@ describe('CampaignEditorComponent', () => {
     const payload = mockApi.createCampaign.mock.calls[0][0] as CampaignPayload;
     expect(payload.name).toBe('Promo Verano');
     expect(payload.type).toBe('email');
-    expect(payload.waProvider).toBeUndefined();
     expect(payload.subject).toBe('Oferta');
     expect(payload.body).toBe('Hola {nombre}');
     expect(payload.recipientTags).toEqual(['VIP']);
@@ -242,7 +240,6 @@ describe('CampaignEditorComponent', () => {
     expect(mockApi.createCampaign).toHaveBeenCalledTimes(1);
     const payload = mockApi.createCampaign.mock.calls[0][0] as CampaignPayload;
     expect(payload.type).toBe('whatsapp');
-    expect(payload.waProvider).toBe('cloudapi');
     expect(payload.body).toBe('[Plantilla: promo_enero]');
     expect(payload.templateName).toBe('promo_enero');
     expect(payload.templateLanguage).toBe('es');
@@ -300,7 +297,7 @@ describe('CampaignEditorComponent', () => {
 
   it('al editar una campaña cloudapi carga plantillas y resuelve la seleccionada', async () => {
     const cloudCampaign: Campaign = {
-      ...emailCampaign, _id: 'c2', type: 'whatsapp', waProvider: 'cloudapi',
+      ...emailCampaign, _id: 'c2', type: 'whatsapp',
       templateName: 'promo_enero', templateLanguage: 'es', templateVars: ['a', 'b'],
     };
     await setup(cloudCampaign);

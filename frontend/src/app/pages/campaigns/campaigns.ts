@@ -2,7 +2,7 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule, Plus, Send, Edit2, Trash2, Megaphone, Mail, MessageSquare,
-  CheckCircle2, Clock, AlertCircle, Copy, Search, Image, Video, RotateCcw, Mic, FileText, HeartHandshake,
+  CheckCircle2, Clock, AlertCircle, Search, Image, Video, RotateCcw, Mic, FileText, HeartHandshake,
   Smartphone, CalendarClock, ListChecks, CircleStop, Link2,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
@@ -113,7 +113,6 @@ import { CampaignRecipientsComponent } from './campaign-recipients';
                     <td data-label="Canal">
                       <span class="type-badge"
                         [class.type-email]="channelOf(c) === 'email'"
-                        [class.type-wa]="channelOf(c) === 'waha'"
                         [class.type-cloud]="channelOf(c) === 'cloudapi'"
                         [class.type-sms]="channelOf(c) === 'sms'">
                         <lucide-icon [img]="channelIcon(c)" [size]="12"></lucide-icon>
@@ -202,11 +201,6 @@ import { CampaignRecipientsComponent } from './campaign-recipients';
                             <lucide-icon [img]="Edit2" [size]="14"></lucide-icon>
                           </button>
                           @if (c.status === 'draft') {
-                            @if (channelOf(c) === 'waha') {
-                              <button class="btn btn-icon btn-ghost btn-sm" (click)="copyWhatsApp(c)" title="Copiar mensaje">
-                                <lucide-icon [img]="Copy" [size]="14"></lucide-icon>
-                              </button>
-                            }
                             <button class="btn btn-sm btn-primary" (click)="sendCampaign(c)">
                               <lucide-icon [img]="Send" [size]="13"></lucide-icon>
                               Enviar
@@ -264,7 +258,6 @@ import { CampaignRecipientsComponent } from './campaign-recipients';
       font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: var(--radius-pill);
     }
     .type-email { background: #EFF6FF; color: #2563EB; }
-    .type-wa    { background: #F0FDF4; color: #16A34A; }
     .type-cloud { background: #F5F3FF; color: #7C3AED; }
     .type-sms   { background: var(--color-brand-light); color: var(--color-brand); }
     .count-btn { background:none; border:none; padding:0; font:inherit; color:var(--color-brand); cursor:pointer; text-decoration:underline; }
@@ -368,7 +361,7 @@ export class CampaignsComponent implements OnInit, OnDestroy {
   readonly Plus = Plus; readonly Send = Send; readonly Edit2 = Edit2;
   readonly Trash2 = Trash2; readonly Megaphone = Megaphone; readonly Mail = Mail;
   readonly MessageSquare = MessageSquare; readonly CheckCircle2 = CheckCircle2;
-  readonly Clock = Clock; readonly AlertCircle = AlertCircle; readonly Copy = Copy;
+  readonly Clock = Clock; readonly AlertCircle = AlertCircle;
   readonly Search = Search; readonly Image = Image; readonly Video = Video;
   readonly RotateCcw = RotateCcw; readonly Mic = Mic; readonly FileText = FileText;
   readonly HeartHandshake = HeartHandshake;
@@ -432,7 +425,7 @@ export class CampaignsComponent implements OnInit, OnDestroy {
           this.campaigns.set(data);
           if (!data.some(c => c.status === 'sending')) {
             this.stopPolling();
-            this.toast.success('Envío WAHA completado');
+            this.toast.success('Envío completado');
           }
         },
       });
@@ -459,7 +452,7 @@ export class CampaignsComponent implements OnInit, OnDestroy {
   channelOf(c: Campaign): CampaignChannel {
     if (c.type === 'email') return 'email';
     if (c.type === 'sms') return 'sms';
-    return c.waProvider === 'cloudapi' ? 'cloudapi' : 'waha';
+    return 'cloudapi';
   }
   channelIcon(c: Campaign) {
     const ch = this.channelOf(c);
@@ -498,8 +491,7 @@ export class CampaignsComponent implements OnInit, OnDestroy {
     const ch = this.channelOf(c);
     if (ch === 'email') return 'Email';
     if (ch === 'sms') return 'SMS';
-    if (ch === 'cloudapi') return 'WA Cloud';
-    return 'WA WAHA';
+    return 'WhatsApp';
   }
   mediaIcon(c: Campaign) {
     if (c.mediaType === 'video') return this.Video;
@@ -531,7 +523,7 @@ export class CampaignsComponent implements OnInit, OnDestroy {
           this.toast.success(
             this.isQueued(updated)
               ? 'Envío en marcha: se procesa por lotes y el avance se actualiza solo.'
-              : 'Enviando por WAHA en background. Se actualizará automáticamente.',
+              : 'Enviando por WhatsApp. Se actualizará automáticamente.',
           );
           this.startPolling();
         } else {
@@ -559,7 +551,7 @@ export class CampaignsComponent implements OnInit, OnDestroy {
           this.toast.success(
             this.isQueued(updated)
               ? 'Reenvío en marcha: se procesa por lotes.'
-              : 'Reenviando por WAHA en background. Se actualizará automáticamente.',
+              : 'Reenviando por WhatsApp. Se actualizará automáticamente.',
           );
           this.startPolling();
         } else {
@@ -596,15 +588,6 @@ export class CampaignsComponent implements OnInit, OnDestroy {
       if (c.scheduledAt && new Date(c.scheduledAt).getTime() > Date.now()) {
         parts.push(`Quedará programada para el ${this.formatDate(c.scheduledAt)}.`);
       }
-    } else if (ch === 'waha') {
-      if (e.remaining < e.recipientCount) {
-        parts.push(`Límite diario: se enviarán ${e.remaining} de ${e.recipientCount} (${e.sentToday} ya enviados hoy, límite ${e.dailyLimit}).`);
-      }
-      if (e.remaining > 0) {
-        parts.push(`Tiempo estimado: ~${e.estimatedMinutes} min (envío escalonado, 30–60 s entre mensajes).`);
-      } else {
-        parts.push(`Límite diario alcanzado (${e.dailyLimit} mensajes). Configúralo en Ajustes.`);
-      }
     }
     return '\n' + parts.join('\n');
   }
@@ -616,13 +599,6 @@ export class CampaignsComponent implements OnInit, OnDestroy {
       next: () => { this.toast.success('Campaña eliminada'); this.load(); },
       error: (err: { error?: { message?: string } }) => this.toast.error(err.error?.message || 'Error al eliminar'),
     });
-  }
-
-  copyWhatsApp(c: Campaign) {
-    navigator.clipboard.writeText(c.body).then(
-      () => this.toast.success('Mensaje copiado'),
-      () => this.toast.error('No se pudo copiar'),
-    );
   }
 
   statusLabel(s: string): string {

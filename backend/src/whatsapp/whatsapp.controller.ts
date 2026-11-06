@@ -13,10 +13,4 @@ export class WhatsAppController {
     assertRole(req.user.role, MANAGE_ROLES);
     return this.settings.getWaStatus(req.user.tenantId);
   }
-
-  @Get('qr')
-  qr(@Request() req: AuthReq) {
-    assertRole(req.user.role, MANAGE_ROLES);
-    return this.settings.getWaQr(req.user.tenantId);
-  }
 }

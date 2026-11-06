@@ -37,7 +37,6 @@ describe('SettingsService', () => {
     // Ningún envío sale de verdad: el servicio de WhatsApp es un doble.
     wa = {
       getStatus: jest.fn().mockResolvedValue({ connected: true }),
-      getQr: jest.fn().mockResolvedValue({ qrcode: 'data:image/png;base64,x' }),
       sendMessage: jest.fn().mockResolvedValue(undefined),
       sendCloudApiTemplate: jest.fn().mockResolvedValue(undefined),
       formatPhone: jest.fn((phone: string) => {
@@ -74,7 +73,7 @@ describe('SettingsService', () => {
 
   describe('get', () => {
     it('busca la configuración de esa empresa', async () => {
-      const doc = { waDailyLimit: 80 };
+      const doc = { whatsappProvider: 'cloudapi' };
       stubLegacyConfig(doc);
 
       const result = await service.get(tenantId);
@@ -88,12 +87,11 @@ describe('SettingsService', () => {
 
   describe('save', () => {
     it('hace upsert de los campos enviados sobre la empresa del usuario', async () => {
-      const saved = { waDailyLimit: 120 };
+      const saved = { whatsappProvider: 'cloudapi' };
       configModel.findOneAndUpdate.mockReturnValue(buildQuery(saved));
 
       const result = await service.save(tenantId, {
-        waDailyLimit: 120,
-        whatsappProvider: 'waha',
+        whatsappProvider: 'cloudapi',
       });
 
       const [filter, change, options] =
@@ -101,34 +99,9 @@ describe('SettingsService', () => {
       expect(Object.keys(filter)).toEqual(['tenantId']);
       expect(filter.tenantId.toString()).toBe(tenantId);
       expect(change.$set.tenantId.toString()).toBe(tenantId);
-      expect(change.$set).toMatchObject({
-        waDailyLimit: 120,
-        whatsappProvider: 'waha',
-      });
+      expect(change.$set).toMatchObject({ whatsappProvider: 'cloudapi' });
       expect(options).toEqual({ upsert: true, new: true });
       expect(result).toBe(saved);
-    });
-  });
-
-  // ─── getWaDailyLimit ───────────────────────────────────────────────────────
-
-  describe('getWaDailyLimit', () => {
-    it('sin configuración usa 50 mensajes al día', async () => {
-      await expect(service.getWaDailyLimit(tenantId)).resolves.toBe(50);
-    });
-
-    it('con configuración pero sin límite también usa 50', async () => {
-      stubLegacyConfig({ whatsappProvider: 'waha' });
-
-      await expect(service.getWaDailyLimit(tenantId)).resolves.toBe(50);
-    });
-
-    it('respeta el límite de la empresa, incluido 0', async () => {
-      stubLegacyConfig({ waDailyLimit: 200 });
-      await expect(service.getWaDailyLimit(tenantId)).resolves.toBe(200);
-
-      stubLegacyConfig({ waDailyLimit: 0 });
-      await expect(service.getWaDailyLimit(tenantId)).resolves.toBe(0);
     });
   });
 
@@ -149,27 +122,29 @@ describe('SettingsService', () => {
 
     it('sin cuenta cae a la configuración heredada de la empresa', async () => {
       stubLegacyConfig({
-        whatsappProvider: 'waha',
-        wahaApiUrl: 'https://waha.test',
-        wahaApiKey: 'clave',
-        wahaSession: 'ventas',
+        whatsappProvider: 'cloudapi',
         waPhoneNumberId: 'pn-9',
         waAccessToken: 'token-viejo',
       });
 
-      await service.getWaQr(tenantId);
+      await service.getWaStatus(tenantId);
 
       expect(configModel.findOne.mock.calls[0][0].tenantId.toString()).toBe(
         tenantId,
       );
-      expect(wa.getQr).toHaveBeenCalledWith({
-        provider: 'waha',
-        wahaApiUrl: 'https://waha.test',
-        wahaApiKey: 'clave',
-        wahaSession: 'ventas',
+      expect(wa.getStatus).toHaveBeenCalledWith({
+        provider: 'cloudapi',
         waPhoneNumberId: 'pn-9',
         waAccessToken: 'token-viejo',
       });
+    });
+
+    it('un proveedor heredado que no es Cloud API queda sin proveedor', async () => {
+      stubLegacyConfig({ whatsappProvider: 'legacy' });
+
+      await service.getWaStatus(tenantId);
+
+      expect(wa.getStatus.mock.calls[0][0].provider).toBe('none');
     });
 
     it('sin cuenta ni configuración no hay proveedor', async () => {
@@ -177,9 +152,6 @@ describe('SettingsService', () => {
 
       expect(wa.getStatus).toHaveBeenCalledWith({
         provider: 'none',
-        wahaApiUrl: undefined,
-        wahaApiKey: undefined,
-        wahaSession: 'default',
         waPhoneNumberId: undefined,
         waAccessToken: undefined,
       });
@@ -210,30 +182,12 @@ describe('SettingsService', () => {
       );
     });
 
-    it('forceProvider cambia el proveedor solo para ese envío', async () => {
-      stubDefaultAccount();
-
-      await service.sendWhatsApp(
-        '51999888777',
-        'Hola',
-        tenantId,
-        undefined,
-        undefined,
-        'waha',
-      );
-
-      expect(wa.sendMessage.mock.calls[0][2]).toEqual({
-        ...accountConfig(),
-        provider: 'waha',
-      });
-    });
-
     it('si el proveedor falla, el error llega a quien envía', async () => {
-      wa.sendMessage.mockRejectedValue(new Error('WAHA caído'));
+      wa.sendMessage.mockRejectedValue(new Error('Meta caído'));
 
       await expect(
         service.sendWhatsApp('51999888777', 'Hola', tenantId),
-      ).rejects.toThrow('WAHA caído');
+      ).rejects.toThrow('Meta caído');
     });
   });
 
@@ -262,17 +216,17 @@ describe('SettingsService', () => {
       );
     });
 
-    it('sale desde la cuenta Cloud API dueña de la plantilla aunque la predeterminada sea WAHA', async () => {
-      const waha = { _id: new Types.ObjectId(), provider: 'waha' };
+    it('sale desde la cuenta dueña de la plantilla aunque la predeterminada sea otra', async () => {
+      const other = { _id: new Types.ObjectId(), provider: 'cloudapi' };
       const cloud = {
         _id: new Types.ObjectId(),
         provider: 'cloudapi',
         active: true,
       };
-      accounts.getDefault.mockResolvedValue(waha);
+      accounts.getDefault.mockResolvedValue(other);
       accounts.findOne.mockResolvedValue(cloud);
       accounts.toConfig.mockImplementation((a: { _id: Types.ObjectId }) =>
-        a === cloud ? accountConfig() : { provider: 'waha' },
+        a === cloud ? accountConfig() : { provider: 'cloudapi' },
       );
       templateModel.find.mockReturnValue(
         buildQuery([{ accountId: cloud._id, language: 'es' }]),
@@ -320,74 +274,6 @@ describe('SettingsService', () => {
 
       expect(accounts.findOne).not.toHaveBeenCalled();
       expect(accounts.toConfig).toHaveBeenCalledWith(account);
-    });
-  });
-
-  // ─── testWaha ───────────────────────────────────────────────────────────────
-
-  describe('testWaha', () => {
-    const waha = {
-      whatsappProvider: 'cloud_api',
-      wahaApiUrl: 'https://waha.test',
-      wahaSession: 'ventas',
-    };
-
-    it('número inválido: informa del error y no envía', async () => {
-      stubLegacyConfig(waha);
-
-      const result = await service.testWaha(tenantId, '12345');
-
-      expect(result).toEqual({
-        success: false,
-        provider: 'waha',
-        wahaApiUrl: 'https://waha.test',
-        wahaSession: 'ventas',
-        formattedPhone: '12345',
-        error: 'Número inválido (< 8 dígitos)',
-      });
-      expect(wa.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('sin URL de WAHA configurada no intenta enviar', async () => {
-      const result = await service.testWaha(tenantId, '999 888 777');
-
-      expect(result.success).toBe(false);
-      expect(result.formattedPhone).toBe('999888777');
-      expect(result.error).toContain('URL de WAHA no configurada');
-      expect(wa.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('envía el mensaje de prueba forzando WAHA aunque el proveedor sea otro', async () => {
-      stubLegacyConfig(waha);
-
-      const result = await service.testWaha(tenantId, '+51 999 888 777');
-
-      const [to, body, config] = wa.sendMessage.mock.calls[0];
-      expect(to).toBe('51999888777');
-      expect(body).toContain('Mensaje de prueba');
-      expect(config).toMatchObject({
-        provider: 'waha',
-        wahaApiUrl: 'https://waha.test',
-        wahaSession: 'ventas',
-      });
-      expect(result).toEqual({
-        success: true,
-        provider: 'waha',
-        wahaApiUrl: 'https://waha.test',
-        wahaSession: 'ventas',
-        formattedPhone: '51999888777',
-      });
-    });
-
-    it('si WAHA falla devuelve el error en vez de lanzarlo', async () => {
-      stubLegacyConfig(waha);
-      wa.sendMessage.mockRejectedValue(new Error('401 Unauthorized'));
-
-      const result = await service.testWaha(tenantId, '999888777');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Error: 401 Unauthorized');
-      expect(result.formattedPhone).toBe('999888777');
     });
   });
 });

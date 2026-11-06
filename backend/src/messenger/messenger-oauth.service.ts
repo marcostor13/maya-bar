@@ -21,11 +21,7 @@ export interface MsPage {
 }
 
 const AUTHORIZE_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
-const SCOPES = [
-  'pages_show_list',
-  'pages_messaging',
-  'pages_manage_metadata',
-];
+const SCOPES = ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'];
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
 /**

@@ -2,8 +2,7 @@ import { Test } from '@nestjs/testing';
 import { WhatsAppService, WaConfig } from './whatsapp.service';
 import { MetaGraphClient, MetaApiError } from '../shared/meta-graph.client';
 
-/** Solo cubre los paths de Cloud API (graph.facebook.com) migrados a MetaGraphClient.
- *  Las llamadas a WAHA siguen usando fetch y no se prueban aquí. */
+/** Cubre los envíos de Cloud API (graph.facebook.com) vía MetaGraphClient. */
 describe('WhatsAppService (Cloud API)', () => {
   let service: WhatsAppService;
   let graph: { get: jest.Mock; post: jest.Mock; delete: jest.Mock };
@@ -177,33 +176,6 @@ describe('WhatsAppService (Cloud API)', () => {
         service.setContactBlocked(config, '51999888777', true),
       ).rejects.toThrow('Cloud API 400: nope');
     });
-
-    it('en WAHA llama a /api/contacts/block con el chatId', async () => {
-      const fetchMock = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue(new Response('{}', { status: 200 }));
-      await service.setContactBlocked(
-        {
-          provider: 'waha',
-          wahaApiUrl: 'http://waha',
-          wahaApiKey: 'k',
-          wahaSession: 's1',
-        },
-        '51999888777',
-        true,
-      );
-      expect(fetchMock).toHaveBeenCalledWith(
-        'http://waha/api/contacts/block',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({
-            session: 's1',
-            contactId: '51999888777@c.us',
-          }),
-        }),
-      );
-      fetchMock.mockRestore();
-    });
   });
 
   describe('sendCloudApiTemplate', () => {
@@ -260,7 +232,7 @@ describe('WhatsAppService (Cloud API)', () => {
 
   describe('registerCloudApiWebhook', () => {
     it('solo aplica a cuentas Cloud API', async () => {
-      const res = await service.registerCloudApiWebhook({ provider: 'waha' });
+      const res = await service.registerCloudApiWebhook({ provider: 'none' });
       expect(res.success).toBe(false);
       expect(graph.post).not.toHaveBeenCalled();
     });
@@ -332,57 +304,5 @@ describe('WhatsAppService (Cloud API)', () => {
         error: 'Unsupported get request',
       });
     });
-  });
-});
-
-describe('WhatsAppService (WAHA)', () => {
-  let service: WhatsAppService;
-  let fetchMock: jest.Mock;
-  const realFetch = global.fetch;
-
-  const config: WaConfig = {
-    provider: 'waha',
-    wahaApiUrl: 'https://waha.test',
-    wahaApiKey: 'key',
-    wahaSession: 'default',
-  };
-
-  beforeEach(async () => {
-    fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ id: 'msg1' }),
-    });
-    global.fetch = fetchMock;
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        WhatsAppService,
-        {
-          provide: MetaGraphClient,
-          useValue: { get: jest.fn(), post: jest.fn() },
-        },
-      ],
-    }).compile();
-    service = moduleRef.get(WhatsAppService);
-  });
-
-  afterEach(() => {
-    global.fetch = realFetch;
-  });
-
-  const sentChatId = () =>
-    (
-      JSON.parse(
-        (fetchMock.mock.calls[0] as [string, { body: string }])[1].body,
-      ) as { chatId: string }
-    ).chatId;
-
-  it('envía a un número como <dígitos>@c.us', async () => {
-    await service.sendMessage('+1 415 555 2671', 'hola', config);
-    expect(sentChatId()).toBe('14155552671@c.us');
-  });
-
-  it('conserva el LID tal cual en vez de convertirlo en número', async () => {
-    await service.sendMessage('123456789012345@lid', 'hola', config);
-    expect(sentChatId()).toBe('123456789012345@lid');
   });
 });

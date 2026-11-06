@@ -18,7 +18,6 @@ export interface CampaignStats {
   failed: number;
   skipped: number;
 }
-export type WaProvider = 'waha' | 'cloudapi';
 export type MediaType = 'image' | 'video' | 'audio' | 'document';
 
 @Schema({ timestamps: true })
@@ -31,9 +30,6 @@ export class Campaign extends Document {
 
   @Prop({ type: String, enum: ['email', 'whatsapp', 'sms'], required: true })
   type: CampaignType;
-
-  @Prop({ type: String, enum: ['waha', 'cloudapi'], default: 'waha' })
-  waProvider?: WaProvider;
 
   @Prop()
   subject?: string;

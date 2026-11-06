@@ -1,6 +1,6 @@
 # Configurar WhatsApp Cloud API (conexión self-service) como canal del agente de IA
 
-Guía para que cada negocio/tenant conecte su propio número de WhatsApp Business a MAYA Platform con un click, usando **Embedded Signup** (Facebook Login for Business) — vigente a julio 2026. Complementa la conexión manual/QR (WAHA) que ya existía; esta es la vía recomendada para **WhatsApp Cloud API**, y soporta **N cuentas por tenant**.
+Guía para que cada negocio/tenant conecte su propio número de WhatsApp Business a MAYA Platform con un click, usando **Embedded Signup** (Facebook Login for Business) — vigente a julio 2026. Es la vía recomendada para **WhatsApp Cloud API** y soporta **N cuentas por tenant**.
 
 ---
 
@@ -63,10 +63,9 @@ Mientras la app esté en modo **Desarrollo**, solo podés conectar números que 
 
 El token dura ~60 días. La lista de cuentas muestra el vencimiento; antes de que expire, usá el botón renovar (↻) — extiende el token sin repetir el popup completo.
 
-### Vía manual (WAHA o Cloud API avanzado)
+### Vía manual (Cloud API avanzado)
 
 **"Añadir manualmente"** sigue disponible para:
-- **WAHA** (self-hosted, conexión por QR) — no tiene equivalente OAuth, es su propio mecanismo de "conexión propia".
 - **Cloud API avanzado**: pegar Phone Number ID + Access Token generados vos mismo desde Graph API Explorer. Tras guardar, usá el botón de enlace (🔗) para suscribir el webhook de esa cuenta.
 
 ---
@@ -110,5 +109,4 @@ Cualquier mensaje que la plataforma **inicie** (fuera de una respuesta dentro de
 
 - El registro del número (`/register`) usa un PIN interno fijo que MAYA gestiona automáticamente — no lo ve ni lo necesita el usuario.
 - El token de larga duración expira a los ~60 días — hay que renovarlo (botón ↻) antes de que venza.
-- WAHA sigue siendo la opción para quienes no quieren pasar por Meta Business en absoluto (usa WhatsApp Web por QR, con sus propias limitaciones y riesgo de baneo por parte de WhatsApp al ser no oficial).
 - Documentación oficial de referencia: [Embedded Signup Overview](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview), [Webhook overrides](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/override/).

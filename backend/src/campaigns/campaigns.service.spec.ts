@@ -45,7 +45,6 @@ function makeCampaignDoc(overrides: Partial<Record<string, unknown>> = {}) {
     tenantId: { toString: () => tenantId },
     name: 'Promo Verano',
     type: 'email',
-    waProvider: 'waha',
     subject: 'Oferta especial',
     body: 'Hola {nombre}, tenemos una oferta',
     targeting: 'tags',
@@ -90,13 +89,6 @@ function createMockModel() {
   return constructor as any;
 }
 
-/** Flush pending microtasks/macrotasks so fire-and-forget queues finish. */
-async function flushAsync(times = 10) {
-  for (let i = 0; i < times; i++) {
-    await new Promise((r) => setImmediate(r));
-  }
-}
-
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 describe('CampaignsService', () => {
@@ -114,7 +106,6 @@ describe('CampaignsService', () => {
 
   const mockMail = { sendCampaign: jest.fn() };
   const mockSettings = {
-    getWaDailyLimit: jest.fn(),
     sendWhatsApp: jest.fn(),
     sendWhatsAppTemplate: jest.fn(),
   };
@@ -154,7 +145,6 @@ describe('CampaignsService', () => {
     mockLinks.createPersonalLinks.mockResolvedValue([]);
 
     mockMail.sendCampaign.mockResolvedValue(undefined);
-    mockSettings.getWaDailyLimit.mockResolvedValue(50);
     mockSettings.sendWhatsApp.mockResolvedValue(undefined);
     mockSettings.sendWhatsAppTemplate.mockResolvedValue(undefined);
     mockLists.resolveCustomers.mockResolvedValue([]);
@@ -365,7 +355,6 @@ describe('CampaignsService', () => {
         _id: 'k1',
         tenantId: { toString: () => tenantId },
         type: 'whatsapp',
-        waProvider: 'cloudapi',
         body: 'Promo',
         status: 'draft',
         // El servicio lo sobrescribe al enviar; va declarado para que el tipo
@@ -394,7 +383,6 @@ describe('CampaignsService', () => {
         listIds: [{ toString: () => 'l1' }],
         recipientTags: [],
         type: 'whatsapp',
-        waProvider: 'cloudapi',
         body: 'Promo',
         status: 'draft',
         recipientCount: 0,
@@ -753,7 +741,6 @@ describe('CampaignsService', () => {
     it('sends personalized message per customer with cloudapi provider', async () => {
       const doc = makeCampaignDoc({
         type: 'whatsapp',
-        waProvider: 'cloudapi',
         body: 'Hola {nombre}',
         mediaUrl: 'http://img',
         mediaType: 'image',
@@ -769,14 +756,13 @@ describe('CampaignsService', () => {
         tenantId,
         'http://img',
         'image',
-        'cloudapi',
       );
       expect(doc.status).toBe('sent');
       expect(doc.sentAt).toBeInstanceOf(Date);
     });
 
     it('skips customers without phone and reports them in errorMessage', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'cloudapi' });
+      const doc = makeCampaignDoc({ type: 'whatsapp' });
       stubFindById(doc);
       stubCustomers([
         makeCustomer({ phone: '+51111' }),
@@ -791,7 +777,7 @@ describe('CampaignsService', () => {
     });
 
     it('records failures without aborting and includes first error', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'cloudapi' });
+      const doc = makeCampaignDoc({ type: 'whatsapp' });
       stubFindById(doc);
       stubCustomers([
         makeCustomer({ phone: '+51111' }),
@@ -812,7 +798,6 @@ describe('CampaignsService', () => {
     it('uses template sending when templateName is set, personalizing vars', async () => {
       const doc = makeCampaignDoc({
         type: 'whatsapp',
-        waProvider: 'cloudapi',
         templateName: 'promo_julio',
         templateLanguage: undefined,
         templateVars: ['{nombre}', '20%'],
@@ -832,88 +817,6 @@ describe('CampaignsService', () => {
         undefined,
       );
       expect(mockSettings.sendWhatsApp).not.toHaveBeenCalled();
-    });
-  });
-
-  // ─── send: WhatsApp WAHA ───────────────────────────────────────────────────
-
-  describe('send whatsapp waha campaign', () => {
-    it('marks campaign sent without sending when daily limit is exhausted', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'waha' });
-      stubFindById(doc);
-      stubCustomers([makeCustomer()]);
-      mockSettings.getWaDailyLimit.mockResolvedValue(10);
-      // countWaSentToday: previous sent campaigns totaling 10
-      campaignModel.find.mockReturnValue(buildQuery([{ recipientCount: 10 }]));
-
-      await service.send(doc._id.toString(), tenantId);
-
-      expect(mockSettings.sendWhatsApp).not.toHaveBeenCalled();
-      expect(doc.status).toBe('sent');
-      expect(doc.errorMessage).toContain('Límite diario de 10');
-    });
-
-    it('returns immediately in sending state and completes queue in background', async () => {
-      const doc = makeCampaignDoc({
-        type: 'whatsapp',
-        waProvider: 'waha',
-        body: 'Hola {nombre}',
-      });
-      stubFindById(doc);
-      stubCustomers([makeCustomer({ name: 'Ana', phone: '+51111' })]);
-      mockSettings.getWaDailyLimit.mockResolvedValue(50);
-
-      const result = await service.send(doc._id.toString(), tenantId);
-      expect(result.status).toBe('sending');
-
-      await flushAsync();
-
-      expect(mockSettings.sendWhatsApp).toHaveBeenCalledWith(
-        '+51111',
-        'Hola Ana',
-        tenantId,
-        undefined,
-        undefined,
-        'waha',
-      );
-      expect(doc.status).toBe('sent');
-      expect(doc.sentAt).toBeInstanceOf(Date);
-      expect(doc.errorMessage).toBeUndefined();
-    });
-
-    it('slices recipients to the remaining daily quota and reports skipped', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'waha' });
-      stubFindById(doc);
-      stubCustomers([
-        makeCustomer({ phone: '+51111' }),
-        makeCustomer({ phone: '+51222' }),
-        makeCustomer({ phone: '+51333' }),
-        makeCustomer({ phone: undefined }),
-      ]);
-      mockSettings.getWaDailyLimit.mockResolvedValue(5);
-      campaignModel.find.mockReturnValue(buildQuery([{ recipientCount: 4 }]));
-
-      await service.send(doc._id.toString(), tenantId);
-      await flushAsync();
-
-      expect(mockSettings.sendWhatsApp).toHaveBeenCalledTimes(1);
-      expect(doc.recipientCount).toBe(1);
-      expect(doc.errorMessage).toContain('1 sin teléfono (omitidos)');
-      expect(doc.errorMessage).toContain('2 omitidos por límite diario');
-    });
-
-    it('records per-recipient failures without aborting the queue', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'waha' });
-      stubFindById(doc);
-      stubCustomers([makeCustomer({ phone: '+51111' })]);
-      mockSettings.sendWhatsApp.mockRejectedValueOnce(new Error('waha down'));
-
-      await service.send(doc._id.toString(), tenantId);
-      await flushAsync();
-
-      expect(doc.status).toBe('sent');
-      expect(doc.errorMessage).toContain('1 mensaje(s) fallaron');
-      expect(doc.errorMessage).toContain('waha down');
     });
   });
 
@@ -958,48 +861,8 @@ describe('CampaignsService', () => {
   // ─── estimate ───────────────────────────────────────────────────────────────
 
   describe('estimate', () => {
-    it('computes recipients, minutes and remaining quota for waha whatsapp', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'waha' });
-      stubFindById(doc);
-      stubCustomers([
-        makeCustomer({ phone: '+51111' }),
-        makeCustomer({ phone: '+51222' }),
-        makeCustomer({ phone: undefined }), // filtered out for whatsapp
-      ]);
-      mockSettings.getWaDailyLimit.mockResolvedValue(100);
-      campaignModel.find.mockReturnValue(buildQuery([{ recipientCount: 95 }]));
-
-      const result = await service.estimate(doc._id.toString(), tenantId);
-
-      expect(result).toEqual({
-        recipientCount: 2,
-        estimatedMinutes: 2, // ceil(2 * 45 / 60)
-        dailyLimit: 100,
-        sentToday: 95,
-        remaining: 5,
-      });
-    });
-
-    it('caps willSend by remaining quota when computing minutes', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'waha' });
-      stubFindById(doc);
-      stubCustomers(
-        Array.from({ length: 10 }, (_, i) =>
-          makeCustomer({ phone: `+51${i}` }),
-        ),
-      );
-      mockSettings.getWaDailyLimit.mockResolvedValue(5);
-      campaignModel.find.mockReturnValue(buildQuery([{ recipientCount: 3 }]));
-
-      const result = await service.estimate(doc._id.toString(), tenantId);
-
-      expect(result.recipientCount).toBe(10);
-      expect(result.remaining).toBe(2);
-      expect(result.estimatedMinutes).toBe(2); // ceil(2 * 45 / 60)
-    });
-
-    it('returns flat pricing and no daily limit for cloudapi', async () => {
-      const doc = makeCampaignDoc({ type: 'whatsapp', waProvider: 'cloudapi' });
+    it('returns flat Cloud API pricing for whatsapp', async () => {
+      const doc = makeCampaignDoc({ type: 'whatsapp' });
       stubFindById(doc);
       stubCustomers([makeCustomer({ phone: '+51111' })]);
 
@@ -1013,7 +876,6 @@ describe('CampaignsService', () => {
         remaining: 1,
         cloudApiPricePerMsg: 0.0625,
       });
-      expect(mockSettings.getWaDailyLimit).not.toHaveBeenCalled();
     });
 
     it('does not filter by phone nor count quota for email campaigns', async () => {
@@ -1023,7 +885,6 @@ describe('CampaignsService', () => {
         makeCustomer({ phone: undefined, email: 'a@test.com' }),
         makeCustomer({ phone: '+51111', email: 'b@test.com' }),
       ]);
-      mockSettings.getWaDailyLimit.mockResolvedValue(50);
 
       const result = await service.estimate(doc._id.toString(), tenantId);
 
@@ -1088,27 +949,6 @@ describe('CampaignsService', () => {
         { status: 'sending', type: 'whatsapp' },
         { $set: expect.objectContaining({ status: 'failed' }) },
       );
-    });
-  });
-
-  describe('cuota diaria (countWaSentToday)', () => {
-    it("cuenta lo enviado hoy y reserva lo que está en 'sending'", async () => {
-      campaignModel.find.mockReturnValue({
-        exec: jest
-          .fn()
-          .mockResolvedValue([{ recipientCount: 10 }, { recipientCount: 5 }]),
-      });
-
-      const total = await (service as any).countWaSentToday(
-        '64b000000000000000000000',
-      );
-
-      expect(total).toBe(15);
-      const filter = campaignModel.find.mock.calls[0][0];
-      expect(filter.$or).toEqual([
-        expect.objectContaining({ status: 'sent' }),
-        { status: 'sending' },
-      ]);
     });
   });
 });

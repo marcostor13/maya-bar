@@ -1,8 +1,7 @@
 /** Modelos de la feature de configuración: cuentas WhatsApp / Instagram / Messenger, plantillas y keys de IA. */
 
-/** Configuración del tenant (GET/PUT /settings): límite diario de WhatsApp y API keys de IA. */
+/** Configuración del tenant (GET/PUT /settings): API keys de IA y de prospección. */
 export interface TenantSettings {
-  waDailyLimit?: number;
   openaiApiKey?: string;
   deepseekApiKey?: string;
   geminiApiKey?: string;
@@ -18,13 +17,8 @@ export interface TenantSettings {
 export interface WaAccount {
   _id: string;
   label: string;
-  provider: 'waha' | 'cloudapi';
+  provider: 'cloudapi';
   phoneNumber?: string;
-  wahaApiUrl?: string;
-  wahaApiKey?: string;
-  wahaSession?: string;
-  /** Conectada por QR en el WAHA de la plataforma: sin URL ni API key propias. */
-  managed?: boolean;
   waPhoneNumberId?: string;
   waAccessToken?: string;
   waBusinessAccountId?: string;
@@ -40,11 +34,6 @@ export interface WaStatus {
   connected: boolean;
   state?: string;
   phoneNumber?: string;
-  error?: string;
-}
-
-export interface WaQr {
-  qrcode?: string;
   error?: string;
 }
 
@@ -241,8 +230,7 @@ export interface WaTemplateAccount {
 
 export function blankWaAccount(): WaAccount {
   return {
-    _id: '', label: '', provider: 'waha', phoneNumber: '', wahaApiUrl: '', wahaApiKey: '',
-    wahaSession: 'default', waPhoneNumberId: '', waAccessToken: '', waBusinessAccountId: '',
+    _id: '', label: '', provider: 'cloudapi', phoneNumber: '', waPhoneNumberId: '', waAccessToken: '', waBusinessAccountId: '',
     waVerifyToken: '', active: true,
   };
 }
