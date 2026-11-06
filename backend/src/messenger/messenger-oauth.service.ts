@@ -25,7 +25,6 @@ const SCOPES = [
   'pages_show_list',
   'pages_messaging',
   'pages_manage_metadata',
-  'pages_read_engagement',
 ];
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
