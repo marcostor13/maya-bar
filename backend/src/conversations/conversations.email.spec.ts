@@ -49,7 +49,7 @@ function setup(
   };
 
   const convModel = {
-    find: jest.fn(() => chain(() => [])),
+    find: jest.fn((_filter: unknown) => chain(() => [])),
     aggregate: jest.fn(() => ({
       exec: () =>
         Promise.resolve([
