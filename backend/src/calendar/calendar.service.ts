@@ -47,7 +47,19 @@ interface EventInput {
   end: Date;
   attendees: string[];
   timeZone?: string;
+  /** Sin videollamada cuando es false (por defecto se crea Meet o Teams). */
+  video: boolean;
 }
+
+/** Bloques ocupados del calendario en un rango. */
+export interface BusyResult {
+  provider: CalendarProvider;
+  connectionId: string;
+  connectionEmail: string;
+  busy: { start: Date; end: Date }[];
+}
+
+const MAX_VIEW_PAGES = 5;
 
 /** Respuesta HTTP ya leída: el cuerpo en JSON y el código. */
 interface ApiResponse {
@@ -269,17 +281,28 @@ export class CalendarService {
         ...new Set((dto.attendees ?? []).map((a) => a.trim().toLowerCase())),
       ].filter(Boolean),
       timeZone: dto.timeZone,
+      video: dto.video !== false,
     };
 
-    const send = async (force: boolean) => {
-      const token = await this.accessToken(conn, force);
-      return conn.provider === 'google'
+    const send = (token: string) =>
+      conn.provider === 'google'
         ? this.postGoogle(token, input)
         : this.postMicrosoft(token, input);
-    };
-    let res = await send(false);
-    // Token revocado o vencido antes de tiempo: se renueva una vez y se reintenta.
-    if (res.status === 401) res = await send(true);
+    let res = await this.withToken(conn, send);
+    // Las cuentas personales de Microsoft no siempre admiten Teams: se crea sin
+    // videollamada antes que no crear la cita.
+    if (
+      !res.ok &&
+      res.status === 400 &&
+      conn.provider === 'microsoft' &&
+      input.video
+    ) {
+      this.logger.warn(
+        `Microsoft rechazó la reunión de Teams (${conn.email}); se crea sin videollamada.`,
+      );
+      input.video = false;
+      res = await this.withToken(conn, send);
+    }
     if (!res.ok) {
       const err = res.data.error as
         | { message?: string; code?: string }
@@ -335,20 +358,140 @@ export class CalendarService {
     };
   }
 
+  /** Llama al proveedor; ante 401 renueva el token una vez y reintenta. */
+  private async withToken(
+    conn: CalendarConnection,
+    send: (token: string) => Promise<ApiResponse>,
+  ): Promise<ApiResponse> {
+    const res = await send(await this.accessToken(conn));
+    if (res.status !== 401) return res;
+    return send(await this.accessToken(conn, true));
+  }
+
+  // ── Disponibilidad ──────────────────────────────────────────────────────
+
+  /**
+   * Bloques ocupados entre `from` y `to` en el calendario pedido o en el
+   * predeterminado. Google: `freeBusy`; Microsoft: `calendarView` (sirve
+   * también con cuentas personales), descartando lo marcado como libre.
+   */
+  async busy(
+    tenantId: string,
+    connectionId: string | undefined,
+    from: Date,
+    to: Date,
+  ): Promise<BusyResult> {
+    const conn = await this.pick(tenantId, connectionId);
+    const busy =
+      conn.provider === 'google'
+        ? await this.busyGoogle(conn, from, to)
+        : await this.busyMicrosoft(conn, from, to);
+    return {
+      provider: conn.provider,
+      connectionId: String(conn._id),
+      connectionEmail: conn.email,
+      busy: busy.sort((a, b) => a.start.getTime() - b.start.getTime()),
+    };
+  }
+
+  private failRead(conn: CalendarConnection, res: ApiResponse): never {
+    this.logger.warn(
+      `${conn.provider} no devolvió la disponibilidad (${res.status}): ${JSON.stringify(res.data).slice(0, 500)}`,
+    );
+    if (res.status === 401 || res.status === 403)
+      throw new BadRequestException(
+        `${PROVIDER_LABEL[conn.provider]} (${conn.email}) no dio permiso para leer la disponibilidad. Vuelve a conectar el calendario en Configuración → Calendario.`,
+      );
+    throw new BadGatewayException(
+      `${PROVIDER_LABEL[conn.provider]} no pudo devolver la disponibilidad`,
+    );
+  }
+
+  private async busyGoogle(conn: CalendarConnection, from: Date, to: Date) {
+    const res = await this.withToken(conn, (token) =>
+      this.request('https://www.googleapis.com/calendar/v3/freeBusy', token, {
+        timeMin: from.toISOString(),
+        timeMax: to.toISOString(),
+        items: [{ id: 'primary' }],
+      }),
+    );
+    if (!res.ok) this.failRead(conn, res);
+    const calendars = res.data.calendars as
+      | Record<
+          string,
+          { busy?: { start: string; end: string }[]; errors?: unknown[] }
+        >
+      | undefined;
+    const cal = calendars?.primary;
+    // Google responde 200 con `errors` por calendario si falta el permiso.
+    if (cal?.errors?.length)
+      this.failRead(conn, {
+        status: 403,
+        ok: false,
+        data: { errors: cal.errors },
+      });
+    return (cal?.busy ?? []).map((b) => ({
+      start: new Date(b.start),
+      end: new Date(b.end),
+    }));
+  }
+
+  private async busyMicrosoft(conn: CalendarConnection, from: Date, to: Date) {
+    type View = {
+      value?: {
+        start?: { dateTime: string };
+        end?: { dateTime: string };
+        showAs?: string;
+        isCancelled?: boolean;
+      }[];
+      '@odata.nextLink'?: string;
+    };
+    const params = new URLSearchParams({
+      startDateTime: from.toISOString(),
+      endDateTime: to.toISOString(),
+      $select: 'start,end,showAs,isCancelled',
+      $top: '100',
+    });
+    let url: string | undefined =
+      `https://graph.microsoft.com/v1.0/me/calendarView?${params.toString()}`;
+    const out: { start: Date; end: Date }[] = [];
+    // Graph devuelve las horas sin zona: con este encabezado vienen en UTC.
+    const headers = { Prefer: 'outlook.timezone="UTC"' };
+    const utc = (v: string) =>
+      new Date(/(Z|[+-]\d{2}:\d{2})$/.test(v) ? v : `${v}Z`);
+    for (let page = 0; url && page < MAX_VIEW_PAGES; page++) {
+      const target: string = url;
+      const res = await this.withToken(conn, (token) =>
+        this.request(target, token, undefined, { method: 'GET', headers }),
+      );
+      if (!res.ok) this.failRead(conn, res);
+      const data = res.data as View;
+      for (const e of data.value ?? []) {
+        if (e.isCancelled || e.showAs === 'free' || !e.start || !e.end)
+          continue;
+        out.push({ start: utc(e.start.dateTime), end: utc(e.end.dateTime) });
+      }
+      url = data['@odata.nextLink'];
+    }
+    return out;
+  }
+
   private async request(
     url: string,
     token: string,
     body: unknown,
+    opts: { method?: 'GET' | 'POST'; headers?: Record<string, string> } = {},
   ): Promise<ApiResponse> {
     let res: Awaited<ReturnType<typeof fetch>>;
     try {
       res = await fetch(url, {
-        method: 'POST',
+        method: opts.method ?? 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...opts.headers,
         },
-        body: JSON.stringify(body),
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (err) {
       this.logger.warn(`Calendario inaccesible: ${String(err)}`);
@@ -378,12 +521,16 @@ export class CalendarService {
         start: when(e.start),
         end: when(e.end),
         attendees: e.attendees.map((email) => ({ email })),
-        conferenceData: {
-          createRequest: {
-            requestId: randomUUID(),
-            conferenceSolutionKey: { type: 'hangoutsMeet' },
-          },
-        },
+        ...(e.video
+          ? {
+              conferenceData: {
+                createRequest: {
+                  requestId: randomUUID(),
+                  conferenceSolutionKey: { type: 'hangoutsMeet' },
+                },
+              },
+            }
+          : {}),
       },
     );
   }
@@ -408,8 +555,9 @@ export class CalendarService {
         emailAddress: { address },
         type: 'required',
       })),
-      isOnlineMeeting: true,
-      onlineMeetingProvider: 'teamsForBusiness',
+      ...(e.video
+        ? { isOnlineMeeting: true, onlineMeetingProvider: 'teamsForBusiness' }
+        : {}),
     });
   }
 }

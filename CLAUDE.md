@@ -1,5 +1,8 @@
 Rules: Read files first. Write complete solution. Test once. No over-engineering. Keep responses terse. Stop immediately and report the full error with traceback before attempting any fix if a step fails. No sycophancy. Only provide the code, fix, or required response.
 
+## Backlog (proceso estándar, spec-driven)
+- Para implementar historias usa SIEMPRE la skill `specdriven`: proceso en `specdriven/PROCESO.md`, buenas prácticas en `specdriven/BUENAS-PRACTICAS.md`, configuración del proyecto en `specdriven/config.md`. Pendientes en `specdriven/backlog/`, cerradas en `specdriven/terminados/`.
+
 ## UI & Design Guidelines (BAR / Maya Platform)
 
 ### Estética

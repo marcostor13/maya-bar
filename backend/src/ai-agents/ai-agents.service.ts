@@ -31,6 +31,20 @@ import { StoreToolSession } from './store/store-tools';
 import { formatForChat, storeUrlsIn } from './chat-links';
 import { LinksService } from '../links/links.service';
 import type { LinkChannel } from '../links/link.schemas';
+import { CalendarService } from '../calendar/calendar.service';
+import { formatLocal } from '../calendar/availability';
+import { AgentBooking } from './calendar/agent-booking.schema';
+import {
+  agentCalendar,
+  assertAgentCalendar,
+  type AgentCalendarConfig,
+} from './calendar/agent-calendar';
+import {
+  CalendarToolSession,
+  type BookedCita,
+  type BookingStore,
+} from './calendar/calendar-tools';
+import type { AiToolCall } from '../ai/ai.service';
 
 // Igual que AI_HISTORY_LIMIT de la bandeja: si el chat pasó por manual, el
 // agente tiene que ver lo que escribió la persona antes de retomar.
@@ -63,6 +77,17 @@ function storePatch(dto: CreateAiAgentDto | UpdateAiAgentDto) {
 /** El agente pidió que una persona tome la conversación. */
 export interface AgentHandoff {
   reason?: string;
+}
+
+/** Contexto de la conversación que necesita el agente para agendar. */
+export interface AgentAnswerOptions {
+  channelHint?: string;
+  channel?: string;
+  conversationId?: string;
+  contactName?: string;
+  contactEmail?: string;
+  /** Playground: las herramientas que escriben (agendar) solo simulan. */
+  simulate?: boolean;
 }
 
 /** Deja los números en E.164 sin '+' y descarta los vacíos o duplicados. */
@@ -112,10 +137,12 @@ export class AiAgentsService {
     @InjectModel(KnowledgeDoc.name) private docModel: Model<KnowledgeDoc>,
     @InjectModel(AgentFile.name) private fileModel: Model<AgentFile>,
     @InjectModel(TenantConfig.name) private configModel: Model<TenantConfig>,
+    @InjectModel(AgentBooking.name) private bookingModel: Model<AgentBooking>,
     private rag: RagService,
     private ai: AiService,
     private store: WooStoreService,
     private links: LinksService,
+    private calendar: CalendarService,
   ) {}
 
   /** Lee las API keys de IA configuradas por el tenant. */
@@ -161,6 +188,7 @@ export class AiAgentsService {
   }
 
   create(tenantId: string, userId: string, dto: CreateAiAgentDto) {
+    if (dto.calendar) assertAgentCalendar(dto.calendar);
     return this.agentModel.create({
       ...dto,
       accountIds: (dto.accountIds ?? []).map((a) => new Types.ObjectId(a)),
@@ -185,6 +213,7 @@ export class AiAgentsService {
   }
 
   async update(id: string, tenantId: string, dto: UpdateAiAgentDto) {
+    if (dto.calendar) assertAgentCalendar(dto.calendar);
     const patch: Record<string, unknown> = { ...dto };
     if (dto.accountIds)
       patch.accountIds = dto.accountIds.map((a) => new Types.ObjectId(a));
@@ -392,6 +421,106 @@ export class AiAgentsService {
     return `\n\n--- TIENDA ONLINE EN VIVO (${agent.storeUrl}) ---\nTienes herramientas que consultan la tienda en tiempo real: buscar_producto (precio, stock, link e id), enviar_foto_producto (foto con pie de foto), generar_link_pago (checkout con el pedido cargado)${agent.handoffEnabled ? ' y derivar_a_humano' : ''}.\nLlámalas directamente, sin avisar antes al cliente que vas a revisar. Precios, stock, links e ids salen SOLO de lo que devuelven en esta respuesta: nunca los inventes ni los recuerdes de mensajes anteriores. Si el cliente pregunta por varios productos, búscalos todos a la vez.\n${cart}\nSi buscar_producto devuelve error web_no_responde, no adivines: comparte link_busqueda y ofrece un asesor.\nLinks: pega la URL completa tal como la devuelve la herramienta, sola en su línea y sin formato (nada de [texto](url), asteriscos ni signos pegados): el sistema la acorta y el cliente solo toca para abrirla.\n--- FIN TIENDA ---`;
   }
 
+  /** Le enseña al agente a ofrecer horarios reales y agendar. */
+  private buildCalendarPromptSection(
+    cal: AgentCalendarConfig,
+    now: Date,
+  ): string {
+    const extra = cal.instructions?.trim()
+      ? `\nIndicaciones de la empresa para agendar: ${cal.instructions.trim()}`
+      : '';
+    return `\n\n--- AGENDA (calendario de la empresa) ---\nAhora es ${formatLocal(now, cal.timeZone)} (zona ${cal.timeZone}). Las citas duran ${cal.durationMinutes} minutos${cal.video ? ' e incluyen videollamada' : ''}.\nCuando el cliente quiera una cita, reunión, llamada o demo:\n1. Llama a consultar_disponibilidad (con las fechas que pida, si las dice) y ofrece 2 o 3 horarios con el campo "texto". Nunca propongas horarios que no salieron de la herramienta.\n2. Pide su nombre y, si quiere la invitación, su correo.\n3. Cuando elija, llama a agendar_cita con el campo "inicio" exacto del horario elegido.\n4. Confirma día, hora y zona horaria${cal.video ? ', y comparte el enlace de la videollamada si lo devolvió' : ''}.\nSi una herramienta devuelve error o no tienes herramientas de agenda, no inventes horarios: di que un asesor le confirmará la cita. Si el horario ya no está libre, ofrece las alternativas que devuelve.\nNo puedes reprogramar ni cancelar citas: para eso, deriva a una persona.${extra}\n--- FIN AGENDA ---`;
+  }
+
+  /** Registro de citas del agente (idempotencia por conversación e inicio). */
+  private bookingStore(tenantId: string, agentId: string): BookingStore {
+    const toCita = (d: AgentBooking): BookedCita => ({
+      start: d.start,
+      end: d.end,
+      title: d.title,
+      contactName: d.contactName ?? '',
+      attendeeEmail: d.attendeeEmail,
+      joinUrl: d.joinUrl,
+      htmlLink: d.htmlLink,
+      provider: d.provider,
+      eventId: d.eventId ?? '',
+      connectionId: d.connectionId ? String(d.connectionId) : undefined,
+    });
+    const oid = (id: string) => new Types.ObjectId(id);
+    return {
+      findExisting: async (conversationId, start) => {
+        const d = await this.bookingModel
+          .findOne({
+            tenantId: oid(tenantId),
+            conversationId: oid(conversationId),
+            start,
+            status: 'confirmed',
+          })
+          .exec();
+        return d ? toCita(d) : null;
+      },
+      countUpcoming: (conversationId, now) =>
+        this.bookingModel
+          .countDocuments({
+            tenantId: oid(tenantId),
+            conversationId: oid(conversationId),
+            status: { $in: ['pending', 'confirmed'] },
+            start: { $gt: now },
+          })
+          .exec(),
+      claim: async (b) => {
+        try {
+          await this.bookingModel.create({
+            tenantId: oid(tenantId),
+            agentId: oid(agentId),
+            conversationId: oid(b.conversationId),
+            connectionId:
+              b.connectionId && Types.ObjectId.isValid(b.connectionId)
+                ? oid(b.connectionId)
+                : undefined,
+            provider: b.provider,
+            start: b.start,
+            end: b.end,
+            title: b.title,
+            contactName: b.contactName,
+            attendeeEmail: b.attendeeEmail,
+            status: 'pending',
+          });
+          return true;
+        } catch (err) {
+          // Duplicado por índice único: otra respuesta ya la está agendando.
+          if ((err as { code?: number }).code === 11000) return false;
+          throw err;
+        }
+      },
+      confirm: async (conversationId, start, c) => {
+        await this.bookingModel
+          .updateOne(
+            { conversationId: oid(conversationId), start },
+            {
+              $set: {
+                status: 'confirmed',
+                eventId: c.eventId,
+                provider: c.provider,
+                joinUrl: c.joinUrl,
+                htmlLink: c.htmlLink,
+              },
+            },
+          )
+          .exec();
+      },
+      release: async (conversationId, start) => {
+        await this.bookingModel
+          .deleteOne({
+            conversationId: oid(conversationId),
+            start,
+            status: 'pending',
+          })
+          .exec();
+      },
+    };
+  }
+
   /** Extrae el token {{HANDOFF}} de la respuesta y devuelve texto limpio + motivo. */
   private parseHandoffToken(
     reply: string,
@@ -492,12 +621,13 @@ export class AiAgentsService {
     agent: AiAgent,
     userMessage: string,
     history: { role: 'user' | 'assistant'; content: string }[] = [],
-    options: { channelHint?: string; channel?: string } = {},
+    options: AgentAnswerOptions = {},
   ): Promise<{
     reply: string;
     sources: number;
     filesToSend: AgentFileSend[];
     handoff: AgentHandoff | null;
+    bookings: BookedCita[];
   }> {
     const [ragChunks, agentFiles] = await Promise.all([
       agent.ragEnabled
@@ -512,6 +642,9 @@ export class AiAgentsService {
     ]);
 
     const sources = ragChunks.length;
+    // Gemini no ejecuta herramientas en esta plataforma: sin ellas no se agenda.
+    const cal = agentCalendar(agent.calendar);
+    const calendarOn = cal.enabled && agent.provider !== 'gemini';
     const context =
       ragChunks.length > 0
         ? ragChunks
@@ -529,6 +662,7 @@ export class AiAgentsService {
       this.buildFilesPromptSection(agentFiles),
       this.buildHandoffPromptSection(agent),
       this.buildStorePromptSection(agent),
+      calendarOn ? this.buildCalendarPromptSection(cal, new Date()) : '',
       options.channelHint ? `\n\n${options.channelHint}` : '',
     ].join('');
 
@@ -540,6 +674,34 @@ export class AiAgentsService {
           handoffEnabled: agent.handoffEnabled,
         })
       : null;
+    const calendarTools = calendarOn
+      ? new CalendarToolSession(
+          this.calendar,
+          this.bookingStore(String(agent.tenantId), String(agent._id)),
+          cal,
+          {
+            tenantId: String(agent.tenantId),
+            agentId: String(agent._id),
+            agentName: agent.name,
+            conversationId: options.conversationId,
+            contactName: options.contactName,
+            contactEmail: options.contactEmail,
+            channel: options.channel ?? 'chat',
+            simulate: options.simulate,
+          },
+        )
+      : null;
+    const tools = [
+      ...(storeTools?.tools ?? []),
+      ...(calendarTools?.tools ?? []),
+    ];
+    const runTool = (call: AiToolCall): Promise<unknown> => {
+      if (calendarTools?.handles(call.name)) return calendarTools.run(call);
+      if (storeTools) return storeTools.run(call);
+      return Promise.resolve({
+        error: `Herramienta desconocida: ${call.name}`,
+      });
+    };
 
     const messages: ChatMessage[] = [
       { role: 'system', content: system },
@@ -561,9 +723,7 @@ export class AiAgentsService {
       temperature: agent.temperature,
       maxTokens: agent.maxTokens,
       apiKeys,
-      ...(storeTools
-        ? { tools: storeTools.tools, runTool: storeTools.run }
-        : {}),
+      ...(tools.length ? { tools, runTool } : {}),
     });
 
     const rawReply = raw.trim() || agent.fallbackMessage;
@@ -598,6 +758,7 @@ export class AiAgentsService {
       sources,
       filesToSend: [...photos, ...filesToSend],
       handoff,
+      bookings: calendarTools?.bookings ?? [],
     };
   }
 
@@ -649,8 +810,10 @@ export class AiAgentsService {
     const history = messages.slice(0, messages.lastIndexOf(last));
     const answer = await this.generateAnswer(agent, last.content, history, {
       channel: 'prueba',
+      simulate: true,
     });
-    const { sources, filesToSend, handoff } = answer;
+    const { sources, filesToSend, handoff, bookings } = answer;
+    const tz = agentCalendar(agent.calendar).timeZone;
     // El pie de la foto es parte de lo que lee el cliente: se muestra con el texto.
     const reply = [
       ...filesToSend.map((f) => f.caption).filter(Boolean),
@@ -666,9 +829,16 @@ export class AiAgentsService {
       reply: reply || (handoff ? agent.handoffMessage : reply),
       sources,
       handoff: handoff ? { reason: handoff.reason ?? null } : null,
-      files: filesToSend.map((f) =>
-        f.caption !== undefined ? `Foto: ${f.name}` : f.name,
-      ),
+      files: [
+        ...filesToSend.map((f) =>
+          f.caption !== undefined ? `Foto: ${f.name}` : f.name,
+        ),
+        // Cita simulada: en el playground no se crea el evento.
+        ...bookings.map(
+          (b) =>
+            `Cita (simulada, no se creó): ${formatLocal(b.start, tz)} – ${b.contactName}`,
+        ),
+      ],
     };
   }
 

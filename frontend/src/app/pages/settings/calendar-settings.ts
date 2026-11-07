@@ -21,7 +21,7 @@ const PROVIDER_LABEL: Record<CalendarProvider, string> = {
         </div>
         <div>
           <h2 class="section-title">Calendario y videollamadas</h2>
-          <p class="section-desc">Conecta un calendario para agendar llamadas desde Conversaciones con enlace de Google Meet o Microsoft Teams.</p>
+          <p class="section-desc">Conecta un calendario para agendar llamadas desde Conversaciones con enlace de Google Meet o Microsoft Teams, y para que los agentes IA ofrezcan horarios libres y agenden citas.</p>
         </div>
       </div>
 
@@ -74,7 +74,7 @@ const PROVIDER_LABEL: Record<CalendarProvider, string> = {
             </div>
           }
         </div>
-        <p class="field-hint">Las reuniones se crean en el calendario predeterminado, salvo que se elija otro al agendar.</p>
+        <p class="field-hint">Las reuniones se crean en el calendario predeterminado, salvo que se elija otro al agendar. Si conectaste Google antes de activar la agenda de los agentes IA, vuelve a conectarlo para darle permiso de ver tu disponibilidad.</p>
       }
     </div>
   `,

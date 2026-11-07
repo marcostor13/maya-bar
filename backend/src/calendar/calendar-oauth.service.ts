@@ -32,6 +32,8 @@ function specs(tenant: string): Record<CalendarProvider, ProviderSpec> {
       tokenUrl: 'https://oauth2.googleapis.com/token',
       scopes: [
         'https://www.googleapis.com/auth/calendar.events',
+        // Ocupado/libre para que los agentes IA ofrezcan horarios reales.
+        'https://www.googleapis.com/auth/calendar.freebusy',
         'openid',
         'email',
         'profile',

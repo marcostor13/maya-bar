@@ -11,6 +11,8 @@ import { RagService } from './rag.service';
 import { AiService } from '../ai/ai.service';
 import { WooStoreService } from './store/woo-store.service';
 import { LinksService } from '../links/links.service';
+import { CalendarService } from '../calendar/calendar.service';
+import { AgentBooking } from './calendar/agent-booking.schema';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -30,6 +32,7 @@ const mockAi = {
 
 const mockStore = { search: jest.fn() };
 const mockLinks = { createPersonalLinks: jest.fn() };
+const mockCalendar = { busy: jest.fn(), createEvent: jest.fn() };
 
 const dolopak = {
   id: 8667,
@@ -102,6 +105,7 @@ describe('AiAgentsService', () => {
   let docModel: any;
   let fileModel: any;
   let configModel: any;
+  let bookingModel: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -110,6 +114,8 @@ describe('AiAgentsService', () => {
     docModel = createMockModel();
     fileModel = createMockModel();
     configModel = createMockModel();
+    bookingModel = createMockModel();
+    bookingModel.countDocuments = jest.fn().mockReturnValue(buildQuery(0));
 
     mockRag.retrieve.mockResolvedValue([]);
     mockAi.chatMessages.mockResolvedValue('respuesta del agente');
@@ -128,6 +134,8 @@ describe('AiAgentsService', () => {
         { provide: AiService, useValue: mockAi },
         { provide: WooStoreService, useValue: mockStore },
         { provide: LinksService, useValue: mockLinks },
+        { provide: CalendarService, useValue: mockCalendar },
+        { provide: getModelToken(AgentBooking.name), useValue: bookingModel },
       ],
     }).compile();
 
@@ -364,6 +372,160 @@ describe('AiAgentsService', () => {
   });
 
   // ─── tienda online ─────────────────────────────────────────────────────────
+
+  describe('agenda (herramientas de calendario)', () => {
+    const calAgent = (o: Record<string, unknown> = {}) =>
+      makeAgent({
+        name: 'Sofía',
+        calendar: { enabled: true, timeZone: 'America/Lima' },
+        ...o,
+      });
+
+    it('sin agenda activa no ofrece herramientas de calendario', async () => {
+      await service.generateAnswer(
+        makeAgent({ calendar: { enabled: false } }),
+        'hola',
+      );
+      const [messages, opts] = mockAi.chatMessages.mock.calls[0];
+      expect(opts.tools).toBeUndefined();
+      expect(messages[0].content).not.toContain('AGENDA');
+    });
+
+    it('con agenda activa ofrece consultar y agendar, aunque no haya tienda', async () => {
+      await service.generateAnswer(calAgent(), 'quiero una cita');
+      const [messages, opts] = mockAi.chatMessages.mock.calls[0];
+      expect(opts.tools.map((t: { name: string }) => t.name)).toEqual([
+        'consultar_disponibilidad',
+        'agendar_cita',
+      ]);
+      expect(messages[0].content).toContain('--- AGENDA');
+      expect(messages[0].content).toContain('America/Lima');
+    });
+
+    it('con tienda y agenda combina las herramientas y enruta cada llamada', async () => {
+      mockStore.search.mockResolvedValue([dolopak]);
+      mockCalendar.busy.mockResolvedValue({
+        provider: 'google',
+        connectionId: 'c1',
+        connectionEmail: 'a@b.pe',
+        busy: [],
+      });
+      const results: any[] = [];
+      mockAi.chatMessages.mockImplementation(
+        async (_m: unknown, opts: { runTool: (c: any) => Promise<any> }) => {
+          results.push(
+            await opts.runTool({
+              name: 'buscar_producto',
+              input: { consulta: 'dolopak' },
+            }),
+          );
+          results.push(
+            await opts.runTool({ name: 'consultar_disponibilidad', input: {} }),
+          );
+          return 'listo';
+        },
+      );
+      await service.generateAnswer(
+        calAgent({ storeUrl: 'https://farmacenter.com.pe' }),
+        'hola',
+      );
+      const opts = mockAi.chatMessages.mock.calls[0][1];
+      expect(opts.tools.map((t: { name: string }) => t.name)).toEqual(
+        expect.arrayContaining(['buscar_producto', 'agendar_cita']),
+      );
+      expect(results[0].productos).toHaveLength(1);
+      expect(results[1].zona_horaria).toBe('America/Lima');
+      expect(mockCalendar.busy).toHaveBeenCalledWith(
+        String(tenantOid),
+        undefined,
+        expect.any(Date),
+        expect.any(Date),
+      );
+    });
+
+    it('con Gemini no activa la agenda (no ejecuta herramientas)', async () => {
+      await service.generateAnswer(calAgent({ provider: 'gemini' }), 'cita');
+      const [messages, opts] = mockAi.chatMessages.mock.calls[0];
+      expect(opts.tools).toBeUndefined();
+      expect(messages[0].content).not.toContain('--- AGENDA');
+    });
+
+    it('agendar desde una conversación crea el evento, lo registra y lo devuelve', async () => {
+      const conv = new Types.ObjectId().toString();
+      mockCalendar.busy.mockResolvedValue({
+        provider: 'google',
+        connectionId: new Types.ObjectId().toString(),
+        connectionEmail: 'a@b.pe',
+        busy: [],
+      });
+      mockCalendar.createEvent.mockResolvedValue({
+        provider: 'google',
+        eventId: 'ev-9',
+        joinUrl: 'https://meet.google.com/x',
+        start: '',
+        end: '',
+        connectionEmail: 'a@b.pe',
+      });
+      // Un horario válido: el próximo lunes a las 10:00 de Lima.
+      const d = new Date(Date.now() + 8 * 86_400_000);
+      while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+      const day = d.toISOString().slice(0, 10);
+      mockAi.chatMessages.mockImplementation(
+        async (_m: unknown, opts: { runTool: (c: any) => Promise<any> }) => {
+          await opts.runTool({
+            name: 'agendar_cita',
+            input: { inicio: `${day}T10:00`, nombre: 'Ana' },
+          });
+          return 'Listo, agendado.';
+        },
+      );
+      const res = await service.generateAnswer(
+        calAgent(),
+        'el lunes a las 10',
+        [],
+        {
+          conversationId: conv,
+          contactName: 'Ana',
+          channel: 'whatsapp',
+        },
+      );
+      expect(mockCalendar.createEvent).toHaveBeenCalled();
+      expect(bookingModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'pending', title: 'Cita – Ana' }),
+      );
+      expect(bookingModel.updateOne).toHaveBeenCalledWith(
+        expect.objectContaining({ start: expect.any(Date) }),
+        {
+          $set: expect.objectContaining({
+            status: 'confirmed',
+            eventId: 'ev-9',
+          }),
+        },
+      );
+      expect(res.bookings).toHaveLength(1);
+      expect(res.bookings[0].joinUrl).toBe('https://meet.google.com/x');
+    });
+
+    it('rechaza una zona horaria inválida al guardar', () => {
+      expect(() =>
+        service.create(String(tenantOid), String(new Types.ObjectId()), {
+          name: 'x',
+          systemPrompt: 'y',
+          calendar: {
+            enabled: true,
+            timeZone: 'Marte/Olimpo',
+            durationMinutes: 30,
+            hours: [{ day: 1, start: '09:00', end: '18:00' }],
+            bufferMinutes: 0,
+            minNoticeHours: 2,
+            maxDaysAhead: 30,
+            video: true,
+            title: 'Cita',
+          },
+        } as any),
+      ).toThrow(BadRequestException);
+    });
+  });
 
   describe('tienda online (herramientas)', () => {
     type Run = (c: {

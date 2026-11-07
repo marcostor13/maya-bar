@@ -7,8 +7,12 @@ import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail, ShoppingCart,
+  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail, ShoppingCart, CalendarDays,
 } from 'lucide-angular';
+import {
+  AgentCalendarSection, agentCalendarPayload, blankAgentCalendar, normalizeAgentCalendar,
+  type AgentCalendar,
+} from './agent-calendar-section';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -82,6 +86,8 @@ interface Agent {
   /** Tienda WooCommerce que el agente consulta en vivo ('' = sin tienda). */
   storeUrl?: string;
   storeCartMode?: 'native' | 'multi';
+  /** Agendamiento en Google Calendar / Outlook. */
+  calendar: AgentCalendar;
   published: boolean;
 }
 
@@ -110,7 +116,7 @@ interface AgentFile {
   contentType?: string;
 }
 
-type Section = 'general' | 'channels' | 'knowledge' | 'files' | 'store' | 'handoff' | 'advanced';
+type Section = 'general' | 'channels' | 'knowledge' | 'files' | 'store' | 'calendar' | 'handoff' | 'advanced';
 
 /** Snippet de WooCommerce para el link de pago con varios productos. */
 const CART_SNIPPET = `<?php
@@ -149,6 +155,7 @@ function blankAgent(): Agent {
     handoffMessage: 'Te comunico con una persona del equipo, en un momento te escriben por acá.',
     handoffTemplateName: '', handoffTemplateLang: 'es',
     storeUrl: '', storeCartMode: 'native',
+    calendar: blankAgentCalendar(),
     published: false,
   };
 }
@@ -156,7 +163,7 @@ function blankAgent(): Agent {
 @Component({
   selector: 'app-ai-agents',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, RouterLink],
+  imports: [FormsModule, LucideAngularModule, RouterLink, AgentCalendarSection],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -664,6 +671,11 @@ function blankAgent(): Agent {
               }
             }
 
+            <!-- AGENDA -->
+            @if (section() === 'calendar') {
+              <app-agent-calendar-section [(config)]="form.calendar" [provider]="form.provider" />
+            }
+
             <!-- AVANZADO -->
             @if (section() === 'advanced') {
               <div class="field">
@@ -945,6 +957,7 @@ export class AiAgentsComponent implements OnInit {
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
   readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Mail = Mail; readonly Settings = Settings;
   readonly PhoneForwarded = PhoneForwarded; readonly ShoppingCart = ShoppingCart;
+  readonly CalendarDays = CalendarDays;
 
   readonly sections: { key: Section; label: string; icon: typeof Bot }[] = [
     { key: 'general', label: 'General', icon: Bot },
@@ -952,6 +965,7 @@ export class AiAgentsComponent implements OnInit {
     { key: 'knowledge', label: 'Conocimiento', icon: BookOpen },
     { key: 'files', label: 'Archivos', icon: Paperclip },
     { key: 'store', label: 'Tienda', icon: ShoppingCart },
+    { key: 'calendar', label: 'Agenda', icon: CalendarDays },
     { key: 'handoff', label: 'Derivación', icon: PhoneForwarded },
     { key: 'advanced', label: 'Avanzado', icon: Sparkles },
   ];
@@ -1122,6 +1136,7 @@ export class AiAgentsComponent implements OnInit {
       handoffTemplateLang: a.handoffTemplateLang || 'es',
       storeUrl: a.storeUrl || '',
       storeCartMode: a.storeCartMode || 'native',
+      calendar: normalizeAgentCalendar(a.calendar),
     };
     this.newTarget = { channel: 'whatsapp', to: '', accountId: '' };
     this.section.set('general');
@@ -1226,8 +1241,15 @@ export class AiAgentsComponent implements OnInit {
       this.toast.error('Agrega al menos un destinatario que reciba el aviso de derivación');
       return;
     }
+    const cal = this.form.calendar;
+    if (cal.enabled && (!cal.hours.length || cal.hours.some((h) => h.start >= h.end))) {
+      this.section.set('calendar');
+      this.toast.error('Revisa el horario de atención: cada día activo necesita una hora de inicio menor que la de fin');
+      return;
+    }
     this.saving.set(true);
-    const { _id, ...body } = this.form;
+    const { _id, ...rest } = this.form;
+    const body = { ...rest, calendar: agentCalendarPayload(cal) };
     const req = _id
       ? this.http.patch<Agent>(`${API}/ai-agents/${_id}`, body)
       : this.http.post<Agent>(`${API}/ai-agents`, body);

@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsISO8601,
   IsInt,
@@ -42,4 +43,7 @@ export class CreateCalendarEventDto {
 
   /** Zona IANA (p. ej. `America/Lima`) con la que se muestra el evento. */
   @IsOptional() @IsString() @MaxLength(64) timeZone?: string;
+
+  /** false = sin Meet/Teams. Por defecto se crea la videollamada. */
+  @IsOptional() @IsBoolean() video?: boolean;
 }

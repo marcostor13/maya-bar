@@ -1,11 +1,18 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
+  IsMongoId,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -14,6 +21,41 @@ import { HANDOFF_CHANNELS } from '../ai-agent.schema';
 import type { HandoffChannel } from '../ai-agent.schema';
 import { STORE_CART_MODES } from '../store/store-tools';
 import type { StoreCartMode } from '../store/store-tools';
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export class WorkingHoursDto {
+  @IsInt() @Min(0) @Max(6) day: number;
+  @Matches(HHMM) start: string;
+  @Matches(HHMM) end: string;
+}
+
+/** Agendamiento del agente. La zona y las franjas se validan en el servicio. */
+export class AgentCalendarDto {
+  @IsBoolean() enabled: boolean;
+
+  /** Vacío = calendario predeterminado de la empresa. */
+  @IsOptional() @IsMongoId() connectionId?: string;
+
+  @IsInt() @Min(10) @Max(240) durationMinutes: number;
+
+  @IsString() @MaxLength(64) timeZone: string;
+
+  @IsArray()
+  @ArrayMaxSize(21)
+  @ValidateNested({ each: true })
+  @Type(() => WorkingHoursDto)
+  hours: WorkingHoursDto[];
+
+  @IsInt() @Min(0) @Max(120) bufferMinutes: number;
+  @IsInt() @Min(0) @Max(720) minNoticeHours: number;
+  @IsInt() @Min(1) @Max(180) maxDaysAhead: number;
+  @IsBoolean() video: boolean;
+
+  @IsString() @IsNotEmpty() @MaxLength(80) title: string;
+
+  @IsOptional() @IsString() @MaxLength(2000) instructions?: string;
+}
 
 export class HandoffTargetDto {
   @IsIn(HANDOFF_CHANNELS)
@@ -136,6 +178,11 @@ export class CreateAiAgentDto {
   @IsOptional()
   @IsIn(STORE_CART_MODES)
   storeCartMode?: StoreCartMode;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentCalendarDto)
+  calendar?: AgentCalendarDto;
 
   @IsOptional()
   @IsBoolean()

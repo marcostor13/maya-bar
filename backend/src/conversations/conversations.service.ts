@@ -35,6 +35,7 @@ import {
   textToHtml,
 } from '../email-accounts/email-message';
 import { AiAgentsService } from '../ai-agents/ai-agents.service';
+import { formatLocal } from '../calendar/availability';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import {
   MediaUnderstandingService,
@@ -1681,17 +1682,17 @@ export class ConversationsService {
     }
 
     try {
-      const { reply, filesToSend, handoff } = await this.agents.generateAnswer(
-        agent,
-        userMessage,
-        history,
-        {
+      const { reply, filesToSend, handoff, bookings } =
+        await this.agents.generateAnswer(agent, userMessage, history, {
           channel: conv.channel,
           ...(conv.channel === 'email'
             ? { channelHint: EMAIL_CHANNEL_HINT }
             : {}),
-        },
-      );
+          // Para agendar: idempotencia por conversación y datos del cliente.
+          conversationId: String(conv._id),
+          contactName: conv.contactName,
+          contactEmail: conv.channel === 'email' ? conv.contact : undefined,
+        });
 
       conv.agentId = agent._id;
       await conv.save();
@@ -1715,6 +1716,28 @@ export class ConversationsService {
       }
       for (const file of filesToSend.filter((f) => f.caption === undefined))
         await sendFile(file);
+
+      // El equipo ve en el hilo cada cita que agendó el agente.
+      for (const b of bookings ?? []) {
+        const when = formatLocal(
+          b.start,
+          agent.calendar?.timeZone || 'America/Lima',
+        );
+        await this.assignment.note(
+          conv,
+          [
+            `${agent.name} agendó una cita: ${when} – ${b.contactName}.`,
+            b.attendeeEmail ? `Invitación enviada a ${b.attendeeEmail}.` : '',
+            b.joinUrl
+              ? `Videollamada: ${b.joinUrl}`
+              : b.htmlLink
+                ? `Evento: ${b.htmlLink}`
+                : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        );
+      }
 
       if (handoff) {
         await this.escalateToHuman(conv, agent, handoff.reason, userMessage);

@@ -1,6 +1,6 @@
 # Calendario y videollamadas (Google Meet / Microsoft Teams)
 
-Una empresa puede conectar uno o varios calendarios en **Configuración → Calendario y videollamadas**. Desde Conversaciones se agendan llamadas que crean un evento real en ese calendario, con enlace de videollamada e invitación a los asistentes.
+Una empresa puede conectar uno o varios calendarios en **Configuración → Calendario y videollamadas**. Desde Conversaciones se agendan llamadas que crean un evento real en ese calendario, con enlace de videollamada e invitación a los asistentes. Los agentes IA también pueden ofrecer horarios libres y agendar solos: ver [calendario-agentes.md](calendario-agentes.md).
 
 | Botón | Proveedor | Videollamada |
 |---|---|---|
@@ -20,7 +20,7 @@ Usa **las mismas apps de OAuth y variables que el correo** (ver [correo.md](corr
 
 1. URI de redirección autorizada: `{PUBLIC_API_URL}/calendar/oauth/google/callback`.
 2. Habilitar **Google Calendar API** en el proyecto.
-3. Pantalla de consentimiento con el scope `https://www.googleapis.com/auth/calendar.events` (scope sensible: fuera de tu organización Google pide verificar la app).
+3. Pantalla de consentimiento con los scopes `https://www.googleapis.com/auth/calendar.events` y `https://www.googleapis.com/auth/calendar.freebusy` (este último lo usan los agentes IA para ver horarios libres; ver [calendario-agentes.md](calendario-agentes.md)). `calendar.events` es sensible: fuera de tu organización Google pide verificar la app.
 
 ### Microsoft
 

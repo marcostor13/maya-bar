@@ -19,6 +19,11 @@ import { HttpEmbeddingsProvider } from '../ai/providers/http-embeddings.provider
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WooStoreService } from './store/woo-store.service';
 import { LinksModule } from '../links/links.module';
+import { CalendarModule } from '../calendar/calendar.module';
+import {
+  AgentBooking,
+  AgentBookingSchema,
+} from './calendar/agent-booking.schema';
 
 @Module({
   imports: [
@@ -29,10 +34,12 @@ import { LinksModule } from '../links/links.module';
       { name: KnowledgeChunk.name, schema: KnowledgeChunkSchema },
       { name: AgentFile.name, schema: AgentFileSchema },
       { name: TenantConfig.name, schema: TenantConfigSchema },
+      { name: AgentBooking.name, schema: AgentBookingSchema },
     ]),
     AiModule,
     WhatsAppModule,
     LinksModule,
+    CalendarModule,
   ],
   // Los webhooks de WhatsApp/Instagram viven ahora en ConversationsModule:
   // así el módulo de agentes no depende de las conversaciones (evita el ciclo).

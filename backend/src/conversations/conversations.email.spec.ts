@@ -27,7 +27,12 @@ type Doc = Record<string, any> & { _id: Types.ObjectId; save: jest.Mock };
  * ejercita el flujo real de ingesta y envío sin Mongo.
  */
 function setup(
-  opts: { agent?: boolean; reply?: string; sendFails?: boolean } = {},
+  opts: {
+    agent?: boolean;
+    reply?: string;
+    sendFails?: boolean;
+    bookings?: unknown[];
+  } = {},
 ) {
   const convs: Doc[] = [];
   const msgs: Doc[] = [];
@@ -131,7 +136,12 @@ function setup(
       ? jest.fn().mockRejectedValue(new Error('SMTP caído'))
       : jest.fn().mockResolvedValue('<out-1@acme.pe>'),
   };
-  const agent = { _id: new Types.ObjectId(), handoffMessage: '' };
+  const agent = {
+    _id: new Types.ObjectId(),
+    name: 'Sofía',
+    handoffMessage: '',
+    calendar: { enabled: true, timeZone: 'America/Lima' },
+  };
   const agents = {
     findPublishedByEmailAccount: jest
       .fn()
@@ -140,6 +150,7 @@ function setup(
       reply: opts.reply ?? 'Hola Ana, claro que sí.',
       filesToSend: [],
       handoff: null,
+      bookings: opts.bookings ?? [],
     }),
     getTenantApiKeys: jest.fn().mockResolvedValue({}),
   };
@@ -229,6 +240,40 @@ function email(extra: Partial<ParsedEmail> = {}): ParsedEmail {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('ConversationsService — correo', () => {
+  beforeEach(() => fakeAssignment.note.mockClear());
+
+  it('le pasa al agente el contexto para agendar y deja una nota por cada cita', async () => {
+    const h = setup({
+      bookings: [
+        {
+          start: new Date('2026-11-10T20:00:00Z'),
+          end: new Date('2026-11-10T20:30:00Z'),
+          title: 'Cita – Ana',
+          contactName: 'Ana Ruiz',
+          attendeeEmail: 'ana@cliente.pe',
+          joinUrl: 'https://meet.google.com/abc',
+          provider: 'google',
+          eventId: 'ev-1',
+        },
+      ],
+    });
+    await h.service.handleEmailInbound(h.account as never, email());
+    await flush();
+
+    const options = h.agents.generateAnswer.mock.calls[0][3];
+    expect(options).toMatchObject({
+      conversationId: String(h.convs[0]._id),
+      contactName: 'Ana Ruiz',
+      contactEmail: 'ana@cliente.pe',
+    });
+    const notes = fakeAssignment.note.mock.calls.map((c) => c[1] as string);
+    const note = notes.find((t) => t.includes('agendó una cita'));
+    expect(note).toContain('Sofía agendó una cita');
+    expect(note).toContain('10 de noviembre');
+    expect(note).toContain('15:00');
+    expect(note).toContain('https://meet.google.com/abc');
+  });
+
   it('crea la conversación, avisa al equipo y el agente responde por correo en el mismo hilo', async () => {
     const h = setup();
     await expect(

@@ -1,7 +1,8 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Prop, raw, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { STORE_CART_MODES } from './store/store-tools';
 import type { StoreCartMode } from './store/store-tools';
+import type { AgentCalendarConfig } from './calendar/agent-calendar';
 
 export const HANDOFF_CHANNELS = ['whatsapp', 'email', 'sms'] as const;
 export type HandoffChannel = (typeof HANDOFF_CHANNELS)[number];
@@ -159,6 +160,28 @@ export class AiAgent extends Document {
    */
   @Prop({ type: String, enum: STORE_CART_MODES, default: 'native' })
   storeCartMode: StoreCartMode;
+
+  // ------------------------------------------------------------------
+  // Agenda: consultar disponibilidad y agendar en Google Calendar / Outlook
+  // ------------------------------------------------------------------
+
+  /** Sin él (agentes antiguos) se usan los valores por defecto, desactivado. */
+  @Prop(
+    raw({
+      enabled: { type: Boolean, default: false },
+      connectionId: { type: String },
+      durationMinutes: { type: Number, default: 30 },
+      timeZone: { type: String, default: 'America/Lima' },
+      hours: [{ _id: false, day: Number, start: String, end: String }],
+      bufferMinutes: { type: Number, default: 0 },
+      minNoticeHours: { type: Number, default: 2 },
+      maxDaysAhead: { type: Number, default: 30 },
+      video: { type: Boolean, default: true },
+      title: { type: String, default: 'Cita' },
+      instructions: { type: String },
+    }),
+  )
+  calendar?: AgentCalendarConfig;
 
   @Prop({ default: false })
   published: boolean;

@@ -301,4 +301,145 @@ describe('CalendarService', () => {
       ['_id', 'email', 'isDefault', 'name', 'provider'].sort(),
     );
   });
+
+  describe('disponibilidad (busy)', () => {
+    const from = new Date('2026-11-10T00:00:00Z');
+    const to = new Date('2026-11-11T00:00:00Z');
+
+    it('Google: consulta freeBusy del calendario principal', async () => {
+      const { service } = setup([connection()]);
+      const fetch = mockFetch({
+        body: {
+          calendars: {
+            primary: {
+              busy: [
+                { start: '2026-11-10T16:00:00Z', end: '2026-11-10T17:00:00Z' },
+                { start: '2026-11-10T14:00:00Z', end: '2026-11-10T15:00:00Z' },
+              ],
+            },
+          },
+        },
+      });
+      const res = await service.busy(TENANT, undefined, from, to);
+      const { url, body } = call(fetch);
+      expect(url).toBe('https://www.googleapis.com/calendar/v3/freeBusy');
+      expect(body).toEqual({
+        timeMin: from.toISOString(),
+        timeMax: to.toISOString(),
+        items: [{ id: 'primary' }],
+      });
+      expect(res.provider).toBe('google');
+      expect(res.busy.map((b) => b.start.toISOString())).toEqual([
+        '2026-11-10T14:00:00.000Z',
+        '2026-11-10T16:00:00.000Z',
+      ]);
+    });
+
+    it('Google sin permiso de freebusy pide reconectar', async () => {
+      const { service } = setup([connection()]);
+      mockFetch({
+        body: {
+          calendars: { primary: { errors: [{ reason: 'notFound' }] } },
+        },
+      });
+      await expect(service.busy(TENANT, undefined, from, to)).rejects.toThrow(
+        /Vuelve a conectar/,
+      );
+    });
+
+    it('Microsoft: lee calendarView en UTC, pagina y descarta lo libre o cancelado', async () => {
+      const { service } = setup([connection({ provider: 'microsoft' })]);
+      const fetch = mockFetch(
+        {
+          body: {
+            value: [
+              {
+                start: { dateTime: '2026-11-10T14:00:00.0000000' },
+                end: { dateTime: '2026-11-10T15:00:00.0000000' },
+                showAs: 'busy',
+              },
+              {
+                start: { dateTime: '2026-11-10T18:00:00.0000000' },
+                end: { dateTime: '2026-11-10T19:00:00.0000000' },
+                showAs: 'free',
+              },
+            ],
+            '@odata.nextLink': 'https://graph.microsoft.com/v1.0/next',
+          },
+        },
+        {
+          body: {
+            value: [
+              {
+                start: { dateTime: '2026-11-10T20:00:00.0000000' },
+                end: { dateTime: '2026-11-10T21:00:00.0000000' },
+                showAs: 'tentative',
+              },
+              {
+                start: { dateTime: '2026-11-10T22:00:00.0000000' },
+                end: { dateTime: '2026-11-10T23:00:00.0000000' },
+                showAs: 'busy',
+                isCancelled: true,
+              },
+            ],
+          },
+        },
+      );
+      const res = await service.busy(TENANT, undefined, from, to);
+      const [url, init] = fetch.mock.calls[0] as [
+        string,
+        { method: string; headers: Record<string, string> },
+      ];
+      expect(url).toContain(
+        'https://graph.microsoft.com/v1.0/me/calendarView?',
+      );
+      expect(url).toContain(
+        `startDateTime=${encodeURIComponent(from.toISOString())}`,
+      );
+      expect(init.method).toBe('GET');
+      expect(init.headers.Prefer).toBe('outlook.timezone="UTC"');
+      expect(fetch.mock.calls[1][0]).toBe(
+        'https://graph.microsoft.com/v1.0/next',
+      );
+      expect(res.busy).toEqual([
+        {
+          start: new Date('2026-11-10T14:00:00Z'),
+          end: new Date('2026-11-10T15:00:00Z'),
+        },
+        {
+          start: new Date('2026-11-10T20:00:00Z'),
+          end: new Date('2026-11-10T21:00:00Z'),
+        },
+      ]);
+    });
+
+    it('sin calendario conectado no inventa disponibilidad', async () => {
+      const { service } = setup([]);
+      await expect(
+        service.busy(TENANT, undefined, from, to),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  it('con video=false crea el evento sin Meet', async () => {
+    const { service } = setup([connection()]);
+    const fetch = mockFetch({ body: { id: 'g-2' } });
+    await service.createEvent(TENANT, { ...event, video: false });
+    expect(call(fetch).body.conferenceData).toBeUndefined();
+  });
+
+  it('si Microsoft rechaza Teams, crea la cita sin videollamada', async () => {
+    const { service } = setup([connection({ provider: 'microsoft' })]);
+    const fetch = mockFetch(
+      {
+        status: 400,
+        body: { error: { message: 'Online meeting not supported' } },
+      },
+      { body: { id: 'm-2', webLink: 'https://outlook.live.com/x' } },
+    );
+    const res = await service.createEvent(TENANT, event);
+    expect(call(fetch, 0).body.isOnlineMeeting).toBe(true);
+    expect(call(fetch, 1).body.isOnlineMeeting).toBeUndefined();
+    expect(res.eventId).toBe('m-2');
+  });
 });
