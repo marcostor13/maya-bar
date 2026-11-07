@@ -143,7 +143,7 @@ export class WhatsAppWebhookController {
       }
       if (inbound.type === 'unsupported')
         this.logger.warn(
-          `[WA] Mensaje ${raw.id ?? '?'} de tipo "${raw.type ?? '?'}" no soportado: ${this.cloudError(raw.errors) ?? 'sin detalle'}`,
+          `[WA] Mensaje ${raw.id ?? '?'} no soportado (${inbound.rawType ?? raw.type ?? '?'}): ${this.cloudError(raw.errors) ?? 'sin detalle'}`,
         );
       await this.conversations.handleWhatsAppInbound(account, inbound);
     } catch (err) {
@@ -288,9 +288,27 @@ export class WhatsAppWebhookController {
           noAgent: true,
         };
 
+      // Meta no entrega el contenido, pero dice qué fue (`unsupported.type`):
+      // edición, encuesta, voto, mensaje fijado… Se guarda para avisar bien.
+      case 'unsupported':
+        return { ...base, rawType: this.unsupportedKind(msg) };
+
       default:
         return base;
     }
+  }
+
+  /**
+   * `unsupported:<tipo>` (p. ej. `unsupported:edit`), `unavailable` cuando
+   * Meta no pudo dar el contenido (#131060, típico del primer mensaje en un
+   * número que también usa la app WhatsApp Business) o `unsupported`.
+   */
+  private unsupportedKind(msg: CloudMessage): string {
+    if (msg.errors?.some((e) => e.code === 131060)) return 'unavailable';
+    const kind = msg.unsupported?.type?.trim().toLowerCase();
+    return kind && /^[a-z_]{1,40}$/.test(kind)
+      ? `unsupported:${kind}`
+      : 'unsupported';
   }
 
   /**
@@ -394,6 +412,8 @@ interface CloudMessage {
   system?: { body?: string; type?: string };
   /** Detalle de Meta cuando `type` es "unsupported". */
   errors?: CloudStatusError[];
+  /** Qué fue el mensaje no soportado: `edit`, `poll_creation`, `pin`… */
+  unsupported?: { type?: string };
   /** Anuncio de origen (Click-to-WhatsApp); solo viene en el primer mensaje. */
   referral?: {
     source_url?: string;

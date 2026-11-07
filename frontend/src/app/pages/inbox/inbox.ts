@@ -81,7 +81,13 @@ interface Msg {
 /** Por qué no se puede mostrar un mensaje, según el tipo que dio WhatsApp. */
 const UNSUPPORTED_LABEL: Record<string, string> = {
   ciphertext: 'WhatsApp aún no pudo descifrar este mensaje. Pídele al cliente que lo reenvíe.',
-  unsupported: 'WhatsApp no entrega este tipo de mensaje (encuesta, "ver una vez", mensaje editado…). Pídele al cliente que lo reenvíe.',
+  unsupported: 'WhatsApp no entregó el contenido de este mensaje (puede ser "ver una vez", un evento o un mensaje de canal). Pídele al cliente que lo reenvíe.',
+  unavailable: 'WhatsApp no pudo entregar este mensaje. Suele pasar con el primer mensaje cuando el número también se usa en la app WhatsApp Business. Pídele al cliente que lo reenvíe.',
+  'unsupported:edit': 'El cliente editó un mensaje anterior. WhatsApp no envía el texto corregido: pídele que lo escriba de nuevo si lo necesitas.',
+  'unsupported:poll_creation': 'El cliente envió una encuesta. WhatsApp no entrega encuestas a las empresas: pídele las opciones por mensaje.',
+  'unsupported:poll_update': 'El cliente votó en una encuesta. WhatsApp no entrega el voto.',
+  'unsupported:pin': 'El cliente fijó un mensaje en el chat.',
+  'unsupported:view_once': 'El cliente envió una foto o video de "ver una vez". WhatsApp no lo entrega a las empresas: pídele que lo reenvíe normal.',
 };
 
 /** Nombre del adjunto que no llegó, para el aviso dentro de la burbuja. */
@@ -2953,8 +2959,10 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   unsupportedLabel(m: Msg): string {
-    return (m.rawType && UNSUPPORTED_LABEL[m.rawType])
-      || `Mensaje no soportado por el canal${m.rawType ? ` (${m.rawType})` : ''}`;
+    if (m.rawType && UNSUPPORTED_LABEL[m.rawType]) return UNSUPPORTED_LABEL[m.rawType];
+    // Otro subtipo que Meta nombra pero aún no tiene texto propio.
+    if (m.rawType?.startsWith('unsupported:')) return `${UNSUPPORTED_LABEL['unsupported']} (tipo: ${m.rawType.slice(12)})`;
+    return `Mensaje no soportado por el canal${m.rawType ? ` (${m.rawType})` : ''}`;
   }
 
   mediaUnavailableLabel(m: Msg): string {

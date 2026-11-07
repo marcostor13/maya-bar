@@ -147,5 +147,33 @@ describe('WhatsAppWebhookController — tipos de mensaje', () => {
         rawType: 'unsupported',
       });
     });
+
+    it('guarda qué fue el mensaje no soportado (edición, encuesta…)', async () => {
+      await cloud({
+        type: 'unsupported',
+        errors: [{ code: 131051, title: 'Message type unknown' }],
+        unsupported: { type: 'edit' },
+      });
+      expect(received()).toMatchObject({
+        type: 'unsupported',
+        rawType: 'unsupported:edit',
+      });
+    });
+
+    it('un subtipo con caracteres raros no se guarda tal cual', async () => {
+      await cloud({
+        type: 'unsupported',
+        unsupported: { type: '<script>' },
+      });
+      expect(received()).toMatchObject({ rawType: 'unsupported' });
+    });
+
+    it('el contenido no disponible (#131060) se distingue', async () => {
+      await cloud({
+        type: 'unsupported',
+        errors: [{ code: 131060, title: 'Message unavailable' }],
+      });
+      expect(received()).toMatchObject({ rawType: 'unavailable' });
+    });
   });
 });
