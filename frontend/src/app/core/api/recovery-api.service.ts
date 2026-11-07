@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
+  RecoveryCampaignOption,
   RecoveryPlan,
   SegmentEdit,
   SegmentSchedule,
@@ -22,11 +23,16 @@ export class RecoveryApiService {
     return this.http.get<RecoveryPlan>(`${this.base}/${id}`);
   }
 
-  create(body: { lookbackDays: number; context: string; timezone: string; name?: string }): Observable<RecoveryPlan> {
+  /** Campañas de las que vienen chats de WhatsApp (anuncios y campañas de Maya). */
+  campaigns(): Observable<RecoveryCampaignOption[]> {
+    return this.http.get<RecoveryCampaignOption[]>(`${this.base}/campaigns`);
+  }
+
+  create(body: { lookbackDays: number; context: string; timezone: string; name?: string; campaign?: string }): Observable<RecoveryPlan> {
     return this.http.post<RecoveryPlan>(this.base, body);
   }
 
-  reanalyze(id: string, body: { lookbackDays: number; context: string }): Observable<RecoveryPlan> {
+  reanalyze(id: string, body: { lookbackDays: number; context: string; campaign?: string }): Observable<RecoveryPlan> {
     return this.http.post<RecoveryPlan>(`${this.base}/${id}/reanalyze`, body);
   }
 

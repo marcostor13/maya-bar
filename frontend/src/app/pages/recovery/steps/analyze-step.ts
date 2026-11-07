@@ -5,7 +5,7 @@ import {
 } from 'lucide-angular';
 import { ToastService } from '../../../shared/toast';
 import { RecoveryApiService } from '../../../core/api/recovery-api.service';
-import { RecoveryPlan } from '../../../shared/models/recovery.model';
+import { RecoveryCampaignOption, RecoveryPlan } from '../../../shared/models/recovery.model';
 import { RECOVERY_SHARED_STYLES } from '../recovery.styles';
 
 const PERIODS = [7, 15, 30, 60, 90];
@@ -95,6 +95,18 @@ const WORKING_TIPS = [
           </div>
         </div>
 
+        @if (campaigns().length) {
+          <div class="field" style="margin-top:24px">
+            <label class="label" for="rec-campaign">¿De qué campaña? <span class="optional">Opcional</span></label>
+            <select id="rec-campaign" class="select" [(ngModel)]="campaign">
+              <option value="">Todas las conversaciones</option>
+              @for (c of campaigns(); track c.key) {
+                <option [value]="c.key">{{ c.name }} · {{ c.kind === 'ad' ? 'anuncio' : 'campaña' }} ({{ c.count }} chats)</option>
+              }
+            </select>
+          </div>
+        }
+
         <div class="field" style="margin-top:24px">
           <label class="label" for="rec-context">¿Tienes algo que ofrecer? <span class="optional">Opcional</span></label>
           <textarea id="rec-context" class="textarea" rows="4" maxlength="2000" [(ngModel)]="context"
@@ -165,6 +177,9 @@ export class RecoveryAnalyzeStepComponent implements OnInit, OnDestroy {
   readonly periods = PERIODS;
   days = signal(30);
   context = '';
+  /** `ad:<id>` o `campaign:<id>`; vacío = todas. */
+  campaign = '';
+  campaigns = signal<RecoveryCampaignOption[]>([]);
   submitting = signal(false);
   private tipIndex = signal(0);
   private tipTimer: ReturnType<typeof setInterval> | null = null;
@@ -186,7 +201,12 @@ export class RecoveryAnalyzeStepComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     const p = this.plan();
-    if (p) { this.days.set(p.lookbackDays); this.context = p.context ?? ''; }
+    if (p) {
+      this.days.set(p.lookbackDays);
+      this.context = p.context ?? '';
+      this.campaign = p.campaign ? `${p.campaign.kind}:${p.campaign.id}` : '';
+    }
+    this.api.campaigns().subscribe({ next: list => this.campaigns.set(list), error: () => this.campaigns.set([]) });
     this.tipTimer = setInterval(() => this.tipIndex.update(i => i + 1), 3500);
   }
 
@@ -195,7 +215,7 @@ export class RecoveryAnalyzeStepComponent implements OnInit, OnDestroy {
   start() {
     this.submitting.set(true);
     const existing = this.plan();
-    const body = { lookbackDays: this.days(), context: this.context };
+    const body = { lookbackDays: this.days(), context: this.context, campaign: this.campaign };
     const req = existing
       ? this.api.reanalyze(existing._id, body)
       : this.api.create({ ...body, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });

@@ -55,6 +55,13 @@ import { NativePushService } from '../notifications/push.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { Customer } from '../customers/customer.schema';
 import { hasAttribution, type AdReferral } from '../shared/ad-referral';
+import { CampaignAttributionService } from '../campaign-attribution/campaign-attribution.service';
+import {
+  campaignFromReferral,
+  listConversationCampaigns,
+  parseCampaignFilter,
+  type ConversationCampaign,
+} from '../campaign-attribution/campaign-attribution';
 import { Lead } from '../leads/lead.schema';
 
 /** Respuestas del agente por hora en un mismo hilo de correo antes de pausarlo. */
@@ -239,7 +246,100 @@ export class ConversationsService {
     private emailAccounts: EmailAccountsService,
     private emailTransport: EmailTransportService,
     private assignment: ConversationAssignmentService,
+    private attribution: CampaignAttributionService,
   ) {}
+
+  /**
+   * Conversaciones que vinieron de un anuncio antes de existir el origen de
+   * campaña: se marcan una vez al arrancar (idempotente).
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      const res = await this.convModel
+        .updateMany(
+          {
+            campaign: { $exists: false },
+            'adReferral.adId': { $exists: true, $ne: null },
+          },
+          [
+            {
+              $set: {
+                campaign: {
+                  kind: 'ad',
+                  id: { $toString: '$adReferral.adId' },
+                  // Titular del anuncio o, si viene vacío, "Anuncio <id>".
+                  name: {
+                    $let: {
+                      vars: {
+                        h: {
+                          $substrCP: [
+                            {
+                              $trim: {
+                                input: {
+                                  $ifNull: ['$adReferral.headline', ''],
+                                },
+                              },
+                            },
+                            0,
+                            120,
+                          ],
+                        },
+                      },
+                      in: {
+                        $cond: [
+                          { $gt: [{ $strLenCP: '$$h' }, 0] },
+                          '$$h',
+                          {
+                            $concat: [
+                              'Anuncio ',
+                              { $toString: '$adReferral.adId' },
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                  at: { $ifNull: ['$adReferral.at', '$createdAt'] },
+                },
+              },
+            },
+          ],
+        )
+        .exec();
+      if (res.modifiedCount)
+        this.logger.log(
+          `${res.modifiedCount} conversación(es) de anuncios marcadas con su campaña`,
+        );
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo marcar el origen de anuncios: ${String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Campañas de las que vienen las conversaciones de la empresa, con cuántas
+   * hay de cada una (más recientes primero). Opcionalmente de un solo canal.
+   */
+  listCampaigns(tenantId: string, channel?: string) {
+    return listConversationCampaigns(this.convModel, tenantId, channel);
+  }
+
+  /** Origen de campaña para una conversación sin origen (anuncio o campaña de Maya). */
+  private async resolveCampaign(
+    channel: ConversationChannel,
+    tenantId: string,
+    inbound: InboundMessage,
+  ): Promise<ConversationCampaign | null> {
+    const fromAd = campaignFromReferral(inbound.referral);
+    if (fromAd) return fromAd;
+    try {
+      return await this.attribution.lookup(tenantId, channel, inbound.contact);
+    } catch (err) {
+      this.logger.warn(`No se pudo atribuir la campaña: ${String(err)}`);
+      return null;
+    }
+  }
 
   // ------------------------------------------------------------------
   // Consulta (bandeja de entrada)
@@ -347,11 +447,18 @@ export class ConversationsService {
        * sin dueño), `ai` (las atiende el agente IA) u `others` (de otro vendedor).
        */
       assigned?: { mode: string; userId: string };
+      /** Origen de campaña: `ad:<id>` o `campaign:<id>`. Inválido = se ignora. */
+      campaign?: string;
     } = {},
   ) {
     const query: QueryFilter<Conversation> = {
       tenantId: new Types.ObjectId(tenantId),
     };
+    const campaign = parseCampaignFilter(filters.campaign);
+    if (campaign) {
+      query['campaign.kind'] = campaign.kind;
+      query['campaign.id'] = campaign.id;
+    }
     // Uno o varios canales separados por coma ("whatsapp,instagram,messenger"
     // es la pestaña de chats, sin el correo).
     const channels = (filters.channel ?? '')
@@ -1473,6 +1580,7 @@ export class ConversationsService {
       tenantId,
       accountId,
       inbound,
+      inbound.fromMe !== true,
     );
     // Contacto bloqueado: no se guarda, no avisa y no despierta al agente.
     if (conv.blocked) {
@@ -1951,6 +2059,8 @@ export class ConversationsService {
     tenantId: string,
     accountId: string,
     inbound: InboundMessage,
+    /** Solo cuando escribe el contacto: así se atribuye a una campaña. */
+    attribute = false,
   ): Promise<Conversation> {
     const filter = {
       channel,
@@ -1978,8 +2088,16 @@ export class ConversationsService {
         !hasAttribution(existing.adReferral)
       )
         existing.adReferral = inbound.referral;
+      // Primer toque: un origen ya asignado no se reemplaza.
+      if (attribute && !existing.campaign) {
+        const campaign = await this.resolveCampaign(channel, tenantId, inbound);
+        if (campaign) existing.campaign = campaign;
+      }
       return existing;
     }
+    const campaign = attribute
+      ? await this.resolveCampaign(channel, tenantId, inbound)
+      : null;
     return this.convModel.create({
       ...filter,
       tenantId: new Types.ObjectId(tenantId),
@@ -1990,6 +2108,7 @@ export class ConversationsService {
       adReferral: hasAttribution(inbound.referral)
         ? inbound.referral
         : undefined,
+      ...(campaign ? { campaign } : {}),
       autoReply: true,
       status: 'open',
       unreadCount: 0,

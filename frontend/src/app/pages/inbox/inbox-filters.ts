@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, model, output, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { LucideAngularModule, SlidersHorizontal, X, Bot, Tag, Check, Ban } from 'lucide-angular';
+import { LucideAngularModule, SlidersHorizontal, X, Bot, Tag, Check, Ban, Megaphone } from 'lucide-angular';
 import { silentRequest } from '../../shared/loader';
 import { environment } from '../../../environments/environment';
 
@@ -9,6 +9,9 @@ const API = environment.apiUrl;
 export type InboxStatusFilter = 'all' | 'unread' | 'auto' | 'mine' | 'unassigned';
 
 interface AgentOption { _id: string; name: string; published: boolean }
+
+/** Campaña de la que vienen chats: anuncio de Meta (`ad`) o campaña de Maya. */
+export interface CampaignOption { key: string; kind: 'ad' | 'campaign'; id: string; name: string; count: number }
 
 /**
  * Filtros de la bandeja. El estado (no leídos, agente/manual) se aplica en el
@@ -44,6 +47,13 @@ interface AgentOption { _id: string; name: string; published: boolean }
           <button type="button" class="f-pill" (click)="agentId.set(''); serverChange.emit()" [attr.aria-label]="'Quitar filtro de agente ' + agentName()">
             <lucide-icon [img]="Bot" [size]="12" [strokeWidth]="2.5"></lucide-icon>
             {{ agentName() }}
+            <lucide-icon [img]="X" [size]="12" [strokeWidth]="2.8"></lucide-icon>
+          </button>
+        }
+        @if (campaign()) {
+          <button type="button" class="f-pill" (click)="campaign.set(''); serverChange.emit()" [attr.aria-label]="'Quitar filtro de campaña ' + campaignName()">
+            <lucide-icon [img]="Megaphone" [size]="12" [strokeWidth]="2.5"></lucide-icon>
+            {{ campaignName() }}
             <lucide-icon [img]="X" [size]="12" [strokeWidth]="2.8"></lucide-icon>
           </button>
         }
@@ -89,6 +99,18 @@ interface AgentOption { _id: string; name: string; published: boolean }
               @if (agents().length === 0) { <small class="f-none">No hay agentes creados.</small> }
             </div>
 
+            <span class="f-label">Campaña</span>
+            <div class="f-options">
+              <button type="button" class="f-opt" [class.active]="!draftCampaign()" (click)="draftCampaign.set('')">Cualquiera</button>
+              @for (c of campaigns(); track c.key) {
+                <button type="button" class="f-opt" [class.active]="draftCampaign() === c.key" (click)="draftCampaign.set(c.key)">
+                  <lucide-icon [img]="Megaphone" [size]="13" [strokeWidth]="2.4"></lucide-icon>
+                  {{ c.name }} <em>· {{ c.kind === 'ad' ? 'anuncio' : 'campaña' }} · {{ c.count }}</em>
+                </button>
+              }
+              @if (campaigns().length === 0) { <small class="f-none">Aún no hay chats que vengan de un anuncio o una campaña.</small> }
+            </div>
+
             <span class="f-label">Etiquetas</span>
             <div class="f-options">
               @for (t of knownTags(); track t) {
@@ -111,7 +133,7 @@ interface AgentOption { _id: string; name: string; published: boolean }
           </div>
 
           <div class="f-actions">
-            <button type="button" class="btn btn-secondary" (click)="draftAgent.set(''); draftTags.set([]); draftBlocked.set(false)">Limpiar</button>
+            <button type="button" class="btn btn-secondary" (click)="draftAgent.set(''); draftTags.set([]); draftBlocked.set(false); draftCampaign.set('')">Limpiar</button>
             <button type="button" class="btn btn-primary" (click)="apply()">Aplicar</button>
           </div>
         </div>
@@ -222,6 +244,8 @@ export class InboxFiltersComponent {
   tags = model<string[]>([]);
   /** Solo los chats bloqueados. */
   blocked = model(false);
+  /** Campaña de origen: `ad:<id>` o `campaign:<id>` ('' = todas). */
+  campaign = model('');
   /** Cambió un filtro que se resuelve en el servidor: hay que volver a pedir la lista. */
   serverChange = output<void>();
 
@@ -231,6 +255,7 @@ export class InboxFiltersComponent {
   readonly Tag = Tag;
   readonly Check = Check;
   readonly Ban = Ban;
+  readonly Megaphone = Megaphone;
 
   readonly statuses: { key: InboxStatusFilter; label: string }[] = [
     { key: 'all', label: 'Todos' },
@@ -255,8 +280,12 @@ export class InboxFiltersComponent {
   draftAgent = signal('');
   draftTags = signal<string[]>([]);
   draftBlocked = signal(false);
+  campaigns = signal<CampaignOption[]>([]);
+  draftCampaign = signal('');
 
-  activeCount = computed(() => (this.agentId() ? 1 : 0) + this.tags().length + (this.blocked() ? 1 : 0));
+  activeCount = computed(() =>
+    (this.agentId() ? 1 : 0) + this.tags().length + (this.blocked() ? 1 : 0) + (this.campaign() ? 1 : 0));
+  campaignName = computed(() => this.campaigns().find(c => c.key === this.campaign())?.name ?? 'Campaña');
   agentName = computed(() => this.agents().find(a => a._id === this.agentId())?.name ?? 'Agente IA');
 
   constructor() {
@@ -271,12 +300,16 @@ export class InboxFiltersComponent {
     this.http.get<string[]>(`${API}/conversations/tags`, ctx).subscribe({
       next: list => this.knownTags.set(list), error: () => this.knownTags.set([]),
     });
+    this.http.get<CampaignOption[]>(`${API}/conversations/campaigns`, ctx).subscribe({
+      next: list => this.campaigns.set(list), error: () => this.campaigns.set([]),
+    });
   }
 
   openPanel() {
     this.draftAgent.set(this.agentId());
     this.draftTags.set([...this.tags()]);
     this.draftBlocked.set(this.blocked());
+    this.draftCampaign.set(this.campaign());
     // Las etiquetas cambian al clasificar chats: se refrescan al abrir.
     this.loadOptions();
     this.panel.set(true);
@@ -290,6 +323,7 @@ export class InboxFiltersComponent {
     this.agentId.set(this.draftAgent());
     this.tags.set(this.draftTags());
     this.blocked.set(this.draftBlocked());
+    this.campaign.set(this.draftCampaign());
     this.panel.set(false);
     this.serverChange.emit();
   }
@@ -303,6 +337,7 @@ export class InboxFiltersComponent {
     this.agentId.set('');
     this.tags.set([]);
     this.blocked.set(false);
+    this.campaign.set('');
     this.serverChange.emit();
   }
 }

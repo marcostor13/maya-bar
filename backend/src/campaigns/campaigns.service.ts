@@ -1,3 +1,4 @@
+import { CampaignAttributionService } from '../campaign-attribution/campaign-attribution.service';
 import {
   OnModuleInit,
   Injectable,
@@ -84,6 +85,7 @@ export class CampaignsService implements OnModuleInit {
     private sms: SmsService,
     private resendAccounts: ResendService,
     private links: LinksService,
+    private attribution: CampaignAttributionService,
   ) {}
 
   async findAll(tenantId: string): Promise<Campaign[]> {
@@ -622,6 +624,15 @@ export class CampaignsService implements OnModuleInit {
       }
 
       const failed = results.filter((r) => r.status === 'rejected').length;
+      // Quien recibió la campaña y escriba después queda atribuido a ella.
+      await this.attribution.recordTouches(
+        tenantId,
+        campaign,
+        'phone',
+        withPhone
+          .filter((_, i) => results[i].status === 'fulfilled')
+          .map((c) => c.phone),
+      );
       const firstError: unknown = results.find(
         (r) => r.status === 'rejected',
       )?.reason;

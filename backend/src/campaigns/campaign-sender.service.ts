@@ -1,3 +1,4 @@
+import { CampaignAttributionService } from '../campaign-attribution/campaign-attribution.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -109,6 +110,7 @@ export class CampaignSenderService {
     private sms: SmsService,
     private resend: ResendService,
     private suppression: SuppressionService,
+    private attribution: CampaignAttributionService,
     config: ConfigService,
   ) {
     this.apiBase = (config.get<string>('PUBLIC_API_URL') ?? '').replace(
@@ -402,6 +404,12 @@ export class CampaignSenderService {
       recipient.error = undefined;
       recipient.attempts += 1;
       await recipient.save();
+      await this.attribution.recordTouches(
+        recipient.tenantId,
+        campaign,
+        isEmail ? 'email' : 'phone',
+        [recipient.to],
+      );
     } catch (err) {
       const message = (err instanceof Error ? err.message : String(err)).slice(
         0,

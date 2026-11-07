@@ -1,3 +1,4 @@
+import { CampaignAttributionService } from '../campaign-attribution/campaign-attribution.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
@@ -120,6 +121,10 @@ describe('ConversationsService — bloquear contacto', () => {
         { provide: EmailAccountsService, useValue: {} },
         { provide: EmailTransportService, useValue: {} },
         { provide: ConversationAssignmentService, useValue: fakeAssignment },
+        {
+          provide: CampaignAttributionService,
+          useValue: { lookup: jest.fn().mockResolvedValue(null) },
+        },
         { provide: SuppressionService, useValue: suppression },
       ],
     }).compile();

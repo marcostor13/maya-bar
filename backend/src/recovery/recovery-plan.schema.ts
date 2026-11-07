@@ -103,6 +103,12 @@ export interface RecoverySegment {
   rewriteJob?: RewriteJob;
 }
 
+export interface RecoveryCampaignFilter {
+  kind: 'ad' | 'campaign';
+  id: string;
+  name: string;
+}
+
 export interface RecoveryAnalysis {
   total: number;
   processed: number;
@@ -147,6 +153,10 @@ export class RecoveryPlan extends Document {
 
   @Prop({ default: 30 })
   lookbackDays: number;
+
+  /** Solo conversaciones que vinieron de esta campaña (anuncio o campaña de Maya). */
+  @Prop({ type: Object })
+  campaign?: RecoveryCampaignFilter;
 
   /** Qué se ofrece, fecha límite, quién firma… lo que el usuario quiera que la IA sepa. */
   @Prop({ default: '' })

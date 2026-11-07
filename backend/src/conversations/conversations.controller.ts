@@ -56,6 +56,7 @@ export class ConversationsController {
     @Query('tags') tags?: string,
     @Query('blocked') blocked?: string,
     @Query('assigned') assigned?: string,
+    @Query('campaign') campaign?: string,
   ) {
     assertRole(req.user.role, CRM_ROLES);
     const tenantId = req.user.tenantId;
@@ -84,6 +85,7 @@ export class ConversationsController {
         assigned && ['me', 'unassigned', 'ai', 'others'].includes(assigned)
           ? { mode: assigned, userId: req.user.userId }
           : undefined,
+      campaign,
     });
   }
 
@@ -106,6 +108,13 @@ export class ConversationsController {
   tags(@Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.availableTags(req.user.tenantId);
+  }
+
+  /** Campañas (anuncios de Meta y campañas de Maya) de las que vienen los chats. */
+  @Get('campaigns')
+  campaigns(@Request() req: AuthReq, @Query('channel') channel?: string) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.listCampaigns(req.user.tenantId, channel);
   }
 
   /** Vendedores con acceso a la bandeja, para asignar chats. */

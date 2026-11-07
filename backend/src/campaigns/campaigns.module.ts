@@ -1,3 +1,4 @@
+import { CampaignAttributionModule } from '../campaign-attribution/campaign-attribution.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CampaignsController } from './campaigns.controller';
@@ -43,6 +44,7 @@ import { ResendModule } from '../resend/resend.module';
     SmsModule,
     LinksModule,
     ResendModule,
+    CampaignAttributionModule,
   ],
   controllers: [CampaignsController, UnsubscribeController],
   providers: [CampaignsService, CampaignSenderService],

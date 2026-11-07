@@ -1,3 +1,4 @@
+import { CampaignAttributionService } from '../campaign-attribution/campaign-attribution.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import {
@@ -91,6 +92,8 @@ function createMockModel() {
 
 // ─── tests ───────────────────────────────────────────────────────────────────
 
+const mockAttribution = { recordTouches: jest.fn().mockResolvedValue(1) };
+
 describe('CampaignsService', () => {
   let service: CampaignsService;
   let campaignModel: any;
@@ -182,6 +185,7 @@ describe('CampaignsService', () => {
         { provide: SmsService, useValue: mockSms },
         { provide: ResendService, useValue: resend },
         { provide: LinksService, useValue: mockLinks },
+        { provide: CampaignAttributionService, useValue: mockAttribution },
       ],
     }).compile();
 
@@ -397,6 +401,48 @@ describe('CampaignsService', () => {
         permitida,
       ]);
       expect(campaign.recipientCount).toBe(1);
+      // Se recuerda a quién le llegó para atribuirle la conversación.
+      expect(mockAttribution.recordTouches).toHaveBeenCalledWith(
+        tenantId,
+        campaign,
+        'phone',
+        [permitida.phone],
+      );
+    });
+
+    it('solo registra como recibidos los envíos de WhatsApp que salieron bien', async () => {
+      mockAttribution.recordTouches.mockClear();
+      const otra = { ...permitida, _id: 'c-otra', phone: '51900000002' };
+      mockSuppression.filterAllowed.mockResolvedValue({
+        allowed: [permitida, otra],
+        blocked: 0,
+      });
+      mockLists.resolveCustomers.mockResolvedValue([permitida, otra]);
+      mockSettings.sendWhatsApp
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('#131026 no entregado'));
+      const campaign = {
+        _id: 'k3',
+        tenantId: { toString: () => tenantId },
+        targeting: 'lists',
+        listIds: [{ toString: () => 'l1' }],
+        recipientTags: [],
+        type: 'whatsapp',
+        body: 'Promo',
+        status: 'draft',
+        recipientCount: 0,
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      stubFindById(campaign);
+
+      await service.send('k3', tenantId);
+
+      expect(mockAttribution.recordTouches).toHaveBeenCalledWith(
+        tenantId,
+        campaign,
+        'phone',
+        [permitida.phone],
+      );
     });
 
     it('en email queda omitido con su motivo, no pendiente de envío', async () => {

@@ -1,3 +1,4 @@
+import { CampaignAttributionService } from '../campaign-attribution/campaign-attribution.service';
 import { Test } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
@@ -25,6 +26,8 @@ const query = <T>(value: T) => {
   q.exec = jest.fn().mockResolvedValue(value);
   return q;
 };
+
+const attribution = { recordTouches: jest.fn().mockResolvedValue(1) };
 
 describe('CampaignSenderService', () => {
   const tenantId = new Types.ObjectId();
@@ -112,6 +115,7 @@ describe('CampaignSenderService', () => {
         { provide: SmsService, useValue: sms },
         { provide: ResendService, useValue: resend },
         { provide: SuppressionService, useValue: suppression },
+        { provide: CampaignAttributionService, useValue: attribution },
         {
           provide: ConfigService,
           useValue: {
@@ -158,6 +162,18 @@ describe('CampaignSenderService', () => {
     expect(bad.status).toBe('failed');
     expect(bad.error).toContain('550');
     expect(good.status).toBe('sent');
+    // Solo el envío exitoso queda registrado para atribuir la conversación.
+    const touched = attribution.recordTouches.mock.calls.map(
+      (c: unknown[]) => (c[3] as string[])[0],
+    );
+    expect(touched).toContain('bien@test.com');
+    expect(touched).not.toContain('mal@test.com');
+    expect(attribution.recordTouches).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'email',
+      ['bien@test.com'],
+    );
   });
 
   it('un error transitorio deja al destinatario pendiente para reintentar', async () => {

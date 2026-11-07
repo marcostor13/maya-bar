@@ -1,3 +1,4 @@
+import { CampaignAttributionModule } from '../campaign-attribution/campaign-attribution.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -50,6 +51,7 @@ import { SmsModule } from '../sms/sms.module';
     MessengerModule,
     MessengerAccountsModule,
     AiAgentsModule,
+    CampaignAttributionModule,
     AiModule,
     UploadModule,
     LeadsModule,

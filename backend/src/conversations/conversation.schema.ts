@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import type { AdReferral } from '../shared/ad-referral';
+import type { ConversationCampaign } from '../campaign-attribution/campaign-attribution';
 
 export type ConversationChannel =
   | 'whatsapp'
@@ -98,6 +99,13 @@ export class Conversation extends Document {
   @Prop({ type: Object })
   adReferral?: AdReferral;
 
+  /**
+   * Campaña de la que vino el chat (primer toque): un anuncio de Meta o una
+   * campaña de Maya que el contacto recibió hasta 30 días antes de escribir.
+   */
+  @Prop({ type: Object })
+  campaign?: ConversationCampaign;
+
   /** Contacto del CRM al que se guardó esta conversación, si se guardó. */
   @Prop({ type: Types.ObjectId, ref: 'Customer', index: true })
   customerId?: Types.ObjectId;
@@ -147,6 +155,10 @@ export class Conversation extends Document {
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);
 ConversationSchema.index({ tenantId: 1, lastMessageAt: -1 });
+ConversationSchema.index(
+  { tenantId: 1, 'campaign.kind': 1, 'campaign.id': 1 },
+  { sparse: true },
+);
 ConversationSchema.index(
   { channel: 1, accountId: 1, contact: 1 },
   { unique: true },

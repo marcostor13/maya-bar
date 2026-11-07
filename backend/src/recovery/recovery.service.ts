@@ -1,4 +1,9 @@
 import {
+  listConversationCampaigns,
+  parseCampaignFilter,
+} from '../campaign-attribution/campaign-attribution';
+import { Conversation } from '../conversations/conversation.schema';
+import {
   BadRequestException,
   Injectable,
   Logger,
@@ -15,6 +20,7 @@ import {
   RecoveryPlan,
   RecoveryRecipient,
   RecoverySegment,
+  type RecoveryCampaignFilter,
 } from './recovery-plan.schema';
 import { RecoveryWorker } from './recovery-worker.service';
 import {
@@ -45,12 +51,23 @@ export class RecoveryService {
 
   constructor(
     @InjectModel(RecoveryPlan.name) private planModel: Model<RecoveryPlan>,
+    @InjectModel(Conversation.name)
+    private conversationModel: Model<Conversation>,
     private worker: RecoveryWorker,
     private templates: WhatsAppTemplatesService,
     private accounts: WhatsAppAccountsService,
     private settings: SettingsService,
     private suppression: SuppressionService,
   ) {}
+
+  /** Campañas de las que vienen chats de WhatsApp, para elegir qué recuperar. */
+  campaigns(tenantId: string) {
+    return listConversationCampaigns(
+      this.conversationModel,
+      tenantId,
+      'whatsapp',
+    );
+  }
 
   findAll(tenantId: string) {
     return this.planModel
@@ -96,11 +113,43 @@ export class RecoveryService {
     return plan;
   }
 
+  /**
+   * Valida la campaña pedida y toma su nombre de las conversaciones de la
+   * empresa: si no hay ninguna de WhatsApp con ese origen, no hay a quién recuperar.
+   */
+  private async campaignFilter(
+    tenantId: string,
+    value: string,
+  ): Promise<RecoveryCampaignFilter> {
+    const parsed = parseCampaignFilter(value);
+    if (!parsed) throw new BadRequestException('Campaña inválida');
+    const conv = await this.conversationModel
+      .findOne(
+        {
+          tenantId: new Types.ObjectId(tenantId),
+          channel: 'whatsapp',
+          'campaign.kind': parsed.kind,
+          'campaign.id': parsed.id,
+        },
+        { campaign: 1 },
+      )
+      .lean<{ campaign?: { name?: string } }>()
+      .exec();
+    if (!conv)
+      throw new BadRequestException(
+        'No hay conversaciones de WhatsApp que vengan de esa campaña',
+      );
+    return { ...parsed, name: conv.campaign?.name || parsed.id };
+  }
+
   async create(
     tenantId: string,
     userId: string,
     dto: CreateRecoveryPlanDto,
   ): Promise<RecoveryPlan> {
+    const campaign = dto.campaign
+      ? await this.campaignFilter(tenantId, dto.campaign)
+      : undefined;
     const timezone =
       dto.timezone && isValidTimezone(dto.timezone)
         ? dto.timezone
@@ -115,8 +164,13 @@ export class RecoveryService {
       createdBy: Types.ObjectId.isValid(userId)
         ? new Types.ObjectId(userId)
         : undefined,
-      name: dto.name?.trim() || `Recuperación del ${date}`,
+      name:
+        dto.name?.trim() ||
+        (campaign
+          ? `Recuperación de ${campaign.name}`.slice(0, 80)
+          : `Recuperación del ${date}`),
       lookbackDays: dto.lookbackDays,
+      ...(campaign ? { campaign } : {}),
       context: dto.context?.trim() ?? '',
       timezone,
       status: 'analyzing',
@@ -142,6 +196,10 @@ export class RecoveryService {
       );
     if (dto.lookbackDays) plan.lookbackDays = dto.lookbackDays;
     if (dto.context !== undefined) plan.context = dto.context.trim();
+    if (dto.campaign !== undefined)
+      plan.campaign = dto.campaign
+        ? await this.campaignFilter(tenantId, dto.campaign)
+        : undefined;
     plan.status = 'analyzing';
     plan.segments = [];
     plan.excluded = [];

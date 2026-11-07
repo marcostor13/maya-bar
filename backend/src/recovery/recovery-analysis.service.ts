@@ -122,6 +122,13 @@ export class RecoveryAnalysisService {
         tenantId: tid,
         channel: 'whatsapp',
         lastMessageAt: { $gte: since },
+        // Recuperación de una sola campaña (anuncio o campaña de Maya).
+        ...(plan.campaign?.id
+          ? {
+              'campaign.kind': plan.campaign.kind,
+              'campaign.id': plan.campaign.id,
+            }
+          : {}),
       })
       .sort({ lastMessageAt: -1 })
       .limit(MAX_CONVERSATIONS)
@@ -149,7 +156,7 @@ export class RecoveryAnalysisService {
     );
     if (!candidates.length)
       throw new NothingToAnalyzeError(
-        `No hay conversaciones de WhatsApp con mensajes de clientes en los últimos ${plan.lookbackDays} días`,
+        `No hay conversaciones de WhatsApp con mensajes de clientes en los últimos ${plan.lookbackDays} días${plan.campaign ? ` que vengan de la campaña "${plan.campaign.name}"` : ''}`,
       );
 
     const suppressed = await this.suppression.setFor(tenantId);

@@ -83,6 +83,8 @@ export interface RecoveryPlan {
   status: RecoveryStatus;
   lookbackDays: number;
   context: string;
+  /** Solo chats que vinieron de esta campaña. */
+  campaign?: { kind: 'ad' | 'campaign'; id: string; name: string };
   timezone: string;
   language: string;
   analysis: RecoveryAnalysis;
@@ -153,4 +155,13 @@ export function validateTemplateBody(body: string): string | null {
     return '{{1}} no puede ir al principio ni al final';
   if (/\n{3,}/.test(text)) return 'No dejes más de una línea en blanco seguida';
   return null;
+}
+
+/** Campaña elegible para recuperar: `key` es `ad:<id>` o `campaign:<id>`. */
+export interface RecoveryCampaignOption {
+  key: string;
+  kind: 'ad' | 'campaign';
+  id: string;
+  name: string;
+  count: number;
 }

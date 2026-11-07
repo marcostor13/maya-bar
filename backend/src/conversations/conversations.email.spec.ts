@@ -32,6 +32,7 @@ function setup(
     reply?: string;
     sendFails?: boolean;
     bookings?: unknown[];
+    campaign?: Record<string, unknown> | null;
   } = {},
 ) {
   const convs: Doc[] = [];
@@ -48,6 +49,21 @@ function setup(
   };
 
   const convModel = {
+    find: jest.fn(() => chain(() => [])),
+    aggregate: jest.fn(() => ({
+      exec: () =>
+        Promise.resolve([
+          {
+            _id: { kind: 'ad', id: '120' },
+            name: 'Promo verano',
+            count: 4,
+            last: new Date(),
+          },
+        ]),
+    })),
+    updateMany: jest.fn(() => ({
+      exec: () => Promise.resolve({ modifiedCount: 3 }),
+    })),
     findOne: jest.fn((f: any) =>
       chain(
         () =>
@@ -65,6 +81,9 @@ function setup(
       convs.push(doc);
       return Promise.resolve(doc);
     }),
+  };
+  const attribution = {
+    lookup: jest.fn().mockResolvedValue(opts.campaign ?? null),
   };
   const msgModel = {
     create: jest.fn((d: any) => {
@@ -182,7 +201,10 @@ function setup(
   const media = {
     interpret: jest.fn().mockResolvedValue({ text: 'Factura de 100 soles' }),
   };
-  const suppression = { isSuppressed: jest.fn().mockResolvedValue(false) };
+  const suppression = {
+    isSuppressed: jest.fn().mockResolvedValue(false),
+    setFor: jest.fn().mockResolvedValue({ empty: true }),
+  };
 
   const service = new ConversationsService(
     convModel as never,
@@ -205,9 +227,12 @@ function setup(
     emailAccounts as never,
     emailTransport as never,
     fakeAssignment as never,
+    attribution as never,
   );
   return {
     service,
+    attribution,
+    convModel,
     convs,
     msgs,
     account,
@@ -241,6 +266,134 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('ConversationsService — correo', () => {
   beforeEach(() => fakeAssignment.note.mockClear());
+
+  it('atribuye la conversación a la campaña que recibió el contacto', async () => {
+    const campaign = {
+      kind: 'campaign',
+      id: new Types.ObjectId().toString(),
+      name: 'Black Friday',
+      at: new Date(),
+    };
+    const h = setup({ campaign });
+    await h.service.handleEmailInbound(h.account as never, email());
+    await flush();
+    expect(h.attribution.lookup).toHaveBeenCalledWith(
+      String(h.account.tenantId),
+      'email',
+      'ana@cliente.pe',
+    );
+    expect(h.convs[0].campaign).toEqual(campaign);
+  });
+
+  it('no reemplaza el origen ya asignado (primer toque)', async () => {
+    const h = setup({
+      campaign: { kind: 'campaign', id: 'x', name: 'Otra', at: new Date() },
+    });
+    const first = { kind: 'ad', id: '120', name: 'Promo', at: new Date() };
+    const svc = h.service as any;
+    const conv = await svc.upsertConversation(
+      'whatsapp',
+      String(h.account.tenantId),
+      String(h.account._id),
+      { contact: '51999888777', type: 'text' },
+      false,
+    );
+    conv.campaign = first;
+    const again = await svc.upsertConversation(
+      'whatsapp',
+      String(h.account.tenantId),
+      String(h.account._id),
+      {
+        contact: '51999888777',
+        type: 'text',
+        referral: { adId: '999', headline: 'Otro anuncio' },
+      },
+      true,
+    );
+    expect(again.campaign).toBe(first);
+  });
+
+  it('filtra la bandeja por campaña e ignora filtros mal formados', async () => {
+    const h = setup();
+    const id = new Types.ObjectId().toString();
+    await h.service.listConversations(String(h.account.tenantId), {
+      campaign: `campaign:${id}`,
+    });
+    expect(h.convModel.find.mock.calls[0][0]).toMatchObject({
+      tenantId: h.account.tenantId,
+      'campaign.kind': 'campaign',
+      'campaign.id': id,
+    });
+    await h.service.listConversations(String(h.account.tenantId), {
+      campaign: 'ad:{"$gt":""}',
+    });
+    expect(h.convModel.find.mock.calls[1][0]).not.toHaveProperty([
+      'campaign.id',
+    ]);
+  });
+
+  it('lista las campañas de la empresa con su número de chats', async () => {
+    const h = setup();
+    const res = await h.service.listCampaigns(
+      String(h.account.tenantId),
+      'whatsapp',
+    );
+    const [pipeline] = h.convModel.aggregate.mock.calls[0] as any[];
+    expect(pipeline[0].$match).toMatchObject({
+      tenantId: h.account.tenantId,
+      channel: 'whatsapp',
+    });
+    expect(res).toEqual([
+      { key: 'ad:120', kind: 'ad', id: '120', name: 'Promo verano', count: 4 },
+    ]);
+  });
+
+  it('al arrancar marca los chats de anuncios antiguos sin origen', async () => {
+    const h = setup();
+    await h.service.onModuleInit();
+    const [filter, pipeline] = h.convModel.updateMany.mock.calls[0] as any[];
+    expect(filter).toEqual({
+      campaign: { $exists: false },
+      'adReferral.adId': { $exists: true, $ne: null },
+    });
+    expect(pipeline[0].$set.campaign).toMatchObject({
+      kind: 'ad',
+      id: { $toString: '$adReferral.adId' },
+    });
+  });
+
+  it('un chat de anuncio de Click-to-WhatsApp queda con su campaña', async () => {
+    const h = setup();
+    const conv = await (h.service as any).upsertConversation(
+      'whatsapp',
+      String(h.account.tenantId),
+      String(h.account._id),
+      {
+        contact: '51911222333',
+        type: 'text',
+        referral: { adId: '120', ctwaClid: 'c', headline: 'Promo verano' },
+      },
+      true,
+    );
+    expect(conv.campaign).toMatchObject({
+      kind: 'ad',
+      id: '120',
+      name: 'Promo verano',
+    });
+    // El anuncio gana: no se buscan campañas de Maya.
+    expect(h.attribution.lookup).not.toHaveBeenCalled();
+  });
+
+  it('al escribir el negocio (saliente) no se atribuye campaña', async () => {
+    const h = setup();
+    await (h.service as any).upsertConversation(
+      'email',
+      String(h.account.tenantId),
+      String(h.account._id),
+      { contact: 'x@y.pe', type: 'text' },
+    );
+    expect(h.attribution.lookup).not.toHaveBeenCalled();
+  });
 
   it('le pasa al agente el contexto para agendar y deja una nota por cada cita', async () => {
     const h = setup({

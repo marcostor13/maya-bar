@@ -41,6 +41,13 @@ export class RecoveryController {
     return this.recovery.findAll(req.user.tenantId);
   }
 
+  /** Campañas de origen de los chats de WhatsApp (va antes de `:id`). */
+  @Get('campaigns')
+  campaigns(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.recovery.campaigns(req.user.tenantId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);

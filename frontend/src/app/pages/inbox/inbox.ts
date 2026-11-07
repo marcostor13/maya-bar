@@ -10,7 +10,7 @@ import {
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
-  CalendarPlus, ListChecks, ShieldBan, ShieldCheck, Users, UserCheck, UserMinus, Hand,
+  CalendarPlus, ListChecks, ShieldBan, ShieldCheck, Users, UserCheck, UserMinus, Hand, Megaphone,
 } from 'lucide-angular';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
@@ -148,6 +148,8 @@ interface Conv {
   escalatedAt?: string;
   escalationReason?: string;
   escalationNotifiedTo?: string[];
+  /** Campaña de la que vino el chat (anuncio de Meta o campaña de Maya). */
+  campaign?: { kind: 'ad' | 'campaign'; id: string; name: string; at?: string };
   /** Etiquetas del contacto vinculado; las adjunta el backend al listar. */
   tags?: string[];
   /** Pidió no recibir comunicaciones: fuera de campañas y sin agente IA. */
@@ -275,7 +277,7 @@ const EMOJIS = [
               }
             </select>
           }
-          <app-inbox-filters [(status)]="filter" [counts]="assignmentCounts()" [(agentId)]="agentFilter" [(tags)]="tagFilter" [(blocked)]="blockedFilter"
+          <app-inbox-filters [(status)]="filter" [counts]="assignmentCounts()" [(agentId)]="agentFilter" [(tags)]="tagFilter" [(blocked)]="blockedFilter" [(campaign)]="campaignFilter"
             (serverChange)="onServerFilterChange()" />
         </div>
 
@@ -355,6 +357,11 @@ const EMOJIS = [
                     } @else {
                       <span class="tag tag-queue">
                         <lucide-icon [img]="Hand" [size]="11" [strokeWidth]="2.4"></lucide-icon> Sin asignar
+                      </span>
+                    }
+                    @if (c.campaign) {
+                      <span class="tag tag-campaign" [title]="(c.campaign.kind === 'ad' ? 'Vino del anuncio ' : 'Vino de la campaña ') + c.campaign.name">
+                        <lucide-icon [img]="Megaphone" [size]="11" [strokeWidth]="2.4"></lucide-icon> {{ c.campaign.name }}
                       </span>
                     }
                     @if (c.escalated && !c.takenOverBy) {
@@ -445,6 +452,11 @@ const EMOJIS = [
                   <lucide-icon [img]="selected()!.takenOverBy ? UserCheck : Hand" [size]="14" [strokeWidth]="2.4"></lucide-icon>
                   <span>{{ ownerLabel(selected()!) }}</span>
                 </button>
+              }
+              @if (selected()!.campaign; as camp) {
+                <span class="tag tag-campaign" [title]="(camp.kind === 'ad' ? 'Vino del anuncio ' : 'Vino de la campaña ') + camp.name">
+                  <lucide-icon [img]="Megaphone" [size]="12" [strokeWidth]="2.4"></lucide-icon> {{ camp.name }}
+                </span>
               }
               <button class="btn btn-sm btn-secondary" (click)="openClassify()" title="Clasificar y enviar a seguimiento">
                 <lucide-icon [img]="Tag" [size]="14" [strokeWidth]="2.5"></lucide-icon>
@@ -1366,6 +1378,7 @@ const EMOJIS = [
     .tag-handoff { background: rgba(245, 158, 11, 0.14); color: #B45309; }
     .tag-owner { background: rgba(59, 130, 246, 0.12); color: #1D4ED8; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tag-queue { background: rgba(239, 68, 68, 0.12); color: var(--color-error); }
+    .tag-campaign { background: var(--color-brand-light); color: var(--color-brand); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .owner-chip {
       display: inline-flex; align-items: center; gap: 6px; max-width: 200px;
       padding: 6px 12px; border-radius: var(--radius-pill); border: 1px solid var(--color-border);
@@ -2059,6 +2072,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly UserCheck = UserCheck;
   readonly UserMinus = UserMinus;
   readonly Hand = Hand;
+  readonly Megaphone = Megaphone;
   readonly Send = Send;
   readonly Reply = Reply;
   readonly Sparkles = Sparkles;
@@ -2187,6 +2201,8 @@ export class InboxComponent implements OnInit, OnDestroy {
   agentFilter = signal('');
   tagFilter = signal<string[]>([]);
   blockedFilter = signal(false);
+  /** Campaña de origen: `ad:<id>` o `campaign:<id>`. */
+  campaignFilter = signal('');
 
   loadingList = signal(true);
   loadingMessages = signal(false);
@@ -2358,6 +2374,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (this.agentFilter()) params.set('agentId', this.agentFilter());
     if (this.tagFilter().length) params.set('tags', this.tagFilter().join(','));
     if (this.blockedFilter()) params.set('blocked', 'true');
+    if (this.campaignFilter()) params.set('campaign', this.campaignFilter());
     if (this.accountId()) params.set('accountId', this.accountId());
     // Con una cuenta concreta el canal sobra: el accountId ya lo determina.
     else if (this.box() === 'email') params.set('channel', 'email');

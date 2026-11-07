@@ -34,6 +34,12 @@ export class CreateRecoveryPlanDto {
   @IsString()
   @MaxLength(60)
   timezone?: string;
+
+  /** `ad:<id>` o `campaign:<id>`; vacío = todas las conversaciones. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  campaign?: string;
 }
 
 export class SegmentEditDto {
