@@ -87,6 +87,7 @@ const UNSUPPORTED_LABEL: Record<string, string> = {
   'unsupported:poll_creation': 'El cliente envió una encuesta. WhatsApp no entrega encuestas a las empresas: pídele las opciones por mensaje.',
   'unsupported:poll_update': 'El cliente votó en una encuesta. WhatsApp no entrega el voto.',
   'unsupported:pin': 'El cliente fijó un mensaje en el chat.',
+  'unsupported:unknown': 'WhatsApp recibió un mensaje que ni Meta sabe clasificar (por ejemplo, un formato nuevo o un mensaje de un servicio de Meta) y no entrega su contenido. Pídele al cliente que lo escriba de nuevo como texto.',
   'unsupported:view_once': 'El cliente envió una foto o video de "ver una vez". WhatsApp no lo entrega a las empresas: pídele que lo reenvíe normal.',
 };
 
