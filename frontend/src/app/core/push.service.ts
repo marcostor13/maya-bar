@@ -3,11 +3,17 @@ import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { PushNotifications } from '@capacitor/push-notifications';
+import { App } from '@capacitor/app';
 import { PlatformService } from './platform.service';
 import { ToastService } from '../shared/toast';
 import { environment } from '../../environments/environment';
 
 export type NativePushPermission = 'unsupported' | 'prompt' | 'granted' | 'denied';
+
+/** El usuario apagó los avisos en este móvil: no se reactivan solos. */
+export const NATIVE_OPT_OUT_KEY = 'maya.push.native.optout';
+/** Id del dispositivo actual en el backend, para marcarlo en la lista. */
+export const NATIVE_DEVICE_KEY = 'maya.push.native.deviceId';
 
 /**
  * Notificaciones push nativas (FCM).
@@ -30,6 +36,8 @@ export class NativePushService {
 
   permission = signal<NativePushPermission>(this.platform.isNative ? 'prompt' : 'unsupported');
   readonly registered = signal(false);
+  /** El backend tiene Firebase configurado. */
+  readonly serverEnabled = signal(true);
 
   private listenersReady = false;
 
@@ -42,10 +50,46 @@ export class NativePushService {
     if (!this.platform.isNative) return;
 
     await this.attachListeners();
+    void this.refreshServerState();
 
     const status = await PushNotifications.checkPermissions();
     this.permission.set(this.mapPermission(status.receive));
-    if (status.receive === 'granted') await this.register();
+    if (status.receive === 'granted' && !this.optedOut()) await this.register();
+  }
+
+  /** ¿El backend puede enviar a la app? (Firebase configurado). */
+  async refreshServerState(): Promise<void> {
+    try {
+      const res = await firstValueFrom(
+        this.http.get<{ enabled: boolean }>(`${this.apiUrl}/devices/status`),
+      );
+      this.serverEnabled.set(res.enabled);
+    } catch {
+      this.serverEnabled.set(false);
+    }
+  }
+
+  /** Id de este móvil en el backend (si está dado de alta). */
+  currentDeviceId(): string | null {
+    return localStorage.getItem(NATIVE_DEVICE_KEY);
+  }
+
+  private optedOut(): boolean {
+    return localStorage.getItem(NATIVE_OPT_OUT_KEY) === '1';
+  }
+
+  /**
+   * El usuario apaga los avisos en este móvil desde Configuración: baja en el
+   * backend y queda anotado para que no se reactiven al abrir la app.
+   */
+  async turnOff(): Promise<void> {
+    localStorage.setItem(NATIVE_OPT_OUT_KEY, '1');
+    await this.disable();
+    try {
+      await PushNotifications.unregister();
+    } catch {
+      /* Sin registro previo no hay nada que soltar. */
+    }
   }
 
   /** Alta explícita desde Configuración. Aquí sí se pide el permiso. */
@@ -56,6 +100,7 @@ export class NativePushService {
     }
 
     await this.attachListeners();
+    localStorage.removeItem(NATIVE_OPT_OUT_KEY);
 
     let status = await PushNotifications.checkPermissions();
     if (status.receive === 'prompt' || status.receive === 'prompt-with-rationale') {
@@ -88,6 +133,24 @@ export class NativePushService {
     }
     this.token.set(null);
     this.registered.set(false);
+    localStorage.removeItem(NATIVE_DEVICE_KEY);
+  }
+
+  /**
+   * Sesión caducada: suelta el token FCM sin pasar por el backend (no hay
+   * token de sesión). FCM lo da por muerto y el backend lo borra al siguiente
+   * envío; al volver a entrar se registra uno nuevo.
+   */
+  async dropLocal(): Promise<void> {
+    if (!this.platform.isNative) return;
+    try {
+      await PushNotifications.unregister();
+    } catch {
+      /* Sin registro no hay nada que soltar. */
+    }
+    this.token.set(null);
+    this.registered.set(false);
+    localStorage.removeItem(NATIVE_DEVICE_KEY);
   }
 
   /**
@@ -113,7 +176,7 @@ export class NativePushService {
     try {
       await PushNotifications.createChannel({
         id: 'maya_default',
-        name: 'Avisos de Maya',
+        name: 'Mensajes',
         description: 'Mensajes nuevos, registros y avisos de campañas',
         importance: 5,
         visibility: 1,
@@ -141,11 +204,13 @@ export class NativePushService {
       // Casi siempre significa que falta `google-services.json` en el build.
       console.error('[push] registro fallido', err);
       this.registered.set(false);
+      this.toast.error('No se pudieron activar las notificaciones en este móvil. Inténtalo de nuevo más tarde.');
     });
 
     // App en primer plano: Android no pinta la notificación del sistema, así
-    // que el aviso lo damos nosotros.
+    // que el aviso lo damos nosotros (salvo que ya esté viendo ese chat).
     await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      if (this.isWatching(notification.data?.['conversationId'] as string | undefined)) return;
       const title = notification.title ?? 'Maya CRM';
       const body = notification.body ?? '';
       this.toast.info(body ? `${title}: ${body}` : title);
@@ -158,17 +223,39 @@ export class NativePushService {
     });
   }
 
+  /** ¿El usuario tiene abierta esa conversación ahora mismo? */
+  isWatching(conversationId: string | undefined): boolean {
+    return (
+      !!conversationId &&
+      document.visibilityState === 'visible' &&
+      this.router.url.startsWith('/inbox') &&
+      this.router.url.includes(conversationId)
+    );
+  }
+
   private async sendToken(token: string): Promise<void> {
     try {
-      await firstValueFrom(
-        this.http.post(`${this.apiUrl}/devices`, {
+      const res = await firstValueFrom(
+        this.http.post<{ id?: string }>(`${this.apiUrl}/devices`, {
           token,
           platform: this.platform.platform === 'ios' ? 'ios' : 'android',
+          appVersion: await this.appVersion(),
         }),
       );
+      if (res?.id) localStorage.setItem(NATIVE_DEVICE_KEY, res.id);
       this.registered.set(true);
     } catch {
       this.registered.set(false);
+      this.toast.error('No se pudo registrar este móvil para recibir notificaciones.');
+    }
+  }
+
+  /** Versión de la app instalada, para distinguir dispositivos en la lista. */
+  private async appVersion(): Promise<string | undefined> {
+    try {
+      return (await App.getInfo()).version.slice(0, 32);
+    } catch {
+      return undefined;
     }
   }
 

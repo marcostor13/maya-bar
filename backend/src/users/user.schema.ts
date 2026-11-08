@@ -80,6 +80,23 @@ export class User extends Document {
   /** Intentos fallidos con el código vigente; al llegar al tope se invalida. */
   @Prop()
   emailVerificationAttempts?: number;
+
+  /**
+   * Qué avisos push quiere recibir. Sin el campo (o sin una clave) el aviso
+   * está activo: las cuentas existentes siguen recibiendo todo.
+   */
+  @Prop({ type: Object })
+  pushPrefs?: PushPrefs;
+}
+
+/** Preferencias de notificaciones push de un usuario. */
+export interface PushPrefs {
+  chats?: boolean;
+  forms?: boolean;
+  leads?: boolean;
+  recovery?: boolean;
+  /** Silencia todo (salvo la notificación de prueba). */
+  muted?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

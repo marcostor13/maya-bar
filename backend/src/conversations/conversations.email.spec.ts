@@ -239,6 +239,7 @@ function setup(
     agents,
     emailTransport,
     push,
+    nativePush,
     uploads,
     media,
     suppression,
@@ -425,6 +426,32 @@ describe('ConversationsService — correo', () => {
     expect(note).toContain('10 de noviembre');
     expect(note).toContain('15:00');
     expect(note).toContain('https://meet.google.com/abc');
+  });
+
+  it('avisa del mensaje entrante por los dos canales con el mismo texto, tipo y badge', async () => {
+    const h = setup();
+    await h.service.handleEmailInbound(h.account as never, email());
+    await flush();
+
+    const [tenant, web, aud] = h.push.sendToTenant.mock.calls[0];
+    expect(aud).toEqual({ moduleKey: 'inbox' });
+    expect(web).toMatchObject({
+      title: 'Ana Ruiz · Correo',
+      category: 'chats',
+      badge: expect.any(Number),
+      url: expect.stringMatching(/^\/inbox\?c=/),
+    });
+    const [nTenant, moduleKey, native] =
+      h.nativePush.sendToTenantModule.mock.calls[0];
+    expect(String(nTenant)).toBe(tenant);
+    expect(moduleKey).toBe('inbox');
+    expect(native).toMatchObject({
+      title: web.title,
+      body: web.body,
+      category: 'chats',
+      tag: expect.stringMatching(/^conv_/),
+      data: { route: web.url },
+    });
   });
 
   it('crea la conversación, avisa al equipo y el agente responde por correo en el mismo hilo', async () => {

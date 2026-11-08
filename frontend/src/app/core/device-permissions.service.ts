@@ -1,6 +1,5 @@
 import { Injectable, inject } from '@angular/core';
 import { PlatformService } from './platform.service';
-import { NativePushService } from './push.service';
 
 /**
  * Marca de que ya se pidieron los permisos: solo se hace la primera vez.
@@ -24,11 +23,13 @@ const YA_PEDIDOS = 'maya.permisos.pedidos.v2';
  * El micrófono y la cámara se piden provocando un `getUserMedia` y cerrando el
  * flujo enseguida: es lo que dispara el diálogo del sistema en el WebView, y
  * evita añadir un plugin solo para esto.
+ *
+ * Las notificaciones NO se piden aquí: Android 13+ solo pregunta una vez, así
+ * que se piden cuando el usuario pulsa "Activar notificaciones".
  */
 @Injectable({ providedIn: 'root' })
 export class DevicePermissionsService {
   private platform = inject(PlatformService);
-  private push = inject(NativePushService);
 
   /** Se llama una vez al arrancar. No lanza nunca: un permiso denegado no
    *  puede impedir que la aplicación se use. */
@@ -37,7 +38,6 @@ export class DevicePermissionsService {
     if (this.yaSePidieron()) return;
 
     await this.microfonoYCamara();
-    await this.push.enable().catch(() => false);
 
     // Se marca DESPUÉS de preguntar, no antes. Marcar antes parecía más
     // seguro —evita insistir si el usuario cierra la app a media pregunta—,

@@ -1,116 +1,167 @@
-# Notificaciones push (Web Push / VAPID)
+# Notificaciones push (Web Push + FCM)
 
-Cada mensaje nuevo de **Conversaciones** llega al móvil del equipo como
-notificación nativa, aunque la plataforma esté cerrada, siempre que se haya
-instalado como acceso directo en la pantalla de inicio.
+Maya avisa al equipo en el móvil y en el ordenador aunque la app esté cerrada.
+Hay dos canales y cada uno necesita sus claves en el servidor:
 
-No hay servicio de terceros (ni Firebase ni OneSignal): se usa **Web Push**
-estándar con claves VAPID, que es lo que hablan directamente Chrome/Android y
-Safari/iOS 16.4+.
+| Dónde | Canal | Qué hace falta en el servidor |
+| --- | --- | --- |
+| iPhone / iPad (Maya añadida a la pantalla de inicio, iOS 16.4+) | Web Push | Claves VAPID |
+| Android con Maya instalada desde Chrome | Web Push | Claves VAPID |
+| Ordenador (Chrome, Edge, Safari, Firefox) | Web Push | Claves VAPID |
+| App de Android (APK) | FCM (Firebase) | Proyecto de Firebase |
+
+No hace falta cuenta de Apple Developer: el iPhone recibe los avisos por la
+web instalada. Sin claves, la app funciona igual y el panel de notificaciones
+dice que el servidor no está configurado.
+
+## Puesta en marcha
+
+### 1. Claves VAPID (iPhone, Android web y ordenador)
+
+1. Generarlas una sola vez:
+
+   ```bash
+   cd backend
+   node scripts/generate-vapid.js
+   ```
+
+2. En Coolify → aplicación **backend** → variables de entorno:
+
+   | Variable | Obligatoria | Descripción |
+   | --- | --- | --- |
+   | `VAPID_PUBLIC_KEY` | sí | Clave pública. El frontend la pide en `GET /push/public-key`; no hace falta duplicarla en el bundle. |
+   | `VAPID_PRIVATE_KEY` | sí | Clave privada. **Secreto**: firma cada notificación. |
+   | `VAPID_SUBJECT` | no | `mailto:` de contacto que exige el estándar. Por defecto `mailto:soporte@mayacrm.site`. |
+
+3. Redesplegar el backend. En el log debe salir
+   `Notificaciones push activas (VAPID configurado).`
+
+> Regenerar las claves invalida todas las suscripciones. Los dispositivos se
+> vuelven a dar de alta solos al abrir la app (el permiso del navegador se
+> conserva), salvo los que el usuario desactivó a propósito.
+
+### 2. Firebase (solo la app de Android)
+
+1. <https://console.firebase.google.com> → crear un proyecto.
+2. *Añadir app → Android* con el paquete exacto `site.mayacrm.app`.
+3. Descargar `google-services.json` a `frontend/android/app/`. Sin él el APK
+   compila, pero no recibe avisos.
+4. *Configuración del proyecto → Cuentas de servicio → Generar nueva clave
+   privada*. Del JSON salen tres variables del backend en Coolify:
+
+   ```
+   FIREBASE_PROJECT_ID=<project_id>
+   FIREBASE_CLIENT_EMAIL=<client_email>
+   FIREBASE_PRIVATE_KEY=<private_key, en una línea con los saltos como \n>
+   ```
+
+5. Redesplegar el backend (log: `Push activado para el proyecto …`) y volver a
+   generar el APK (`docs/android-app.md`) para que incluya `google-services.json`.
+
+### 3. Instalar y activar en cada dispositivo
+
+- **iPhone / iPad (iOS 16.4+)**: abrir `https://mayacrm.site` en **Safari** →
+  **Compartir** → **Añadir a pantalla de inicio** → abrir Maya **desde el
+  ícono nuevo** e iniciar sesión → campana → **Activar notificaciones** →
+  **Permitir**. Desde una pestaña de Safari iOS no entrega avisos; si se borra
+  el ícono hay que repetirlo. El panel guía estos pasos y avisa si iOS es
+  anterior a 16.4.
+- **Android (web)**: Chrome → menú ⋮ → **Instalar app** (o el botón "Instalar
+  la app" del panel) → campana → **Activar notificaciones**.
+- **Android (APK)**: instalar, iniciar sesión → campana o Configuración →
+  Notificaciones → **Activar notificaciones**. Android solo pregunta una vez.
+- **Ordenador**: campana → **Activar notificaciones**.
+
+## Qué puede hacer cada usuario
+
+El mismo panel está en la campana de la cabecera (todo el equipo) y en
+Configuración → Notificaciones:
+
+- Activar o desactivar los avisos en el dispositivo actual. "Desactivar" queda
+  anotado en el dispositivo: no se reactivan solos al volver a abrir la app.
+- **Enviar prueba** a todos sus dispositivos (ignora las preferencias).
+- Ver sus dispositivos (navegadores y apps) y quitar cualquiera.
+- Elegir qué avisos recibir: chats, formularios, leads, recuperación, o
+  **Silenciar todo**. Se guarda en el usuario (`User.pushPrefs`), así que vale
+  para todos sus dispositivos.
 
 ## Cómo funciona
 
 ```
-mensaje entrante (WhatsApp / Instagram)
-  → ConversationsService.ingestInbound()
-  → PushService.sendToTenant(..., { moduleKey: 'inbox' })
-  → servicio de push del navegador (FCM / APNs / Mozilla)
-  → public/sw.js  →  showNotification()
-  → al tocarla: /inbox?c=<conversationId>
+evento (mensaje, derivación, formulario, lead, recordatorio, recuperación)
+  → PushService (Web Push) y NativePushService (FCM), en paralelo
+  → PushAudienceService decide quién: usuarios activos de la empresa, con el
+    módulo en su rol ACTUAL y el tipo de aviso permitido en sus preferencias
+  → navegador: public/sw.js → showNotification()   ·   app: FCM → Android
+  → al tocarla: la ruta del aviso (/inbox?c=…, /leads?lead=…, /forms, /recuperacion/…)
 ```
 
 | Pieza | Archivo |
 | --- | --- |
-| Suscripciones y envío | `backend/src/push/push.service.ts` |
-| Alta/baja del dispositivo | `backend/src/push/push.controller.ts` |
-| Enganche con los mensajes | `backend/src/conversations/conversations.service.ts` (`notifyInbound`) |
+| Destinatarios y preferencias | `backend/src/push/push-audience.service.ts` |
+| Web Push: suscripciones y envío | `backend/src/push/push.service.ts` |
+| Endpoints de push, dispositivos y preferencias | `backend/src/push/push.controller.ts` |
+| FCM: tokens y envío | `backend/src/notifications/push.service.ts` |
+| Alta/baja del token de la app | `backend/src/notifications/notifications.controller.ts` |
+| Avisos de mensajes y derivaciones | `backend/src/conversations/conversations.service.ts` (`notifyInbound`, `escalateToHuman`) |
 | Service worker | `frontend/public/sw.js` |
-| Permiso e instalación | `frontend/src/app/shared/push.service.ts` |
-| Interfaz (campana) | `frontend/src/app/shared/push-center.ts` |
+| Permiso, suscripción e instalación (web) | `frontend/src/app/shared/push.service.ts` |
+| Permiso y token (app Android) | `frontend/src/app/core/push.service.ts` |
+| Panel (campana y Configuración) | `frontend/src/app/shared/notifications-panel.ts` |
 
-## Puesta en marcha
-
-### 1. Generar las claves VAPID (una sola vez)
-
-```bash
-cd backend
-node scripts/generate-vapid.js
-```
-
-### 2. Configurarlas en el backend
-
-Variables de entorno del contenedor (Coolify):
-
-| Variable | Obligatoria | Descripción |
-| --- | --- | --- |
-| `VAPID_PUBLIC_KEY` | sí | Clave pública. El frontend la pide en `GET /push/public-key`; no hace falta duplicarla en el bundle. |
-| `VAPID_PRIVATE_KEY` | sí | Clave privada. **Secreto**: firma cada notificación. |
-| `VAPID_SUBJECT` | no | `mailto:` de contacto que exige el estándar. Por defecto `mailto:soporte@mayacrm.site`. |
-
-Sin las dos primeras el servicio arranca igual, avisa por log y las
-notificaciones quedan desactivadas: `GET /push/status` devuelve
-`enabled: false` y la campana explica que faltan por configurar.
-
-> Regenerar las claves invalida todas las suscripciones existentes. Los
-> dispositivos se vuelven a dar de alta solos al abrir la app (el permiso del
-> navegador se conserva), pero hasta entonces no reciben avisos.
-
-### 3. Activarlas desde el móvil
-
-- **Android / Chrome**: entrar, tocar la campana y **Activar notificaciones**.
-  Si el navegador ofrece instalar la app, el mismo panel muestra el botón.
-- **iPhone / iPad**: Safari solo permite pedir el permiso con la plataforma ya
-  instalada. Compartir → *Añadir a pantalla de inicio* → abrir Maya desde el
-  icono nuevo → campana → **Activar notificaciones**. El panel guía estos pasos
-  solo cuando detecta iOS sin instalar.
+Tipos de aviso: `chats` (módulo `inbox`: mensajes y derivaciones), `forms`,
+`leads` (asignación y recordatorios), `recovery` (módulo `campaigns`).
 
 ## Endpoints
 
-Todos bajo `JwtAuthGuard`; no llevan guard de módulo a propósito (cualquiera
-con sesión puede querer avisos en su móvil). El filtro por permisos se aplica
-al **enviar**.
+Todos bajo `JwtAuthGuard` y siempre sobre el usuario del token; no llevan guard
+de módulo a propósito (cualquiera con sesión puede querer avisos). El filtro por
+permisos se aplica al **enviar**.
 
 | Método | Ruta | Para qué |
 | --- | --- | --- |
 | `GET` | `/push/public-key` | Clave pública y si el servidor está configurado. |
-| `GET` | `/push/status` | Si está activo y cuántos dispositivos tiene el usuario. |
-| `POST` | `/push/subscribe` | Alta/renovación del dispositivo. |
-| `DELETE` | `/push/subscribe` | Baja del dispositivo. |
-| `POST` | `/push/test` | Notificación de prueba a los dispositivos del propio usuario. |
-
-## Quién recibe cada aviso
-
-`sendToTenant` filtra por `moduleKey`: solo los usuarios cuyo **rol tenga el
-módulo `inbox`** en la matriz de permisos de la empresa. El rol se guarda al
-suscribirse y se vuelve a comprobar en cada envío, así que revocar el módulo
-corta los avisos sin tener que tocar la suscripción.
-
-Se notifica en dos momentos:
-
-- **Mensaje entrante** de un cliente (nunca los ecos de mensajes propios).
-- **Derivación a persona**: cuando el agente IA escala un chat, además del
-  aviso por WhatsApp a los números configurados en el agente.
+| `GET` | `/push/status` | Si Web Push está activo y cuántos navegadores tiene el usuario. |
+| `POST` | `/push/subscribe` | Alta/renovación del navegador. Devuelve `{ id }`. |
+| `DELETE` | `/push/subscribe` | Baja del navegador actual. |
+| `GET` | `/push/devices` | Dispositivos del usuario (sin endpoints ni tokens). |
+| `DELETE` | `/push/devices/:kind/:id` | Quita uno de sus dispositivos (`web`, `android`, `ios`). |
+| `GET` / `PUT` | `/push/preferences` | Qué avisos quiere recibir. |
+| `POST` | `/push/test` | Prueba por los dos canales a todos sus dispositivos. |
+| `GET` | `/devices/status` | Si FCM está activo. |
+| `POST` | `/devices` | Alta del token de la app. Devuelve `{ ok, id }`. |
+| `DELETE` | `/devices/:token` | Baja del token, solo si es del usuario. |
 
 ## Detalles que evitan sorpresas
 
-- **Un push nunca bloquea un mensaje.** `notifyInbound` se lanza sin `await` y
-  `sendToTenant` captura cualquier error: un fallo del servicio de push jamás
-  puede tumbar la recepción de mensajes.
-- **Limpieza automática.** Si el servicio responde `404`/`410` (la PWA se
-  desinstaló o se revocó el permiso), la suscripción se borra de la base.
-- **Sin duplicados.** El `tag` de la notificación es la conversación: los
-  mensajes seguidos de un mismo chat reemplazan la notificación anterior en vez
-  de apilarse.
-- **Sin vibrar por lo que ya estás leyendo.** Si el chat está abierto y visible
-  en pantalla, el service worker muestra la notificación en silencio (el
-  navegador obliga a mostrar algo por cada push).
+- **Un push nunca bloquea nada.** Los envíos van sin `await` o con
+  `allSettled`, y ni la audiencia ni los servicios lanzan.
+- **Limpieza automática.** `404`/`410` en Web Push y token no registrado en FCM
+  borran el registro en ese mismo envío.
+- **Un aviso por chat.** La etiqueta es la conversación: los mensajes seguidos
+  reemplazan la notificación anterior y el texto dice cuántos van
+  ("3 mensajes nuevos · …"). Extracto de hasta 100 caracteres.
+- **Insignia del ícono.** Los avisos de chat llevan el total sin leer de la
+  empresa (`badge` en Web Push, `notificationCount` en FCM); con la app
+  abierta se sincroniza con `navigator.setAppBadge` y se limpia al llegar a 0.
+- **Sin molestar por lo que ya estás leyendo.** En el navegador la notificación
+  se muestra en silencio y se retira al instante (iOS y Chrome exigen mostrar
+  algo por cada push); en la app no sale el aviso interno.
 - **Cerrar sesión da de baja el dispositivo** en el backend, pero conserva la
-  suscripción del navegador: en un móvil compartido, quien sale deja de recibir
-  y quien entra la reaprovecha sin volver a pedir permiso.
+  suscripción del navegador: en un móvil compartido quien entra la reaprovecha
+  sin volver a pedir permiso.
 - **El service worker no cachea la app.** El frontend se sirve con SSR y assets
-  hasheados; un caché propio solo conseguiría servir bundles viejos tras cada
-  despliegue. `sw.js` y `manifest.webmanifest` se sirven con `no-cache` desde
-  `frontend/src/server.ts`, fuera del `maxAge: '1y'` del resto de estáticos.
+  hasheados. `sw.js` y `manifest.webmanifest` se sirven con `no-cache` desde
+  `frontend/src/server.ts`.
+
+## Problemas frecuentes
+
+| Síntoma | Causa y solución |
+| --- | --- |
+| "Las notificaciones aún no están habilitadas en el servidor" | Faltan las claves VAPID (web) o Firebase (app) en Coolify. |
+| En iPhone no aparece el botón de activar | Maya está abierta en Safari: abrirla desde el ícono de la pantalla de inicio. |
+| Permiso bloqueado | iPhone: Ajustes → Notificaciones → Maya CRM. App Android: Ajustes → Aplicaciones → Maya → Notificaciones. Chrome: Configuración de sitios → Notificaciones. |
+| La app de Android no recibe nada | Falta `google-services.json` en el APK o las variables `FIREBASE_*`. |
 
 ## Iconos y manifest
 

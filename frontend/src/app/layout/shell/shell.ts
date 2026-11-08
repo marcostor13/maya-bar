@@ -1,4 +1,5 @@
 import { Component, inject, signal, computed, effect, DestroyRef, type Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DOCUMENT } from '@angular/common';
 import { NavigationEnd, RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { filter } from 'rxjs/operators';
@@ -722,6 +723,12 @@ export class ShellComponent {
     void this.push.init();
     // Dentro de la app nativa el canal es FCM, no el service worker.
     void this.nativePush.init();
+    // Sesión caducada: quien la tenía no debe seguir recibiendo avisos aquí.
+    this.auth.sessionExpired.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.realtime.disconnect();
+      void this.push.dropLocal();
+      void this.nativePush.dropLocal();
+    });
     // Primera vez en la app: micrófono, cámara y notificaciones de una vez, en
     // lugar de fallar justo cuando alguien intenta grabar una nota de voz.
     void this.devicePermissions.pedirAlInstalar();

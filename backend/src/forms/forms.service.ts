@@ -362,7 +362,13 @@ export class FormsService {
     void this.push
       .sendToTenant(
         String(tenantId),
-        { title, body, url, tag: `form-${String(form._id)}` },
+        {
+          title,
+          body,
+          url,
+          tag: `form-${String(form._id)}`,
+          category: 'forms',
+        },
         { moduleKey: 'forms' },
       )
       .catch(() => undefined);
@@ -371,6 +377,8 @@ export class FormsService {
       .sendToTenantModule(tenantId, 'forms', {
         title,
         body,
+        tag: `form_${String(form._id)}`,
+        category: 'forms',
         data: {
           route: url,
           formId: String(form._id),

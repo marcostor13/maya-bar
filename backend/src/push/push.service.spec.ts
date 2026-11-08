@@ -5,7 +5,7 @@ import { Types } from 'mongoose';
 import * as webpush from 'web-push';
 import { PushService } from './push.service';
 import { PushSubscription } from './push-subscription.schema';
-import { RolesService } from '../roles/roles.service';
+import { PushAudienceService } from './push-audience.service';
 
 jest.mock('web-push', () => ({
   setVapidDetails: jest.fn(),
@@ -13,48 +13,60 @@ jest.mock('web-push', () => ({
 }));
 
 const tenantId = new Types.ObjectId().toString();
+const userA = new Types.ObjectId().toString();
+const userB = new Types.ObjectId().toString();
 
 const makeSub = (over: Partial<Record<string, unknown>> = {}) => ({
+  _id: new Types.ObjectId(),
   endpoint: 'https://push.example/abc',
   p256dh: 'p256dh-key',
   auth: 'auth-key',
-  role: 'TENANT_ADMIN',
   ...over,
 });
 
-describe('PushService', () => {
+/** `find().select().sort().lean()` que resuelve a `rows`. */
+const chain = (rows: unknown) => {
+  const q: Record<string, unknown> = {};
+  for (const m of ['select', 'sort']) q[m] = () => q;
+  q.lean = () => Promise.resolve(rows);
+  return q;
+};
+
+describe('PushService (Web Push)', () => {
   let service: PushService;
   let subs: any;
-  let roles: any;
+  let audience: { forUsers: jest.Mock; forModule: jest.Mock };
 
   const build = async (env: Record<string, string | undefined>) => {
     subs = {
       find: jest.fn().mockResolvedValue([]),
+      distinct: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ deletedCount: 0 }),
       deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
       countDocuments: jest.fn().mockResolvedValue(0),
       findOneAndUpdate: jest.fn().mockResolvedValue(makeSub()),
     };
-    roles = {
-      accessFor: jest
-        .fn()
-        .mockResolvedValue({ modules: ['inbox'], actions: {} }),
+    audience = {
+      forUsers: jest.fn().mockResolvedValue([]),
+      forModule: jest.fn().mockResolvedValue([]),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PushService,
         { provide: getModelToken(PushSubscription.name), useValue: subs },
         { provide: ConfigService, useValue: { get: (k: string) => env[k] } },
-        { provide: RolesService, useValue: roles },
+        { provide: PushAudienceService, useValue: audience },
       ],
     }).compile();
     service = module.get(PushService);
     service.onModuleInit();
   };
 
+  const vapid = { VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv' };
+
   beforeEach(() => jest.clearAllMocks());
 
-  it('stays disabled and sends nothing when VAPID is not configured', async () => {
+  it('queda desactivado y no envía nada sin VAPID', async () => {
     await build({});
     expect(service.isEnabled()).toBe(false);
     expect(
@@ -63,39 +75,58 @@ describe('PushService', () => {
     expect(webpush.sendNotification).not.toHaveBeenCalled();
   });
 
-  it('sends to every device of the tenant whose role has the module', async () => {
-    await build({ VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv' });
+  it('envía solo a los usuarios que la audiencia aprueba para el módulo', async () => {
+    await build(vapid);
+    audience.forModule.mockResolvedValue([userA]);
     subs.find.mockResolvedValue([
       makeSub({ endpoint: 'https://push.example/1' }),
-      makeSub({ endpoint: 'https://push.example/2', role: 'KITCHEN' }),
     ]);
-    roles.accessFor.mockImplementation((_t: string, role: string) =>
-      Promise.resolve({
-        modules: role === 'TENANT_ADMIN' ? ['inbox'] : [],
-        actions: {},
-      }),
-    );
     (webpush.sendNotification as jest.Mock).mockResolvedValue({});
 
     const sent = await service.sendToTenant(
       tenantId,
-      { title: 'Ana', body: 'Hola', url: '/inbox?c=1' },
-      { moduleKey: 'inbox' },
+      {
+        title: 'Ana',
+        body: 'Hola',
+        url: '/inbox?c=1',
+        category: 'chats',
+        badge: 4,
+      },
+      { moduleKey: 'inbox', excludeUserId: userB },
     );
 
     expect(sent).toBe(1);
-    expect(webpush.sendNotification).toHaveBeenCalledTimes(1);
-    const [subscription, payload] = (webpush.sendNotification as jest.Mock).mock
-      .calls[0] as [{ endpoint: string }, string];
-    expect(subscription.endpoint).toBe('https://push.example/1');
-    expect(JSON.parse(payload)).toMatchObject({
-      title: 'Ana',
-      url: '/inbox?c=1',
+    expect(audience.forModule).toHaveBeenCalledWith(tenantId, 'inbox', {
+      category: 'chats',
+      excludeUserId: userB,
     });
+    expect(subs.find).toHaveBeenCalledWith({
+      userId: { $in: [new Types.ObjectId(userA)] },
+    });
+    const [, payload] = (webpush.sendNotification as jest.Mock).mock
+      .calls[0] as [unknown, string];
+    const body = JSON.parse(payload) as Record<string, unknown>;
+    expect(body).toMatchObject({ title: 'Ana', url: '/inbox?c=1', badge: 4 });
+    // La categoría solo elige destinatarios: no viaja al navegador.
+    expect(body).not.toHaveProperty('category');
   });
 
-  it('drops subscriptions the browser already discarded (410 Gone)', async () => {
-    await build({ VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv' });
+  it('no envía si la audiencia no aprueba a nadie (preferencias, inactivo)', async () => {
+    await build(vapid);
+    audience.forUsers.mockResolvedValue([]);
+    const sent = await service.sendToUser(userA, {
+      title: 'x',
+      body: 'y',
+      category: 'leads',
+    });
+    expect(sent).toBe(0);
+    expect(audience.forUsers).toHaveBeenCalledWith([userA], 'leads');
+    expect(subs.find).not.toHaveBeenCalled();
+  });
+
+  it('borra las suscripciones que el navegador ya descartó (410)', async () => {
+    await build(vapid);
+    audience.forUsers.mockResolvedValue([userA]);
     subs.find.mockResolvedValue([
       makeSub({ endpoint: 'https://push.example/gone' }),
     ]);
@@ -103,10 +134,7 @@ describe('PushService', () => {
       statusCode: 410,
     });
 
-    const sent = await service.sendToTenant(tenantId, {
-      title: 'x',
-      body: 'y',
-    });
+    const sent = await service.sendToUser(userA, { title: 'x', body: 'y' });
 
     expect(sent).toBe(0);
     expect(subs.deleteMany).toHaveBeenCalledWith({
@@ -114,26 +142,57 @@ describe('PushService', () => {
     });
   });
 
-  it('never throws when the database or the push service fails', async () => {
-    await build({ VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv' });
+  it('nunca lanza si la base o el proveedor fallan', async () => {
+    await build(vapid);
+    audience.forModule.mockResolvedValue([userA]);
     subs.find.mockRejectedValue(new Error('mongo caído'));
     await expect(
-      service.sendToTenant(tenantId, { title: 'x', body: 'y' }),
+      service.sendToTenant(
+        tenantId,
+        { title: 'x', body: 'y' },
+        { moduleKey: 'inbox' },
+      ),
     ).resolves.toBe(0);
   });
 
-  it('excludes the user that caused the event', async () => {
-    await build({ VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv' });
-    const excluded = new Types.ObjectId().toString();
-    await service.sendToTenant(
-      tenantId,
-      { title: 'x', body: 'y' },
-      { excludeUserId: excluded },
+  it('lista los dispositivos del usuario sin endpoint ni claves', async () => {
+    await build(vapid);
+    const id = new Types.ObjectId();
+    subs.find.mockReturnValue(
+      chain([
+        {
+          _id: id,
+          userAgent:
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1',
+          installed: true,
+        },
+      ]),
     );
-    expect(subs.find).toHaveBeenCalledWith(
+    const list = await service.listForUser(userA);
+    expect(subs.find).toHaveBeenCalledWith({
+      userId: new Types.ObjectId(userA),
+    });
+    expect(list).toEqual([
       expect.objectContaining({
-        userId: { $ne: new Types.ObjectId(excluded) },
+        id: String(id),
+        kind: 'web',
+        label: 'Safari en iPhone',
+        installed: true,
       }),
-    );
+    ]);
+    expect(list[0]).not.toHaveProperty('endpoint');
+  });
+
+  it('solo borra un dispositivo si es del usuario', async () => {
+    await build(vapid);
+    const id = new Types.ObjectId().toString();
+    await service.removeById(id, userA);
+    expect(subs.deleteOne).toHaveBeenCalledWith({
+      _id: new Types.ObjectId(id),
+      userId: new Types.ObjectId(userA),
+    });
+    expect(await service.removeById('no-es-id', userA)).toEqual({
+      removed: 0,
+    });
   });
 });

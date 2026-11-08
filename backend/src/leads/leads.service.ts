@@ -513,19 +513,24 @@ export class LeadsService {
     });
 
     await this.log(lead, 'system', 'Oportunidad creada', userId);
-    if (!owner) await this.log(lead, 'assignment', 'Queda sin asignar', userId);
-    else if (owner.name) {
+    if (!owner) {
+      await this.log(lead, 'assignment', 'Queda sin asignar', userId);
+      // Sin responsable: avisa a quien pueda trabajar leads, menos a quien la creó.
+      void this.notifyUnassigned(tenantId, lead, userId);
+    } else {
       const actor = await this.userName(userId);
-      await this.log(
-        lead,
-        'assignment',
-        `${actor} se la asignó a ${owner.name}`,
-        userId,
-      );
-      void this.notifyOwner(String(owner.id), lead, {
-        title: 'Te asignaron una oportunidad',
-        body: `${actor}: ${lead.title}`,
-      });
+      if (owner.name)
+        await this.log(
+          lead,
+          'assignment',
+          `${actor} se la asignó a ${owner.name}`,
+          userId,
+        );
+      if (String(owner.id) !== userId)
+        void this.notifyOwner(String(owner.id), lead, {
+          title: 'Te asignaron una oportunidad',
+          body: `${actor}: ${lead.title}`,
+        });
     }
     return this.findOne(String(lead._id), tenantId, userId, role);
   }
@@ -954,6 +959,48 @@ export class LeadsService {
     });
   }
 
+  /** Lead nuevo sin responsable: push al equipo con el módulo de leads. Nunca lanza. */
+  private async notifyUnassigned(
+    tenantId: string,
+    lead: Lead,
+    creatorId: string,
+  ): Promise<void> {
+    const route = `/leads?lead=${String(lead._id)}`;
+    const title = 'Nueva oportunidad sin asignar';
+    const results = await Promise.allSettled([
+      Promise.resolve().then(() =>
+        this.push.sendToTenant(
+          tenantId,
+          {
+            title,
+            body: lead.title,
+            url: route,
+            tag: `lead-new-${String(lead._id)}`,
+            category: 'leads',
+          },
+          { moduleKey: 'leads', excludeUserId: creatorId },
+        ),
+      ),
+      Promise.resolve().then(() =>
+        this.nativePush.sendToTenantModule(
+          tenantId,
+          'leads',
+          {
+            title,
+            body: lead.title,
+            tag: `lead_new_${String(lead._id)}`,
+            category: 'leads',
+            data: { route, leadId: String(lead._id) },
+          },
+          { excludeUserId: creatorId },
+        ),
+      ),
+    ]);
+    for (const r of results)
+      if (r.status === 'rejected')
+        this.logger.warn(`Aviso de lead nuevo no enviado: ${String(r.reason)}`);
+  }
+
   /** Push web y nativo al responsable. Nunca lanza: el reparto no depende del aviso. */
   private async notifyOwner(
     userId: string,
@@ -967,10 +1014,13 @@ export class LeadsService {
         body: msg.body,
         url: route,
         tag: `lead-owner-${String(lead._id)}`,
+        category: 'leads',
       }),
       this.nativePush.sendToUser(userId, {
         title: msg.title,
         body: msg.body,
+        tag: `lead_owner_${String(lead._id)}`,
+        category: 'leads',
         data: { route, leadId: String(lead._id) },
       }),
     ]);

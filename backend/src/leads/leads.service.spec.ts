@@ -73,8 +73,8 @@ describe('LeadsService', () => {
   let activityModel: any;
   let customerModel: any;
   let userModel: any;
-  let push: { sendToUser: jest.Mock };
-  let nativePush: { sendToUser: jest.Mock };
+  let push: { sendToUser: jest.Mock; sendToTenant: jest.Mock };
+  let nativePush: { sendToUser: jest.Mock; sendToTenantModule: jest.Mock };
   let stageModel: any;
 
   beforeEach(async () => {
@@ -85,8 +85,14 @@ describe('LeadsService', () => {
     activityModel.create.mockResolvedValue({ _id: new Types.ObjectId() });
     conversions = { reportLeadStage: jest.fn().mockResolvedValue(null) };
     userModel = createMockModel();
-    push = { sendToUser: jest.fn().mockResolvedValue(1) };
-    nativePush = { sendToUser: jest.fn().mockResolvedValue(1) };
+    push = {
+      sendToUser: jest.fn().mockResolvedValue(1),
+      sendToTenant: jest.fn().mockResolvedValue(1),
+    };
+    nativePush = {
+      sendToUser: jest.fn().mockResolvedValue(1),
+      sendToTenantModule: jest.fn().mockResolvedValue(1),
+    };
     // Embudo del tenant: por defecto, el de fábrica ya sembrado.
     stageModel = createMockModel();
     stageModel.find.mockReturnValue(
@@ -622,6 +628,22 @@ describe('LeadsService', () => {
       expect(leadModel.create.mock.calls[0][0].ownerId).toBeUndefined();
       expect(activityModel.create.mock.calls[1][0].title).toBe(
         'Queda sin asignar',
+      );
+      await new Promise((r) => setImmediate(r));
+      // Sin responsable: avisa al equipo de leads, menos a quien la creó.
+      expect(push.sendToTenant).toHaveBeenCalledWith(
+        tenantId,
+        expect.objectContaining({
+          title: 'Nueva oportunidad sin asignar',
+          category: 'leads',
+        }),
+        { moduleKey: 'leads', excludeUserId: userId },
+      );
+      expect(nativePush.sendToTenantModule).toHaveBeenCalledWith(
+        tenantId,
+        'leads',
+        expect.objectContaining({ category: 'leads' }),
+        { excludeUserId: userId },
       );
     });
   });

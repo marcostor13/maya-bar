@@ -190,22 +190,27 @@ export class RecoveryWorker implements OnApplicationShutdown {
             body,
             url: route,
             tag,
+            category: 'recovery',
           }),
           this.nativePush.sendToUser(plan.createdBy, {
             title,
             body,
+            tag,
+            category: 'recovery',
             data: { route },
           }),
         ]
       : [
           this.push.sendToTenant(
             tenantId,
-            { title, body, url: route, tag },
+            { title, body, url: route, tag, category: 'recovery' },
             { moduleKey: 'campaigns' },
           ),
           this.nativePush.sendToTenantModule(tenantId, 'campaigns', {
             title,
             body,
+            tag,
+            category: 'recovery',
             data: { route },
           }),
         ];

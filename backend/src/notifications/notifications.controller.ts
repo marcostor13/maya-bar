@@ -31,19 +31,20 @@ export class NotificationsController {
 
   @Post()
   async register(@Request() req: AuthReq, @Body() dto: RegisterDeviceDto) {
-    await this.push.registerDevice({
+    const id = await this.push.registerDevice({
       tenantId: req.user.tenantId,
       userId: req.user.userId,
       token: dto.token,
       platform: dto.platform,
       appVersion: dto.appVersion,
     });
-    return { ok: true };
+    return { ok: true, id };
   }
 
+  /** Baja del dispositivo: solo borra el token si es del usuario de la sesión. */
   @Delete(':token')
-  async unregister(@Param('token') token: string) {
-    await this.push.unregisterDevice(token);
+  async unregister(@Param('token') token: string, @Request() req: AuthReq) {
+    await this.push.unregisterDevice(token, req.user.userId);
     return { ok: true };
   }
 }

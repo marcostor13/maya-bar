@@ -5,5 +5,6 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-08 | [HU3 — Notificaciones push en Android e iPhone](2026-11-08-hu3-notificaciones-push/cierre.md) | Terminada (pendiente configuración y prueba real del usuario) | 18 CUMPLE · 3 PARCIAL · 2 [usuario]; correcciones posteriores sin 3.ª vuelta |
 | 2026-11-06 | [HU2 — Origen de campaña de las conversaciones](2026-11-06-hu2-origen-campana/cierre.md) | Terminada | 10 CUMPLE (C7 tras corrección) |
 | 2026-11-06 | [HU1 — Agendamiento por calendario para agentes IA](2026-11-06-hu1-agendamiento-agentes-ia/cierre.md) | Terminada (pendiente configuración del usuario) | 13 CUMPLE · 1 [usuario] |

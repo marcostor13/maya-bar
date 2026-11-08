@@ -5,8 +5,10 @@ import { Model, Types } from 'mongoose';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { DeviceToken } from './device-token.schema';
-import { User } from '../users/user.schema';
-import { RolesService } from '../roles/roles.service';
+import {
+  PushAudienceService,
+  type PushCategory,
+} from '../push/push-audience.service';
 
 export interface NativePushPayload {
   title: string;
@@ -15,7 +17,17 @@ export interface NativePushPayload {
   data?: Record<string, string>;
   /** Etiqueta de la notificación en Android (p. ej. `conv_<id>`). */
   tag?: string;
+  /** Tipo de aviso, para respetar las preferencias del usuario. Sin él: prueba. */
+  category?: PushCategory;
+  /** Número para la insignia del ícono de la app. */
+  badge?: number;
 }
+
+const PLATFORM_LABEL: Record<string, string> = {
+  android: 'App de Android',
+  ios: 'App de iPhone',
+  web: 'Navegador',
+};
 
 /**
  * Deja la clave privada en PEM, venga como venga del entorno.
@@ -52,7 +64,6 @@ export function describeKeyShape(raw: string): string {
 const DEAD_TOKEN_CODES = new Set([
   'messaging/registration-token-not-registered',
   'messaging/invalid-registration-token',
-  'messaging/invalid-argument',
 ]);
 
 /**
@@ -69,11 +80,9 @@ export class NativePushService implements OnModuleInit {
 
   constructor(
     private config: ConfigService,
-    private roles: RolesService,
+    private audience: PushAudienceService,
     @InjectModel(DeviceToken.name)
     private deviceTokens: Model<DeviceToken>,
-    @InjectModel(User.name)
-    private users: Model<User>,
   ) {}
 
   onModuleInit() {
@@ -113,15 +122,15 @@ export class NativePushService implements OnModuleInit {
     return this.app !== null;
   }
 
-  /** Alta o reasignación de un dispositivo. */
+  /** Alta o reasignación de un dispositivo. Devuelve su id. */
   async registerDevice(params: {
     tenantId: string;
     userId: string;
     token: string;
     platform?: 'android' | 'ios' | 'web';
     appVersion?: string;
-  }): Promise<void> {
-    await this.deviceTokens.updateOne(
+  }): Promise<string> {
+    const doc = await this.deviceTokens.findOneAndUpdate(
       { token: params.token },
       {
         $set: {
@@ -132,13 +141,55 @@ export class NativePushService implements OnModuleInit {
           lastSeenAt: new Date(),
         },
       },
-      { upsert: true },
+      { upsert: true, new: true },
     );
+    return String(doc?._id ?? '');
   }
 
-  /** Baja de un dispositivo (logout). */
-  async unregisterDevice(token: string): Promise<void> {
-    await this.deviceTokens.deleteOne({ token });
+  /** Baja de un dispositivo (logout). Solo el dueño del token puede darlo de baja. */
+  async unregisterDevice(token: string, userId: string): Promise<void> {
+    await this.deviceTokens.deleteOne({
+      token,
+      userId: new Types.ObjectId(userId),
+    });
+  }
+
+  /** Dispositivos del usuario para la lista de Configuración (sin el token). */
+  async listForUser(userId: string) {
+    const rows = await this.deviceTokens
+      .find({ userId: new Types.ObjectId(userId) })
+      .select('platform appVersion createdAt lastSeenAt')
+      .sort({ lastSeenAt: -1 })
+      .lean<
+        {
+          _id: Types.ObjectId;
+          platform?: string;
+          appVersion?: string;
+          createdAt?: Date;
+          lastSeenAt?: Date;
+        }[]
+      >();
+    return rows.map((r) => {
+      const kind = (r.platform ?? 'android') as 'android' | 'ios' | 'web';
+      return {
+        id: String(r._id),
+        kind,
+        label: `${PLATFORM_LABEL[kind] ?? 'App'}${r.appVersion ? ` ${r.appVersion}` : ''}`,
+        installed: true,
+        createdAt: r.createdAt,
+        lastSeenAt: r.lastSeenAt,
+      };
+    });
+  }
+
+  /** Baja de un dispositivo por id, solo si es del usuario. */
+  async removeById(id: string, userId: string): Promise<{ removed: number }> {
+    if (!Types.ObjectId.isValid(id)) return { removed: 0 };
+    const res = await this.deviceTokens.deleteOne({
+      _id: new Types.ObjectId(id),
+      userId: new Types.ObjectId(userId),
+    });
+    return { removed: res.deletedCount ?? 0 };
   }
 
   /**
@@ -149,39 +200,17 @@ export class NativePushService implements OnModuleInit {
     userId: string | Types.ObjectId,
     payload: NativePushPayload,
   ): Promise<number> {
-    if (!this.app) return 0;
-
-    const devices = await this.deviceTokens
-      .find({ userId: new Types.ObjectId(userId.toString()) })
-      .select('token')
-      .lean();
-    if (!devices.length) return 0;
-
-    return this.send(
-      devices.map((d) => d.token),
-      payload,
-    );
+    return this.sendToUsers([userId], payload);
   }
 
-  /** Envía a varios usuarios de una vez (por ejemplo, todo un equipo). */
+  /** Envía a varios usuarios de una vez, respetando sus preferencias. */
   async sendToUsers(
     userIds: (string | Types.ObjectId)[],
     payload: NativePushPayload,
   ): Promise<number> {
     if (!this.app || !userIds.length) return 0;
-
-    const devices = await this.deviceTokens
-      .find({
-        userId: { $in: userIds.map((id) => new Types.ObjectId(id.toString())) },
-      })
-      .select('token')
-      .lean();
-    if (!devices.length) return 0;
-
-    return this.send(
-      devices.map((d) => d.token),
-      payload,
-    );
+    const ids = await this.audience.forUsers(userIds, payload.category);
+    return this.sendToAllowed(ids, payload);
   }
 
   /**
@@ -196,43 +225,33 @@ export class NativePushService implements OnModuleInit {
     opts?: { excludeUserId?: string },
   ): Promise<number> {
     if (!this.app) return 0;
-    const tenant = String(tenantId);
+    const ids = await this.audience.forModule(tenantId, moduleKey, {
+      category: payload.category,
+      excludeUserId: opts?.excludeUserId,
+    });
+    return this.sendToAllowed(ids, payload);
+  }
 
-    const devices = await this.deviceTokens
-      .find({ tenantId: new Types.ObjectId(tenant) })
-      .select('token userId')
-      .lean();
-    if (!devices.length) return 0;
-
-    const users = await this.users
-      .find({
-        _id: { $in: devices.map((d) => d.userId) },
-        isActive: true,
-      })
-      .select('role')
-      .lean();
-    const roleOf = new Map(users.map((u) => [String(u._id), u.role]));
-
-    // La matriz de módulos se resuelve una vez por rol, no una por dispositivo.
-    const roleAllows = new Map<string, boolean>();
-    const tokens: string[] = [];
-
-    for (const device of devices) {
-      const userId = String(device.userId);
-      if (opts?.excludeUserId && userId === opts.excludeUserId) continue;
-
-      const role = roleOf.get(userId);
-      if (!role) continue; // usuario desactivado o borrado
-
-      if (!roleAllows.has(role)) {
-        const modules = await this.roles.modulesFor(tenant, role);
-        roleAllows.set(role, modules.includes(moduleKey));
-      }
-      if (roleAllows.get(role)) tokens.push(device.token);
+  /** Tokens de los usuarios ya filtrados por la audiencia. Nunca lanza. */
+  private async sendToAllowed(
+    userIds: string[],
+    payload: NativePushPayload,
+  ): Promise<number> {
+    if (!userIds.length) return 0;
+    try {
+      const devices = await this.deviceTokens
+        .find({ userId: { $in: userIds.map((id) => new Types.ObjectId(id)) } })
+        .select('token')
+        .lean();
+      if (!devices.length) return 0;
+      return await this.send(
+        devices.map((d) => d.token),
+        payload,
+      );
+    } catch (err) {
+      this.logger.error(`Error enviando push: ${(err as Error).message}`);
+      return 0;
     }
-
-    if (!tokens.length) return 0;
-    return this.send(tokens, payload);
   }
 
   private async send(
@@ -252,6 +271,10 @@ export class NativePushService implements OnModuleInit {
             channelId: 'maya_default',
             color: '#E11D48',
             icon: 'ic_stat_maya',
+            defaultSound: true,
+            ...(payload.badge !== undefined
+              ? { notificationCount: payload.badge }
+              : {}),
             // Con etiqueta, cada aviso nuevo del mismo origen sustituye al
             // anterior y la app puede retirarlo al abrir la conversación.
             ...(payload.tag ? { tag: payload.tag } : {}),

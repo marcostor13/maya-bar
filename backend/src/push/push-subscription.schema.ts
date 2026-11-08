@@ -34,6 +34,10 @@ export class PushSubscription extends Document {
   @Prop()
   userAgent?: string;
 
+  /** Se suscribió con la app instalada en la pantalla de inicio (PWA). */
+  @Prop()
+  installed?: boolean;
+
   /** Última vez que el dispositivo confirmó la suscripción desde el cliente. */
   @Prop({ default: Date.now })
   lastSeenAt: Date;

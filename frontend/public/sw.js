@@ -58,6 +58,13 @@ self.addEventListener('push', (event) => {
         for (const client of clients) {
           client.postMessage({ type: 'push', payload: data });
         }
+        // Número de mensajes sin leer en el ícono de la app instalada.
+        if (typeof data.badge === 'number' && 'setAppBadge' in self.navigator) {
+          const op = data.badge > 0
+            ? self.navigator.setAppBadge(data.badge)
+            : self.navigator.clearAppBadge();
+          op.catch(() => undefined);
+        }
         return self.registration.showNotification(data.title || 'Maya CRM', {
           body: data.body || '',
           icon: data.icon || FALLBACK_ICON,
@@ -74,6 +81,13 @@ self.addEventListener('push', (event) => {
             conversationId: data.conversationId || null,
           },
           actions: data.url ? [{ action: 'open', title: 'Abrir chat' }] : [],
+        }).then(() => {
+          // Ya está leyendo ese chat: el navegador (y iOS) exigen mostrar algo
+          // por cada push, pero se retira al instante para no molestar.
+          if (!silent) return;
+          return self.registration
+            .getNotifications({ tag: data.tag || 'maya-notification' })
+            .then((list) => list.forEach((n) => n.close()));
         });
       }),
   );

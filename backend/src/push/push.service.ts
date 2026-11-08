@@ -5,7 +5,11 @@ import { Model, Types } from 'mongoose';
 import * as webpush from 'web-push';
 import { PushSubscription } from './push-subscription.schema';
 import { SavePushSubscriptionDto } from './dto/push.dto';
-import { RolesService } from '../roles/roles.service';
+import {
+  PushAudienceService,
+  type PushCategory,
+} from './push-audience.service';
+import { describeUserAgent } from './device-label';
 
 /** Contenido de la notificación tal como lo lee `public/sw.js`. */
 export interface PushPayload {
@@ -16,6 +20,10 @@ export interface PushPayload {
   /** Agrupa/reemplaza notificaciones del mismo hilo. */
   tag?: string;
   conversationId?: string;
+  /** Tipo de aviso, para respetar las preferencias del usuario. Sin él: prueba. */
+  category?: PushCategory;
+  /** Número para el ícono de la app (Badging API). */
+  badge?: number;
 }
 
 /** A quién va dirigida una notificación dentro del tenant. */
@@ -44,7 +52,7 @@ export class PushService implements OnModuleInit {
     @InjectModel(PushSubscription.name)
     private subs: Model<PushSubscription>,
     private config: ConfigService,
-    private roles: RolesService,
+    private audience: PushAudienceService,
   ) {}
 
   onModuleInit() {
@@ -95,6 +103,7 @@ export class PushService implements OnModuleInit {
             : {}),
           role: user.role,
           userAgent: dto.userAgent,
+          installed: dto.installed === true,
           lastSeenAt: new Date(),
         },
       },
@@ -116,13 +125,49 @@ export class PushService implements OnModuleInit {
     return this.subs.countDocuments({ userId: new Types.ObjectId(userId) });
   }
 
-  /** Envía a todos los dispositivos de un usuario concreto (prueba manual). */
-  async sendToUser(userId: string, payload: PushPayload): Promise<number> {
-    if (!this.configured) return 0;
-    const targets = await this.subs.find({
+  /** Dispositivos del usuario para la lista de Configuración (sin claves). */
+  async listForUser(userId: string) {
+    const rows = await this.subs
+      .find({ userId: new Types.ObjectId(userId) })
+      .select('userAgent installed createdAt lastSeenAt')
+      .sort({ lastSeenAt: -1 })
+      .lean<
+        {
+          _id: Types.ObjectId;
+          userAgent?: string;
+          installed?: boolean;
+          createdAt?: Date;
+          lastSeenAt?: Date;
+        }[]
+      >();
+    return rows.map((r) => ({
+      id: String(r._id),
+      kind: 'web' as const,
+      label: describeUserAgent(r.userAgent),
+      installed: r.installed === true,
+      createdAt: r.createdAt,
+      lastSeenAt: r.lastSeenAt,
+    }));
+  }
+
+  /** Baja de un dispositivo por id, solo si es del usuario. */
+  async removeById(id: string, userId: string): Promise<{ removed: number }> {
+    if (!Types.ObjectId.isValid(id)) return { removed: 0 };
+    const res = await this.subs.deleteOne({
+      _id: new Types.ObjectId(id),
       userId: new Types.ObjectId(userId),
     });
-    return this.deliver(targets, payload);
+    return { removed: res.deletedCount ?? 0 };
+  }
+
+  /**
+   * Envía a todos los dispositivos de un usuario concreto, si sus preferencias
+   * aceptan este tipo de aviso. Nunca lanza.
+   */
+  async sendToUser(userId: string, payload: PushPayload): Promise<number> {
+    if (!this.configured) return 0;
+    const ids = await this.audience.forUsers([userId], payload.category);
+    return this.sendToUsers(ids, payload);
   }
 
   /**
@@ -136,42 +181,42 @@ export class PushService implements OnModuleInit {
   ): Promise<number> {
     if (!this.configured || !tenantId) return 0;
     try {
-      const targets = await this.subs.find({
-        tenantId: new Types.ObjectId(tenantId),
-        ...(audience.excludeUserId
-          ? { userId: { $ne: new Types.ObjectId(audience.excludeUserId) } }
-          : {}),
-      });
-      const allowed = audience.moduleKey
-        ? await this.filterByModule(tenantId, targets, audience.moduleKey)
-        : targets;
-      return await this.deliver(allowed, payload);
+      let ids: string[];
+      if (audience.moduleKey) {
+        ids = await this.audience.forModule(tenantId, audience.moduleKey, {
+          category: payload.category,
+          excludeUserId: audience.excludeUserId,
+        });
+      } else {
+        const owners = await this.subs.distinct('userId', {
+          tenantId: new Types.ObjectId(tenantId),
+        });
+        ids = (await this.audience.forUsers(owners, payload.category)).filter(
+          (id) => id !== audience.excludeUserId,
+        );
+      }
+      return await this.sendToUsers(ids, payload);
     } catch (err) {
       this.logger.error(`Error enviando push al tenant: ${String(err)}`);
       return 0;
     }
   }
 
-  /**
-   * Descarta los dispositivos cuyo rol ya no tiene el módulo: los permisos se
-   * pueden revocar después de suscribirse y la notificación no debe filtrarse.
-   */
-  private async filterByModule(
-    tenantId: string,
-    targets: PushSubscription[],
-    moduleKey: string,
-  ): Promise<PushSubscription[]> {
-    const roles = [...new Set(targets.map((t) => t.role).filter(Boolean))];
-    const allowed = new Map<string, boolean>();
-    for (const role of roles as string[]) {
-      if (role === 'SUPERADMIN') {
-        allowed.set(role, true);
-        continue;
-      }
-      const access = await this.roles.accessFor(tenantId, role);
-      allowed.set(role, access.modules.includes(moduleKey));
+  /** Entrega a los dispositivos de estos usuarios (ya filtrados por la audiencia). */
+  private async sendToUsers(
+    userIds: string[],
+    payload: PushPayload,
+  ): Promise<number> {
+    if (!userIds.length) return 0;
+    try {
+      const targets = await this.subs.find({
+        userId: { $in: userIds.map((id) => new Types.ObjectId(id)) },
+      });
+      return await this.deliver(targets, payload);
+    } catch (err) {
+      this.logger.error(`Error enviando push: ${String(err)}`);
+      return 0;
     }
-    return targets.filter((t) => t.role && allowed.get(t.role));
   }
 
   /** Entrega en paralelo y limpia las suscripciones que el navegador ya descartó. */
@@ -180,7 +225,10 @@ export class PushService implements OnModuleInit {
     payload: PushPayload,
   ): Promise<number> {
     if (targets.length === 0) return 0;
-    const body = JSON.stringify({ ...payload, timestamp: Date.now() });
+    // La categoría solo sirve para elegir destinatarios: no viaja al navegador.
+    const visible: Partial<PushPayload> = { ...payload };
+    delete visible.category;
+    const body = JSON.stringify({ ...visible, timestamp: Date.now() });
     const stale: string[] = [];
     let sent = 0;
 
@@ -202,7 +250,7 @@ export class PushService implements OnModuleInit {
           if (status === 404 || status === 410) stale.push(sub.endpoint);
           else
             this.logger.warn(
-              `Push fallido (${status ?? 'sin código'}): ${String(err)}`,
+              `Push fallido (${status ?? 'sin código'}) para la suscripción ${String(sub._id)}`,
             );
         }
       }),

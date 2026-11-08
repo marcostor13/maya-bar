@@ -3,7 +3,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { NotificationsController } from './notifications.controller';
 import { NativePushService } from './push.service';
 import { DeviceToken, DeviceTokenSchema } from './device-token.schema';
-import { User, UserSchema } from '../users/user.schema';
 
 /**
  * Global: cualquier servicio que quiera avisar al usuario (conversaciones,
@@ -15,8 +14,6 @@ import { User, UserSchema } from '../users/user.schema';
   imports: [
     MongooseModule.forFeature([
       { name: DeviceToken.name, schema: DeviceTokenSchema },
-      // Para filtrar destinatarios por el módulo al que su rol tiene acceso.
-      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [NotificationsController],

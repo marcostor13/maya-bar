@@ -34,7 +34,7 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
         </div>
       </div>
 
-      <!-- Notificaciones push (solo visible dentro de la app nativa) -->
+      <!-- Notificaciones push (app Android y navegador) -->
       <app-notifications-settings />
 
       <!-- WhatsApp Accounts Card -->

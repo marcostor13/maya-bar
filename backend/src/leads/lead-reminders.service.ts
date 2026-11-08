@@ -103,10 +103,13 @@ export class LeadRemindersService {
           body: cuerpo,
           url: ruta,
           tag: `lead-${String(lead._id)}`,
+          category: 'leads',
         }),
         this.nativePush.sendToUser(String(destinatario), {
           title: titulo,
           body: cuerpo,
+          tag: `lead_${String(lead._id)}`,
+          category: 'leads',
           data: { route: ruta, leadId: String(lead._id) },
         }),
       ]);
@@ -120,12 +123,15 @@ export class LeadRemindersService {
             body: cuerpo,
             url: ruta,
             tag: `lead-${String(lead._id)}`,
+            category: 'leads',
           },
           { moduleKey: 'leads' },
         ),
         this.nativePush.sendToTenantModule(tenantId, 'leads', {
           title: titulo,
           body: cuerpo,
+          tag: `lead_${String(lead._id)}`,
+          category: 'leads',
           data: { route: ruta, leadId: String(lead._id) },
         }),
       ]);

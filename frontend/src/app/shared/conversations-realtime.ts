@@ -108,6 +108,7 @@ export class ConversationsRealtimeService {
     this.refreshTimer = null;
     if (this.isBrowser) document.removeEventListener('visibilitychange', this.onVisible);
     this.unread.set(0);
+    if (this.isBrowser) updateAppBadge(0);
   }
 
   /** Relee el total sin leer. Silencioso: un 403 solo significa "sin módulo". */
@@ -120,10 +121,25 @@ export class ConversationsRealtimeService {
       .subscribe({
         next: (res) => {
           this.unread.set(res.total ?? 0);
+          updateAppBadge(res.total ?? 0);
           // Todo leído: ningún aviso de conversación debe quedar en el móvil.
           if (!res.total) void this.nativePush.clearConversation();
         },
         error: () => undefined,
       });
   }
+}
+
+/**
+ * Número en el ícono de la app instalada (Badging API: PWA en Android,
+ * escritorio y iPhone 16.4+). Con 0 se limpia. Sin soporte no hace nada.
+ */
+export function updateAppBadge(total: number): void {
+  const nav = navigator as Navigator & {
+    setAppBadge?: (n?: number) => Promise<void>;
+    clearAppBadge?: () => Promise<void>;
+  };
+  if (!nav.setAppBadge) return;
+  const op = total > 0 ? nav.setAppBadge(total) : nav.clearAppBadge?.();
+  void op?.catch(() => undefined);
 }

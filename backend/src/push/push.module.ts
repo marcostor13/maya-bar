@@ -7,6 +7,8 @@ import {
   PushSubscription,
   PushSubscriptionSchema,
 } from './push-subscription.schema';
+import { PushAudienceService } from './push-audience.service';
+import { User, UserSchema } from '../users/user.schema';
 
 /**
  * Global: cualquier módulo que genere un evento relevante (mensajes, pedidos,
@@ -18,10 +20,12 @@ import {
     ConfigModule,
     MongooseModule.forFeature([
       { name: PushSubscription.name, schema: PushSubscriptionSchema },
+      // Para elegir destinatarios: usuario activo, rol actual y preferencias.
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [PushController],
-  providers: [PushService],
-  exports: [PushService],
+  providers: [PushService, PushAudienceService],
+  exports: [PushService, PushAudienceService],
 })
 export class PushModule {}

@@ -43,6 +43,9 @@ sdk.dir=C:/Users/<usuario>/AppData/Local/Android/Sdk
 
 ## Notificaciones push (FCM)
 
+Guía completa (VAPID, Firebase, Coolify e instalación en iPhone y Android):
+[`docs/notificaciones-push.md`](notificaciones-push.md).
+
 El código está completo en ambos lados. Falta dar de alta el proyecto de
 Firebase, que requiere una cuenta de Google.
 
@@ -71,20 +74,25 @@ es un no-op registrado en el log. `GET /devices/status` dice si está activo.
 
 ### 3. Cómo funciona
 
-- El alta la hace el usuario desde **Configuración → Notificaciones**. No se
-  pide el permiso al entrar: en Android 13+ solo hay una oportunidad.
+- El alta la hace el usuario desde la campana de la cabecera o
+  **Configuración → Notificaciones**. No se pide el permiso al entrar: en
+  Android 13+ solo hay una oportunidad.
 - El token se guarda en `device_tokens` asociado a usuario y empresa, y se da
   de baja al cerrar sesión.
-- Los avisos se envían con `PushService.sendToTenantModule(tenantId, módulo, …)`,
-  que solo llega a quien tiene ese módulo en su matriz de permisos.
+- Los avisos se envían con `NativePushService.sendToTenantModule(tenantId, módulo, …)`;
+  `PushAudienceService` decide los destinatarios (usuario activo, módulo en su
+  rol y preferencias del usuario), igual que para Web Push.
 - Los tokens caducados se borran solos al primer envío fallido.
 
 Disparadores actuales:
 
 | Evento | Módulo | Ruta al tocar |
 |---|---|---|
-| Mensaje entrante de WhatsApp/Instagram | `inbox` | `/inbox` |
+| Mensaje entrante (WhatsApp, Instagram, Messenger, correo) | `inbox` | `/inbox?c=<id>` |
+| Derivación del agente IA a una persona | `inbox` | `/inbox?c=<id>` |
 | Registro nuevo en un formulario | `forms` | `/forms` |
+| Lead asignado y recordatorio de seguimiento | `leads` | `/leads?lead=<id>` |
+| Avisos de la recuperación de clientes | `campaigns` | `/recuperacion/<id>` |
 
 ## Publicación
 

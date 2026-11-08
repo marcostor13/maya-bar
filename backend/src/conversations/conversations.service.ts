@@ -221,6 +221,22 @@ const PUSH_HINT_BY_TYPE: Record<MessageType, string> = {
   unsupported: 'Nuevo mensaje',
 };
 
+/** Largo máximo del extracto del mensaje en la notificación. */
+const PUSH_EXCERPT_MAX = 100;
+
+/**
+ * Cuerpo de la notificación de un mensaje entrante: extracto de hasta 100
+ * caracteres y, si el chat acumula varios sin leer, cuántos son.
+ */
+export function inboundPushBody(preview: string, unread: number): string {
+  const clean = preview.replace(/\s+/g, ' ').trim();
+  const excerpt =
+    clean.length > PUSH_EXCERPT_MAX
+      ? `${clean.slice(0, PUSH_EXCERPT_MAX - 1).trimEnd()}…`
+      : clean;
+  return unread > 1 ? `${unread} mensajes nuevos · ${excerpt}` : excerpt;
+}
+
 @Injectable()
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
@@ -1640,10 +1656,7 @@ export class ConversationsService {
     // atiende a la PWA y FCM a la app nativa. Van sin `await`: el push nunca
     // debe retrasar ni romper la recepción del mensaje. Los ecos no avisan,
     // son mensajes del propio negocio.
-    if (!isEcho && !params.quiet) {
-      void this.notifyInbound(conv, msg);
-      void this.notifyInboundNative(conv, msg);
-    }
+    if (!isEcho && !params.quiet) void this.notifyInbound(conv, msg);
 
     // Leer el adjunto va después de avisar al equipo y antes del agente: el
     // aviso no puede esperar a que el modelo transcriba, pero el agente sí —
@@ -1677,49 +1690,6 @@ export class ConversationsService {
       return;
     }
     await this.runAgent(conv, msg, params.resolveAgent, params.typing);
-  }
-
-  /**
-   * Avisa del mensaje entrante por el canal nativo (FCM) a quien tenga acceso
-   * a la bandeja. El canal del navegador (Web Push) lo dispara aparte
-   * `notifyInboundMessage`; un mismo usuario con la PWA y la app instaladas
-   * recibe el aviso en cada dispositivo, que es lo correcto.
-   *
-   * Se llama sin `await`: una push que falle no puede romper la recepción.
-   */
-  private async notifyInboundNative(
-    conv: Conversation,
-    msg: Message,
-  ): Promise<void> {
-    try {
-      const payload = {
-        // Mismo texto y mismo destino que la notificación web: quien tenga los
-        // dos canales debe ver el mismo aviso, no dos redacciones distintas.
-        title: `${this.displayContact(conv)} · ${CHANNEL_LABEL[conv.channel]}`,
-        body:
-          this.previewOf(msg) || PUSH_HINT_BY_TYPE[msg.type] || 'Nuevo mensaje',
-        // La app retira las notificaciones con esta etiqueta al abrir el chat.
-        tag: `conv_${String(conv._id)}`,
-        data: {
-          route: `/inbox?c=${String(conv._id)}`,
-          conversationId: String(conv._id),
-          channel: conv.channel,
-        },
-      };
-      // Un chat con dueño solo le avisa a él: al resto del equipo no le toca.
-      if (conv.takenOverBy)
-        await this.nativePush.sendToUser(conv.takenOverBy, payload);
-      else
-        await this.nativePush.sendToTenantModule(
-          conv.tenantId,
-          'inbox',
-          payload,
-        );
-    } catch (err) {
-      this.logger.warn(
-        `No se pudo notificar el mensaje entrante: ${(err as Error).message}`,
-      );
-    }
   }
 
   /** ¿El contacto de esta conversación pidió no recibir comunicaciones? */
@@ -1906,17 +1876,32 @@ export class ConversationsService {
     this.gateway.emitConversation(tenantId, conv);
     // Además del aviso a los destinatarios del agente, se avisa al móvil de todo
     // el equipo con acceso a la bandeja: una derivación no puede pasar de largo.
-    void this.push.sendToTenant(
-      tenantId,
-      {
-        title: '🔔 Un chat necesita atención',
-        body: `${this.displayContact(conv)}${reason ? ` · ${reason}` : ''}`,
-        url: `/inbox?c=${String(conv._id)}`,
-        tag: `handoff-${String(conv._id)}`,
-        conversationId: String(conv._id),
-      },
-      { moduleKey: 'inbox' },
-    );
+    const handoffTitle = '🔔 Un chat necesita atención';
+    const handoffBody = `${this.displayContact(conv)}${reason ? ` · ${reason}` : ''}`;
+    const route = `/inbox?c=${String(conv._id)}`;
+    void this.push
+      .sendToTenant(
+        tenantId,
+        {
+          title: handoffTitle,
+          body: handoffBody,
+          url: route,
+          tag: `handoff-${String(conv._id)}`,
+          conversationId: String(conv._id),
+          category: 'chats',
+        },
+        { moduleKey: 'inbox' },
+      )
+      .catch(() => undefined);
+    void this.nativePush
+      .sendToTenantModule(tenantId, 'inbox', {
+        title: handoffTitle,
+        body: handoffBody,
+        tag: `handoff_${String(conv._id)}`,
+        category: 'chats',
+        data: { route, conversationId: String(conv._id) },
+      })
+      .catch(() => undefined);
     if (error)
       this.logger.warn(
         `Derivación de ${String(conv._id)} con avisos fallidos: ${error}`,
@@ -1924,33 +1909,62 @@ export class ConversationsService {
   }
 
   /**
-   * Notificación push a los móviles del equipo por un mensaje entrante.
+   * Notificación push por un mensaje entrante, por los dos canales: Web Push
+   * (PWA y navegadores, también iPhone) y FCM (app Android). Mismo texto y
+   * mismo destino en ambos.
    *
-   * Solo la reciben los usuarios cuyo rol tenga el módulo `inbox`, y al tocarla
-   * se abre justo esa conversación (`/inbox?c=<id>`).
+   * Solo la reciben los usuarios cuyo rol tenga el módulo `inbox` (o el dueño
+   * del chat, si lo tiene). La etiqueta es la conversación: los mensajes
+   * seguidos reemplazan la notificación anterior, que dice cuántos van. Se
+   * llama sin `await` y nunca lanza: una push no puede romper la recepción.
    */
   private async notifyInbound(conv: Conversation, msg: Message) {
-    const who = this.displayContact(conv);
-    const channel = CHANNEL_LABEL[conv.channel];
-    const payload = {
-      title: `${who} · ${channel}`,
-      body: this.previewOf(msg) || 'Nuevo mensaje',
-      url: `/inbox?c=${String(conv._id)}`,
-      tag: `conversation-${String(conv._id)}`,
-      conversationId: String(conv._id),
-    };
-    // Un chat con dueño solo le avisa a él: al resto del equipo no le toca.
-    if (conv.takenOverBy) {
-      await this.push
-        .sendToUser(String(conv.takenOverBy), payload)
-        .catch((err: unknown) =>
-          this.logger.warn(`Push al vendedor del chat falló: ${String(err)}`),
-        );
-      return;
+    try {
+      const id = String(conv._id);
+      const route = `/inbox?c=${id}`;
+      const title = `${this.displayContact(conv)} · ${CHANNEL_LABEL[conv.channel]}`;
+      const body = inboundPushBody(
+        this.previewOf(msg) || PUSH_HINT_BY_TYPE[msg.type] || 'Nuevo mensaje',
+        conv.unreadCount,
+      );
+      const { total: badge } = await this.unreadTotal(String(conv.tenantId));
+      const web = {
+        title,
+        body,
+        url: route,
+        tag: `conversation-${id}`,
+        conversationId: id,
+        category: 'chats' as const,
+        badge,
+      };
+      const native = {
+        title,
+        body,
+        // La app retira las notificaciones con esta etiqueta al abrir el chat.
+        tag: `conv_${id}`,
+        category: 'chats' as const,
+        badge,
+        data: { route, conversationId: id, channel: conv.channel },
+      };
+      // Un chat con dueño solo le avisa a él: al resto del equipo no le toca.
+      if (conv.takenOverBy) {
+        await Promise.allSettled([
+          this.push.sendToUser(String(conv.takenOverBy), web),
+          this.nativePush.sendToUser(conv.takenOverBy, native),
+        ]);
+        return;
+      }
+      await Promise.allSettled([
+        this.push.sendToTenant(String(conv.tenantId), web, {
+          moduleKey: 'inbox',
+        }),
+        this.nativePush.sendToTenantModule(conv.tenantId, 'inbox', native),
+      ]);
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo notificar el mensaje entrante de ${String(conv._id)}: ${(err as Error).message}`,
+      );
     }
-    await this.push.sendToTenant(String(conv.tenantId), payload, {
-      moduleKey: 'inbox',
-    });
   }
 
   /** Cómo se nombra al contacto fuera de la bandeja: su nombre o el id del canal. */

@@ -22,6 +22,39 @@ interface SwMessage {
 
 export type PushPermission = 'default' | 'granted' | 'denied' | 'unsupported';
 
+/** Un dispositivo del usuario dado de alta para recibir avisos. */
+export interface PushDevice {
+  id: string;
+  kind: 'web' | 'android' | 'ios';
+  label: string;
+  installed?: boolean;
+  createdAt?: string;
+  lastSeenAt?: string;
+}
+
+/** Qué avisos quiere recibir el usuario. */
+export interface PushPrefs {
+  chats: boolean;
+  forms: boolean;
+  leads: boolean;
+  recovery: boolean;
+  muted: boolean;
+}
+
+/** El usuario apagó los avisos en este navegador: no se reactivan solos. */
+export const WEB_OPT_OUT_KEY = 'maya.push.web.optout';
+/** Id del dispositivo actual en el backend, para marcarlo en la lista. */
+export const WEB_DEVICE_KEY = 'maya.push.web.deviceId';
+
+/** Versión de iOS del User-Agent (`[16, 4]`), o `null` si no es iOS. */
+export function iosVersion(ua: string): [number, number] | null {
+  // iPadOS en modo escritorio se anuncia como Mac sin versión de iOS: null.
+  if (!/iPhone|iPad|iPod/.test(ua)) return null;
+  const m = /OS (\d+)_(\d+)/.exec(ua);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2])];
+}
+
 /**
  * Notificaciones push nativas y instalación como app.
  *
@@ -83,6 +116,29 @@ export class PushService {
     return this.isIos() && !this.isStandalone();
   }
 
+  /** iOS anterior a 16.4: Safari no admite notificaciones push. */
+  iosTooOld(): boolean {
+    if (!this.isIos()) return false;
+    const v = iosVersion(navigator.userAgent);
+    return !!v && (v[0] < 16 || (v[0] === 16 && v[1] < 4));
+  }
+
+  /** Dónde está el usuario, para explicarle cómo reactivar un permiso negado. */
+  deviceKind(): 'ios' | 'android' | 'desktop' {
+    if (this.isIos()) return 'ios';
+    if (this.isBrowser && /Android/.test(navigator.userAgent)) return 'android';
+    return 'desktop';
+  }
+
+  /** Id de este navegador en el backend (si está dado de alta). */
+  currentDeviceId(): string | null {
+    return this.isBrowser ? localStorage.getItem(WEB_DEVICE_KEY) : null;
+  }
+
+  private optedOut(): boolean {
+    return this.isBrowser && localStorage.getItem(WEB_OPT_OUT_KEY) === '1';
+  }
+
   /**
    * Arranque: registra el service worker, escucha sus mensajes y sincroniza la
    * suscripción existente. Se llama al entrar en el shell —también tras un
@@ -138,7 +194,10 @@ export class PushService {
     if (
       this.registration &&
       Notification.permission === 'granted' &&
-      this.serverEnabled()
+      this.serverEnabled() &&
+      // Quien apagó los avisos en este navegador no debe recuperarlos solo
+      // por volver a abrir la app con el permiso aún concedido.
+      !this.optedOut()
     ) {
       await this.subscribe(false).catch(() => undefined);
     }
@@ -159,6 +218,18 @@ export class PushService {
         body: { endpoint: sub.endpoint },
       }),
     ).catch(() => undefined);
+    this.subscribed.set(false);
+  }
+
+  /**
+   * Sesión caducada (sin token para hablar con el backend): se tira la
+   * suscripción del navegador. El servicio de push la rechazará y el backend
+   * la borrará al siguiente envío; al volver a entrar se crea una nueva.
+   */
+  async dropLocal(): Promise<void> {
+    const sub = await this.registration?.pushManager.getSubscription();
+    await sub?.unsubscribe().catch(() => undefined);
+    localStorage.removeItem(WEB_DEVICE_KEY);
     this.subscribed.set(false);
   }
 
@@ -184,6 +255,7 @@ export class PushService {
     if (!this.isBrowser || !this.registration) return false;
     this.busy.set(true);
     try {
+      localStorage.removeItem(WEB_OPT_OUT_KEY);
       const permission = await Notification.requestPermission();
       this.permission.set(permission as PushPermission);
       if (permission !== 'granted') return false;
@@ -207,10 +279,36 @@ export class PushService {
         ).catch(() => undefined);
         await sub.unsubscribe();
       }
+      localStorage.setItem(WEB_OPT_OUT_KEY, '1');
+      localStorage.removeItem(WEB_DEVICE_KEY);
       this.subscribed.set(false);
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** Dispositivos del usuario (navegadores y apps). */
+  devices(): Promise<PushDevice[]> {
+    return firstValueFrom(this.http.get<PushDevice[]>(`${API}/push/devices`));
+  }
+
+  /** Baja de uno de los dispositivos del usuario. */
+  async removeDevice(device: PushDevice): Promise<void> {
+    await firstValueFrom(
+      this.http.delete(`${API}/push/devices/${device.kind}/${encodeURIComponent(device.id)}`),
+    );
+    if (device.id === this.currentDeviceId()) {
+      localStorage.removeItem(WEB_DEVICE_KEY);
+      this.subscribed.set(false);
+    }
+  }
+
+  preferences(): Promise<PushPrefs> {
+    return firstValueFrom(this.http.get<PushPrefs>(`${API}/push/preferences`));
+  }
+
+  savePreferences(prefs: Partial<PushPrefs>): Promise<PushPrefs> {
+    return firstValueFrom(this.http.put<PushPrefs>(`${API}/push/preferences`, prefs));
   }
 
   /** Notificación de prueba a los dispositivos del propio usuario. */
@@ -252,14 +350,16 @@ export class PushService {
     const json = sub.toJSON() as { keys?: { p256dh?: string; auth?: string } };
     if (!json.keys?.p256dh || !json.keys?.auth) return false;
 
-    await firstValueFrom(
-      this.http.post(`${API}/push/subscribe`, {
+    const saved = await firstValueFrom(
+      this.http.post<{ id?: string }>(`${API}/push/subscribe`, {
         endpoint: sub.endpoint,
         p256dh: json.keys.p256dh,
         auth: json.keys.auth,
         userAgent: navigator.userAgent,
+        installed: this.isStandalone(),
       }),
     );
+    if (saved?.id) localStorage.setItem(WEB_DEVICE_KEY, saved.id);
     this.subscribed.set(true);
     return true;
   }

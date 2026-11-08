@@ -2310,6 +2310,18 @@ export class InboxComponent implements OnInit, OnDestroy {
     // Con un chat abierto en el móvil, el hilo ocupa la pantalla entera: el
     // shell esconde su cabecera y su barra de pestañas mientras dure.
     effect(() => this.chrome.immersive.set(!!this.selectedId()));
+    // El chat abierto queda en la URL (`?c=<id>`): el service worker y la app
+    // la miran para no avisar de un mensaje que ya se está leyendo.
+    effect(() => {
+      const id = this.selectedId();
+      if ((this.route.snapshot.queryParamMap.get('c') ?? null) === id) return;
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { c: id },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    });
     // Un push que llega con la app en segundo plano puede adelantarse al
     // websocket (o llegar con él dormido): al volver, se refresca la lista.
     effect(() => {

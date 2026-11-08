@@ -1,7 +1,7 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, finalize, map, shareReplay, tap, throwError } from 'rxjs';
+import { Observable, Subject, catchError, finalize, map, shareReplay, tap, throwError } from 'rxjs';
 import { ToastService } from '../shared/toast';
 import { environment } from '../../environments/environment';
 
@@ -17,6 +17,12 @@ export interface AuthUser {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  /**
+   * La sesión caducó sin `logout()`: ya no hay token para dar de baja el
+   * dispositivo en el backend, así que el shell suelta la suscripción push en
+   * local (el proveedor la rechazará y el backend la borrará en el próximo envío).
+   */
+  readonly sessionExpired = new Subject<void>();
   /**
    * Lo registra `PermissionsService` al construirse. Se hace con un gancho y no
    * inyectando el servicio para no crear una dependencia circular: los permisos
@@ -157,6 +163,7 @@ export class AuthService {
    */
   private expireSession(): void {
     if (!this.isAuthenticated()) return; // ya estaba fuera: no avisar dos veces
+    this.sessionExpired.next();
     this.clearSession();
     this.toast.warning('Tu sesión ha caducado. Entra de nuevo.');
     void this.router.navigate(['/login']);
