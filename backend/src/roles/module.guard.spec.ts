@@ -1,5 +1,10 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { MODULE_KEY, ModuleGuard, PlatformModule } from './module.guard';
+import {
+  MODULE_KEY,
+  ModuleGuard,
+  PlatformModule,
+  RouteAction,
+} from './module.guard';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -209,6 +214,35 @@ describe('ModuleGuard', () => {
       class Controlador {}
 
       expect(Reflect.getMetadata(MODULE_KEY, Controlador)).toBe('leads');
+    });
+  });
+
+  describe('acción declarada en la ruta', () => {
+    class Ctrl {
+      @RouteAction('edit')
+      unblock(this: void) {}
+      remove(this: void) {}
+    }
+    const ctx = (handler: () => void) =>
+      ({
+        switchToHttp: () => ({
+          getRequest: () => request('MARKETING', 'DELETE'),
+        }),
+        getHandler: () => handler,
+      }) as unknown as ExecutionContext;
+
+    it('un DELETE marcado como editar se permite a quien puede editar aunque no pueda eliminar', async () => {
+      grant(['inbox'], { inbox: ['create', 'edit'] });
+      await expect(
+        guardFor('inbox').canActivate(ctx(Ctrl.prototype.unblock)),
+      ).resolves.toBe(true);
+    });
+
+    it('sin marca, el DELETE sigue exigiendo eliminar', async () => {
+      grant(['inbox'], { inbox: ['create', 'edit'] });
+      await expect(
+        guardFor('inbox').canActivate(ctx(Ctrl.prototype.remove)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });

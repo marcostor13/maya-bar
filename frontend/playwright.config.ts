@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const API_PORT = 3100;
-const WEB_PORT = 4300;
+// Se puede cambiar si otro proceso ocupa el puerto (E2E_WEB_PORT=4310 npm run e2e).
+const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 4300);
 
 /**
  * Pruebas de navegador contra la plataforma completa: frontend real + backend

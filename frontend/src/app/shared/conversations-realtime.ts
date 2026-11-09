@@ -44,6 +44,8 @@ export class ConversationsRealtimeService {
   readonly messageNew$ = new Subject<RealtimeMessage>();
   readonly messageUpdated$ = new Subject<RealtimeMessage>();
   readonly conversationUpdated$ = new Subject<RealtimeConversation>();
+  /** Conversaciones que salieron de la bandeja (se movieron a la papelera). */
+  readonly conversationRemoved$ = new Subject<{ ids: string[] }>();
   readonly typing$ = new Subject<{ conversationId: string; typing: boolean }>();
   /** Un mensaje programado se envió (o falló): la lista del chat cambió. */
   readonly scheduledChanged$ = new Subject<{ conversationId: string }>();
@@ -65,34 +67,43 @@ export class ConversationsRealtimeService {
       query: { tenantId },
       transports: ['websocket'],
     });
-
-    this.socket.on('connect', () => this.connected.set(true));
-    this.socket.on('disconnect', () => this.connected.set(false));
-    this.socket.on('message:new', (msg: RealtimeMessage) =>
-      this.messageNew$.next(msg),
-    );
-    this.socket.on('message:updated', (msg: RealtimeMessage) =>
-      this.messageUpdated$.next(msg),
-    );
-    this.socket.on('scheduled:changed', (p: { conversationId: string }) =>
-      this.scheduledChanged$.next(p),
-    );
-    this.socket.on('conversation:updated', (conv: RealtimeConversation) => {
-      this.conversationUpdated$.next(conv);
-      // Leída aquí o en otro dispositivo: su aviso ya no pinta nada en el móvil.
-      if (conv.unreadCount === 0) void this.nativePush.clearConversation(conv._id);
-      this.refreshUnread();
-    });
-    this.socket.on(
-      'conversation:typing',
-      (p: { conversationId: string; typing: boolean }) => this.typing$.next(p),
-    );
+    this.bind(this.socket);
 
     this.refreshUnread();
     // Red de seguridad si el socket se cae o el móvil suspende la pestaña.
     this.refreshTimer = setInterval(() => this.refreshUnread(), 60_000);
     // Al volver a la app el socket pudo perderse eventos mientras dormía.
     document.addEventListener('visibilitychange', this.onVisible);
+  }
+
+  /** Engancha los eventos del gateway. Aparte para poder probarlo con un socket falso. */
+  bind(socket: Pick<Socket, 'on'>): void {
+    const s = socket as Socket;
+    s.on('connect', () => this.connected.set(true));
+    s.on('disconnect', () => this.connected.set(false));
+    s.on('message:new', (msg: RealtimeMessage) =>
+      this.messageNew$.next(msg),
+    );
+    s.on('message:updated', (msg: RealtimeMessage) =>
+      this.messageUpdated$.next(msg),
+    );
+    s.on('scheduled:changed', (p: { conversationId: string }) =>
+      this.scheduledChanged$.next(p),
+    );
+    s.on('conversation:updated', (conv: RealtimeConversation) => {
+      this.conversationUpdated$.next(conv);
+      // Leída aquí o en otro dispositivo: su aviso ya no pinta nada en el móvil.
+      if (conv.unreadCount === 0) void this.nativePush.clearConversation(conv._id);
+      this.refreshUnread();
+    });
+    s.on('conversation:removed', (p: { ids: string[] }) => {
+      this.conversationRemoved$.next(p);
+      this.refreshUnread();
+    });
+    s.on(
+      'conversation:typing',
+      (p: { conversationId: string; typing: boolean }) => this.typing$.next(p),
+    );
   }
 
   private onVisible = () => {

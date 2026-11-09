@@ -172,7 +172,11 @@ export class DashboardAnalyticsService {
           .exec()
           .then((rows) => rows.map((r) => r._id))
       : null;
-    const msgScope = convIds ? { conversationId: { $in: convIds } } : {};
+    // Los mensajes de chats en la papelera no cuentan (ver ConversationTrashService).
+    const msgScope = {
+      inTrash: { $ne: true },
+      ...(convIds ? { conversationId: { $in: convIds } } : {}),
+    };
     const leadScope: Record<string, unknown> = { tenantId: tid };
     if (isOwnerScoped(role)) {
       const uid = new Types.ObjectId(userId);

@@ -50,6 +50,16 @@ export const USER_REFERENCES: UserReference[] = [
     field: 'blockedBy',
     label: 'Contactos bloqueados',
   },
+  {
+    collection: 'blocked_contacts',
+    field: 'blockedBy',
+    label: 'Bloqueos de contactos',
+  },
+  {
+    collection: 'conversations',
+    field: 'trashedBy',
+    label: 'Conversaciones en la papelera',
+  },
   { collection: 'messages', field: 'sentBy', label: 'Mensajes enviados' },
   { collection: 'customers', field: 'ownerId', label: 'Contactos a su cargo' },
   {

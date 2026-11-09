@@ -23,6 +23,7 @@ import { ConversationsGateway } from './conversations.gateway';
 import { HandoffService } from './handoff.service';
 import { LeadsService } from '../leads/leads.service';
 import { ConversationAssignmentService } from './conversation-assignment.service';
+import { BlockedContactsService } from './blocked-contacts.service';
 
 /** Asignación simulada: escribir le da el chat a quien escribe. */
 const fakeAssignment = {
@@ -47,7 +48,10 @@ const userId = new Types.ObjectId().toString();
 const convOid = new Types.ObjectId();
 
 function buildQuery(result: unknown) {
-  const q: any = { exec: jest.fn().mockResolvedValue(result) };
+  const q: any = {
+    exec: jest.fn().mockResolvedValue(result),
+    lean: jest.fn().mockResolvedValue(result),
+  };
   for (const m of ['populate', 'sort', 'limit', 'select'])
     q[m] = jest.fn().mockReturnValue(q);
   return q;
@@ -74,11 +78,15 @@ describe('ConversationsService — bloquear contacto', () => {
   let waAccounts: any;
   let suppression: any;
   let gateway: any;
+  let blocks: any;
+  let leads: any;
+  let emailAccounts: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     convModel = {
       findOne: jest.fn().mockReturnValue(buildQuery(makeConv())),
+      find: jest.fn().mockReturnValue(buildQuery([])),
     };
     msgModel = { create: jest.fn() };
     wa = { setContactBlocked: jest.fn().mockResolvedValue(undefined) };
@@ -92,6 +100,16 @@ describe('ConversationsService — bloquear contacto', () => {
       removeByContact: jest.fn(),
     };
     gateway = { emitConversation: jest.fn(), emitMessage: jest.fn() };
+    blocks = {
+      isBlocked: jest.fn().mockResolvedValue(false),
+      block: jest.fn((_t: string, targets: unknown[]) =>
+        Promise.resolve(targets.map(() => ({}))),
+      ),
+      unblock: jest.fn().mockResolvedValue(null),
+      removeById: jest.fn().mockResolvedValue(null),
+    };
+    leads = { findCustomer: jest.fn().mockResolvedValue(null) };
+    emailAccounts = { findOne: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -109,16 +127,13 @@ describe('ConversationsService — bloquear contacto', () => {
         { provide: UploadService, useValue: {} },
         { provide: ConversationsGateway, useValue: gateway },
         { provide: HandoffService, useValue: {} },
-        {
-          provide: LeadsService,
-          useValue: { findCustomer: jest.fn().mockResolvedValue(null) },
-        },
+        { provide: LeadsService, useValue: leads },
         { provide: PushService, useValue: { sendToTenant: jest.fn() } },
         {
           provide: NativePushService,
           useValue: { sendToTenantModule: jest.fn() },
         },
-        { provide: EmailAccountsService, useValue: {} },
+        { provide: EmailAccountsService, useValue: emailAccounts },
         { provide: EmailTransportService, useValue: {} },
         { provide: ConversationAssignmentService, useValue: fakeAssignment },
         {
@@ -126,18 +141,15 @@ describe('ConversationsService — bloquear contacto', () => {
           useValue: { lookup: jest.fn().mockResolvedValue(null) },
         },
         { provide: SuppressionService, useValue: suppression },
+        { provide: BlockedContactsService, useValue: blocks },
       ],
     }).compile();
 
     service = module.get<ConversationsService>(ConversationsService);
   });
 
-  it('bloquea en la plataforma, en WhatsApp y lo pasa a no contactar', async () => {
-    const conv = makeConv({
-      chatId: '51999888777@c.us',
-      autoReply: true,
-      unreadCount: 3,
-    });
+  it('bloquea al contacto (no solo al chat), en WhatsApp y lo pasa a no contactar', async () => {
+    const conv = makeConv({ chatId: '51999888777@c.us' });
     convModel.findOne.mockReturnValue(buildQuery(conv));
 
     const res = await service.setBlocked(
@@ -146,6 +158,7 @@ describe('ConversationsService — bloquear contacto', () => {
       userId,
       true,
       'Spam',
+      { userName: 'Ana' },
     );
 
     expect(wa.setContactBlocked).toHaveBeenCalledWith(
@@ -153,15 +166,17 @@ describe('ConversationsService — bloquear contacto', () => {
       '51999888777@c.us',
       true,
     );
-    expect(conv).toMatchObject({
-      blocked: true,
-      blockedReason: 'Spam',
-      blockedOnChannel: true,
-      autoReply: false,
-      unreadCount: 0,
-    });
-    expect(String(conv.blockedBy)).toBe(userId);
-    expect(conv.save).toHaveBeenCalled();
+    expect(blocks.block).toHaveBeenCalledWith(
+      tenantId,
+      [{ channel: 'whatsapp', contact: '51999888777' }],
+      expect.objectContaining({
+        reason: 'Spam',
+        source: 'inbox',
+        userId,
+        userName: 'Ana',
+      }),
+      { accountId: String(conv.accountId), onChannel: true },
+    );
     expect(suppression.add).toHaveBeenCalledWith(
       tenantId,
       expect.objectContaining({ phone: '51999888777', reason: 'Spam' }),
@@ -170,13 +185,12 @@ describe('ConversationsService — bloquear contacto', () => {
       blocked: true,
       channelBlocked: true,
       doNotContact: true,
+      blockedCount: 1,
     });
     expect(gateway.emitConversation).toHaveBeenCalledWith(tenantId, conv);
   });
 
   it('si WhatsApp rechaza el bloqueo, queda bloqueado en la plataforma y devuelve el motivo', async () => {
-    const conv = makeConv();
-    convModel.findOne.mockReturnValue(buildQuery(conv));
     wa.setContactBlocked.mockRejectedValue(new Error('Cloud API 500: caído'));
 
     const res = await service.setBlocked(
@@ -186,17 +200,23 @@ describe('ConversationsService — bloquear contacto', () => {
       true,
     );
 
-    expect(conv.blocked).toBe(true);
-    expect(conv.blockedOnChannel).toBe(false);
+    expect(blocks.block).toHaveBeenCalledWith(
+      tenantId,
+      expect.any(Array),
+      expect.any(Object),
+      expect.objectContaining({ onChannel: false }),
+    );
     expect(res).toMatchObject({
+      blocked: true,
       channelBlocked: false,
       channelError: 'Cloud API 500: caído',
     });
   });
 
   it('en Instagram bloquea solo en la plataforma', async () => {
-    const conv = makeConv({ channel: 'instagram', contact: 'ig-123' });
-    convModel.findOne.mockReturnValue(buildQuery(conv));
+    convModel.findOne.mockReturnValue(
+      buildQuery(makeConv({ channel: 'instagram', contact: 'ig-123' })),
+    );
 
     const res = await service.setBlocked(
       String(convOid),
@@ -207,18 +227,57 @@ describe('ConversationsService — bloquear contacto', () => {
 
     expect(wa.setContactBlocked).not.toHaveBeenCalled();
     expect(suppression.add).not.toHaveBeenCalled();
-    expect(conv.blocked).toBe(true);
+    expect(blocks.block.mock.calls[0][1]).toEqual([
+      { channel: 'instagram', contact: 'ig-123' },
+    ]);
     expect(res.channelBlocked).toBe(false);
   });
 
-  it('desbloquea sin sacarlo de la lista de no contactar', async () => {
-    const conv = makeConv({
-      blocked: true,
-      blockedAt: new Date(),
-      blockedReason: 'Spam',
+  it('con "todos los canales" bloquea el teléfono, el email y los otros chats del cliente', async () => {
+    const customerId = new Types.ObjectId();
+    convModel.findOne.mockReturnValue(buildQuery(makeConv({ customerId })));
+    leads.findCustomer.mockResolvedValue({
+      name: 'Ana Pérez',
+      phone: '+51 988 777 666',
+      email: 'ana@correo.com',
     });
-    convModel.findOne.mockReturnValue(buildQuery(conv));
+    convModel.find
+      .mockReturnValueOnce(
+        buildQuery([{ channel: 'instagram', contact: 'ig-9' }]),
+      )
+      .mockReturnValue(buildQuery([]));
 
+    const res = await service.setBlocked(
+      String(convOid),
+      tenantId,
+      userId,
+      true,
+      undefined,
+      { allChannels: true },
+    );
+
+    expect(blocks.block.mock.calls[0][1]).toEqual([
+      { channel: 'whatsapp', contact: '51999888777' },
+      { channel: 'whatsapp', contact: '+51 988 777 666' },
+      { channel: 'email', contact: 'ana@correo.com' },
+      { channel: 'instagram', contact: 'ig-9' },
+    ]);
+    expect(convModel.find.mock.calls[0][0]).toMatchObject({ customerId });
+    expect(res.blockedCount).toBe(4);
+  });
+
+  it('sin "todos los canales" no toca los otros chats del cliente', async () => {
+    convModel.findOne.mockReturnValue(
+      buildQuery(makeConv({ customerId: new Types.ObjectId() })),
+    );
+    leads.findCustomer.mockResolvedValue({ phone: '+51 988 777 666' });
+
+    await service.setBlocked(String(convOid), tenantId, userId, true);
+
+    expect(blocks.block.mock.calls[0][1]).toHaveLength(1);
+  });
+
+  it('desbloquea al contacto sin sacarlo de la lista de no contactar', async () => {
     await service.setBlocked(String(convOid), tenantId, userId, false);
 
     expect(wa.setContactBlocked).toHaveBeenCalledWith(
@@ -226,9 +285,12 @@ describe('ConversationsService — bloquear contacto', () => {
       '51999888777',
       false,
     );
-    expect(conv.blocked).toBe(false);
-    expect(conv.blockedAt).toBeUndefined();
-    expect(conv.blockedReason).toBeUndefined();
+    expect(blocks.unblock).toHaveBeenCalledWith(
+      tenantId,
+      'whatsapp',
+      '51999888777',
+    );
+    expect(blocks.block).not.toHaveBeenCalled();
     expect(suppression.removeByContact).not.toHaveBeenCalled();
   });
 
@@ -241,8 +303,27 @@ describe('ConversationsService — bloquear contacto', () => {
     expect(msgModel.create).not.toHaveBeenCalled();
   });
 
-  it('descarta lo que llega de un contacto bloqueado sin crear nada', async () => {
-    convModel.findOne.mockReturnValue(buildQuery(makeConv({ blocked: true })));
+  it('no deja redactar un correo nuevo a un contacto bloqueado', async () => {
+    blocks.isBlocked.mockResolvedValue(true);
+
+    await expect(
+      service.composeEmail(tenantId, userId, {
+        accountId: String(new Types.ObjectId()),
+        to: 'Spam@Correo.com',
+        subject: 'Hola',
+        text: 'hola',
+      }),
+    ).rejects.toThrow(/bloqueado/);
+    expect(blocks.isBlocked).toHaveBeenCalledWith(
+      tenantId,
+      'email',
+      'Spam@Correo.com',
+    );
+    expect(emailAccounts.findOne).not.toHaveBeenCalled();
+  });
+
+  it('descarta lo que llega de un contacto bloqueado antes de crear o tocar el chat', async () => {
+    blocks.isBlocked.mockResolvedValue(true);
     const account = { _id: new Types.ObjectId(), tenantId };
 
     await service.handleWhatsAppInbound(account as any, {
@@ -251,7 +332,70 @@ describe('ConversationsService — bloquear contacto', () => {
       text: 'hola',
     });
 
+    expect(blocks.isBlocked).toHaveBeenCalledWith(
+      tenantId,
+      'whatsapp',
+      '51999888777',
+    );
+    // Ni siquiera se busca la conversación: aunque se haya eliminado, no vuelve.
+    expect(convModel.findOne).not.toHaveBeenCalled();
     expect(msgModel.create).not.toHaveBeenCalled();
     expect(gateway.emitMessage).not.toHaveBeenCalled();
+  });
+
+  it('bloqueo a mano: normaliza el número y lo pasa a no contactar', async () => {
+    await service.blockManual(tenantId, userId, {
+      channel: 'whatsapp',
+      contact: '999 888 777',
+      reason: 'Acoso',
+    });
+
+    expect(blocks.block).toHaveBeenCalledWith(
+      tenantId,
+      [{ channel: 'whatsapp', contact: '51999888777' }],
+      expect.objectContaining({ source: 'manual', reason: 'Acoso' }),
+    );
+    expect(suppression.add).toHaveBeenCalledWith(
+      tenantId,
+      expect.objectContaining({ phone: '51999888777' }),
+    );
+  });
+
+  it('bloqueo a mano: rechaza un número que no sirve', async () => {
+    await expect(
+      service.blockManual(tenantId, userId, {
+        channel: 'whatsapp',
+        contact: '12',
+      }),
+    ).rejects.toThrow(/no es válido/);
+    expect(blocks.block).not.toHaveBeenCalled();
+  });
+
+  it('desbloquear desde la lista: 404 si el bloqueo no es de la empresa', async () => {
+    await expect(
+      service.unblockEntry(tenantId, String(new Types.ObjectId())),
+    ).rejects.toThrow(/no encontrado/);
+  });
+
+  it('desbloquear desde la lista: quita también el bloqueo de WhatsApp', async () => {
+    blocks.removeById.mockResolvedValue({
+      _id: new Types.ObjectId(),
+      channel: 'whatsapp',
+      identifier: '51999888777',
+      onChannel: true,
+      accountId: new Types.ObjectId(),
+    });
+
+    const res = await service.unblockEntry(
+      tenantId,
+      String(new Types.ObjectId()),
+    );
+
+    expect(wa.setContactBlocked).toHaveBeenCalledWith(
+      { provider: 'cloudapi' },
+      '51999888777',
+      false,
+    );
+    expect(res).toEqual({ removed: true });
   });
 });

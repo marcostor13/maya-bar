@@ -228,6 +228,7 @@ function setup(
     emailTransport as never,
     fakeAssignment as never,
     attribution as never,
+    { isBlocked: jest.fn().mockResolvedValue(false) } as never, // blocks
   );
   return {
     service,

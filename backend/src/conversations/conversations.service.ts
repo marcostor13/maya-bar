@@ -43,6 +43,11 @@ import {
 } from '../ai/media-understanding.service';
 import { UploadService } from '../upload/upload.service';
 import { ConversationsGateway } from './conversations.gateway';
+import {
+  BlockedContactsService,
+  blockKey,
+  type BlockTarget,
+} from './blocked-contacts.service';
 import { HandoffService } from './handoff.service';
 import {
   ConversationAssignmentService,
@@ -263,6 +268,7 @@ export class ConversationsService {
     private emailTransport: EmailTransportService,
     private assignment: ConversationAssignmentService,
     private attribution: CampaignAttributionService,
+    private blocks: BlockedContactsService,
   ) {}
 
   /**
@@ -624,12 +630,16 @@ export class ConversationsService {
   }
 
   /**
-   * Bloquea (o desbloquea) el chat. Bloqueado, sus mensajes se descartan al
+   * Bloquea (o desbloquea) al contacto del chat. El bloqueo se guarda en
+   * `BlockedContactsService` (sobrevive a que el chat se elimine) y vale para
+   * todas las cuentas del canal. Bloqueado, sus mensajes se descartan al
    * llegar, no se le puede escribir y entra en la lista de no contactar. En
    * WhatsApp se bloquea además en el proveedor; si eso falla, el bloqueo en la
    * plataforma se mantiene y se devuelve el motivo.
    *
-   * Desbloquear no lo saca de la lista de no contactar: eso se decide aparte.
+   * Con `allChannels` se bloquean también el teléfono, el email y los demás
+   * chats del cliente vinculado. Desbloquear solo quita el bloqueo de este
+   * contacto y no lo saca de la lista de no contactar.
    */
   async setBlocked(
     id: string,
@@ -637,12 +647,14 @@ export class ConversationsService {
     userId: string,
     blocked: boolean,
     reason?: string,
+    opts: { allChannels?: boolean; userName?: string } = {},
   ): Promise<{
     conversation: Conversation;
     blocked: boolean;
     channelBlocked: boolean;
     channelError?: string;
     doNotContact?: boolean;
+    blockedCount?: number;
   }> {
     const conv = await this.getConversation(id, tenantId);
 
@@ -661,25 +673,39 @@ export class ConversationsService {
       } catch (err) {
         channelError = err instanceof Error ? err.message : String(err);
         this.logger.warn(
-          `No se pudo ${blocked ? 'bloquear' : 'desbloquear'} ${conv.contact} en WhatsApp: ${channelError}`,
+          `No se pudo ${blocked ? 'bloquear' : 'desbloquear'} el chat ${String(conv._id)} en WhatsApp: ${channelError}`,
         );
       }
     }
 
     let doNotContact: boolean | undefined;
+    let blockedCount: number | undefined;
+    let targets: BlockTarget[] = [
+      { channel: conv.channel, contact: conv.contact },
+    ];
     if (blocked) {
-      conv.blocked = true;
-      conv.blockedAt = new Date();
-      conv.blockedBy = new Types.ObjectId(userId);
-      conv.blockedReason = reason?.trim() || undefined;
-      conv.blockedOnChannel = channelBlocked;
-      conv.autoReply = false;
-      conv.takenOverAt = new Date();
-      conv.unreadCount = 0;
-
       const customer = conv.customerId
         ? await this.leads.findCustomer(String(conv.customerId), tenantId)
         : null;
+      targets = await this.blockTargets(conv, tenantId, customer, {
+        allChannels: opts.allChannels === true,
+      });
+      const entries = await this.blocks.block(
+        tenantId,
+        targets,
+        {
+          reason,
+          source: 'inbox',
+          userId,
+          userName: opts.userName,
+          name: customer?.name ?? conv.contactName,
+          customerId: conv.customerId,
+          conversationId: conv._id,
+        },
+        { accountId: String(conv.accountId), onChannel: channelBlocked },
+      );
+      blockedCount = entries.length;
+
       const contact = {
         phone: conv.channel === 'whatsapp' ? conv.contact : customer?.phone,
         email: conv.channel === 'email' ? conv.contact : customer?.email,
@@ -688,7 +714,7 @@ export class ConversationsService {
         await this.suppression.add(tenantId, {
           ...contact,
           name: customer?.name ?? conv.contactName,
-          reason: conv.blockedReason ?? 'Contacto bloqueado',
+          reason: reason?.trim() || 'Contacto bloqueado',
           source: 'inbox',
           userId,
           conversationId: String(conv._id),
@@ -696,22 +722,155 @@ export class ConversationsService {
         doNotContact = true;
       }
     } else {
-      conv.blocked = false;
-      conv.blockedAt = undefined;
-      conv.blockedBy = undefined;
-      conv.blockedReason = undefined;
-      conv.blockedOnChannel = undefined;
+      await this.blocks.unblock(tenantId, conv.channel, conv.contact);
     }
-    await conv.save();
 
-    this.gateway.emitConversation(tenantId, conv);
+    const updated = await this.getConversation(id, tenantId);
+    this.gateway.emitConversation(tenantId, updated);
+    await this.emitOtherChats(tenantId, targets, String(conv._id));
     return {
-      conversation: conv,
+      conversation: updated,
       blocked,
       channelBlocked,
       ...(channelError ? { channelError } : {}),
       ...(doNotContact ? { doNotContact } : {}),
+      ...(blockedCount !== undefined ? { blockedCount } : {}),
     };
+  }
+
+  /**
+   * Identificadores a bloquear: el del chat y, con `allChannels`, el teléfono
+   * (WhatsApp) y el email del cliente y los contactos de sus otros chats.
+   */
+  private async blockTargets(
+    conv: Conversation,
+    tenantId: string,
+    customer: { phone?: string; email?: string } | null,
+    opts: { allChannels: boolean },
+  ): Promise<BlockTarget[]> {
+    const targets: BlockTarget[] = [
+      { channel: conv.channel, contact: conv.contact },
+    ];
+    if (!opts.allChannels || !conv.customerId) return targets;
+    if (customer?.phone)
+      targets.push({ channel: 'whatsapp', contact: customer.phone });
+    if (customer?.email)
+      targets.push({ channel: 'email', contact: customer.email });
+    const others = await this.convModel
+      .find({
+        tenantId: new Types.ObjectId(tenantId),
+        customerId: conv.customerId,
+        _id: { $ne: conv._id },
+      })
+      .select('channel contact')
+      .lean<Array<{ channel: ConversationChannel; contact: string }>>();
+    for (const o of others)
+      targets.push({ channel: o.channel, contact: o.contact });
+    return targets;
+  }
+
+  /**
+   * Avisa por tiempo real de los chats (de cualquier cuenta) cuyo bloqueo
+   * cambió, salvo `exceptId`, que ya emitió quien llama.
+   */
+  private async emitOtherChats(
+    tenantId: string,
+    targets: BlockTarget[],
+    exceptId?: string,
+  ): Promise<void> {
+    const or = targets.flatMap((t) => {
+      const key = blockKey(t.channel, t.contact);
+      return [...new Set([t.contact, key].filter(Boolean))].map((c) => ({
+        channel: t.channel,
+        contact: c,
+      }));
+    });
+    if (!or.length) return;
+    const convs = await this.convModel
+      .find({
+        tenantId: new Types.ObjectId(tenantId),
+        ...(exceptId ? { _id: { $ne: new Types.ObjectId(exceptId) } } : {}),
+        $or: or,
+      })
+      .exec();
+    for (const c of convs) this.gateway.emitConversation(tenantId, c);
+  }
+
+  /** Bloqueo a mano desde la pantalla de bloqueados (número, email o id). */
+  async blockManual(
+    tenantId: string,
+    userId: string,
+    dto: {
+      channel: ConversationChannel;
+      contact: string;
+      reason?: string;
+      userName?: string;
+    },
+  ) {
+    const identifier = blockKey(dto.channel, dto.contact);
+    if (!identifier)
+      throw new BadRequestException(
+        dto.channel === 'whatsapp'
+          ? 'El número no es válido'
+          : 'El contacto no es válido',
+      );
+    const [entry] = await this.blocks.block(
+      tenantId,
+      [{ channel: dto.channel, contact: identifier }],
+      {
+        reason: dto.reason,
+        source: 'manual',
+        userId,
+        userName: dto.userName,
+      },
+    );
+    if (dto.channel === 'whatsapp' || dto.channel === 'email')
+      await this.suppression.add(tenantId, {
+        phone: dto.channel === 'whatsapp' ? identifier : undefined,
+        email: dto.channel === 'email' ? identifier : undefined,
+        reason: dto.reason?.trim() || 'Contacto bloqueado',
+        source: 'inbox',
+        userId,
+      });
+    await this.emitOtherChats(tenantId, [
+      { channel: dto.channel, contact: identifier },
+    ]);
+    return entry;
+  }
+
+  /**
+   * Quita un bloqueo desde la pantalla de bloqueados. Si también estaba
+   * bloqueado en WhatsApp, intenta quitarlo allí; si falla, avisa del motivo.
+   * El contacto sigue en "No contactar".
+   */
+  async unblockEntry(
+    tenantId: string,
+    id: string,
+  ): Promise<{ removed: true; channelError?: string }> {
+    const entry = await this.blocks.removeById(tenantId, id);
+    if (!entry) throw new NotFoundException('Bloqueo no encontrado');
+    let channelError: string | undefined;
+    if (entry.channel === 'whatsapp' && entry.onChannel && entry.accountId) {
+      try {
+        const account = await this.waAccounts.findById(String(entry.accountId));
+        if (!account) throw new Error('La cuenta de WhatsApp ya no existe');
+        await this.wa.setContactBlocked(
+          this.waAccounts.toConfig(account),
+          entry.identifier,
+          false,
+        );
+      } catch (err) {
+        channelError = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `No se pudo desbloquear ${String(entry._id)} en WhatsApp: ${channelError}`,
+        );
+      }
+    }
+    await this.emitOtherChats(tenantId, [
+      { channel: entry.channel, contact: entry.identifier },
+    ]);
+    this.logger.log(`Desbloqueo: tenant=${tenantId} bloqueo=${id}`);
+    return { removed: true, ...(channelError ? { channelError } : {}) };
   }
 
   async getConversation(id: string, tenantId: string): Promise<Conversation> {
@@ -845,13 +1004,6 @@ export class ConversationsService {
     await conv.save();
     this.gateway.emitConversation(tenantId, conv);
     return conv;
-  }
-
-  async remove(id: string, tenantId: string) {
-    const conv = await this.getConversation(id, tenantId);
-    await this.msgModel.deleteMany({ conversationId: conv._id }).exec();
-    await this.convModel.deleteOne({ _id: conv._id }).exec();
-    return { deleted: true };
   }
 
   // ------------------------------------------------------------------
@@ -1453,6 +1605,10 @@ export class ConversationsService {
       filename?: string;
     },
   ) {
+    if (await this.blocks.isBlocked(tenantId, 'email', dto.to))
+      throw new BadRequestException(
+        'Este contacto está bloqueado: desbloquéalo para escribirle.',
+      );
     const account = await this.emailAccounts.findOne(dto.accountId, tenantId);
     const conv = await this.upsertConversation(
       'email',
@@ -1591,6 +1747,14 @@ export class ConversationsService {
     noAgent?: boolean;
   }) {
     const { channel, tenantId, accountId, inbound } = params;
+    // Contacto bloqueado: se descarta antes de tocar la conversación, así el
+    // bloqueo vale aunque su chat se haya eliminado.
+    if (await this.blocks.isBlocked(tenantId, channel, inbound.contact)) {
+      this.logger.log(
+        `Mensaje entrante descartado: contacto bloqueado (tenant=${tenantId}, canal=${channel}).`,
+      );
+      return;
+    }
     const conv = await this.upsertConversation(
       channel,
       tenantId,
@@ -1601,7 +1765,7 @@ export class ConversationsService {
     // Contacto bloqueado: no se guarda, no avisa y no despierta al agente.
     if (conv.blocked) {
       this.logger.log(
-        `Mensaje de ${inbound.contact} descartado: contacto bloqueado.`,
+        `Mensaje entrante descartado: chat ${String(conv._id)} bloqueado.`,
       );
       return;
     }

@@ -131,8 +131,16 @@ export class DashboardService {
       this.agrupar(this.convModel, tid, '$channel'),
       this.agentModel.countDocuments({ tenantId: tid, published: true }),
       this.agentModel.countDocuments({ tenantId: tid }),
-      this.msgModel.countDocuments({ tenantId: tid, author: 'agent' }),
-      this.msgModel.countDocuments({ tenantId: tid, author: 'human' }),
+      this.msgModel.countDocuments({
+        tenantId: tid,
+        author: 'agent',
+        inTrash: { $ne: true },
+      }),
+      this.msgModel.countDocuments({
+        tenantId: tid,
+        author: 'human',
+        inTrash: { $ne: true },
+      }),
       this.leads.stats(tenantId, userId, role),
     ]);
 

@@ -33,6 +33,18 @@ import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
 import { EmailListenerService } from './email-listener.service';
 import { MailModule } from '../mail/mail.module';
 import { SmsModule } from '../sms/sms.module';
+import { BlockedContact, BlockedContactSchema } from './blocked-contact.schema';
+import { BlockedContactsService } from './blocked-contacts.service';
+import { ConversationTrashService } from './conversation-trash.service';
+import { Lead, LeadSchema } from '../leads/lead.schema';
+import {
+  ContactActivity,
+  ContactActivitySchema,
+} from '../customers/contact-activity.schema';
+import {
+  AgentBooking,
+  AgentBookingSchema,
+} from '../ai-agents/calendar/agent-booking.schema';
 
 @Module({
   imports: [
@@ -43,6 +55,10 @@ import { SmsModule } from '../sms/sms.module';
       { name: ScheduledMessage.name, schema: ScheduledMessageSchema },
       { name: Customer.name, schema: CustomerSchema },
       { name: User.name, schema: UserSchema },
+      { name: BlockedContact.name, schema: BlockedContactSchema },
+      { name: Lead.name, schema: LeadSchema },
+      { name: ContactActivity.name, schema: ContactActivitySchema },
+      { name: AgentBooking.name, schema: AgentBookingSchema },
     ]),
     WhatsAppModule,
     WhatsAppAccountsModule,
@@ -72,7 +88,9 @@ import { SmsModule } from '../sms/sms.module';
     ConversationAssignmentService,
     EmailListenerService,
     InboxToolsService,
+    BlockedContactsService,
+    ConversationTrashService,
   ],
-  exports: [ConversationsService],
+  exports: [ConversationsService, BlockedContactsService],
 })
 export class ConversationsModule {}

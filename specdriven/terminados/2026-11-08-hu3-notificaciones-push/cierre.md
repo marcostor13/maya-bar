@@ -3,7 +3,7 @@
 - **Cerrada:** 2026-11-08
 - **Estado:** Terminada con pendientes del usuario
 - **Verificación (spec-verifier):** 2.ª vuelta: 18 CUMPLE · 3 PARCIAL · 2 NO VERIFICADO [usuario]. Después se corrigieron el hallazgo alto y dos medios (ver abajo), sin tercera vuelta del verificador.
-- **Commits:** sin commit
+- **Commits:** 25da7e7
 
 Pedido: `hu.md` · Spec: `spec.md` · Plan: `plan.md` · Tareas: `tasks.md`
 

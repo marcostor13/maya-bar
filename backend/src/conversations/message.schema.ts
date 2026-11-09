@@ -127,6 +127,10 @@ export class Message extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User' })
   sentBy?: Types.ObjectId;
 
+  /** Su chat está en la papelera: no cuenta en los paneles. */
+  @Prop()
+  inTrash?: boolean;
+
   @Prop({ type: Date, default: Date.now, index: true })
   at: Date;
 }

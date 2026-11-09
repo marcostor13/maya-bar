@@ -7,6 +7,7 @@ import { MediaUnderstandingService } from '../ai/media-understanding.service';
 import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
 import { SuppressionService } from '../suppression/suppression.service';
+import { BlockedContactsService } from './blocked-contacts.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { EmailTransportService } from '../email-accounts/email-transport.service';
 import { Conversation } from './conversation.schema';
@@ -120,6 +121,10 @@ describe('ConversationsService — contacto del CRM', () => {
         { provide: EmailAccountsService, useValue: {} },
         { provide: EmailTransportService, useValue: {} },
         { provide: ConversationAssignmentService, useValue: fakeAssignment },
+        {
+          provide: BlockedContactsService,
+          useValue: { isBlocked: jest.fn().mockResolvedValue(false) },
+        },
         {
           provide: CampaignAttributionService,
           useValue: { lookup: jest.fn().mockResolvedValue(null) },
@@ -295,6 +300,10 @@ describe('ConversationsService — clasificación y seguimiento', () => {
         { provide: EmailAccountsService, useValue: {} },
         { provide: EmailTransportService, useValue: {} },
         { provide: ConversationAssignmentService, useValue: fakeAssignment },
+        {
+          provide: BlockedContactsService,
+          useValue: { isBlocked: jest.fn().mockResolvedValue(false) },
+        },
         {
           provide: CampaignAttributionService,
           useValue: { lookup: jest.fn().mockResolvedValue(null) },

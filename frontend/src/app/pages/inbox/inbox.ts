@@ -11,6 +11,7 @@ import {
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
   CalendarPlus, ListChecks, ShieldBan, ShieldCheck, Users, UserCheck, UserMinus, Hand, Megaphone,
+  SquareCheck,
 } from 'lucide-angular';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
@@ -24,6 +25,9 @@ import { PlatformService } from '../../core/platform.service';
 import { EmailComposeComponent } from './email-compose';
 import { InboxActionsComponent, type ActionKind } from './inbox-actions';
 import { InboxFiltersComponent } from './inbox-filters';
+import { BlockDialogComponent, type BlockDialogResult } from './block-dialog';
+import { InboxTrashComponent } from './inbox-trash';
+import { InboxBlockedComponent } from './inbox-blocked';
 import { ContactCareComponent } from '../customers/contact-care';
 import type { OwnerRef } from '../../core/api/contact-care-api.service';
 
@@ -199,10 +203,27 @@ const EMOJIS = [
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent],
+  imports: [FormsModule, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent,
+    BlockDialogComponent, InboxTrashComponent, InboxBlockedComponent],
   host: { '(document:paste)': 'onPaste($event)' },
   template: `
     <div class="inbox" [class.thread-open]="selectedId()">
+
+      @if (blockDialog(); as d) {
+        <app-block-dialog
+          [mode]="d.mode"
+          [count]="d.convs.length"
+          [name]="d.convs.length === 1 ? displayName(d.convs[0]) : ''"
+          [canAllChannels]="d.convs.some(c => !!c.customerId)"
+          (confirmed)="onBlockConfirmed($event)"
+          (cancelled)="blockDialog.set(null)" />
+      }
+      @if (trashOpen()) {
+        <app-inbox-trash (closed)="trashOpen.set(false)" (restored)="onRestored($event)" />
+      }
+      @if (blockedOpen()) {
+        <app-inbox-blocked (closed)="blockedOpen.set(false)" />
+      }
 
       <!-- ══ Lista de chats ══ -->
       <aside class="chat-list">
@@ -219,6 +240,28 @@ const EMOJIS = [
               <button class="btn-icon btn-ghost" (click)="reload()" title="Actualizar" aria-label="Actualizar">
                 <lucide-icon [img]="RefreshCw" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
+              <div class="lm-wrap">
+                <button class="btn-icon btn-ghost" (click)="listMenu.set(!listMenu())" title="Más opciones"
+                  aria-label="Más opciones de la bandeja" aria-haspopup="menu" [attr.aria-expanded]="listMenu()">
+                  <lucide-icon [img]="MoreVertical" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                </button>
+                @if (listMenu()) {
+                  <div class="lm-backdrop" (click)="listMenu.set(false)"></div>
+                  <div class="lm-pop" role="menu">
+                    @if (canDelete()) {
+                      <button type="button" role="menuitem" (click)="startSelecting()">
+                        <lucide-icon [img]="SquareCheck" [size]="16" [strokeWidth]="2.2"></lucide-icon> Seleccionar
+                      </button>
+                      <button type="button" role="menuitem" (click)="openTrash()">
+                        <lucide-icon [img]="Trash2" [size]="16" [strokeWidth]="2.2"></lucide-icon> Papelera
+                      </button>
+                    }
+                    <button type="button" role="menuitem" (click)="openBlocked()">
+                      <lucide-icon [img]="ShieldBan" [size]="16" [strokeWidth]="2.2"></lucide-icon> Contactos bloqueados
+                    </button>
+                  </div>
+                }
+              </div>
             </div>
           </div>
           @if (hasEmail()) {
@@ -286,6 +329,25 @@ const EMOJIS = [
           }
           <app-inbox-filters [(status)]="filter" [counts]="assignmentCounts()" [(agentId)]="agentFilter" [(tags)]="tagFilter" [(blocked)]="blockedFilter" [(campaign)]="campaignFilter"
             (serverChange)="onServerFilterChange()" />
+          @if (selecting()) {
+            <div class="select-bar" role="toolbar" aria-label="Acciones con las conversaciones seleccionadas">
+              <button type="button" class="btn btn-sm btn-ghost" (click)="togglePickAll()">
+                <lucide-icon [img]="allPicked() ? SquareCheck : Square" [size]="15" [strokeWidth]="2.3"></lucide-icon>
+                {{ picked().size }} {{ picked().size === 1 ? 'seleccionada' : 'seleccionadas' }}
+              </button>
+              <div class="select-actions">
+                <button type="button" class="btn btn-sm btn-danger" (click)="deletePicked()" [disabled]="picked().size === 0">
+                  <lucide-icon [img]="Trash2" [size]="14" [strokeWidth]="2.4"></lucide-icon> Eliminar
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" (click)="deleteAndBlockPicked()" [disabled]="picked().size === 0">
+                  <lucide-icon [img]="ShieldBan" [size]="14" [strokeWidth]="2.4"></lucide-icon> Eliminar y bloquear
+                </button>
+                <button type="button" class="btn-icon btn-ghost" (click)="cancelSelecting()" aria-label="Cancelar selección" title="Cancelar">
+                  <lucide-icon [img]="X" [size]="17" [strokeWidth]="2.4"></lucide-icon>
+                </button>
+              </div>
+            </div>
+          }
         </div>
 
         <div class="list-scroll">
@@ -306,9 +368,16 @@ const EMOJIS = [
             @for (c of visibleConversations(); track c._id) {
               <button
                 class="chat-item"
-                [class.active]="selectedId() === c._id"
-                (click)="openConversation(c)"
+                [class.active]="!selecting() && selectedId() === c._id"
+                [class.picked]="selecting() && isPicked(c)"
+                [attr.aria-pressed]="selecting() ? isPicked(c) : null"
+                (click)="selecting() ? togglePick(c) : openConversation(c)"
               >
+                @if (selecting()) {
+                  <span class="pick-box" aria-hidden="true">
+                    <lucide-icon [img]="isPicked(c) ? SquareCheck : Square" [size]="20" [strokeWidth]="2.2"></lucide-icon>
+                  </span>
+                }
                 <div class="avatar" [attr.data-channel]="c.channel">
                   @if (c.contactAvatar && !avatarRoto().has(c._id)) {
                     <img class="avatar-img" [src]="c.contactAvatar" [alt]="displayName(c)"
@@ -488,9 +557,11 @@ const EMOJIS = [
                 [attr.aria-label]="selected()!.blocked ? 'Desbloquear contacto' : 'Bloquear contacto'">
                 <lucide-icon [img]="selected()!.blocked ? ShieldCheck : ShieldBan" [size]="18" [strokeWidth]="2.2"></lucide-icon>
               </button>
-              <button class="btn-icon btn-ghost danger" (click)="deleteConversation()" title="Eliminar conversación" aria-label="Eliminar">
-                <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
-              </button>
+              @if (canDelete()) {
+                <button class="btn-icon btn-ghost danger" (click)="deleteConversation()" title="Eliminar conversación (va a la papelera)" aria-label="Eliminar conversación">
+                  <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                </button>
+              }
             </div>
 
             <!-- En el móvil no caben cinco controles: van a una hoja de acciones. -->
@@ -586,12 +657,26 @@ const EMOJIS = [
                   </span>
                 </button>
 
-                <button class="sheet-row danger" (click)="threadMenu.set(false); deleteConversation()">
-                  <span class="sheet-row-icon">
-                    <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
-                  </span>
-                  <span class="sheet-row-text">Eliminar conversación</span>
-                </button>
+                @if (canDelete()) {
+                  <button class="sheet-row danger" (click)="threadMenu.set(false); deleteConversation()">
+                    <span class="sheet-row-icon">
+                      <lucide-icon [img]="Trash2" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                    </span>
+                    <span class="sheet-row-text">
+                      Eliminar conversación
+                      <small>Va a la papelera 30 días</small>
+                    </span>
+                  </button>
+                  <button class="sheet-row danger" (click)="threadMenu.set(false); deleteAndBlockCurrent()">
+                    <span class="sheet-row-icon">
+                      <lucide-icon [img]="ShieldBan" [size]="18" [strokeWidth]="2.2"></lucide-icon>
+                    </span>
+                    <span class="sheet-row-text">
+                      Eliminar y bloquear
+                      <small>Para spam: no vuelve a escribirte</small>
+                    </span>
+                  </button>
+                }
               </div>
             </div>
           }
@@ -1555,6 +1640,34 @@ const EMOJIS = [
     }
 
     .overlay.sheet-overlay { align-items: flex-end; }
+
+    /* Menú "más opciones" de la lista */
+    .lm-wrap { position: relative; }
+    .lm-backdrop { position: fixed; inset: 0; z-index: 40; }
+    .lm-pop {
+      position: absolute; right: 0; top: calc(100% + 6px); z-index: 41;
+      min-width: 220px; padding: 6px; display: flex; flex-direction: column;
+      background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+      animation: fadeInUp var(--transition-spring);
+    }
+    .lm-pop button {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 10px 12px; border: none; background: none; border-radius: 12px;
+      font: inherit; font-size: 14px; color: var(--color-text-main); cursor: pointer; text-align: left;
+    }
+    .lm-pop button:hover, .lm-pop button:focus-visible { background: var(--color-bg-light); outline: none; }
+
+    /* Selección múltiple */
+    .select-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+      margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-md);
+      background: var(--color-brand-light);
+    }
+    .select-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .pick-box { display: flex; align-items: center; color: var(--color-text-muted); flex-shrink: 0; }
+    .chat-item.picked { background: var(--color-brand-light); }
+    .chat-item.picked .pick-box { color: var(--color-brand); }
     /* El interruptor reutiliza el pill del escritorio, pero su estado
        "encendido" cuelga de .sheet-row.on, no de .ai-switch.on. */
     .sheet-row.on .ai-track { background: var(--color-ai); }
@@ -2116,6 +2229,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Phone = Phone;
   readonly MoreVertical = MoreVertical;
   readonly ShieldBan = ShieldBan;
+  readonly SquareCheck = SquareCheck;
   readonly ShieldCheck = ShieldCheck;
   readonly Tag = Tag;
   readonly CalendarPlus = CalendarPlus;
@@ -2223,6 +2337,14 @@ export class InboxComponent implements OnInit, OnDestroy {
   attachment = signal<{ url: string; key?: string; type: MsgType; mimeType: string; filename: string; size: number } | null>(null);
   /** Hoja de acciones del chat en móvil. */
   threadMenu = signal(false);
+  /** Puede eliminar chats (administrador o "Eliminar" marcado en Bandeja). */
+  canDelete = signal(false);
+  listMenu = signal(false);
+  selecting = signal(false);
+  picked = signal<Set<string>>(new Set());
+  trashOpen = signal(false);
+  blockedOpen = signal(false);
+  blockDialog = signal<{ mode: 'block' | 'delete'; convs: Conv[] } | null>(null);
   attachOpen = signal(false);
   emojiOpen = signal(false);
   lightbox = signal<string | null>(null);
@@ -2332,6 +2454,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.loadAccounts();
     this.loadConversations();
+    this.loadPermissions();
     // El aviso de derivación enlaza a /inbox?c=<id>: abre ese chat al entrar.
     const deepLink = this.route.snapshot.queryParamMap.get('c');
     if (deepLink) this.openById(deepLink);
@@ -2983,33 +3106,45 @@ export class InboxComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Bloquear descarta lo que el contacto escriba, impide escribirle y lo pasa a
-   * no contactar; en WhatsApp lo bloquea también en el canal.
+   * Bloquear descarta lo que el contacto escriba (aunque se elimine el chat),
+   * impide escribirle y lo pasa a no contactar; en WhatsApp lo bloquea también
+   * en el canal. Bloquear abre el diálogo (motivo, todos los canales);
+   * desbloquear solo pide confirmación.
    */
   async toggleBlock() {
     const conv = this.selected();
     if (!conv) return;
-    const blocked = !conv.blocked;
-    const ok = await this.confirmSvc.confirm(
-      blocked
-        ? {
-            title: 'Bloquear contacto',
-            message: `Dejarás de recibir los mensajes de ${this.displayName(conv)}, no podrás escribirle y saldrá de las campañas.`
-              + (conv.channel === 'whatsapp' ? ' También se bloqueará en WhatsApp.' : ''),
-            confirmText: 'Bloquear',
-            danger: true,
-          }
-        : {
-            title: 'Desbloquear contacto',
-            message: `Volverás a recibir los mensajes de ${this.displayName(conv)}. Sigue en "No contactar" hasta que lo desmarques en Clasificar.`,
-            confirmText: 'Desbloquear',
-          },
-    );
+    if (!conv.blocked) {
+      this.blockDialog.set({ mode: 'block', convs: [conv] });
+      return;
+    }
+    const ok = await this.confirmSvc.confirm({
+      title: 'Desbloquear contacto',
+      message: `Volverás a recibir los mensajes de ${this.displayName(conv)}. Sigue en "No contactar" hasta que lo desmarques en Clasificar.`,
+      confirmText: 'Desbloquear',
+    });
     if (!ok) return;
+    this.applyBlock(conv, false);
+  }
+
+  /** El usuario confirmó el diálogo de bloqueo (solo bloquear o eliminar y bloquear). */
+  onBlockConfirmed(res: BlockDialogResult) {
+    const d = this.blockDialog();
+    this.blockDialog.set(null);
+    if (!d) return;
+    if (d.mode === 'block') this.applyBlock(d.convs[0], true, res);
+    else this.bulkDelete(d.convs.map(c => c._id), res);
+  }
+
+  private applyBlock(conv: Conv, blocked: boolean, opts?: BlockDialogResult) {
     this.http.patch<{
       conversation: Conv; blocked: boolean; channelBlocked: boolean;
-      channelError?: string; doNotContact?: boolean;
-    }>(`${API}/conversations/${conv._id}/block`, { blocked }).subscribe({
+      channelError?: string; doNotContact?: boolean; blockedCount?: number;
+    }>(`${API}/conversations/${conv._id}/block`, {
+      blocked,
+      ...(opts?.reason ? { reason: opts.reason } : {}),
+      ...(opts?.allChannels ? { allChannels: true } : {}),
+    }).subscribe({
       next: res => {
         this.upsertConv({
           ...conv, ...res.conversation,
@@ -3019,30 +3154,150 @@ export class InboxComponent implements OnInit, OnDestroy {
           this.toast.error(
             `${res.blocked ? 'Bloqueado' : 'Desbloqueado'} en la plataforma, pero no en WhatsApp: ${res.channelError}`,
           );
+        else if (res.blocked && (res.blockedCount ?? 1) > 1)
+          this.toast.success(`Contacto bloqueado en ${res.blockedCount} canales`);
         else this.toast.success(res.blocked ? 'Contacto bloqueado' : 'Contacto desbloqueado');
       },
       error: err => this.toast.error(err.error?.message || 'No se pudo actualizar el bloqueo'),
     });
   }
 
+  /** Manda el chat abierto a la papelera (se puede restaurar 30 días). */
   async deleteConversation() {
     const conv = this.selected();
     if (!conv) return;
     const ok = await this.confirmSvc.confirm({
       title: 'Eliminar conversación',
-      message: `Se borrará todo el historial con ${this.displayName(conv)}. Esta acción no se puede deshacer.`,
+      message: `La conversación con ${this.displayName(conv)} irá a la papelera. Podrás restaurarla durante 30 días.`,
       confirmText: 'Eliminar',
       danger: true,
     });
     if (!ok) return;
     this.http.delete(`${API}/conversations/${conv._id}`).subscribe({
       next: () => {
-        this.conversations.update(list => list.filter(c => c._id !== conv._id));
-        this.selectedId.set(null);
-        this.toast.success('Conversación eliminada');
+        this.removeConvs([conv._id]);
+        this.toast.success('Conversación movida a la papelera');
       },
       error: err => this.toast.error(err.error?.message || 'No se pudo eliminar la conversación'),
     });
+  }
+
+  /** "Eliminar y bloquear" del chat abierto: una sola confirmación. */
+  deleteAndBlockCurrent() {
+    const conv = this.selected();
+    if (conv) this.blockDialog.set({ mode: 'delete', convs: [conv] });
+  }
+
+  // ── Selección múltiple ──
+
+  startSelecting() {
+    this.listMenu.set(false);
+    this.picked.set(new Set());
+    this.selecting.set(true);
+  }
+
+  cancelSelecting() {
+    this.selecting.set(false);
+    this.picked.set(new Set());
+  }
+
+  isPicked(c: Conv) {
+    return this.picked().has(c._id);
+  }
+
+  togglePick(c: Conv) {
+    this.picked.update(set => {
+      const next = new Set(set);
+      if (next.has(c._id)) next.delete(c._id);
+      else next.add(c._id);
+      return next;
+    });
+  }
+
+  /** Marca todas las visibles o, si ya lo están, ninguna. */
+  togglePickAll() {
+    const visible = this.visibleConversations().map(c => c._id);
+    const all = visible.length > 0 && visible.every(id => this.picked().has(id));
+    this.picked.set(all ? new Set() : new Set(visible));
+  }
+
+  allPicked = computed(() => {
+    const visible = this.visibleConversations();
+    return visible.length > 0 && visible.every(c => this.picked().has(c._id));
+  });
+
+  async deletePicked() {
+    const ids = [...this.picked()];
+    if (!ids.length) return;
+    const ok = await this.confirmSvc.confirm({
+      title: ids.length === 1 ? 'Eliminar conversación' : `Eliminar ${ids.length} conversaciones`,
+      message: `${ids.length === 1 ? 'La conversación irá' : 'Las ' + ids.length + ' conversaciones irán'} a la papelera. Podrás restaurarlas durante 30 días.`,
+      confirmText: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.bulkDelete(ids);
+  }
+
+  deleteAndBlockPicked() {
+    const convs = this.conversations().filter(c => this.picked().has(c._id));
+    if (convs.length) this.blockDialog.set({ mode: 'delete', convs });
+  }
+
+  private bulkDelete(ids: string[], block?: BlockDialogResult) {
+    this.http.post<{ trashed: number; ids: string[]; blocked: number; channelErrors?: string[] }>(`${API}/conversations/bulk-delete`, {
+      ids,
+      ...(block ? { block: true, allChannels: block.allChannels, ...(block.reason ? { reason: block.reason } : {}) } : {}),
+    }).subscribe({
+      next: res => {
+        this.removeConvs(res.ids);
+        this.cancelSelecting();
+        const moved = res.trashed === 1 ? '1 conversación movida' : `${res.trashed} conversaciones movidas`;
+        this.toast.success(
+          block ? `${moved} a la papelera y ${res.blocked === 1 ? 'contacto bloqueado' : res.blocked + ' contactos bloqueados'}` : `${moved} a la papelera`,
+        );
+        if (res.channelErrors?.length) {
+          this.toast.error(`Bloqueado en la plataforma, pero no en WhatsApp: ${res.channelErrors[0]}`);
+        }
+      },
+      error: err => this.toast.error(err.error?.message || 'No se pudieron eliminar las conversaciones'),
+    });
+  }
+
+  /** Quita chats de la lista (eliminados aquí o por otra persona). */
+  private removeConvs(ids: string[]) {
+    if (!ids.length) return;
+    const gone = new Set(ids);
+    this.conversations.update(list => list.filter(c => !gone.has(c._id)));
+    if (this.picked().size) this.picked.update(set => new Set([...set].filter(id => !gone.has(id))));
+    const open = this.selectedId();
+    if (open && gone.has(open)) this.selectedId.set(null);
+    this.realtime.refreshUnread();
+  }
+
+  /** Volvió de la papelera: entra en la lista como cualquier actualización. */
+  onRestored(conv: Record<string, unknown>) {
+    this.upsertConv(conv as unknown as Conv);
+    this.realtime.refreshUnread();
+  }
+
+  openTrash() {
+    this.listMenu.set(false);
+    this.trashOpen.set(true);
+  }
+
+  openBlocked() {
+    this.listMenu.set(false);
+    this.blockedOpen.set(true);
+  }
+
+  private loadPermissions() {
+    this.http
+      .get<{ canDelete: boolean }>(`${API}/conversations/permissions`, { context: silentRequest() })
+      .subscribe({
+        next: res => this.canDelete.set(res.canDelete === true),
+        error: () => this.canDelete.set(false),
+      });
   }
 
   // ── Envío ──
@@ -3535,6 +3790,10 @@ export class InboxComponent implements OnInit, OnDestroy {
 
     this.realtime.conversationUpdated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(raw =>
       this.upsertConv(raw as unknown as Conv),
+    );
+
+    this.realtime.conversationRemoved$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p =>
+      this.removeConvs(p.ids),
     );
 
     this.realtime.typing$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p => {

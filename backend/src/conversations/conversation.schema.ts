@@ -151,6 +151,24 @@ export class Conversation extends Document {
   /** true si el bloqueo también quedó aplicado en el canal (WhatsApp). */
   @Prop()
   blockedOnChannel?: boolean;
+
+  // --- Papelera ---
+
+  /**
+   * En la papelera: oculta en toda la plataforma (ver `excludeTrash`) y se
+   * borra definitivamente a los 30 días.
+   */
+  @Prop({ default: false })
+  inTrash: boolean;
+
+  @Prop({ type: Date, index: true })
+  trashedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  trashedBy?: Types.ObjectId;
+
+  @Prop()
+  trashedByName?: string;
 }
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);
@@ -159,7 +177,57 @@ ConversationSchema.index(
   { tenantId: 1, 'campaign.kind': 1, 'campaign.id': 1 },
   { sparse: true },
 );
+// Único solo fuera de la papelera: si el contacto vuelve a escribir mientras su
+// chat viejo está en la papelera, se abre uno nuevo.
 ConversationSchema.index(
   { channel: 1, accountId: 1, contact: 1 },
-  { unique: true },
+  { unique: true, partialFilterExpression: { inTrash: false } },
 );
+
+/** Filtro que deja fuera la papelera. */
+export const NOT_IN_TRASH = { inTrash: { $ne: true } } as const;
+
+/** ¿La consulta ya decide sobre la papelera? Entonces no se toca. */
+function mentionsTrash(filter: Record<string, unknown> | undefined): boolean {
+  return !!filter && Object.hasOwn(filter, 'inTrash');
+}
+
+/**
+ * Las conversaciones en la papelera no existen para el resto de la plataforma
+ * (bandeja, contadores, paneles, recuperación…). Para verlas, la consulta debe
+ * filtrar por `inTrash` de forma explícita. `deleteOne`/`deleteMany` no se
+ * filtran: la purga los necesita.
+ */
+ConversationSchema.pre(
+  [
+    'find',
+    'findOne',
+    'countDocuments',
+    'updateOne',
+    'updateMany',
+    'findOneAndUpdate',
+    'distinct',
+  ],
+  function () {
+    hideTrashInQuery(this);
+  },
+);
+
+ConversationSchema.pre('aggregate', function () {
+  hideTrashInPipeline(this.pipeline());
+});
+
+/** Añade el filtro de papelera a una consulta, salvo que ya decida sobre ella. */
+export function hideTrashInQuery(query: {
+  getFilter(): Record<string, unknown>;
+  where(filter: Record<string, unknown>): unknown;
+}): void {
+  if (!mentionsTrash(query.getFilter())) query.where({ ...NOT_IN_TRASH });
+}
+
+/** Igual para un aggregate: un `$match` inicial, salvo que ya decida sobre ella. */
+export function hideTrashInPipeline(pipeline: object[]): void {
+  const first = pipeline[0] as { $match?: Record<string, unknown> } | undefined;
+  if (first?.$match && mentionsTrash(first.$match)) return;
+  pipeline.unshift({ $match: { ...NOT_IN_TRASH } });
+}

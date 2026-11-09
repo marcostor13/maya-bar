@@ -228,6 +228,48 @@ export class BlockContactDto {
   @IsString()
   @MaxLength(200)
   reason?: string;
+
+  /** Bloquear también el teléfono, el email y los otros chats del cliente. */
+  @IsOptional()
+  @IsBoolean()
+  allChannels?: boolean;
+}
+
+/** Eliminar (a la papelera) varias conversaciones, opcionalmente bloqueándolas. */
+export class BulkDeleteDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsMongoId({ each: true })
+  ids: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  block?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  allChannels?: boolean;
+}
+
+/** Bloqueo a mano desde la pantalla de contactos bloqueados. */
+export class ManualBlockDto {
+  @IsIn(['whatsapp', 'instagram', 'messenger', 'email'])
+  channel: 'whatsapp' | 'instagram' | 'messenger' | 'email';
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(320)
+  contact: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
 }
 
 /** Mensaje (o correo) que sale solo a la hora indicada. */

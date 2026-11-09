@@ -10,9 +10,10 @@ import {
   UseGuards,
   Request,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { ModuleGuard } from '../roles/module.guard';
+import { ModuleGuard, RouteAction } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { ConversationsService } from './conversations.service';
@@ -25,6 +26,8 @@ import {
   SendToPipelineDto,
   DoNotContactDto,
   BlockContactDto,
+  BulkDeleteDto,
+  ManualBlockDto,
   ComposeEmailDto,
   ScheduleMessageDto,
   ConversationTaskDto,
@@ -34,6 +37,8 @@ import {
 } from './dto/conversation.dto';
 import { ConversationAssignmentService } from './conversation-assignment.service';
 import { InboxToolsService } from './inbox-tools.service';
+import { ConversationTrashService } from './conversation-trash.service';
+import { BlockedContactsService } from './blocked-contacts.service';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard, ModuleGuard('inbox'))
@@ -42,7 +47,121 @@ export class ConversationsController {
     private service: ConversationsService,
     private tools: InboxToolsService,
     private assignment: ConversationAssignmentService,
+    private trash: ConversationTrashService,
+    private blocks: BlockedContactsService,
   ) {}
+
+  /** Quién actúa, con su nombre para la papelera y los bloqueos. */
+  private async actor(req: AuthReq) {
+    return {
+      userId: req.user.userId,
+      name: await this.assignment.nameOf(req.user.userId),
+    };
+  }
+
+  // ── Permisos para la interfaz ──
+
+  @Get('permissions')
+  async permissions(@Request() req: AuthReq) {
+    return {
+      canDelete: await this.trash.canDelete(req.user.tenantId, req.user.role),
+    };
+  }
+
+  // ── Papelera (rutas fijas antes de `:id`) ──
+
+  @Get('trash')
+  async trashList(@Request() req: AuthReq) {
+    await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
+    return this.trash.list(req.user.tenantId);
+  }
+
+  @Post('trash/:id/restore')
+  async restore(@Param('id') id: string, @Request() req: AuthReq) {
+    await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
+    return this.trash.restore(req.user.tenantId, id, await this.actor(req));
+  }
+
+  @Delete('trash/:id')
+  async purge(@Param('id') id: string, @Request() req: AuthReq) {
+    await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
+    return this.trash.purge(req.user.tenantId, id, await this.actor(req));
+  }
+
+  @Delete('trash')
+  async emptyTrash(@Request() req: AuthReq) {
+    await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
+    return this.trash.empty(req.user.tenantId, await this.actor(req));
+  }
+
+  /**
+   * Elimina (a la papelera) una o varias conversaciones. Con `block`, antes
+   * bloquea a cada contacto ("Eliminar y bloquear").
+   */
+  @Post('bulk-delete')
+  async bulkDelete(@Body() dto: BulkDeleteDto, @Request() req: AuthReq) {
+    await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
+    const actor = await this.actor(req);
+    let blocked = 0;
+    const channelErrors: string[] = [];
+    if (dto.block) {
+      assertRole(req.user.role, CRM_ROLES);
+      for (const id of dto.ids) {
+        const res = await this.service
+          .setBlocked(
+            id,
+            req.user.tenantId,
+            req.user.userId,
+            true,
+            dto.reason,
+            {
+              allChannels: dto.allChannels,
+              userName: actor.name,
+            },
+          )
+          .catch((err: unknown) => {
+            if (err instanceof NotFoundException) return null;
+            throw err;
+          });
+        if (!res) continue;
+        blocked++;
+        if (res.channelError) channelErrors.push(res.channelError);
+      }
+    }
+    const res = await this.trash.trash(req.user.tenantId, dto.ids, actor);
+    return {
+      ...res,
+      blocked,
+      // Quedaron bloqueados en la plataforma, pero WhatsApp no lo aceptó.
+      ...(channelErrors.length ? { channelErrors } : {}),
+    };
+  }
+
+  // ── Contactos bloqueados ──
+
+  @Get('blocked')
+  blockedList(@Request() req: AuthReq, @Query('q') q?: string) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.blocks.list(req.user.tenantId, q);
+  }
+
+  @Post('blocked')
+  async blockManual(@Body() dto: ManualBlockDto, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    const actor = await this.actor(req);
+    return this.service.blockManual(req.user.tenantId, req.user.userId, {
+      ...dto,
+      userName: actor.name,
+    });
+  }
+
+  // Desbloquear y cancelar un programado son editar, no eliminar conversaciones.
+  @RouteAction('edit')
+  @Delete('blocked/:id')
+  unblockEntry(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.unblockEntry(req.user.tenantId, id);
+  }
 
   @Get()
   async list(
@@ -192,6 +311,8 @@ export class ConversationsController {
     return this.tools.schedule(id, req.user.tenantId, req.user.userId, dto);
   }
 
+  // Desbloquear y cancelar un programado son editar, no eliminar conversaciones.
+  @RouteAction('edit')
   @Delete(':id/scheduled/:scheduledId')
   cancelScheduled(
     @Param('id') id: string,
@@ -310,7 +431,7 @@ export class ConversationsController {
    * se le puede escribir y, en WhatsApp, queda bloqueado también en el canal.
    */
   @Patch(':id/block')
-  block(
+  async block(
     @Param('id') id: string,
     @Body() dto: BlockContactDto,
     @Request() req: AuthReq,
@@ -322,6 +443,10 @@ export class ConversationsController {
       req.user.userId,
       dto.blocked,
       dto.reason,
+      {
+        allChannels: dto.allChannels,
+        userName: await this.assignment.nameOf(req.user.userId),
+      },
     );
   }
 
@@ -425,9 +550,16 @@ export class ConversationsController {
     return this.service.setStatus(id, req.user.tenantId, dto.status);
   }
 
+  /** Manda la conversación a la papelera (se puede restaurar 30 días). */
   @Delete(':id')
-  remove(@Param('id') id: string, @Request() req: AuthReq) {
-    assertRole(req.user.role, CRM_ROLES);
-    return this.service.remove(id, req.user.tenantId);
+  async remove(@Param('id') id: string, @Request() req: AuthReq) {
+    await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
+    const res = await this.trash.trash(
+      req.user.tenantId,
+      [id],
+      await this.actor(req),
+    );
+    if (!res.trashed) throw new NotFoundException('Conversación no encontrada');
+    return { deleted: true, trashed: true };
   }
 }

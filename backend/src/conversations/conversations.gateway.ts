@@ -35,6 +35,12 @@ export class ConversationsGateway
     this.server?.to(tenantId).emit('conversation:updated', payload);
   }
 
+  /** Conversaciones que salieron de la bandeja (papelera). */
+  emitRemoved(tenantId: string, ids: string[]) {
+    if (ids.length)
+      this.server?.to(tenantId).emit('conversation:removed', { ids });
+  }
+
   /** Cambió la lista de mensajes programados de un chat (se envió uno o falló). */
   emitScheduledChanged(tenantId: string, conversationId: string) {
     this.server?.to(tenantId).emit('scheduled:changed', { conversationId });

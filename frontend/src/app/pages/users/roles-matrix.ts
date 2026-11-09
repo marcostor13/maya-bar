@@ -269,10 +269,22 @@ export class RolesMatrixComponent implements OnInit {
     return role.modules.includes(moduleKey);
   }
 
-  /** Sin restricción guardada se permiten todas las acciones. */
+  /** Sin restricción guardada se permiten todas las acciones (ver `implicitActions`). */
   canAct(role: TenantRole, moduleKey: string, action: string): boolean {
-    const allowed = role.actions?.[moduleKey];
-    return allowed === undefined ? true : allowed.includes(action);
+    const allowed = role.actions?.[moduleKey] ?? this.implicitActions(role, moduleKey);
+    return allowed.includes(action);
+  }
+
+  /**
+   * Acciones de un módulo sin nada guardado: todas, salvo eliminar
+   * conversaciones, que el servidor solo concede al administrador o si se
+   * marca a propósito. Así la matriz muestra lo que de verdad se aplica.
+   */
+  private implicitActions(role: TenantRole, moduleKey: string): string[] {
+    const all = this.actionDefs().map((a) => a.key);
+    if (moduleKey === 'inbox' && role.key !== 'TENANT_ADMIN')
+      return all.filter((a) => a !== 'delete');
+    return all;
   }
 
   isLocked(roleKey: string, moduleKey: string): boolean {
@@ -307,10 +319,9 @@ export class RolesMatrixComponent implements OnInit {
     this.roles.update((list) =>
       list.map((r) => {
         if (r.key !== role.key) return r;
-        const all = this.actionDefs().map((a) => a.key);
-        // La primera vez que se toca hay que materializar "todas", porque el
-        // estado implícito no se puede modificar parcialmente.
-        const current = r.actions?.[moduleKey] ?? all;
+        // La primera vez que se toca hay que materializar el estado implícito,
+        // porque no se puede modificar parcialmente.
+        const current = r.actions?.[moduleKey] ?? this.implicitActions(r, moduleKey);
         const next = current.includes(action)
           ? current.filter((a) => a !== action)
           : [...current, action];

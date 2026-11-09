@@ -9,9 +9,23 @@ import {
 } from '@nestjs/common';
 import { RolesService } from './roles.service';
 import type { AuthReq } from '../auth/permissions';
-import { ACTION_LABELS, MODULES, actionForMethod } from './modules.catalog';
+import {
+  ACTION_LABELS,
+  MODULES,
+  actionForMethod,
+  type ModuleAction,
+} from './modules.catalog';
 
 export const MODULE_KEY = 'platform_module';
+export const ROUTE_ACTION_KEY = 'platform_module_action';
+
+/**
+ * Declara qué acción de la matriz exige una ruta cuando el verbo HTTP no la
+ * describe bien. Ej.: desbloquear un contacto es `DELETE`, pero en la Bandeja
+ * "Eliminar" significa eliminar conversaciones; desbloquear es editar.
+ */
+export const RouteAction = (action: ModuleAction) =>
+  SetMetadata(ROUTE_ACTION_KEY, action);
 
 /**
  * Exige que el rol del usuario tenga acceso al módulo, según la matriz que la
@@ -46,7 +60,13 @@ export function ModuleGuard(moduleKey: string): Type<CanActivate> {
 
       // El verbo HTTP dice qué se está intentando hacer, así que no hace falta
       // anotar cada endpoint. GET no se restringe: verlo ya lo concede el módulo.
-      const action = actionForMethod(req.method ?? 'GET');
+      const handler = context.getHandler?.();
+      const declared = handler
+        ? (Reflect.getMetadata(ROUTE_ACTION_KEY, handler) as
+            | ModuleAction
+            | undefined)
+        : undefined;
+      const action = declared ?? actionForMethod(req.method ?? 'GET');
       if (!action) return true;
 
       const allowed = actions?.[moduleKey];

@@ -140,3 +140,29 @@ describe('ConversationsRealtimeService → insignia', () => {
     delete nav['clearAppBadge'];
   });
 });
+
+describe('ConversationsRealtimeService → conversaciones eliminadas', () => {
+  it('reenvía conversation:removed y recalcula el no leído', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: { currentUser: () => ({ tenantId: 't1' }) } },
+        { provide: NativePushService, useValue: { clearConversation: vi.fn() } },
+      ],
+    });
+    const rt = TestBed.inject(ConversationsRealtimeService);
+    const http = TestBed.inject(HttpTestingController);
+    const handlers = new Map<string, (p: unknown) => void>();
+    rt.bind({ on: ((ev: string, fn: (p: unknown) => void) => handlers.set(ev, fn)) as never });
+
+    const removed = vi.fn();
+    rt.conversationRemoved$.subscribe(removed);
+    handlers.get('conversation:removed')!({ ids: ['c1', 'c2'] });
+
+    expect(removed).toHaveBeenCalledWith({ ids: ['c1', 'c2'] });
+    http.expectOne(`${API}/conversations/unread-count`).flush({ total: 1 });
+    expect(rt.unread()).toBe(1);
+    http.verify();
+  });
+});
