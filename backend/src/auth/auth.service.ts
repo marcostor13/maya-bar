@@ -9,7 +9,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
-import { UsersService } from '../users/users.service';
+import { UsersService, hashResetCode } from '../users/users.service';
+import { UserSessionsService } from '../users/user-sessions.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { MailService } from '../mail/mail.service';
 import { RefreshToken } from './refresh-token.schema';
@@ -41,6 +42,7 @@ export class AuthService {
     private mailService: MailService,
     @InjectModel(RefreshToken.name)
     private refreshTokens: Model<RefreshToken>,
+    private sessions: UserSessionsService,
   ) {}
 
   /**
@@ -96,6 +98,8 @@ export class AuthService {
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
       userAgent,
     });
+    // Toda sesión nueva o renovada pasa por aquí: es el "último acceso".
+    await this.sessions.touchAccess(userId);
     return token;
   }
 
@@ -164,6 +168,9 @@ export class AuthService {
         null,
       localIds: ((user['localIds'] as unknown[]) ?? []).map((id) => String(id)),
       mustChangePassword: !!user['mustChangePassword'],
+      // `iat` va en segundos: con esto una revocación en el mismo segundo que
+      // el login también invalida el token (ver ActiveUserCache.check).
+      iatMs: Date.now(),
     };
     const result = {
       access_token: this.jwtService.sign(payload),
@@ -315,8 +322,7 @@ export class AuthService {
       return { message: 'Si el correo existe, se ha enviado un código.' };
     }
 
-    // Generate 6-digit code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = randomInt(100000, 1000000).toString();
     const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     await this.usersService.saveResetCode(String(user._id), code, expires);
@@ -329,17 +335,26 @@ export class AuthService {
     const user = await this.usersService.findOneByEmail(email);
     // Mensaje único para TODAS las ramas de fallo: igual que forgotPassword,
     // no se debe revelar si el email existe (anti-enumeración).
+    const invalid = new BadRequestException(
+      'El código es inválido o ha expirado',
+    );
     if (
       !user ||
       !user.resetPasswordCode ||
-      user.resetPasswordCode !== code ||
       !user.resetPasswordExpires ||
       new Date() > user.resetPasswordExpires
-    ) {
-      throw new BadRequestException('El código es inválido o ha expirado');
+    )
+      throw invalid;
+    if (hashResetCode(code) !== user.resetPasswordCode) {
+      // Seis dígitos se adivinan a fuerza de intentos: con el tope, el código
+      // muere antes y hay que pedir otro.
+      await this.usersService.registerResetFailure(String(user._id));
+      throw invalid;
     }
 
     await this.usersService.resetPassword(String(user._id), newPassword);
+    // Quien tuviera la contraseña anterior (o una sesión abierta) queda fuera.
+    await this.sessions.revoke(String(user._id), { refresh: true });
     return { message: 'Contraseña actualizada exitosamente' };
   }
 }

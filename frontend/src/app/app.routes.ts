@@ -226,6 +226,11 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/admin/tenants').then(m => m.AdminTenantsComponent),
         canActivate: [roleGuard('SUPERADMIN')],
       },
+      {
+        path: 'admin/users',
+        loadComponent: () => import('./pages/admin/users').then(m => m.AdminUsersComponent),
+        canActivate: [roleGuard('SUPERADMIN')],
+      },
       // Nunca llega a pintarse: el guard siempre redirige a la primera pantalla
       // que le toque al rol. El componente está solo porque la ruta lo exige.
       {

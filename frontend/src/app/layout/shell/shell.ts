@@ -784,7 +784,10 @@ export class ShellComponent {
     if (this.isSuperAdmin()) {
       return [{
         label: 'PLATAFORMA',
-        items: [{ key: 'tenants', label: 'Empresas', icon: Building2, route: '/admin/tenants' }],
+        items: [
+          { key: 'tenants', label: 'Empresas', icon: Building2, route: '/admin/tenants' },
+          { key: 'admin-users', label: 'Usuarios', icon: Users, route: '/admin/users' },
+        ],
       }];
     }
 

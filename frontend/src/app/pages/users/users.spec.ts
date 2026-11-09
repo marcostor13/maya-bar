@@ -4,8 +4,9 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { UsersComponent } from './users';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { AuthService } from '../../auth/auth.service';
 
-const ADMIN = { _id: 'u1', name: 'Dueña', email: 'admin@x.pe', role: 'TENANT_ADMIN', isActive: true, mustChangePassword: false, createdAt: '2026-01-01' };
+const ADMIN = { _id: 'u1', name: 'Dueña', email: 'admin@x.pe', role: 'TENANT_ADMIN', isActive: true, mustChangePassword: false, createdAt: '2026-01-01', lastAccessAt: '2026-11-05T15:30:00' };
 const PEDRO = { _id: 'u2', name: 'Pedro Ruiz', email: 'pedro@x.pe', role: 'MANAGER', isActive: true, localIds: ['l1'], mustChangePassword: true, createdAt: '2026-02-01' };
 const INACTIVA = { _id: 'u3', email: 'ines@x.pe', role: 'MARKETING', isActive: false, localIds: [], mustChangePassword: false, createdAt: '2026-03-01' };
 const LOCALS = [{ _id: 'l1', name: 'Sede Centro' }, { _id: 'l2', name: 'Sede Norte' }];
@@ -25,7 +26,10 @@ describe('UsersComponent', () => {
   const actions = (email: string) =>
     Array.from(row(email).querySelectorAll('.actions button')).map((b) => b.textContent!.trim());
   const drawer = () => el().querySelector('.drawer') as HTMLElement;
-  const delModal = () => el().querySelector('.modal-card') as HTMLElement;
+  /** "Eliminar" exacto (no "Eliminar definitivamente"). */
+  const eliminarBtn = (root: ParentNode) =>
+    Array.from(root.querySelectorAll<HTMLButtonElement>('.actions button')).find((b) => b.textContent!.trim() === 'Eliminar')!;
+  const delModal = () => el().querySelector('app-user-delete-dialog .ud-modal') as HTMLElement;
   const click = (target: HTMLElement) => { target.click(); fixture.detectChanges(); };
   const settle = async () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -50,6 +54,8 @@ describe('UsersComponent', () => {
         provideHttpClient(), provideHttpClientTesting(),
         { provide: ToastService, useValue: toast },
         { provide: ConfirmService, useValue: confirm },
+        // La sesión es la de la administradora (u1).
+        { provide: AuthService, useValue: { currentUser: () => ({ id: 'u1' }) } },
       ],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
@@ -71,7 +77,7 @@ describe('UsersComponent', () => {
     await settle();
   }
   function openDelete(email: string, impact: object, candidates: unknown[] = []) {
-    click(button('Eliminar', row(email)));
+    click(eliminarBtn(row(email)));
     const id = email === PEDRO.email ? 'u2' : 'u3';
     const imp = http.expectOne((r) => r.url.endsWith(`/users/${id}/impact`));
     const cand = http.expectOne((r) => r.url.endsWith(`/users/${id}/reassign-candidates`));
@@ -105,6 +111,13 @@ describe('UsersComponent', () => {
       fixture.detectChanges();
       expect(toast.error).toHaveBeenCalledWith('Error al cargar usuarios');
       expect(el().querySelector('.loading-msg')).toBeNull();
+      // Un fallo no se confunde con un equipo vacío y se puede reintentar.
+      expect(el().textContent).not.toContain('No hay usuarios registrados aún.');
+      expect(el().textContent).toContain('No se pudo cargar el equipo.');
+      click(button('Reintentar'));
+      expectUsers().flush([PEDRO]);
+      fixture.detectChanges();
+      expect(row(PEDRO.email)).toBeTruthy();
     });
 
     it('pinta rol, locales, estado y la marca de contraseña temporal', async () => {
@@ -121,11 +134,60 @@ describe('UsersComponent', () => {
       expect(row(INACTIVA.email).querySelector('.badge-warning')).toBeNull();
     });
 
-    it('al administrador de la empresa no se le puede editar, desactivar ni eliminar', async () => {
+    it('en mi propia fila solo puedo editar; al resto lo gestiono, también a otros administradores', async () => {
+      const OTRO_ADMIN = { ...ADMIN, _id: 'u4', email: 'otro@x.pe', name: 'Otro admin' };
+      await setup([ADMIN, PEDRO, INACTIVA, OTRO_ADMIN]);
+      expect(row(ADMIN.email).querySelector('.badge-me')!.textContent).toContain('Tú');
+      expect(actions(ADMIN.email)).toEqual(['Editar']);
+      expect(actions(PEDRO.email)).toEqual(['Editar', 'Restablecer', 'Desactivar', 'Eliminar']);
+      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Restablecer', 'Activar', 'Eliminar']);
+      expect(actions(OTRO_ADMIN.email)).toEqual(['Editar', 'Restablecer', 'Desactivar', 'Eliminar']);
+    });
+
+    it('muestra el último acceso, o "Nunca" si no ha entrado', async () => {
       await setup();
-      expect(actions(ADMIN.email)).toEqual([]);
-      expect(actions(PEDRO.email)).toEqual(['Editar', 'Desactivar', 'Eliminar']);
-      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Activar', 'Eliminar']);
+      expect(row(ADMIN.email).querySelector('.td-access')!.textContent).toContain('05/11/2026 15:30');
+      expect(row(PEDRO.email).querySelector('.td-access')!.textContent).toContain('Nunca');
+    });
+  });
+
+  describe('buscar y filtrar', () => {
+    const setSelect = (label: string, value: string) => {
+      const sel = el().querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
+      sel.value = value;
+      sel.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+    const search = (value: string) => {
+      const input = el().querySelector('input[aria-label="Buscar usuarios"]') as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    };
+    const visible = () => Array.from(el().querySelectorAll('tbody tr')).map((r) => r.querySelector('[data-label="Email"]')!.textContent!.trim());
+
+    it('busca por nombre o email sin distinguir mayúsculas', async () => {
+      await setup();
+      await fixture.whenStable();
+      search('PEDRO');
+      expect(visible()).toEqual(['pedro@x.pe']);
+      search('ines@');
+      expect(visible()).toEqual(['ines@x.pe']);
+    });
+
+    it('combina búsqueda, estado y rol; sin resultados ofrece quitar filtros', async () => {
+      await setup();
+      await fixture.whenStable();
+      setSelect('Filtrar por estado', 'inactive');
+      expect(visible()).toEqual(['ines@x.pe']);
+      search('pedro');
+      expect(el().textContent).toContain('Ningún usuario coincide con la búsqueda.');
+      click(button('Quitar filtros'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(visible()).toEqual(['admin@x.pe', 'pedro@x.pe', 'ines@x.pe']);
+      setSelect('Filtrar por rol', 'MANAGER');
+      expect(visible()).toEqual(['pedro@x.pe']);
     });
   });
 
@@ -200,18 +262,22 @@ describe('UsersComponent', () => {
   });
 
   describe('editar', () => {
-    it('manda PATCH /users/:id con nombre, rol y locales (el email no se edita) y avisa', async () => {
+    it('manda PATCH /users/:id con nombre, email, teléfono, rol y locales y avisa', async () => {
       await setup();
       await openDrawer(() => button('Editar', row(PEDRO.email)).click());
       expect(drawer().querySelector('h2')!.textContent).toContain('Editar usuario');
-      expect(drawer().querySelector('[name="email"]')).toBeNull();
       type('name', 'Pedro R.');
+      type('email', 'pedro.ruiz@x.pe');
+      expect(drawer().textContent).toContain('tendrá que iniciar sesión de nuevo');
+      type('phone', '51999111222');
       type('role', 'SERVER');
       submit();
 
       const req = http.expectOne((r) => r.url.endsWith('/users/u2'));
       expect(req.request.method).toBe('PATCH');
-      expect(req.request.body).toEqual({ name: 'Pedro R.', role: 'SERVER', localIds: ['l1'] });
+      expect(req.request.body).toEqual({
+        name: 'Pedro R.', email: 'pedro.ruiz@x.pe', phone: '51999111222', role: 'SERVER', localIds: ['l1'],
+      });
       req.flush({ _id: 'u2', name: 'Pedro R.', role: 'SERVER' });
       fixture.detectChanges();
 
@@ -219,6 +285,29 @@ describe('UsersComponent', () => {
       expect(drawer()).toBeNull();
       expect(row(PEDRO.email).textContent).toContain('Pedro R.');
       expect(row(PEDRO.email).textContent).toContain('Mesero');
+    });
+
+    it('al editarme a mí misma el rol no se puede cambiar ni se envía', async () => {
+      await setup();
+      await openDrawer(() => button('Editar', row(ADMIN.email)).click());
+      expect((drawer().querySelector('select[name="role"]') as HTMLSelectElement).disabled).toBe(true);
+      expect(drawer().textContent).toContain('Traspasar administración');
+      type('name', 'Dueña G.');
+      submit();
+      const req = http.expectOne((r) => r.url.endsWith('/users/u1'));
+      expect(req.request.body).not.toHaveProperty('role');
+      req.flush({ ...ADMIN, name: 'Dueña G.' });
+    });
+
+    it('el panel es un diálogo accesible y Escape lo cierra', async () => {
+      await setup();
+      await openDrawer(() => button('+ Nuevo usuario').click());
+      expect(drawer().getAttribute('role')).toBe('dialog');
+      expect(drawer().getAttribute('aria-modal')).toBe('true');
+      expect(drawer().querySelector('button[aria-label="Cerrar"] lucide-icon')).toBeTruthy();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+      expect(drawer()).toBeNull();
     });
 
     it('si falla muestra el mensaje del servidor y deja el panel abierto', async () => {
@@ -257,7 +346,7 @@ describe('UsersComponent', () => {
       fixture.detectChanges();
       expect(toast.success).toHaveBeenCalledWith('Usuario desactivado');
       expect(row(PEDRO.email).textContent).toContain('Inactivo');
-      expect(actions(PEDRO.email)).toEqual(['Editar', 'Activar', 'Eliminar']);
+      expect(actions(PEDRO.email)).toEqual(['Editar', 'Restablecer', 'Activar', 'Eliminar']);
     });
 
     it('si falla desactivar avisa con un toast de error y la fila sigue activa', async () => {
@@ -279,7 +368,7 @@ describe('UsersComponent', () => {
       req.flush({ ...INACTIVA, isActive: true });
       fixture.detectChanges();
       expect(toast.success).toHaveBeenCalledWith('Usuario activado');
-      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Desactivar', 'Eliminar']);
+      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Restablecer', 'Desactivar', 'Eliminar']);
     });
 
     it('si falla activar avisa con un toast de error', async () => {
@@ -299,7 +388,7 @@ describe('UsersComponent', () => {
 
     it('primero calcula el impacto y no elimina nada hasta confirmarlo', async () => {
       await setup();
-      click(button('Eliminar', row(PEDRO.email)));
+      click(eliminarBtn(row(PEDRO.email)));
       expect(delModal().textContent).toContain('Eliminar a Pedro Ruiz');
       expect(delModal().textContent).toContain('Calculando qué tiene asociado…');
       expect(button('Eliminar definitivamente', delModal()).disabled).toBe(true);
@@ -309,7 +398,7 @@ describe('UsersComponent', () => {
       fixture.detectChanges();
 
       expect(delModal().textContent!.replace(/\s+/g, ' ')).toContain('Tiene 5 registro(s) asociados');
-      const items = Array.from(delModal().querySelectorAll('.impact-list li')).map((li) => li.textContent);
+      const items = Array.from(delModal().querySelectorAll('.ud-impact li')).map((li) => li.textContent);
       expect(items).toEqual(['Oportunidades3', 'Tareas2']);
       expect(button('Eliminar definitivamente', delModal()).disabled).toBe(false);
       http.expectNone((r) => r.method === 'DELETE');
@@ -328,7 +417,7 @@ describe('UsersComponent', () => {
       await setup();
       openDelete(PEDRO.email, NADA);
       expect(delModal().textContent).toContain('Este usuario no tiene contenido asociado.');
-      expect(delModal().querySelector('#reassign')).toBeNull();
+      expect(delModal().querySelector('select[name="reassign"]')).toBeNull();
       click(button('Eliminar definitivamente', delModal()));
       expect(button('Eliminando…', delModal()).disabled).toBe(true);
 
@@ -345,7 +434,7 @@ describe('UsersComponent', () => {
       await setup();
       openDelete(PEDRO.email, IMPACT, [INACTIVA]);
       await settle();
-      const select = delModal().querySelector('#reassign') as HTMLSelectElement;
+      const select = delModal().querySelector('select[name="reassign"]') as HTMLSelectElement;
       expect(Array.from(select.options).map((o) => o.textContent!.trim())).toEqual([
         'Dejarlos a nivel de empresa (los verán los administradores)', 'Reasignar a ines@x.pe',
       ]);
@@ -376,21 +465,56 @@ describe('UsersComponent', () => {
         .flush({ message: 'Es el único gerente' }, { status: 400, statusText: 'Bad Request' });
       fixture.detectChanges();
       expect(toast.error).toHaveBeenCalledWith('Es el único gerente');
-      expect(delModal().querySelector('.form-error')!.textContent).toContain('Es el único gerente');
+      expect(delModal().querySelector('.ud-error')!.textContent).toContain('Es el único gerente');
       expect(button('Eliminar definitivamente', delModal()).disabled).toBe(false);
       expect(row(PEDRO.email)).toBeTruthy();
     });
 
     it('si no se puede calcular el impacto lo dice dentro del diálogo', async () => {
       await setup();
-      click(button('Eliminar', row(INACTIVA.email)));
+      click(eliminarBtn(row(INACTIVA.email)));
       http.expectOne((r) => r.url.endsWith('/users/u3/impact'))
         .flush({ message: 'Sin permiso para verlo' }, { status: 403, statusText: 'Forbidden' });
       http.expectOne((r) => r.url.endsWith('/users/u3/reassign-candidates')).flush(null, { status: 403, statusText: 'Forbidden' });
       fixture.detectChanges();
       expect(delModal().textContent).toContain('Eliminar a ines@x.pe');
-      expect(delModal().querySelector('.form-error')!.textContent).toContain('Sin permiso para verlo');
+      expect(delModal().querySelector('.ud-error')!.textContent).toContain('Sin permiso para verlo');
       expect(delModal().textContent).not.toContain('Calculando');
+    });
+  });
+
+  describe('restablecer, traspasar y registro', () => {
+    it('"Restablecer" abre el diálogo para ese usuario', async () => {
+      await setup();
+      click(button('Restablecer', row(PEDRO.email)));
+      const dialog = el().querySelector('app-reset-access-dialog')!;
+      expect(dialog.textContent).toContain('Pedro Ruiz');
+      click(button('Cancelar', dialog));
+      expect(el().querySelector('app-reset-access-dialog')).toBeNull();
+      // Al cerrarlo se recarga el equipo (cambia la marca de contraseña temporal).
+      expectUsers().flush([ADMIN, PEDRO, INACTIVA]);
+    });
+
+    it('"Traspasar administración" ofrece solo usuarios activos que no soy yo', async () => {
+      await setup();
+      click(button('Traspasar administración'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const dialog = el().querySelector('app-transfer-admin-dialog')!;
+      const people = Array.from(dialog.querySelectorAll('select[name="to"] option')).map((o) => o.textContent!.trim());
+      expect(people).toEqual(['Elige a una persona', 'Pedro Ruiz']);
+    });
+
+    it('la pestaña Registro carga el registro de la empresa', async () => {
+      await setup();
+      click(button('Registro'));
+      const req = http.expectOne((r) => r.url.endsWith('/users/audit'));
+      req.flush([{ _id: 'a1', at: '2026-11-05T10:00:00', action: 'update', actorName: 'Dueña', actorRole: 'TENANT_ADMIN',
+        targetEmail: 'pedro@x.pe', changes: { role: { from: 'SERVER', to: 'MANAGER' } } }]);
+      fixture.detectChanges();
+      const audit = el().querySelector('app-user-audit')!;
+      expect(audit.textContent).toContain('Edición');
+      expect(audit.textContent).toContain('Rol: Mesero → Gerente');
     });
   });
 });

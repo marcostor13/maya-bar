@@ -56,8 +56,13 @@ export class User extends Document {
   @Prop({ sparse: true, index: true })
   referralCode?: string;
 
+  /** Hash SHA-256 del código de recuperación, nunca el código en claro. */
   @Prop()
   resetPasswordCode?: string;
+
+  /** Intentos fallidos con el código de recuperación vigente. */
+  @Prop()
+  resetPasswordAttempts?: number;
 
   @Prop()
   resetPasswordExpires?: Date;
@@ -87,6 +92,14 @@ export class User extends Document {
    */
   @Prop({ type: Object })
   pushPrefs?: PushPrefs;
+
+  /** Último inicio o renovación de sesión. */
+  @Prop({ type: Date })
+  lastAccessAt?: Date;
+
+  /** Los tokens de acceso emitidos antes de esta fecha ya no valen. */
+  @Prop({ type: Date })
+  sessionsValidFrom?: Date;
 }
 
 /** Preferencias de notificaciones push de un usuario. */

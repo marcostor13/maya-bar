@@ -6,8 +6,9 @@ import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
-import { UsersService } from '../users/users.service';
+import { UsersService, hashResetCode } from '../users/users.service';
 import { TenantsService } from '../tenants/tenants.service';
+import { UserSessionsService } from '../users/user-sessions.service';
 import { MailService } from '../mail/mail.service';
 import { createHash } from 'crypto';
 
@@ -54,9 +55,14 @@ describe('AuthService', () => {
     create: jest.fn(),
     changePassword: jest.fn(),
     saveResetCode: jest.fn(),
+    registerResetFailure: jest.fn(),
     resetPassword: jest.fn(),
   };
   const tenantsService = { create: jest.fn(), remove: jest.fn() };
+  const sessions = {
+    revoke: jest.fn().mockResolvedValue(undefined),
+    touchAccess: jest.fn().mockResolvedValue(undefined),
+  };
   const mailService = {
     isConfigured: false,
     sendPasswordResetEmail: jest.fn(),
@@ -83,6 +89,7 @@ describe('AuthService', () => {
         { provide: UsersService, useValue: usersService },
         { provide: TenantsService, useValue: tenantsService },
         { provide: MailService, useValue: mailService },
+        { provide: UserSessionsService, useValue: sessions },
         {
           provide: getModelToken(RefreshToken.name),
           useValue: refreshTokenModel,
@@ -161,8 +168,11 @@ describe('AuthService', () => {
         tenantId: tenantOid.toString(),
         localIds: [localOid.toString()],
         mustChangePassword: false,
+        iatMs: expect.any(Number) as number,
       });
       expect(result.access_token).toBe('signed.jwt.token');
+      // Toda sesión nueva anota el último acceso.
+      expect(sessions.touchAccess).toHaveBeenCalledWith(String(user._id));
     });
 
     it('returns the public user object without password', async () => {
@@ -477,7 +487,7 @@ describe('AuthService', () => {
 
     it('resets the password when the code is valid and not expired', async () => {
       const user = makeUserDoc({
-        resetPasswordCode: '123456',
+        resetPasswordCode: hashResetCode('123456'),
         resetPasswordExpires: futureDate(),
       });
       usersService.findOneByEmail.mockResolvedValue(user);
@@ -492,6 +502,10 @@ describe('AuthService', () => {
         String(user._id),
         'Nueva123!',
       );
+      // Las sesiones anteriores dejan de valer.
+      expect(sessions.revoke).toHaveBeenCalledWith(String(user._id), {
+        refresh: true,
+      });
       expect(result).toEqual({
         message: 'Contraseña actualizada exitosamente',
       });
@@ -499,13 +513,34 @@ describe('AuthService', () => {
 
     it('rejects a wrong code', async () => {
       const user = makeUserDoc({
-        resetPasswordCode: '123456',
+        resetPasswordCode: hashResetCode('123456'),
         resetPasswordExpires: futureDate(),
       });
       usersService.findOneByEmail.mockResolvedValue(user);
 
       await expect(
         service.resetPassword('user@test.com', '000000', 'Nueva123!'),
+      ).rejects.toThrow('El código es inválido o ha expirado');
+      expect(usersService.resetPassword).not.toHaveBeenCalled();
+      // Cuenta el intento fallido para cortar la fuerza bruta.
+      expect(usersService.registerResetFailure).toHaveBeenCalledWith(
+        String(user._id),
+      );
+    });
+
+    it('rejects the stored hash typed as if it were the code', async () => {
+      const user = makeUserDoc({
+        resetPasswordCode: hashResetCode('123456'),
+        resetPasswordExpires: futureDate(),
+      });
+      usersService.findOneByEmail.mockResolvedValue(user);
+
+      await expect(
+        service.resetPassword(
+          'user@test.com',
+          hashResetCode('123456'),
+          'Nueva123!',
+        ),
       ).rejects.toThrow('El código es inválido o ha expirado');
       expect(usersService.resetPassword).not.toHaveBeenCalled();
     });
@@ -524,7 +559,7 @@ describe('AuthService', () => {
 
     it('rejects an expired code', async () => {
       const user = makeUserDoc({
-        resetPasswordCode: '123456',
+        resetPasswordCode: hashResetCode('123456'),
         resetPasswordExpires: new Date(Date.now() - 1000),
       });
       usersService.findOneByEmail.mockResolvedValue(user);

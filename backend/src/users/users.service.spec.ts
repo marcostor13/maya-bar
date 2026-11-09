@@ -9,7 +9,11 @@ import {
 import { RolesService } from '../roles/roles.service';
 import { Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { UsersService } from './users.service';
+import {
+  RESET_CODE_MAX_ATTEMPTS,
+  UsersService,
+  hashResetCode,
+} from './users.service';
 import { User } from './user.schema';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -46,6 +50,7 @@ function createUserModel() {
   model.findOneAndUpdate = jest.fn().mockReturnValue(buildQuery(null));
   model.findByIdAndUpdate = jest.fn().mockReturnValue(buildQuery(null));
   model.find = jest.fn().mockReturnValue(buildQuery([]));
+  model.updateOne = jest.fn().mockReturnValue(buildQuery({}));
   return model;
 }
 
@@ -252,65 +257,6 @@ describe('UsersService', () => {
     });
   });
 
-  // ─── updateUser ────────────────────────────────────────────────────────────
-
-  describe('updateUser', () => {
-    it('scopes the update to the caller tenant (filter includes tenantId)', async () => {
-      const updated = { _id: userOid, name: 'Nuevo' };
-      userModel.findOneAndUpdate.mockReturnValue(buildQuery(updated));
-
-      const result = await service.updateUser(
-        userOid.toString(),
-        tenantOid.toString(),
-        { name: 'Nuevo' },
-      );
-
-      const [filter, updates, options] =
-        userModel.findOneAndUpdate.mock.calls[0];
-      expect(filter._id).toBe(userOid.toString());
-      expect(filter.tenantId).toBeInstanceOf(Types.ObjectId);
-      expect(filter.tenantId.toString()).toBe(tenantOid.toString());
-      expect(updates).toEqual({ name: 'Nuevo' });
-      expect(options.projection).toEqual({ password: 0 });
-      expect(result).toBe(updated);
-    });
-
-    it('returns null when the user belongs to another tenant (no match)', async () => {
-      userModel.findOneAndUpdate.mockReturnValue(buildQuery(null));
-
-      const result = await service.updateUser(
-        userOid.toString(),
-        new Types.ObjectId().toString(), // otro tenant
-        { name: 'Intruso' },
-      );
-
-      expect(result).toBeNull();
-    });
-
-    it('rejects role changes outside CREATABLE_ROLES', async () => {
-      await expect(
-        service.updateUser(userOid.toString(), tenantOid.toString(), {
-          role: 'SUPERADMIN',
-        }),
-      ).rejects.toThrow(ForbiddenException);
-      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
-    });
-  });
-
-  // ─── deactivateUser ────────────────────────────────────────────────────────
-
-  describe('deactivateUser', () => {
-    it('deactivates scoped by tenant and never a TENANT_ADMIN', async () => {
-      await service.deactivateUser(userOid.toString(), tenantOid.toString());
-
-      const [filter, update] = userModel.findOneAndUpdate.mock.calls[0];
-      expect(filter._id).toBe(userOid.toString());
-      expect(filter.tenantId.toString()).toBe(tenantOid.toString());
-      expect(filter.role).toEqual({ $ne: 'TENANT_ADMIN' });
-      expect(update).toEqual({ isActive: false });
-    });
-  });
-
   // ─── changePassword ────────────────────────────────────────────────────────
 
   describe('changePassword', () => {
@@ -357,6 +303,59 @@ describe('UsersService', () => {
       expect(bcrypt.compareSync('Nueva123!', doc.password)).toBe(true);
       expect(doc.mustChangePassword).toBe(false);
       expect(doc.save).toHaveBeenCalled();
+    });
+  });
+
+  // ─── código de recuperación ────────────────────────────────────────────────
+
+  describe('saveResetCode / registerResetFailure', () => {
+    it('guarda el hash del código, no el código, y reinicia los intentos', async () => {
+      userModel.findByIdAndUpdate.mockReturnValue(buildQuery(null));
+      const expires = new Date();
+      await service.saveResetCode(userOid.toString(), '654321', expires);
+      const [, update] = userModel.findByIdAndUpdate.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(update).toEqual({
+        resetPasswordCode: hashResetCode('654321'),
+        resetPasswordExpires: expires,
+        resetPasswordAttempts: 0,
+      });
+      expect(update.resetPasswordCode).not.toContain('654321');
+    });
+
+    it('invalida el código al llegar al tope de intentos', async () => {
+      userModel.findByIdAndUpdate.mockReturnValue(
+        buildQuery({
+          _id: userOid,
+          resetPasswordAttempts: RESET_CODE_MAX_ATTEMPTS,
+        }),
+      );
+      await service.registerResetFailure(userOid.toString());
+      expect(userModel.updateOne).toHaveBeenCalledWith(
+        { _id: userOid },
+        {
+          $unset: {
+            resetPasswordCode: 1,
+            resetPasswordExpires: 1,
+            resetPasswordAttempts: 1,
+          },
+        },
+      );
+    });
+
+    it('por debajo del tope solo suma el intento', async () => {
+      userModel.findByIdAndUpdate.mockReturnValue(
+        buildQuery({ _id: userOid, resetPasswordAttempts: 1 }),
+      );
+      await service.registerResetFailure(userOid.toString());
+      expect(userModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        userOid.toString(),
+        { $inc: { resetPasswordAttempts: 1 } },
+        { new: true },
+      );
+      expect(userModel.updateOne).not.toHaveBeenCalled();
     });
   });
 

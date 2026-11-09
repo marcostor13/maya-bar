@@ -94,4 +94,37 @@ describe('ActiveUserCache', () => {
     await cache.isActive('u1');
     expect(users.findById).toHaveBeenCalledTimes(2);
   });
+
+  describe('revocación por fecha', () => {
+    const validFrom = new Date('2026-01-01T09:00:00Z');
+    const ms = (d: Date) => d.getTime();
+
+    it('un token emitido antes de la revocación queda revocado', async () => {
+      users.findById.mockResolvedValue({
+        isActive: true,
+        sessionsValidFrom: validFrom,
+      });
+      await expect(cache.check('u1', ms(validFrom) - 1)).resolves.toBe(
+        'revoked',
+      );
+    });
+
+    it('un token emitido después sigue valiendo', async () => {
+      users.findById.mockResolvedValue({
+        isActive: true,
+        sessionsValidFrom: validFrom,
+      });
+      await expect(cache.check('u1', ms(validFrom) + 5)).resolves.toBe('ok');
+    });
+
+    it('sin revocación cualquier token activo vale', async () => {
+      users.findById.mockResolvedValue({ isActive: true });
+      await expect(cache.check('u1', 1)).resolves.toBe('ok');
+    });
+
+    it('un usuario desactivado da inactive aunque el token sea nuevo', async () => {
+      users.findById.mockResolvedValue({ isActive: false });
+      await expect(cache.check('u1', ms(new Date()))).resolves.toBe('inactive');
+    });
+  });
 });

@@ -32,6 +32,23 @@ const CREATABLE_ROLES = [
   'IMPULSADOR',
 ];
 
+/** Campos que nunca salen en una respuesta de la API. */
+export const SECRET_FIELDS = {
+  password: 0,
+  resetPasswordCode: 0,
+  resetPasswordExpires: 0,
+  resetPasswordAttempts: 0,
+  emailVerificationCodeHash: 0,
+} as const;
+
+/** Intentos fallidos antes de invalidar un código de recuperación. */
+export const RESET_CODE_MAX_ATTEMPTS = 5;
+
+/** El código de recuperación se guarda como hash: un volcado de la base no sirve para cambiar contraseñas. */
+export function hashResetCode(code: string): string {
+  return crypto.createHash('sha256').update(code.trim()).digest('hex');
+}
+
 @Injectable()
 export class UsersService implements OnModuleInit {
   private readonly logger = new Logger(UsersService.name);
@@ -173,42 +190,11 @@ export class UsersService implements OnModuleInit {
     return { user, tempPassword };
   }
 
-  async updateUser(
-    id: string,
-    tenantId: string,
-    updates: {
-      name?: string;
-      role?: string;
-      isActive?: boolean;
-      localIds?: string[];
-    },
-  ): Promise<User | null> {
-    if (updates.role) await this.assertRoleAllowed(tenantId, updates.role);
-    const { localIds, ...rest } = updates;
-    const payload: Record<string, unknown> = { ...rest };
-    // Lista vacía es una elección válida: significa "todos los locales".
-    if (localIds !== undefined)
-      payload.localIds = localIds
-        .filter((l) => Types.ObjectId.isValid(l))
-        .map((l) => new Types.ObjectId(l));
-
-    return this.userModel
-      .findOneAndUpdate(
-        { _id: id, tenantId: new Types.ObjectId(tenantId) },
-        payload,
-        { new: true, projection: { password: 0 } },
-      )
-      .exec();
-  }
-
   /**
    * Acepta los roles del sistema y los que la empresa haya creado. El respaldo
    * cubre el caso de que la colección de roles todavía no exista.
    */
-  private async assertRoleAllowed(
-    tenantId: string,
-    role: string,
-  ): Promise<void> {
+  async assertRoleAllowed(tenantId: string, role: string): Promise<void> {
     let permitidos: string[] = CREATABLE_ROLES;
     try {
       const configurados = await this.roles.assignableKeys(tenantId);
@@ -218,19 +204,6 @@ export class UsersService implements OnModuleInit {
     }
     if (!permitidos.includes(role))
       throw new ForbiddenException('Rol no permitido');
-  }
-
-  async deactivateUser(id: string, tenantId: string): Promise<void> {
-    await this.userModel
-      .findOneAndUpdate(
-        {
-          _id: id,
-          tenantId: new Types.ObjectId(tenantId),
-          role: { $ne: 'TENANT_ADMIN' },
-        },
-        { isActive: false },
-      )
-      .exec();
   }
 
   // ── Borrado definitivo ────────────────────────────────────────────────────
@@ -330,7 +303,7 @@ export class UsersService implements OnModuleInit {
           _id: { $ne: new Types.ObjectId(id) },
           isActive: true,
         },
-        { password: 0 },
+        SECRET_FIELDS,
       )
       .sort({ name: 1 })
       .exec();
@@ -364,12 +337,14 @@ export class UsersService implements OnModuleInit {
       );
 
     if (user.role === 'TENANT_ADMIN') {
-      const admins = await this.userModel.countDocuments({
+      // Los demás administradores activos: borrar a uno inactivo no deja la empresa sin acceso.
+      const others = await this.userModel.countDocuments({
         tenantId: new Types.ObjectId(tenantId),
+        _id: { $ne: user._id },
         role: 'TENANT_ADMIN',
-        isActive: true,
+        isActive: { $ne: false },
       });
-      if (admins <= 1)
+      if (others === 0)
         throw new ForbiddenException(
           'Es el último administrador activo: asigna otro antes de eliminarlo',
         );
@@ -397,10 +372,35 @@ export class UsersService implements OnModuleInit {
   ): Promise<void> {
     await this.userModel
       .findByIdAndUpdate(userId, {
-        resetPasswordCode: code,
+        resetPasswordCode: hashResetCode(code),
         resetPasswordExpires: expires,
+        resetPasswordAttempts: 0,
       })
       .exec();
+  }
+
+  /** Suma un intento fallido; al llegar al tope el código deja de valer. */
+  async registerResetFailure(userId: string): Promise<void> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $inc: { resetPasswordAttempts: 1 } },
+        { new: true },
+      )
+      .exec();
+    if (user && (user.resetPasswordAttempts ?? 0) >= RESET_CODE_MAX_ATTEMPTS)
+      await this.userModel
+        .updateOne(
+          { _id: user._id },
+          {
+            $unset: {
+              resetPasswordCode: 1,
+              resetPasswordExpires: 1,
+              resetPasswordAttempts: 1,
+            },
+          },
+        )
+        .exec();
   }
 
   async resetPassword(userId: string, newPassword: string): Promise<User> {
@@ -409,6 +409,7 @@ export class UsersService implements OnModuleInit {
     user.password = await bcrypt.hash(newPassword, 10);
     user.resetPasswordCode = undefined;
     user.resetPasswordExpires = undefined;
+    user.resetPasswordAttempts = undefined;
     // Si la cuenta tenía contraseña temporal, al recuperarla ya estableció una
     // definitiva: no debe forzarse otro cambio en el siguiente login.
     user.mustChangePassword = false;
@@ -436,7 +437,7 @@ export class UsersService implements OnModuleInit {
 
   async findAllByTenant(tenantId: string): Promise<User[]> {
     return this.userModel
-      .find({ tenantId: new Types.ObjectId(tenantId) }, { password: 0 })
+      .find({ tenantId: new Types.ObjectId(tenantId) }, SECRET_FIELDS)
       .sort({ createdAt: -1 })
       .exec();
   }

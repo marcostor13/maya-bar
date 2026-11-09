@@ -1,49 +1,43 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, ElementRef, HostListener, Injector, afterNextRender, computed, inject, signal, viewChild, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { LucideAngularModule, Search, KeyRound, Crown, X, RotateCw } from 'lucide-angular';
 import { RolesMatrixComponent } from './roles-matrix';
+import { ROLE_LABELS } from './role-labels';
+import { ResetAccessDialogComponent } from './reset-access-dialog';
+import { UserDeleteDialogComponent } from './user-delete-dialog';
+import { TransferAdminDialogComponent } from './transfer-admin-dialog';
+import { UserAuditComponent } from './user-audit';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { AuthService } from '../../auth/auth.service';
 import { environment } from '../../../environments/environment';
 
 interface TenantUser {
   _id: string;
   name?: string;
   email: string;
+  phone?: string;
   role: string;
   isActive: boolean;
   localIds?: string[];
   mustChangePassword: boolean;
   createdAt: string;
+  lastAccessAt?: string;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  TENANT_ADMIN: 'Administrador',
-  MANAGER: 'Gerente',
-  HOST: 'Hostess',
-  SERVER: 'Mesero',
-  KITCHEN: 'Cocina',
-  BAR: 'Bar',
-  MARKETING: 'Marketing',
-  IMPULSADOR: 'Impulsador',
-};
-
-/** Lo que devuelve `GET /users/:id/impact`. */
-interface DeletionImpact {
-  userId: string;
-  name: string;
-  email: string;
-  role: string;
-  items: { collection: string; label: string; count: number }[];
-  total: number;
-}
+type StatusFilter = 'all' | 'active' | 'inactive';
 
 const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BAR', 'MARKETING', 'IMPULSADOR'];
 
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [FormsModule, RolesMatrixComponent],
+  imports: [
+    FormsModule, DatePipe, LucideAngularModule, RolesMatrixComponent, ResetAccessDialogComponent,
+    UserDeleteDialogComponent, TransferAdminDialogComponent, UserAuditComponent,
+  ],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -52,7 +46,12 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
           <p class="page-sub">Gestiona el equipo de tu empresa y lo que ve cada rol</p>
         </div>
         @if (tab() === 'users') {
-          <button class="btn btn-primary" (click)="openCreate()">+ Nuevo usuario</button>
+          <div class="header-actions">
+            <button class="btn btn-secondary" (click)="transferOpen.set(true)">
+              <lucide-icon [img]="Crown" [size]="16" [strokeWidth]="2.3"></lucide-icon> Traspasar administración
+            </button>
+            <button class="btn btn-primary" (click)="openCreate()">+ Nuevo usuario</button>
+          </div>
         }
       </div>
 
@@ -63,94 +62,153 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
         <button class="tab-btn" [class.active]="tab() === 'roles'" (click)="tab.set('roles')">
           Roles y accesos
         </button>
+        <button class="tab-btn" [class.active]="tab() === 'audit'" (click)="tab.set('audit')">
+          Registro
+        </button>
       </div>
 
       @if (tab() === 'roles') {
         <app-roles-matrix />
+      } @else if (tab() === 'audit') {
+        <app-user-audit [url]="api + '/audit'" [roleLabels]="roleLabels()" />
       } @else if (loading()) {
         <p class="loading-msg">Cargando…</p>
+      } @else if (loadError()) {
+        <div class="empty-state card" role="alert">
+          <p>No se pudo cargar el equipo.</p>
+          <button class="btn btn-secondary" (click)="loadUsers()">
+            <lucide-icon [img]="RotateCw" [size]="16"></lucide-icon> Reintentar
+          </button>
+        </div>
       } @else if (users().length === 0) {
         <div class="empty-state card">
           <p>No hay usuarios registrados aún.</p>
           <button class="btn btn-primary" (click)="openCreate()">Crear primer usuario</button>
         </div>
       } @else {
-        <div class="table-wrap card">
-          <table>
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Email</th>
-                <th>Rol</th>
-                <th>Locales</th>
-                <th>Estado</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (u of users(); track u._id) {
-                <tr [class.row-inactive]="!u.isActive">
-                  <td class="td-name">
-                    {{ u.name || '—' }}
-                    @if (u.mustChangePassword) {
-                      <span class="badge-warning" title="Contraseña temporal">Temp</span>
-                    }
-                  </td>
-                  <td data-label="Email">{{ u.email }}</td>
-                  <td data-label="Rol">{{ roleLabel(u.role) }}</td>
-                  <td data-label="Locales" class="td-locals">{{ localsLabel(u) }}</td>
-                  <td data-label="Estado">
-                    <span [class]="u.isActive ? 'badge-success' : 'badge-neutral'">
-                      {{ u.isActive ? 'Activo' : 'Inactivo' }}
-                    </span>
-                  </td>
-                  <td class="actions">
-                    @if (u.role !== 'TENANT_ADMIN') {
+        <div class="filters">
+          <label class="search">
+            <lucide-icon [img]="Search" [size]="16" [strokeWidth]="2.2"></lucide-icon>
+            <input class="input" type="search" placeholder="Buscar por nombre o email"
+              aria-label="Buscar usuarios" [ngModel]="query()" (ngModelChange)="query.set($event)" />
+          </label>
+          <select class="select" aria-label="Filtrar por rol" [ngModel]="roleFilter()" (ngModelChange)="roleFilter.set($event)">
+            <option value="">Todos los roles</option>
+            @for (r of availableRoles(); track r.key) {
+              <option [value]="r.key">{{ r.label }}</option>
+            }
+          </select>
+          <select class="select" aria-label="Filtrar por estado" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
+            <option value="all">Todos</option>
+            <option value="active">Activos</option>
+            <option value="inactive">Desactivados</option>
+          </select>
+        </div>
+
+        @if (filtered().length === 0) {
+          <div class="empty-state card">
+            <p>Ningún usuario coincide con la búsqueda.</p>
+            <button class="btn btn-secondary btn-sm" (click)="clearFilters()">Quitar filtros</button>
+          </div>
+        } @else {
+          <div class="table-wrap card">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>Rol</th>
+                  <th>Locales</th>
+                  <th>Último acceso</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (u of filtered(); track u._id) {
+                  <tr [class.row-inactive]="!u.isActive">
+                    <td class="td-name">
+                      {{ u.name || '—' }}
+                      @if (isMe(u)) {
+                        <span class="badge-me">Tú</span>
+                      }
+                      @if (u.mustChangePassword) {
+                        <span class="badge-warning" title="Contraseña temporal">Temp</span>
+                      }
+                    </td>
+                    <td data-label="Email">{{ u.email }}</td>
+                    <td data-label="Rol">{{ roleLabel(u.role) }}</td>
+                    <td data-label="Locales" class="td-locals">{{ localsLabel(u) }}</td>
+                    <td data-label="Último acceso" class="td-access">
+                      {{ u.lastAccessAt ? (u.lastAccessAt | date: 'dd/MM/yyyy HH:mm') : 'Nunca' }}
+                    </td>
+                    <td data-label="Estado">
+                      <span [class]="u.isActive ? 'badge-success' : 'badge-neutral'">
+                        {{ u.isActive ? 'Activo' : 'Inactivo' }}
+                      </span>
+                    </td>
+                    <td class="actions">
                       <button class="btn btn-ghost btn-sm" (click)="openEdit(u)">Editar</button>
-                      @if (u.isActive) {
-                        <button class="btn btn-danger btn-sm" (click)="deactivate(u)">Desactivar</button>
-                        <button class="btn btn-ghost btn-sm danger-text" (click)="openDelete(u)"
-                          title="Eliminar definitivamente">Eliminar</button>
-                      } @else {
-                        <button class="btn btn-secondary btn-sm" (click)="activate(u)">Activar</button>
-                        <button class="btn btn-ghost btn-sm danger-text" (click)="openDelete(u)"
+                      @if (!isMe(u)) {
+                        <button class="btn btn-ghost btn-sm" (click)="resetting.set(u)"
+                          [attr.aria-label]="'Restablecer acceso de ' + (u.name || u.email)">
+                          <lucide-icon [img]="KeyRound" [size]="14" [strokeWidth]="2.3"></lucide-icon> Restablecer
+                        </button>
+                        @if (u.isActive) {
+                          <button class="btn btn-danger btn-sm" (click)="deactivate(u)">Desactivar</button>
+                        } @else {
+                          <button class="btn btn-secondary btn-sm" (click)="activate(u)">Activar</button>
+                        }
+                        <button class="btn btn-ghost btn-sm danger-text" (click)="deleting.set(u)"
                           title="Eliminar definitivamente">Eliminar</button>
                       }
-                    }
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
       }
     </div>
 
     <!-- Drawer: create / edit -->
     @if (showDrawer()) {
       <div class="overlay" (click)="closeDrawer()">
-        <div class="drawer" (click)="$event.stopPropagation()">
+        <div class="drawer" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="u-drawer-title">
           <div class="drawer-header">
-            <h2>{{ editingUser() ? 'Editar usuario' : 'Nuevo usuario' }}</h2>
-            <button class="btn btn-ghost btn-icon" (click)="closeDrawer()">✕</button>
+            <h2 id="u-drawer-title">{{ editingUser() ? 'Editar usuario' : 'Nuevo usuario' }}</h2>
+            <button type="button" class="btn btn-ghost btn-icon" (click)="closeDrawer()" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="18" [strokeWidth]="2.4"></lucide-icon>
+            </button>
           </div>
 
           <form (ngSubmit)="save()" #f="ngForm" class="drawer-form">
             <div class="field">
-              <label>Nombre</label>
-              <input class="input" name="name" [(ngModel)]="form.name" placeholder="Nombre completo" />
+              <label for="u-name">Nombre</label>
+              <input id="u-name" class="input" name="name" [(ngModel)]="form.name" placeholder="Nombre completo" #nameInput />
             </div>
 
-            @if (!editingUser()) {
-              <div class="field">
-                <label>Email *</label>
-                <input class="input" name="email" [(ngModel)]="form.email" type="email" required placeholder="correo@empresa.com" />
-              </div>
-            }
+            <div class="field">
+              <label for="u-email">Email *</label>
+              <input id="u-email" class="input" name="email" [(ngModel)]="form.email" type="email" email required
+                placeholder="correo@empresa.com" />
+              @if (editingUser() && emailChanged()) {
+                <p class="field-hint">Con el correo nuevo tendrá que iniciar sesión de nuevo.</p>
+              }
+            </div>
 
             <div class="field">
-              <label>Rol *</label>
-              <select class="input" name="role" [(ngModel)]="form.role" required>
+              <label for="u-phone">Teléfono</label>
+              <input id="u-phone" class="input" name="phone" [(ngModel)]="form.phone" inputmode="tel" placeholder="51999888777" />
+            </div>
+
+            <div class="field">
+              <label for="u-role">Rol *</label>
+              @if (editingSelf()) {
+                <p class="field-hint">No puedes cambiar tu propio rol. Usa "Traspasar administración".</p>
+              }
+              <select id="u-role" class="input" name="role" [(ngModel)]="form.role" required [disabled]="editingSelf()">
                 @for (r of availableRoles(); track r.key) {
                   <option [value]="r.key">{{ r.label }}</option>
                 }
@@ -216,58 +274,16 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
       </div>
     }
 
-    <!-- ── Eliminar definitivamente ── -->
     @if (deleting(); as target) {
-      <div class="overlay" (click)="closeDelete()" role="dialog" aria-modal="true"
-        aria-label="Eliminar usuario">
-        <div class="modal-card" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <div>
-              <h3 class="modal-title">Eliminar a {{ target.name || target.email }}</h3>
-              <p class="modal-sub">
-                Esta acción no se puede deshacer. Desactivar, en cambio, conserva
-                el usuario y todo su contenido.
-              </p>
-            </div>
-          </div>
-
-          <div class="modal-body">
-            @if (impactLoading()) {
-              <p class="muted">Calculando qué tiene asociado…</p>
-            } @else if (impact(); as imp) {
-              @if (imp.total === 0) {
-                <p class="muted">Este usuario no tiene contenido asociado.</p>
-              } @else {
-                <p class="impact-lead">
-                  Tiene <strong>{{ imp.total }}</strong> registro(s) asociados:
-                </p>
-                <ul class="impact-list">
-                  @for (item of imp.items; track item.collection) {
-                    <li><span>{{ item.label }}</span><strong>{{ item.count }}</strong></li>
-                  }
-                </ul>
-
-                <label class="field-label" for="reassign">¿Qué hacemos con ellos?</label>
-                <select id="reassign" class="select" [(ngModel)]="reassignTo" name="reassign">
-                  <option value="">Dejarlos a nivel de empresa (los verán los administradores)</option>
-                  @for (c of candidates(); track c._id) {
-                    <option [value]="c._id">Reasignar a {{ c.name || c.email }}</option>
-                  }
-                </select>
-              }
-            }
-            @if (deleteError()) { <p class="form-error">{{ deleteError() }}</p> }
-          </div>
-
-          <div class="modal-actions">
-            <button class="btn btn-secondary" (click)="closeDelete()">Cancelar</button>
-            <button class="btn btn-danger" (click)="confirmDelete()"
-              [disabled]="impactLoading() || deletingBusy()">
-              {{ deletingBusy() ? 'Eliminando…' : 'Eliminar definitivamente' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <app-user-delete-dialog [user]="target" [apiBase]="api"
+        (deleted)="onDeleted($event)" (closed)="deleting.set(null)" />
+    }
+    @if (resetting(); as target) {
+      <app-reset-access-dialog [user]="target" [apiBase]="api" (closed)="onResetClosed()" />
+    }
+    @if (transferOpen()) {
+      <app-transfer-admin-dialog [candidates]="transferCandidates()" [roles]="availableRoles()" [apiBase]="api"
+        (done)="onTransferred()" (closed)="transferOpen.set(false)" />
     }
   `,
   styles: [`
@@ -285,28 +301,17 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
 
     .danger-text { color: var(--color-error); }
     .danger-text:hover { background: #FEF2F2; }
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45);
-      backdrop-filter: blur(3px); display: flex; align-items: center;
-      justify-content: center; z-index: 120; }
-    .modal-card { background: #fff; border-radius: var(--radius-lg);
-      width: calc(100% - 48px); max-width: 520px; box-shadow: var(--shadow-lg); overflow: hidden; }
-    .modal-header { padding: 24px 28px 14px; border-bottom: 1px solid var(--color-border); }
-    .modal-title { font-family: var(--font-heading); font-size: 17px; font-weight: 700; margin: 0 0 6px; }
-    .modal-sub { margin: 0; font-size: 13px; color: var(--color-text-muted); line-height: 1.55; }
-    .modal-body { padding: 20px 28px; }
-    .impact-lead { margin: 0 0 10px; font-size: 14px; }
-    .impact-list { list-style: none; margin: 0 0 20px; padding: 0;
-      border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
-    .impact-list li { display: flex; justify-content: space-between; gap: 12px;
-      padding: 9px 14px; font-size: 13.5px; border-bottom: 1px solid var(--color-border); }
-    .impact-list li:last-child { border-bottom: none; }
-    .impact-list li:nth-child(odd) { background: var(--color-bg-app); }
-    .impact-list strong { font-variant-numeric: tabular-nums; }
-    .modal-actions { display: flex; justify-content: flex-end; gap: 10px;
-      padding: 16px 28px 22px; }
-    .muted { color: var(--color-text-muted); font-size: 14px; margin: 0; }
-
-    .tabs-row { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tabs-row { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .header-actions .btn, .actions .btn { display: inline-flex; align-items: center; gap: 5px; }
+    .filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .filters .select { width: auto; min-width: 160px; }
+    .search { position: relative; flex: 1; min-width: 220px; display: flex; align-items: center; }
+    .search lucide-icon { position: absolute; left: 14px; color: var(--color-text-muted); pointer-events: none; }
+    .search .input { padding-left: 38px; width: 100%; }
+    .td-access { font-size: 13px; color: var(--color-text-muted); white-space: nowrap; }
+    .badge-me { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; padding: 2px 7px;
+      border-radius: var(--radius-pill); background: var(--color-brand-light); color: var(--color-brand); }
     .tab-btn { padding: 8px 18px; border-radius: var(--radius-pill);
       border: 1px solid var(--color-border); background: #fff; font-size: 13px;
       font-weight: 600; color: var(--color-text-muted); cursor: pointer;
@@ -543,7 +548,9 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
     @media (max-width: 768px) {
       .page { padding: 20px 16px; }
       .page-header { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 24px; }
-      .page-header .btn { width: 100%; }
+      .page-header .btn { width: 100%; justify-content: center; }
+      .header-actions { flex-direction: column; }
+      .filters .select { flex: 1; }
 
       table thead { display: none; }
       table, tbody { display: block; width: 100%; }
@@ -570,12 +577,71 @@ export class UsersComponent implements OnInit {
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
 
-  private readonly api = environment.apiUrl + '/users';
+  private auth = inject(AuthService);
+
+  readonly api = environment.apiUrl + '/users';
+  readonly Search = Search;
+  readonly KeyRound = KeyRound;
+  readonly Crown = Crown;
+  readonly X = X;
+  readonly RotateCw = RotateCw;
+  loadError = signal(false);
 
   users = signal<TenantUser[]>([]);
-  tab = signal<'users' | 'roles'>('users');
+  tab = signal<'users' | 'roles' | 'audit'>('users');
+
+  query = signal('');
+  roleFilter = signal('');
+  statusFilter = signal<StatusFilter>('all');
+
+  /** Lista visible: búsqueda por nombre o email y filtros de rol y estado. */
+  filtered = computed(() => {
+    const q = this.query().trim().toLowerCase();
+    const role = this.roleFilter();
+    const status = this.statusFilter();
+    return this.users().filter((u) =>
+      (!q || (u.name ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+      (!role || u.role === role) &&
+      (status === 'all' || (status === 'active') === u.isActive),
+    );
+  });
+
+  deleting = signal<TenantUser | null>(null);
+  resetting = signal<TenantUser | null>(null);
+  transferOpen = signal(false);
+
+  /** A quién se puede traspasar: activos y que no sean yo. */
+  transferCandidates = computed(() => this.users().filter((u) => u.isActive && !this.isMe(u)));
+  roleLabels = computed(() => Object.fromEntries(this.availableRoles().map((r) => [r.key, r.label])));
+
+  isMe(u: TenantUser): boolean {
+    return u._id === this.auth.currentUser()?.id;
+  }
+
+  editingSelf(): boolean {
+    const u = this.editingUser();
+    return !!u && this.isMe(u);
+  }
+
+  emailChanged(): boolean {
+    const u = this.editingUser();
+    return !!u && this.form.email.trim().toLowerCase() !== u.email;
+  }
+
+  clearFilters() {
+    this.query.set('');
+    this.roleFilter.set('');
+    this.statusFilter.set('all');
+  }
   loading = signal(true);
   showDrawer = signal(false);
+  private injector = inject(Injector);
+  private nameInput = viewChild<ElementRef<HTMLInputElement>>('nameInput');
+
+  /** Al abrir el panel, el foco va al primer campo. */
+  private focusFirstField() {
+    afterNextRender(() => this.nameInput()?.nativeElement.focus(), { injector: this.injector });
+  }
   saving = signal(false);
   formError = signal('');
   editingUser = signal<TenantUser | null>(null);
@@ -622,9 +688,10 @@ export class UsersComponent implements OnInit {
   }
 
   /** `localIds` vacío significa "todos los locales de la empresa". */
-  form: { name: string; email: string; role: string; localIds: string[] } = {
+  form: { name: string; email: string; phone: string; role: string; localIds: string[] } = {
     name: '',
     email: '',
+    phone: '',
     role: 'SERVER',
     localIds: [],
   };
@@ -640,28 +707,43 @@ export class UsersComponent implements OnInit {
 
   loadUsers() {
     this.loading.set(true);
+    this.loadError.set(false);
     this.http.get<TenantUser[]>(this.api).subscribe({
       next: (users) => { this.users.set(users); this.loading.set(false); },
-      error: () => { this.loading.set(false); this.toast.error('Error al cargar usuarios'); },
+      error: () => {
+        this.loading.set(false);
+        this.loadError.set(true);
+        this.toast.error('Error al cargar usuarios');
+      },
     });
   }
 
   openCreate() {
     this.editingUser.set(null);
-    this.form = { name: '', email: '', role: 'SERVER', localIds: [] as string[] };
+    this.form = { name: '', email: '', phone: '', role: 'SERVER', localIds: [] as string[] };
     this.formError.set('');
     this.showDrawer.set(true);
+    this.focusFirstField();
   }
 
   openEdit(u: TenantUser) {
     this.editingUser.set(u);
-    this.form = { name: u.name || '', email: u.email, role: u.role, localIds: [...(u.localIds ?? [])] };
+    this.form = {
+      name: u.name || '', email: u.email, phone: u.phone || '', role: u.role, localIds: [...(u.localIds ?? [])],
+    };
     this.formError.set('');
     this.showDrawer.set(true);
+    this.focusFirstField();
   }
 
   closeDrawer() {
     this.showDrawer.set(false);
+  }
+
+  /** Escape cierra el panel (los diálogos gestionan su propio Escape). */
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    if (this.showDrawer() && !this.saving()) this.closeDrawer();
   }
 
   save() {
@@ -672,7 +754,10 @@ export class UsersComponent implements OnInit {
     if (editing) {
       this.http.patch<TenantUser>(`${this.api}/${editing._id}`, {
         name: this.form.name,
-        role: this.form.role,
+        email: this.form.email.trim(),
+        phone: this.form.phone.trim(),
+        // El propio rol no se envía: el servidor lo rechazaría.
+        ...(this.isMe(editing) ? {} : { role: this.form.role }),
         localIds: this.form.localIds,
       }).subscribe({
         next: (updated) => {
@@ -688,7 +773,11 @@ export class UsersComponent implements OnInit {
         },
       });
     } else {
-      this.http.post<{ user: TenantUser; tempPassword: string }>(this.api, this.form).subscribe({
+      const { phone, ...rest } = this.form;
+      this.http.post<{ user: TenantUser; tempPassword: string }>(this.api, {
+        ...rest,
+        ...(phone.trim() ? { phone: phone.trim() } : {}),
+      }).subscribe({
         next: (res) => {
           this.saving.set(false);
           this.users.update((list) => [res.user, ...list]);
@@ -705,73 +794,21 @@ export class UsersComponent implements OnInit {
     }
   }
 
-  // ── Eliminar definitivamente ──
-
-  deleting = signal<TenantUser | null>(null);
-  impact = signal<DeletionImpact | null>(null);
-  impactLoading = signal(false);
-  candidates = signal<TenantUser[]>([]);
-  deletingBusy = signal(false);
-  deleteError = signal('');
-  reassignTo = '';
-
-  openDelete(u: TenantUser) {
-    this.deleting.set(u);
-    this.impact.set(null);
-    this.deleteError.set('');
-    this.reassignTo = '';
-    this.impactLoading.set(true);
-
-    this.http.get<DeletionImpact>(`${this.api}/${u._id}/impact`).subscribe({
-      next: (imp) => {
-        this.impact.set(imp);
-        this.impactLoading.set(false);
-      },
-      error: (err) => {
-        this.impactLoading.set(false);
-        const msg = err.error?.message || 'No se pudo calcular el impacto';
-        this.deleteError.set(msg);
-        this.toast.error(msg);
-      },
-    });
-
-    this.http.get<TenantUser[]>(`${this.api}/${u._id}/reassign-candidates`).subscribe({
-      next: (list) => this.candidates.set(list),
-      error: () => this.candidates.set([]),
-    });
-  }
-
-  closeDelete() {
+  onDeleted(id: string) {
     this.deleting.set(null);
+    this.users.update((list) => list.filter((x) => x._id !== id));
   }
 
-  confirmDelete() {
-    const target = this.deleting();
-    if (!target) return;
+  /** Al restablecer cambia `mustChangePassword`: se recarga la lista. */
+  onResetClosed() {
+    this.resetting.set(null);
+    this.loadUsers();
+  }
 
-    this.deletingBusy.set(true);
-    this.deleteError.set('');
-    const params = new URLSearchParams({ mode: 'delete' });
-    if (this.reassignTo) params.set('reassignTo', this.reassignTo);
-
-    this.http.delete<{ reassigned: number }>(`${this.api}/${target._id}?${params}`).subscribe({
-      next: (res) => {
-        this.deletingBusy.set(false);
-        this.deleting.set(null);
-        this.users.update((list) => list.filter((x) => x._id !== target._id));
-        this.toast.success(
-          res.reassigned > 0
-            ? `Usuario eliminado; ${res.reassigned} registro(s) ${this.reassignTo ? 'reasignados' : 'liberados'}`
-            : 'Usuario eliminado',
-        );
-      },
-      error: (err) => {
-        this.deletingBusy.set(false);
-        const msg = err.error?.message || 'No se pudo eliminar el usuario';
-        this.deleteError.set(msg);
-        this.toast.error(msg);
-      },
-    });
+  /** Tras traspasar ya no soy administrador: al recargar se renueva la sesión con el rol nuevo. */
+  onTransferred() {
+    this.transferOpen.set(false);
+    window.location.assign('/inicio');
   }
 
   async deactivate(u: TenantUser) {
