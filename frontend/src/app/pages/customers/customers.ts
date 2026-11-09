@@ -10,6 +10,7 @@ import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
+import { CallsService } from '../../shared/calls/calls.service';
 import { ConfirmService } from '../../shared/confirm';
 import { AuthService } from '../../auth/auth.service';
 import { ContactImportComponent } from './contact-import/contact-import';
@@ -583,9 +584,16 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                 </div>
               </div>
             </div>
-            <button class="btn btn-ghost btn-icon" (click)="viewing.set(null)" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-            </button>
+            <div class="view-head-actions">
+              @if (c.phone && calls.available()) {
+                <button class="btn btn-primary btn-sm" (click)="callCustomer(c)" [attr.aria-label]="'Llamar a ' + c.name">
+                  <lucide-icon [img]="Phone" [size]="14" [strokeWidth]="2.4"></lucide-icon> Llamar
+                </button>
+              }
+              <button class="btn btn-ghost btn-icon" (click)="viewing.set(null)" aria-label="Cerrar">
+                <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+              </button>
+            </div>
           </div>
 
           <div class="drawer-scroll">
@@ -1089,6 +1097,8 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
     .contact-cell:hover .contact-name { color:var(--color-brand); }
     .contact-cell:focus-visible { outline:2px solid var(--color-brand); outline-offset:3px; }
 
+    .view-head-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+    .view-head-actions .btn-sm { display:inline-flex; align-items:center; gap:5px; }
     .view-header { padding:32px 32px 20px; display:flex; align-items:flex-start; justify-content:space-between;
       gap:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
     .view-identity { display:flex; align-items:center; gap:16px; min-width:0; }
@@ -1261,6 +1271,7 @@ export class CustomersComponent implements OnInit {
   private auth     = inject(AuthService);
   private router   = inject(Router);
   private route    = inject(ActivatedRoute);
+  readonly calls   = inject(CallsService);
   private care     = inject(ContactCareApiService);
 
   readonly Users = Users; readonly Plus = Plus; readonly Pencil = Pencil;
@@ -1488,7 +1499,11 @@ export class CustomersComponent implements OnInit {
   loadCustomers() {
     this.loading.set(true);
     this.http.get<Customer[]>(`${API}/customers`).subscribe({
-      next: cs => { this.customers.set(cs); this.loading.set(false); },
+      next: cs => {
+        this.customers.set(cs);
+        this.loading.set(false);
+        this.openFromLink(cs);
+      },
       error: () => this.loading.set(false),
     });
   }
@@ -1802,6 +1817,21 @@ export class CustomersComponent implements OnInit {
 
   openView(c: Customer) {
     this.viewing.set(c);
+  }
+
+  /** ?view=<id> (desde el historial de llamadas): abre esa ficha una vez. */
+  private openFromLink(cs: Customer[]) {
+    const id = this.route.snapshot.queryParamMap.get('view');
+    if (!id || this.linkOpened) return;
+    this.linkOpened = true;
+    const c = cs.find(x => x._id === id);
+    if (c) this.viewing.set(c);
+    else this.toast.warning('No encontramos ese contacto');
+  }
+  private linkOpened = false;
+
+  callCustomer(c: Customer) {
+    this.calls.open({ contact: c.phone ?? '', contactName: c.name });
   }
 
   editFromView(c: Customer) {

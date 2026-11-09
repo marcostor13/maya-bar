@@ -50,6 +50,10 @@ export class PushPrefsDto {
 
   @IsOptional()
   @IsBoolean()
+  calls?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   muted?: boolean;
 }
 

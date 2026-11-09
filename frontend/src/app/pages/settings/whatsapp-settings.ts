@@ -3,8 +3,9 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, MessageSquare, CheckCircle2, RefreshCw, Save, WifiOff,
-  Eye, EyeOff, Plus, Trash2, Smartphone, Pencil, Star, Link, Copy,
+  Eye, EyeOff, Plus, Trash2, Smartphone, Pencil, Star, Link, Copy, Phone,
 } from 'lucide-angular';
+import { CallSettingsComponent } from './call-settings';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { AccountsApiService } from '../../core/api/accounts-api.service';
@@ -15,7 +16,7 @@ declare const FB: any;
 @Component({
   selector: 'app-whatsapp-settings',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, DatePipe],
+  imports: [FormsModule, LucideAngularModule, DatePipe, CallSettingsComponent],
   template: `
     <!-- WhatsApp Accounts Card -->
     <div class="section-card">
@@ -76,6 +77,9 @@ declare const FB: any;
                     </button>
                     <button class="btn btn-sm btn-ghost btn-icon" (click)="checkStatus(acc)" title="Verificar estado">
                       <lucide-icon [img]="RefreshCw" [size]="14"></lucide-icon>
+                    </button>
+                    <button class="btn btn-sm btn-ghost btn-icon" (click)="callSettings.set(acc)" title="Llamadas" aria-label="Configurar llamadas">
+                      <lucide-icon [img]="Phone" [size]="14"></lucide-icon>
                     </button>
                     <button class="btn btn-sm btn-ghost btn-icon" (click)="toggleTest(acc)" title="Probar envío">
                       <lucide-icon [img]="MessageSquare" [size]="14"></lucide-icon>
@@ -184,6 +188,11 @@ declare const FB: any;
             <label class="label">Verify Token (webhook)</label>
             <input class="input" [(ngModel)]="accForm()!.waVerifyToken" placeholder="token-secreto-para-meta" />
           </div>
+          <div class="field">
+            <label class="label">App Secret (webhook firmado, necesario para llamadas)</label>
+            <input class="input" type="password" autocomplete="off" [(ngModel)]="accForm()!.waAppSecret"
+              placeholder="Déjalo vacío para no cambiarlo" />
+          </div>
         </div>
 
         <div class="section-footer" style="justify-content: space-between;">
@@ -195,6 +204,10 @@ declare const FB: any;
         </div>
       }
     </div>
+
+    @if (callSettings(); as acc) {
+      <app-call-settings [accountId]="acc._id" [label]="acc.label" (closed)="callSettings.set(null)" />
+    }
   `,
   styles: [`
     :host { display: block; }
@@ -282,6 +295,8 @@ export class WhatsappSettingsComponent implements OnInit, OnDestroy {
   readonly Star = Star;
   readonly Link = Link;
   readonly Copy = Copy;
+  readonly Phone = Phone;
+  callSettings = signal<WaAccount | null>(null);
 
   // Accounts
   accounts = signal<WaAccount[]>([]);

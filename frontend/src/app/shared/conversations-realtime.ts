@@ -18,6 +18,14 @@ export interface RealtimeMessage {
   [key: string]: unknown;
 }
 
+/** Eventos de llamadas que el gateway manda a esta sesión. */
+export const CALL_EVENTS = ['call:incoming', 'call:taken', 'call:ended', 'call:answer', 'call:updated'] as const;
+export type CallEventName = (typeof CALL_EVENTS)[number];
+export interface CallEvent {
+  event: CallEventName;
+  payload: Record<string, unknown>;
+}
+
 /** Conversación tal como la emite el gateway (`conversation:updated`). */
 export interface RealtimeConversation {
   _id: string;
@@ -49,6 +57,8 @@ export class ConversationsRealtimeService {
   readonly typing$ = new Subject<{ conversationId: string; typing: boolean }>();
   /** Un mensaje programado se envió (o falló): la lista del chat cambió. */
   readonly scheduledChanged$ = new Subject<{ conversationId: string }>();
+  /** Llamadas de WhatsApp (solo llegan a quien tiene el módulo Llamadas). */
+  readonly call$ = new Subject<CallEvent>();
 
   /** Total de mensajes sin leer del tenant, para la insignia del menú. */
   unread = signal(0);
@@ -56,15 +66,18 @@ export class ConversationsRealtimeService {
 
   private socket: Socket | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  /** Reintentos seguidos de reconectar tras renovar la sesión. */
+  private reauthAttempts = 0;
 
   /** Conecta (una sola vez) y arranca el contador. Idempotente. */
   connect(): void {
     if (!this.isBrowser || this.socket) return;
-    const tenantId = this.auth.currentUser()?.tenantId;
-    if (!tenantId) return;
+    if (!this.auth.currentUser()?.tenantId) return;
 
+    // El servidor identifica la sesión por el token (y de él saca la empresa).
+    // Como función: cada reconexión manda el token vigente, no el del arranque.
     this.socket = io(`${API}/conversations`, {
-      query: { tenantId },
+      auth: (cb: (data: object) => void) => cb({ token: this.auth.getToken() }),
       transports: ['websocket'],
     });
     this.bind(this.socket);
@@ -79,8 +92,18 @@ export class ConversationsRealtimeService {
   /** Engancha los eventos del gateway. Aparte para poder probarlo con un socket falso. */
   bind(socket: Pick<Socket, 'on'>): void {
     const s = socket as Socket;
-    s.on('connect', () => this.connected.set(true));
-    s.on('disconnect', () => this.connected.set(false));
+    s.on('connect', () => {
+      this.connected.set(true);
+      this.reauthAttempts = 0;
+    });
+    s.on('disconnect', (reason: string) => {
+      this.connected.set(false);
+      // El servidor corta cuando el token caducó o se revocó: socket.io no
+      // reintenta solo en ese caso, así que se renueva la sesión y se vuelve.
+      if (reason === 'io server disconnect') this.reauthenticate();
+    });
+    for (const event of CALL_EVENTS)
+      s.on(event, (payload: Record<string, unknown>) => this.call$.next({ event, payload }));
     s.on('message:new', (msg: RealtimeMessage) =>
       this.messageNew$.next(msg),
     );
@@ -104,6 +127,15 @@ export class ConversationsRealtimeService {
       'conversation:typing',
       (p: { conversationId: string; typing: boolean }) => this.typing$.next(p),
     );
+  }
+
+  private reauthenticate(): void {
+    if (this.reauthAttempts >= 3) return;
+    this.reauthAttempts++;
+    this.auth.refreshSession().subscribe({
+      next: () => this.socket?.connect(),
+      error: () => undefined,
+    });
   }
 
   private onVisible = () => {

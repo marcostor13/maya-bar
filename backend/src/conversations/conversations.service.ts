@@ -2139,6 +2139,56 @@ export class ConversationsService {
     );
   }
 
+  // ------------------------------------------------------------------
+  // Llamadas de WhatsApp (HU6)
+  // ------------------------------------------------------------------
+
+  /** Chat de WhatsApp de un contacto en una cuenta, si ya existe. */
+  async findWhatsAppChat(
+    accountId: string,
+    contact: string,
+  ): Promise<Conversation | null> {
+    return this.convModel
+      .findOne({
+        channel: 'whatsapp',
+        accountId: new Types.ObjectId(accountId),
+        contact,
+      })
+      .exec();
+  }
+
+  /**
+   * Deja una llamada como evento en el hilo del contacto (lo crea si no
+   * existe: una llamada también es una conversación con el cliente).
+   */
+  async noteCall(
+    tenantId: string,
+    accountId: string,
+    contact: string,
+    contactName: string | undefined,
+    text: string,
+  ): Promise<Conversation> {
+    const conv = await this.upsertConversation(
+      'whatsapp',
+      tenantId,
+      accountId,
+      { contact, chatId: contact, contactName, type: 'text', at: new Date() },
+    );
+    const msg = await this.systemNote(conv, text);
+    await this.touchConversation(conv, msg);
+    return conv;
+  }
+
+  /** Mensaje automático al cliente (p. ej. tras una llamada perdida). */
+  async sendAutomatic(conv: Conversation, text: string): Promise<void> {
+    await this.sendFromAgent(conv, { type: 'text', text });
+  }
+
+  /** Nota interna en un chat ya existente (p. ej. permiso de llamada). */
+  async noteInChat(conv: Conversation, text: string): Promise<void> {
+    await this.systemNote(conv, text);
+  }
+
   /** Nota interna en el hilo: se ve en la bandeja, no se envía al cliente. */
   private async systemNote(conv: Conversation, text: string) {
     const msg = await this.msgModel.create({

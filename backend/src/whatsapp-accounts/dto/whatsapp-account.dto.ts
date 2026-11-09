@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
 } from 'class-validator';
 
 export class CreateWhatsAppAccountDto {
@@ -33,6 +34,12 @@ export class CreateWhatsAppAccountDto {
   @IsOptional()
   @IsString()
   waVerifyToken?: string;
+
+  /** App Secret de la app de Meta, para verificar la firma de los webhooks. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  waAppSecret?: string;
 
   @IsOptional()
   @IsBoolean()
@@ -67,6 +74,12 @@ export class UpdateWhatsAppAccountDto {
   @IsOptional()
   @IsString()
   waVerifyToken?: string;
+
+  /** App Secret de la app de Meta, para verificar la firma de los webhooks. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  waAppSecret?: string;
 
   @IsOptional()
   @IsBoolean()

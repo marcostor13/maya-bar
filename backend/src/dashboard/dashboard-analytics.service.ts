@@ -9,6 +9,7 @@ import {
 import { Message } from '../conversations/message.schema';
 import { AiAgent } from '../ai-agents/ai-agent.schema';
 import { Lead } from '../leads/lead.schema';
+import { Call } from '../calls/call.schema';
 import { LeadStagesService } from '../leads/lead-stages.service';
 import { Campaign } from '../campaigns/campaign.schema';
 import { FormSubmission } from '../forms/form-submission.schema';
@@ -89,6 +90,12 @@ export interface DashboardAnalytics {
     aiShare: Kpi;
     newLeads: Kpi;
     conversionRate: Kpi;
+    /** Llamadas de WhatsApp (entrantes y salientes). */
+    calls: Kpi;
+    /** Entrantes que nadie atendió. */
+    callsMissed: Kpi;
+    /** Duración media de las completadas, en segundos. */
+    callAvgDuration: Kpi;
   };
   pipeline: { open: number; openValue: number; weightedValue: number };
   activity: { inbound: number[]; ai: number[]; human: number[] };
@@ -148,6 +155,7 @@ export class DashboardAnalyticsService {
     @InjectModel(SuppressionEntry.name)
     private suppressionModel: Model<SuppressionEntry>,
     private leadStages: LeadStagesService,
+    @InjectModel(Call.name) private callModel: Model<Call>,
   ) {}
 
   async analytics(
@@ -448,6 +456,7 @@ export class DashboardAnalyticsService {
         inbound: kpi(inbound, messagePrev.inbound),
         aiShare: kpi(aiShareSeries, aiSharePrev, aiShare),
         newLeads: kpi(leadSeries, leadsPrev),
+        ...(await this.callKpis(tid, range, inPrev, kpi)),
         conversionRate: kpi(
           wonDealsSeries.map((w, i) => {
             const lost = wonSeries.lost[i] ?? 0;
@@ -528,6 +537,67 @@ export class DashboardAnalyticsService {
         date: `$${field}`,
         timezone: range.timezone,
       },
+    };
+  }
+
+  /** Llamadas, perdidas y duración media (HU6). */
+  private async callKpis(
+    tid: Types.ObjectId,
+    range: ResolvedRange,
+    inPrev: { $gte: Date; $lt: Date },
+    kpi: (series: number[], previous: number, value?: number) => Kpi,
+  ) {
+    const missedScope = {
+      tenantId: tid,
+      status: 'missed' as const,
+      direction: 'inbound' as const,
+    };
+    const [callSeries, callsPrev, missedSeries, missedPrev, avgRows, avgPrev] =
+      await Promise.all([
+        this.countSeries(this.callModel, { tenantId: tid }, 'startedAt', range),
+        this.callModel.countDocuments({ tenantId: tid, startedAt: inPrev }),
+        this.countSeries(this.callModel, missedScope, 'startedAt', range),
+        this.callModel.countDocuments({ ...missedScope, startedAt: inPrev }),
+        this.callModel.aggregate<{
+          _id: string;
+          value: number;
+          sum: number;
+          n: number;
+        }>([
+          {
+            $match: {
+              tenantId: tid,
+              status: 'completed',
+              startedAt: { $gte: range.from, $lte: range.to },
+            },
+          },
+          {
+            $group: {
+              _id: this.dateKey('startedAt', range),
+              value: { $avg: '$durationSec' },
+              sum: { $sum: '$durationSec' },
+              n: { $sum: 1 },
+            },
+          },
+        ]),
+        this.callModel.aggregate<{ value: number }>([
+          { $match: { tenantId: tid, status: 'completed', startedAt: inPrev } },
+          { $group: { _id: null, value: { $avg: '$durationSec' } } },
+        ]),
+      ]);
+    const totalSec = avgRows.reduce((a, r) => a + (r.sum ?? 0), 0);
+    const totalN = avgRows.reduce((a, r) => a + (r.n ?? 0), 0);
+    return {
+      calls: kpi(callSeries, callsPrev),
+      callsMissed: kpi(missedSeries, missedPrev),
+      callAvgDuration: kpi(
+        fillSeries(
+          range.buckets,
+          avgRows.map((r) => ({ _id: r._id, value: Math.round(r.value ?? 0) })),
+        ),
+        Math.round(avgPrev[0]?.value ?? 0),
+        totalN ? Math.round(totalSec / totalN) : 0,
+      ),
     };
   }
 

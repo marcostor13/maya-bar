@@ -161,6 +161,21 @@ function setup(buckets: () => string[]) {
     ],
   });
   const suppression = model({ count: () => 2 });
+  const call = model({
+    count: (f) =>
+      '$lt' in (f.startedAt ?? {}) ? (f.status === 'missed' ? 1 : 4) : 0,
+    aggregate: (p) => {
+      const match = p[0]?.$match as Record<string, unknown> | undefined;
+      const id = groupId(p);
+      if (match?.status === 'completed' && id === null) return [{ value: 50 }];
+      if (match?.status === 'completed')
+        return [{ _id: buckets().at(-1), value: 90, sum: 180, n: 2 }];
+      if (match?.status === 'missed')
+        return [{ _id: buckets().at(-1), value: 2 }];
+      if (id?.$dateToString) return [{ _id: buckets().at(-1), value: 5 }];
+      return [];
+    },
+  });
 
   const service = new DashboardAnalyticsService(
     customer as never,
@@ -176,6 +191,7 @@ function setup(buckets: () => string[]) {
     prospect as never,
     suppression as never,
     { list: () => Promise.resolve(LEAD_STAGES) } as never,
+    call as never,
   );
   return { service, msg, customer, conv, lead };
 }
@@ -345,5 +361,12 @@ describe('DashboardAnalyticsService', () => {
     expect(d.range.key).toBe('30d');
     expect(d.channel).toBeNull();
     expect(h.conv.find).not.toHaveBeenCalled();
+  });
+
+  it('contadores de llamadas: total, perdidas y duración media de las completadas', async () => {
+    const d = await run(setup(() => buckets));
+    expect(d.kpis.calls).toMatchObject({ value: 5, previous: 4 });
+    expect(d.kpis.callsMissed).toMatchObject({ value: 2, previous: 1 });
+    expect(d.kpis.callAvgDuration).toMatchObject({ value: 90, previous: 50 });
   });
 });

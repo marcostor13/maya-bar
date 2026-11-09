@@ -33,6 +33,8 @@ export interface MetaRequestOptions {
   form?: Record<string, string>;
   /** Omite el prefijo de versión (p.ej. /oauth/access_token de api.instagram.com) */
   unversioned?: boolean;
+  /** Versión de Graph para esta petición (APIs más nuevas que la general). */
+  version?: string;
 }
 
 const GRAPH_VERSION = 'v21.0';
@@ -92,7 +94,7 @@ export class MetaGraphClient {
 
   private buildUrl(path: string, opts: MetaRequestOptions): string {
     const host = opts.host ?? 'https://graph.facebook.com';
-    const version = opts.unversioned ? '' : `/${GRAPH_VERSION}`;
+    const version = opts.unversioned ? '' : `/${opts.version ?? GRAPH_VERSION}`;
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const query = opts.params
       ? `?${new URLSearchParams(opts.params).toString()}`

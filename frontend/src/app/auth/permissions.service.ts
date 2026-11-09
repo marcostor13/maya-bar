@@ -21,24 +21,24 @@ export interface MyPermissions {
 const FALLBACK: Record<string, string[]> = {
   TENANT_ADMIN: [
     'dashboard', 'locals', 'events',
-    'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
+    'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox', 'calls',
     'visits', 'users', 'settings',
   ],
   MANAGER: [
     'dashboard', 'locals', 'events',
-    'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
+    'customers', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox', 'calls',
     'visits',
   ],
   MARKETING: [
     'dashboard', 'events', 'customers', 'lists', 'forms', 'campaigns',
-    'ai-agents', 'inbox',
+    'ai-agents', 'inbox', 'calls',
   ],
   HOST: ['dashboard'],
   SERVER: ['dashboard'],
   KITCHEN: ['dashboard'],
   BAR: ['dashboard'],
   IMPULSADOR: [
-    'impulsador-panel', 'visits', 'events', 'my-guests', 'inbox',
+    'impulsador-panel', 'visits', 'events', 'my-guests', 'inbox', 'calls',
     'customers', 'lists', 'campaigns',
   ],
 };

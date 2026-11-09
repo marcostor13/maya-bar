@@ -7,7 +7,9 @@ import {
   LucideAngularModule, ContactRound, MessagesSquare, Target, Bot, TriangleAlert, Inbox,
   Trophy, RefreshCw, TrendingUp, TrendingDown, Minus, MessageCircle, Megaphone, HeartPulse,
   FileText, CalendarCheck, Telescope, ShieldBan, Tag, Timer, Wallet, Flame, ArrowUpRight,
+  Phone, PhoneMissed,
 } from 'lucide-angular';
+import { NgTemplateOutlet } from '@angular/common';
 import { environment } from '../../../environments/environment';
 import {
   BarListComponent, ChartCardComponent, CountUpComponent, FunnelComponent, HeatmapComponent,
@@ -32,11 +34,29 @@ const TILES: Tile[] = [
   { key: 'wonDeals', label: 'Negocios ganados', icon: Trophy, format: 'int', color: 'var(--chart-1)', link: '/leads', module: 'leads' },
 ];
 
+/** Llamadas de WhatsApp (HU6): solo para quien tiene el módulo. */
+const CALL_TILES: Tile[] = [
+  { key: 'calls', label: 'Llamadas', icon: Phone, format: 'int', color: 'var(--chart-1)', link: '/llamadas', module: 'calls' },
+  { key: 'callsMissed', label: 'Llamadas perdidas', icon: PhoneMissed, format: 'int', color: 'var(--chart-2)', link: '/llamadas', module: 'calls' },
+  { key: 'callAvgDuration', label: 'Duración media', icon: Timer, format: 'min', color: 'var(--chart-1)', link: '/llamadas', module: 'calls' },
+];
+
+type Kpi = NonNullable<DashboardAnalytics['kpis'][keyof DashboardAnalytics['kpis']]>;
+
+/** La duración llega en segundos y el formato 'min' espera minutos. */
+export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
+  const empty: Kpi = { value: 0, previous: 0, delta: null, series: [] };
+  if (!k) return empty;
+  if (key !== 'callAvgDuration') return k;
+  const m = (v: number) => v / 60;
+  return { ...k, value: m(k.value), previous: m(k.previous), series: k.series.map(m) };
+}
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [
-    RouterLink, LucideAngularModule, BarListComponent, ChartCardComponent, CountUpComponent,
+    RouterLink, NgTemplateOutlet, LucideAngularModule, BarListComponent, ChartCardComponent, CountUpComponent,
     FunnelComponent, HeatmapComponent, RingComponent, SparklineComponent, TimeChartComponent,
   ],
   template: `
@@ -135,23 +155,35 @@ const TILES: Tile[] = [
 
           <section class="tiles">
             @for (t of tiles; track t.key; let i = $index) {
-              @let k = d.kpis[t.key];
-              <a class="tile" [style.--i]="i" [routerLink]="t.link && can(t.module!) ? t.link : null">
-                <div class="tile-head">
-                  <span class="tile-icon" [style.color]="t.color"><lucide-icon [img]="t.icon" [size]="18" [strokeWidth]="2.4" /></span>
-                  <span class="tile-label">{{ t.label }}</span>
-                </div>
-                <div class="tile-value"><app-count-up [value]="k.value" [format]="t.format" /></div>
-                <div class="tile-foot">
-                  <span class="pill" [class.up]="(k.delta ?? 0) > 0" [class.down]="(k.delta ?? 0) < 0">
-                    <lucide-icon [img]="trendIcon(k.delta)" [size]="13" [strokeWidth]="2.6" />{{ deltaText(k.delta) }}
-                  </span>
-                  <span class="muted">vs. {{ fmt(k.previous, t.format) }}</span>
-                </div>
-                <app-sparkline [data]="k.series" [color]="t.color" />
-              </a>
+              <ng-container *ngTemplateOutlet="tileTpl; context: { t: t, k: d.kpis[t.key], i: i }" />
             }
           </section>
+
+          @if (can('calls')) {
+            <h2 class="section">Llamadas</h2>
+            <section class="tiles tiles-3">
+              @for (t of callTiles; track t.key; let i = $index) {
+                <ng-container *ngTemplateOutlet="tileTpl; context: { t: t, k: callKpi(t.key, d.kpis[t.key]), i: i }" />
+              }
+            </section>
+          }
+
+          <ng-template #tileTpl let-t="t" let-k="k" let-i="i">
+            <a class="tile" [style.--i]="i" [routerLink]="t.link && can(t.module!) ? t.link : null">
+              <div class="tile-head">
+                <span class="tile-icon" [style.color]="t.color"><lucide-icon [img]="t.icon" [size]="18" [strokeWidth]="2.4" /></span>
+                <span class="tile-label">{{ t.label }}</span>
+              </div>
+              <div class="tile-value"><app-count-up [value]="k.value" [format]="t.format" /></div>
+              <div class="tile-foot">
+                <span class="pill" [class.up]="(k.delta ?? 0) > 0" [class.down]="(k.delta ?? 0) < 0">
+                  <lucide-icon [img]="trendIcon(k.delta)" [size]="13" [strokeWidth]="2.6" />{{ deltaText(k.delta) }}
+                </span>
+                <span class="muted">vs. {{ fmt(k.previous, t.format) }}</span>
+              </div>
+              <app-sparkline [data]="k.series" [color]="t.color" />
+            </a>
+          </ng-template>
 
           <h2 class="section">Conversaciones</h2>
           <div class="grid g-21">
@@ -318,6 +350,7 @@ const TILES: Tile[] = [
     .pill.light { background: color-mix(in srgb, var(--color-white) 22%, transparent); color: var(--color-white); }
 
     .tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; margin-bottom: 8px; }
+    .tiles.tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .tile { display: flex; flex-direction: column; gap: 8px; background: var(--color-white); border-radius: var(--radius-lg); padding: 18px 18px 12px;
       box-shadow: var(--shadow-sm); text-decoration: none; color: inherit; min-width: 0;
       transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
@@ -373,6 +406,7 @@ const TILES: Tile[] = [
       .seg button { flex: 1; padding: 8px 10px; }
       .channel { flex: 1; min-width: 0; }
       .tiles, .minis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .tiles.tiles-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .pipe { flex-direction: column-reverse; align-items: stretch; }
       .pipe app-ring { align-self: center; }
       .tile-value { font-size: 22px; }
@@ -396,6 +430,8 @@ export class DashboardComponent implements OnInit {
   readonly ShieldBan = ShieldBan; readonly Tag = Tag;
 
   readonly tiles = TILES;
+  readonly callTiles = CALL_TILES;
+  readonly callKpi = callKpi;
   readonly ranges: { key: AnalyticsRange; label: string }[] = [
     { key: '7d', label: '7 días' }, { key: '30d', label: '30 días' },
     { key: '90d', label: '90 días' }, { key: '12m', label: '12 meses' },

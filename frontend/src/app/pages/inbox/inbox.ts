@@ -15,6 +15,7 @@ import {
 } from 'lucide-angular';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
+import { CallsService } from '../../shared/calls/calls.service';
 import { ConfirmService } from '../../shared/confirm';
 import { AppChromeService } from '../../shared/app-chrome';
 import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
@@ -533,6 +534,13 @@ const EMOJIS = [
                 <span class="tag tag-campaign" [title]="(camp.kind === 'ad' ? 'Vino del anuncio ' : 'Vino de la campaña ') + camp.name">
                   <lucide-icon [img]="Megaphone" [size]="12" [strokeWidth]="2.4"></lucide-icon> {{ camp.name }}
                 </span>
+              }
+              @if (selected()!.channel === 'whatsapp' && calls.available() && !selected()!.blocked) {
+                <button class="btn btn-sm btn-secondary" (click)="callContact()" title="Llamar por WhatsApp"
+                  [attr.aria-label]="'Llamar a ' + (selected()!.contactName || selected()!.contact)">
+                  <lucide-icon [img]="Phone" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                  <span>Llamar</span>
+                </button>
               }
               <button class="btn btn-sm btn-secondary" (click)="openClassify()" title="Clasificar y enviar a seguimiento">
                 <lucide-icon [img]="Tag" [size]="14" [strokeWidth]="2.5"></lucide-icon>
@@ -2179,6 +2187,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private toast = inject(ToastService);
+  readonly calls = inject(CallsService);
   private confirmSvc = inject(ConfirmService);
   private realtime = inject(ConversationsRealtimeService);
   private chrome = inject(AppChromeService);
@@ -2384,6 +2393,12 @@ export class InboxComponent implements OnInit, OnDestroy {
   private arrancando = false;
   private soltadoAntesDeArrancar = false;
   private allLoaded = false;
+
+  callContact() {
+    const c = this.selected();
+    if (!c) return;
+    this.calls.open({ contact: c.contact, contactName: c.contactName, accountId: c.accountId });
+  }
 
   selected = computed(() => this.conversations().find(c => c._id === this.selectedId()) ?? null);
 

@@ -23,6 +23,8 @@ export interface WaAccount {
   waAccessToken?: string;
   waBusinessAccountId?: string;
   waVerifyToken?: string;
+  /** Solo se envía al guardar; la API nunca lo devuelve. */
+  waAppSecret?: string;
   tokenExpiresAt?: string;
   active: boolean;
   isDefault?: boolean;

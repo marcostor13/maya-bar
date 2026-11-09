@@ -31,6 +31,7 @@ import {
   SuppressionEntrySchema,
 } from '../suppression/suppression-entry.schema';
 import { DashboardAnalyticsService } from './dashboard-analytics.service';
+import { Call, CallSchema } from '../calls/call.schema';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { DashboardAnalyticsService } from './dashboard-analytics.service';
       { name: RecoveryPlan.name, schema: RecoveryPlanSchema },
       { name: Prospect.name, schema: ProspectSchema },
       { name: SuppressionEntry.name, schema: SuppressionEntrySchema },
+      { name: Call.name, schema: CallSchema },
     ]),
     // El bloque de seguimiento reutiliza las métricas del tablero de leads en
     // vez de recalcularlas: son las mismas y deben cuadrar entre pantallas.

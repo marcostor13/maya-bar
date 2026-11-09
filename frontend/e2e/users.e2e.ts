@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
@@ -25,13 +26,21 @@ async function withDb<T>(fn: (db: import('mongodb').Db) => Promise<T>): Promise<
   }
 }
 
-/** En e2e no hay correo: el código de recuperación se lee de la Mongo en memoria. */
+/**
+ * En e2e no hay correo y la base guarda el sha256 del código: con 6 dígitos se
+ * recupera probando las 10^6 combinaciones (menos de un segundo).
+ */
 async function resetCodeOf(email: string): Promise<string> {
-  return withDb(async (db) => {
+  const hash = await withDb(async (db) => {
     const user = await db.collection('users').findOne({ email });
-    expect(user?.resetPasswordCode).toMatch(/^\d{6}$/);
+    expect(user?.resetPasswordCode).toMatch(/^[0-9a-f]{64}$/);
     return user!.resetPasswordCode as string;
   });
+  for (let n = 0; n < 1_000_000; n++) {
+    const code = String(n).padStart(6, '0');
+    if (createHash('sha256').update(code).digest('hex') === hash) return code;
+  }
+  throw new Error('Código de recuperación no encontrado');
 }
 test.describe('Usuarios: recuperar, restablecer y eliminar', () => {
   let account: Account;

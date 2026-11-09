@@ -19,6 +19,7 @@ const CATEGORIES: { key: keyof Omit<PushPrefs, 'muted'>; label: string; hint: st
   { key: 'forms', label: 'Formularios', hint: 'Registros nuevos en tus formularios' },
   { key: 'leads', label: 'Leads', hint: 'Leads asignados y recordatorios de seguimiento' },
   { key: 'recovery', label: 'Recuperación', hint: 'Avisos de la recuperación de clientes' },
+  { key: 'calls', label: 'Llamadas', hint: 'Llamadas de WhatsApp entrantes' },
 ];
 
 /**

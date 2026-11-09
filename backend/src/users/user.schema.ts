@@ -108,6 +108,8 @@ export interface PushPrefs {
   forms?: boolean;
   leads?: boolean;
   recovery?: boolean;
+  /** Llamadas de WhatsApp entrantes. */
+  calls?: boolean;
   /** Silencia todo (salvo la notificación de prueba). */
   muted?: boolean;
 }

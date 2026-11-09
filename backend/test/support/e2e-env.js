@@ -30,6 +30,8 @@ function isolateEnv(overrides) {
       SEED_ADMIN_EMAIL: ADMIN.email,
       SEED_ADMIN_PASSWORD: ADMIN.password,
       WHATSAPP_PROVIDER: 'none',
+      // Secreto falso para firmar los webhooks simulados de Meta.
+      FACEBOOK_APP_SECRET: 'e2e-app-secret',
     },
     overrides,
   );

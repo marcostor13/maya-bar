@@ -7,7 +7,14 @@ import {
   Body,
   Logger,
   HttpCode,
+  Headers,
+  Req,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request } from 'express';
+import { ConfigService } from '@nestjs/config';
+import { verifyMetaSignature } from '../shared/meta-signature';
+import { CallsService } from '../calls/calls.service';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { ConversationsService, InboundMessage } from './conversations.service';
 import type { AdReferral } from '../shared/ad-referral';
@@ -33,6 +40,8 @@ export class WhatsAppWebhookController {
   constructor(
     private accounts: WhatsAppAccountsService,
     private conversations: ConversationsService,
+    private config: ConfigService,
+    private calls: CallsService,
   ) {}
 
   // --- Meta Cloud API (nivel de app): verificación del webhook ---
@@ -50,8 +59,12 @@ export class WhatsAppWebhookController {
   // --- Meta Cloud API (nivel de app): mensajes entrantes ---
   @Post('cloud')
   @HttpCode(200)
-  cloudAppInbound(@Body() body: unknown) {
-    void this.handleCloud(undefined, body);
+  cloudAppInbound(
+    @Body() body: unknown,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-hub-signature-256') signature?: string,
+  ) {
+    void this.receive(undefined, body, req.rawBody, signature);
     return { received: true };
   }
 
@@ -78,22 +91,79 @@ export class WhatsAppWebhookController {
   // --- Meta Cloud API: mensajes entrantes ---
   @Post('cloud/:accountId')
   @HttpCode(200)
-  cloudInbound(@Param('accountId') accountId: string, @Body() body: unknown) {
-    void this.handleCloud(accountId, body);
+  cloudInbound(
+    @Param('accountId') accountId: string,
+    @Body() body: unknown,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-hub-signature-256') signature?: string,
+  ) {
+    void this.receive(accountId, body, req.rawBody, signature);
     return { received: true };
+  }
+
+  /**
+   * Comprueba la firma de Meta antes de procesar. Siempre se responde 200 (un
+   * error haría que Meta reintente y acabe desactivando el webhook); lo que no
+   * pasa la firma simplemente se descarta.
+   *
+   * Sin secreto configurado los mensajes siguen entrando como siempre, pero los
+   * eventos de llamadas (que abren audio con un usuario) exigen firma.
+   */
+  private async receive(
+    accountId: string | undefined,
+    body: unknown,
+    rawBody: Buffer | undefined,
+    signature: string | undefined,
+  ) {
+    try {
+      const secret = accountId
+        ? await this.accounts.appSecretFor(accountId)
+        : this.config.get<string>('FACEBOOK_APP_SECRET') || undefined;
+      let verified = false;
+      if (secret) {
+        if (!verifyMetaSignature(rawBody, signature, secret)) {
+          this.logger.warn(
+            `[WA] Webhook ${accountId ? `de la cuenta ${accountId}` : 'de app'} con firma inválida — descartado.`,
+          );
+          return;
+        }
+        verified = true;
+      }
+      await this.handleCloud(accountId, body, verified);
+    } catch (err) {
+      this.logger.error(
+        `[WA] Error en el webhook de Cloud API: ${String(err)}`,
+      );
+    }
   }
 
   // ------------------------------------------------------------------
   // Meta Cloud API
   // ------------------------------------------------------------------
 
-  private async handleCloud(accountId: string | undefined, body: unknown) {
+  private async handleCloud(
+    accountId: string | undefined,
+    body: unknown,
+    verified = false,
+  ) {
     try {
       const value = (body as CloudBody).entry?.[0]?.changes?.[0]?.value;
       if (!value) return;
 
+      // Llamadas: solo con firma verificada (abren audio con un usuario).
+      if (value.calls?.length || this.hasCallSignals(value)) {
+        if (!verified) {
+          this.logger.warn(
+            '[WA] Evento de llamada sin firma verificada — descartado. Configura FACEBOOK_APP_SECRET (o el secreto de la cuenta).',
+          );
+        } else {
+          await this.handleCallEvents(accountId, value);
+        }
+      }
+
       // Acks de entrega/lectura de los mensajes que enviamos.
       for (const st of value.statuses ?? []) {
+        if (st.type === 'call') continue;
         if (st.id && st.status) {
           // Meta acepta el envío y avisa del rechazo después, en este ack: el
           // motivo (ventana de 24 h, número no permitido, bloqueo por país...)
@@ -113,6 +183,8 @@ export class WhatsAppWebhookController {
 
       const raw = value.messages?.[0];
       if (!raw) return;
+      // La respuesta al permiso de llamada no es un mensaje para la bandeja.
+      if (raw.interactive?.type === 'call_permission_reply') return;
 
       // Con la URL a nivel de app no viene accountId: se resuelve por el número que recibió el mensaje.
       const phoneNumberId = value.metadata?.phone_number_id;
@@ -150,6 +222,91 @@ export class WhatsAppWebhookController {
       this.logger.error(
         `[WA] Error en el webhook de Cloud API: ${String(err)}`,
       );
+    }
+  }
+
+  /** ¿Trae el payload algo de llamadas además del campo `calls`? */
+  private hasCallSignals(value: CloudValue): boolean {
+    return (
+      (value.statuses ?? []).some((s) => s.type === 'call') ||
+      value.messages?.[0]?.interactive?.type === 'call_permission_reply'
+    );
+  }
+
+  private async resolveAccount(
+    accountId: string | undefined,
+    value: CloudValue,
+  ) {
+    const phoneNumberId = value.metadata?.phone_number_id;
+    const account = accountId
+      ? await this.accounts.findById(accountId)
+      : phoneNumberId
+        ? await this.accounts.findByPhoneNumberId(phoneNumberId)
+        : null;
+    return account?.active ? account : null;
+  }
+
+  /** Eventos de la Calling API: entrantes, respuestas SDP, estados y permisos. */
+  private async handleCallEvents(
+    accountId: string | undefined,
+    value: CloudValue,
+  ) {
+    const account = await this.resolveAccount(accountId, value);
+    if (!account) {
+      this.logger.warn(
+        '[WA] Evento de llamada de una cuenta inexistente o inactiva — descartado.',
+      );
+      return;
+    }
+    const contactInfo = value.contacts?.[0];
+    for (const c of value.calls ?? []) {
+      if (!c.id) continue;
+      const contact =
+        c.from ??
+        c.from_user_id ??
+        contactInfo?.wa_id ??
+        contactInfo?.user_id ??
+        '';
+      if (c.event === 'connect' && c.direction === 'USER_INITIATED') {
+        if (!contact) continue;
+        await this.calls.onIncoming(account, {
+          id: c.id,
+          contact,
+          contactName:
+            contactInfo?.profile?.name ?? contactInfo?.profile?.username,
+          sdp: c.session?.sdp,
+          timestamp: c.timestamp,
+        });
+      } else if (
+        c.event === 'connect' &&
+        c.session?.sdp_type === 'answer' &&
+        c.session.sdp
+      ) {
+        await this.calls.onOutboundAnswer(c.id, c.session.sdp);
+      } else if (c.event === 'terminate') {
+        await this.calls.onTerminate(c.id, {
+          status: c.status,
+          duration: c.duration !== undefined ? Number(c.duration) : undefined,
+          startTime: c.start_time,
+          endTime: c.end_time,
+          errorCode: c.errors?.[0]?.code,
+        });
+      }
+    }
+    for (const st of value.statuses ?? [])
+      if (st.type === 'call' && st.id && st.status)
+        await this.calls.onOutboundStatus(st.id, st.status);
+
+    const msg = value.messages?.[0];
+    const reply = msg?.interactive?.call_permission_reply;
+    if (msg?.interactive?.type === 'call_permission_reply' && reply) {
+      const contact = msg.from ?? msg.from_user_id ?? contactInfo?.wa_id ?? '';
+      if (contact)
+        await this.calls.onPermissionReply(account, contact, {
+          response: reply.response,
+          expiration: reply.expiration_timestamp,
+          permanent: reply.is_permanent,
+        });
     }
   }
 
@@ -396,8 +553,14 @@ interface CloudMessage {
   }[];
   button?: { text?: string; payload?: string };
   interactive?: {
+    type?: string;
     button_reply?: { title?: string };
     list_reply?: { title?: string };
+    call_permission_reply?: {
+      response?: 'accept' | 'reject';
+      is_permanent?: boolean;
+      expiration_timestamp?: string;
+    };
   };
   reaction?: { emoji?: string; message_id?: string };
   order?: {
@@ -432,20 +595,44 @@ interface CloudStatusError {
   error_data?: { details?: string };
 }
 
+/** Evento de la Calling API (campo `calls` del webhook). */
+interface CloudCall {
+  id?: string;
+  from?: string;
+  from_user_id?: string;
+  to?: string;
+  /** `connect` o `terminate`. */
+  event?: string;
+  /** `USER_INITIATED` o `BUSINESS_INITIATED`. */
+  direction?: string;
+  timestamp?: string;
+  session?: { sdp_type?: 'offer' | 'answer'; sdp?: string };
+  status?: string;
+  start_time?: string;
+  end_time?: string;
+  duration?: number | string;
+  errors?: CloudStatusError[];
+}
+
+interface CloudValue {
+  metadata?: { phone_number_id?: string; display_phone_number?: string };
+  contacts?: CloudContact[];
+  messages?: CloudMessage[];
+  calls?: CloudCall[];
+  statuses?: {
+    id?: string;
+    /** `call` en los estados de una llamada saliente (RINGING, ACCEPTED…). */
+    type?: string;
+    status?: string;
+    recipient_id?: string;
+    errors?: CloudStatusError[];
+  }[];
+}
+
 interface CloudBody {
   entry?: {
     changes?: {
-      value?: {
-        metadata?: { phone_number_id?: string; display_phone_number?: string };
-        contacts?: CloudContact[];
-        messages?: CloudMessage[];
-        statuses?: {
-          id?: string;
-          status?: string;
-          recipient_id?: string;
-          errors?: CloudStatusError[];
-        }[];
-      };
+      value?: CloudValue;
     }[];
   }[];
 }

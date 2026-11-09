@@ -1,3 +1,4 @@
+import { of, throwError } from 'rxjs';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -164,5 +165,46 @@ describe('ConversationsRealtimeService → conversaciones eliminadas', () => {
     http.expectOne(`${API}/conversations/unread-count`).flush({ total: 1 });
     expect(rt.unread()).toBe(1);
     http.verify();
+  });
+});
+
+describe('ConversationsRealtimeService → llamadas y sesión del socket', () => {
+  function setup(refresh = vi.fn().mockReturnValue(of('nuevo'))) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: { currentUser: () => ({ tenantId: 't1' }), refreshSession: refresh } },
+        { provide: NativePushService, useValue: { clearConversation: vi.fn() } },
+      ],
+    });
+    const rt = TestBed.inject(ConversationsRealtimeService);
+    const handlers = new Map<string, (p: unknown) => void>();
+    rt.bind({ on: ((ev: string, fn: (p: unknown) => void) => handlers.set(ev, fn)) as never });
+    return { rt, handlers, refresh };
+  }
+
+  it('reenvía los eventos de llamadas por call$', () => {
+    const { rt, handlers } = setup();
+    const got = vi.fn();
+    rt.call$.subscribe(got);
+    handlers.get('call:incoming')!({ call: { _id: 'c1' } });
+    handlers.get('call:taken')!({ id: 'c1' });
+    expect(got).toHaveBeenNthCalledWith(1, { event: 'call:incoming', payload: { call: { _id: 'c1' } } });
+    expect(got).toHaveBeenNthCalledWith(2, { event: 'call:taken', payload: { id: 'c1' } });
+  });
+
+  it('si el servidor corta (token caducado) renueva la sesión; una caída de red no', () => {
+    const { handlers, refresh } = setup();
+    handlers.get('disconnect')!('transport close');
+    expect(refresh).not.toHaveBeenCalled();
+    handlers.get('disconnect')!('io server disconnect');
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('deja de reintentar tras 3 cortes seguidos sin conectar', () => {
+    const { handlers, refresh } = setup(vi.fn().mockReturnValue(throwError(() => new Error('x'))));
+    for (let i = 0; i < 5; i++) handlers.get('disconnect')!('io server disconnect');
+    expect(refresh).toHaveBeenCalledTimes(3);
   });
 });

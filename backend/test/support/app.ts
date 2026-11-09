@@ -12,7 +12,9 @@ export async function createApp(): Promise<NestExpressApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
   }).compile();
-  const app = moduleRef.createNestApplication<NestExpressApplication>();
+  const app = moduleRef.createNestApplication<NestExpressApplication>({
+    rawBody: true,
+  });
   configureApp(app);
   await app.init();
   return app;

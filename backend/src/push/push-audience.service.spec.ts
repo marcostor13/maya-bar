@@ -146,6 +146,7 @@ describe('PushAudienceService', () => {
       forms: true,
       leads: false,
       recovery: true,
+      calls: true,
       muted: false,
     });
   });

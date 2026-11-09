@@ -5,7 +5,13 @@ import { User, type PushPrefs } from '../users/user.schema';
 import { RolesService } from '../roles/roles.service';
 
 /** Tipos de aviso que el usuario puede apagar en Configuración. */
-export const PUSH_CATEGORIES = ['chats', 'forms', 'leads', 'recovery'] as const;
+export const PUSH_CATEGORIES = [
+  'chats',
+  'forms',
+  'leads',
+  'recovery',
+  'calls',
+] as const;
 export type PushCategory = (typeof PUSH_CATEGORIES)[number];
 
 /** Tipo de aviso que corresponde a cada módulo. */
@@ -14,6 +20,7 @@ const MODULE_CATEGORY: Record<string, PushCategory> = {
   forms: 'forms',
   leads: 'leads',
   campaigns: 'recovery',
+  calls: 'calls',
 };
 
 export function categoryForModule(moduleKey: string): PushCategory | undefined {
@@ -26,6 +33,7 @@ const CATEGORY_MODULE: Record<PushCategory, string> = {
   forms: 'forms',
   leads: 'leads',
   recovery: 'campaigns',
+  calls: 'calls',
 };
 
 /** ¿Las preferencias dejan pasar este aviso? Sin categoría (prueba) siempre. */
@@ -169,6 +177,7 @@ function withDefaults(p: PushPrefs | undefined): Required<PushPrefs> {
     forms: p?.forms !== false,
     leads: p?.leads !== false,
     recovery: p?.recovery !== false,
+    calls: p?.calls !== false,
     muted: p?.muted === true,
   };
 }

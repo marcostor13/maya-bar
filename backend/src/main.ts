@@ -15,7 +15,10 @@ async function bootstrap() {
     );
   }
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: la firma de los webhooks de Meta se calcula sobre el cuerpo crudo.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   configureApp(app);
 
   const port = app.get(ConfigService).get<number>('PORT') || 3000;

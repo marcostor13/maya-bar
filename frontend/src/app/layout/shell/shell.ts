@@ -12,13 +12,14 @@ import { PushCenterComponent } from '../../shared/push-center';
 import { BackButtonService } from '../../core/back-button.service';
 import { NativePushService } from '../../core/push.service';
 import { DevicePermissionsService } from '../../core/device-permissions.service';
+import { CallOverlayComponent } from '../../shared/calls/call-overlay';
 import {
   LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight,
   Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, X, MessagesSquare,
   LayoutTemplate,
   MailPlus,
   Link2,
-  MessageSquareText, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, type LucideIconData,
+  MessageSquareText, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, Phone, type LucideIconData,
 } from 'lucide-angular';
 
 /** Una entrada del menú. La misma alimenta el lateral, la barra inferior y la hoja "Más". */
@@ -51,7 +52,7 @@ const TAB_PRIORITY: Record<string, string[]> = {
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, LucideAngularModule, PushCenterComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, LucideAngularModule, PushCenterComponent, CallOverlayComponent],
   template: `
     <div class="shell" [class.immersive]="immersive()">
       <!-- ══ Cabecera móvil ══ -->
@@ -121,6 +122,8 @@ const TAB_PRIORITY: Record<string, string[]> = {
       <main class="main-content" (scroll)="onScroll($event)">
         <router-outlet />
       </main>
+
+      @if (can('calls')) { <app-call-overlay /> }
 
       <!-- ══ Barra inferior (móvil) ══ -->
       @if (tabs().length > 0) {
@@ -768,7 +771,7 @@ export class ShellComponent {
    * haya configurado. `permissionsReady` fuerza el recálculo en cuanto llegan.
    */
   private permissionsReady = computed(() => this.permissions.ready());
-  private can(moduleKey: string): boolean {
+  can(moduleKey: string): boolean {
     this.permissionsReady();
     return this.permissions.can(moduleKey);
   }
@@ -798,6 +801,7 @@ export class ShellComponent {
         { key: 'events', label: 'Eventos', icon: Zap, route: '/events' },
         { key: 'my-guests', label: 'Mis Asistentes', short: 'Asistentes', icon: Users, route: '/mis-asistentes' },
         { key: 'inbox', label: 'Conversaciones', short: 'Chats', icon: MessagesSquare, route: '/inbox' },
+        { key: 'calls', label: 'Llamadas', icon: Phone, route: '/llamadas' },
       ]);
       const clients = keep([
         { key: 'customers', label: 'Contactos', icon: ContactRound, route: '/customers' },
@@ -831,6 +835,7 @@ export class ShellComponent {
       { key: 'templates', label: 'Plantillas WhatsApp', short: 'Plantillas', icon: LayoutTemplate, route: '/plantillas' },
       { key: 'ai-agents', label: 'Agentes IA', short: 'Agentes', icon: Bot, route: '/ai-agents' },
       { key: 'inbox', label: 'Conversaciones', short: 'Chats', icon: MessagesSquare, route: '/inbox' },
+      { key: 'calls', label: 'Llamadas', icon: Phone, route: '/llamadas' },
       { key: 'suppression', label: 'No contactar', short: 'Bajas', icon: BanIcon, route: '/no-contactar' },
     ]);
     const management = keep([

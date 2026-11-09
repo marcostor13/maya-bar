@@ -7,7 +7,7 @@ import { PlatformService } from '../core/platform.service';
 import { ToastService } from './toast';
 import { ConfirmService } from './confirm';
 
-const prefs: PushPrefs = { chats: true, forms: true, leads: true, recovery: true, muted: false };
+const prefs: PushPrefs = { chats: true, forms: true, leads: true, recovery: true, calls: true, muted: false };
 const devices: PushDevice[] = [
   { id: 'n1', kind: 'android', label: 'App de Android', installed: true, createdAt: '2026-11-01T10:00:00Z' },
   { id: 'w1', kind: 'web', label: 'Safari en iPhone', installed: true, createdAt: '2026-11-02T10:00:00Z' },
@@ -178,7 +178,7 @@ describe('NotificationsPanelComponent', () => {
   it('las preferencias son interruptores accesibles que se guardan al cambiar', async () => {
     await render();
     const switches = (fixture.nativeElement as HTMLElement).querySelectorAll('input[role="switch"]');
-    expect(switches.length).toBe(5);
+    expect(switches.length).toBe(6);
     const leads = [...switches].find(s => s.closest('label')?.textContent?.includes('Leads')) as HTMLInputElement;
     expect(leads.getAttribute('aria-checked')).toBe('true');
     leads.checked = false;

@@ -104,6 +104,17 @@ export class WhatsAppAccountsService {
     return this.model.findById(new Types.ObjectId(id)).exec();
   }
 
+  /** Secreto con el que Meta firma los webhooks de la URL por cuenta. */
+  async appSecretFor(id: string): Promise<string | undefined> {
+    if (!Types.ObjectId.isValid(id)) return undefined;
+    const acc = await this.model
+      .findById(new Types.ObjectId(id))
+      .select('+waAppSecret')
+      .lean()
+      .exec();
+    return acc?.waAppSecret || undefined;
+  }
+
   /** Ubica la cuenta Cloud API por el phone_number_id que trae el payload de Meta (webhook a nivel de app). */
   findByPhoneNumberId(phoneNumberId: string) {
     return this.model
@@ -154,6 +165,8 @@ export class WhatsAppAccountsService {
 
   async update(id: string, tenantId: string, dto: UpdateWhatsAppAccountDto) {
     const patch: UpdateWhatsAppAccountDto = { ...dto };
+    // Secreto vacío = no cambiarlo (el formulario nunca lo recibe de vuelta).
+    if (!patch.waAppSecret?.trim()) delete patch.waAppSecret;
     const doc = await this.model
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), tenantId: new Types.ObjectId(tenantId) },

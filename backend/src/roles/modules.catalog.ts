@@ -39,6 +39,7 @@ const ALL_MODULES: PlatformModule[] = [
   { key: 'templates', label: 'Plantillas', group: 'Clientes', route: 'plantillas' },
   { key: 'ai-agents', label: 'Agentes IA', group: 'Clientes', route: 'ai-agents' },
   { key: 'inbox', label: 'Conversaciones', group: 'Clientes', route: 'inbox' },
+  { key: 'calls', label: 'Llamadas', group: 'Clientes', route: 'llamadas' },
   { key: 'suppression', label: 'No contactar', group: 'Clientes', route: 'no-contactar' },
 
   // Mi actividad (impulsadores)
@@ -103,20 +104,20 @@ const RAW_DEFAULT_ROLE_MODULES: Record<string, string[]> = {
   MANAGER: [
     'dashboard', 'locals', 'menu', 'orders', 'kds', 'reservations', 'events',
     'customers', 'leads', 'lists', 'forms', 'campaigns', 'templates', 'ai-agents', 'inbox',
-    'suppression',
+    'calls', 'suppression',
     'visits',
   ],
   MARKETING: [
     'dashboard', 'events',
     'customers', 'leads', 'lists', 'forms', 'campaigns', 'ai-agents', 'inbox',
-    'suppression',
+    'calls', 'suppression',
   ],
   HOST: ['dashboard', 'orders', 'reservations'],
   SERVER: ['dashboard', 'orders'],
   KITCHEN: ['dashboard', 'menu', 'orders', 'kds'],
   BAR: ['dashboard', 'menu', 'orders', 'kds'],
   IMPULSADOR: [
-    'impulsador-panel', 'visits', 'events', 'my-guests', 'inbox',
+    'impulsador-panel', 'visits', 'events', 'my-guests', 'inbox', 'calls',
     'customers', 'leads', 'lists', 'campaigns',
   ],
 };

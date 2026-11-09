@@ -185,6 +185,11 @@ export const routes: Routes = [
         canActivate: [moduleGuard('inbox')],
       },
       {
+        path: 'llamadas',
+        loadComponent: () => import('./pages/calls/calls').then(m => m.CallsPageComponent),
+        canActivate: [moduleGuard('calls')],
+      },
+      {
         path: 'no-contactar',
         loadComponent: () =>
           import('./pages/suppression/suppression').then(m => m.SuppressionComponent),

@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
-import { DashboardComponent } from './dashboard';
+import { DashboardComponent, callKpi } from './dashboard';
 import { AuthService } from '../../auth/auth.service';
 import { PermissionsService } from '../../auth/permissions.service';
 import type { DashboardAnalytics } from '../../shared/models/analytics.model';
@@ -69,6 +69,27 @@ describe('DashboardComponent', () => {
     expect(text()).toContain('Contactos nuevos');
     expect(text()).toContain('Asistente');
     expect(text()).toContain('Embudo de oportunidades');
+  });
+
+  it('llamadas: total, perdidas y duración media (de segundos a minutos) con el módulo', () => {
+    const d = sample();
+    d.kpis.calls = kpi(12, 10);
+    d.kpis.callsMissed = kpi(3, 1);
+    d.kpis.callAvgDuration = kpi(150, 90);
+    http.expectOne((r) => r.url.endsWith('/dashboard/analytics')).flush(d);
+    fixture.detectChanges();
+    const section = [...(fixture.nativeElement as HTMLElement).querySelectorAll('.tiles-3 .tile')];
+    expect(section.map((t) => t.querySelector('.tile-label')!.textContent!.trim()))
+      .toEqual(['Llamadas', 'Llamadas perdidas', 'Duración media']);
+    expect(callKpi('callAvgDuration', d.kpis.callAvgDuration)).toMatchObject({ value: 2.5, previous: 1.5 });
+    expect(callKpi('calls', undefined)).toMatchObject({ value: 0, previous: 0 });
+  });
+
+  it('sin el módulo de llamadas no hay sección de llamadas', () => {
+    (TestBed.inject(PermissionsService) as unknown as { can: (m: string) => boolean }).can = (m) => m !== 'calls';
+    http.expectOne((r) => r.url.endsWith('/dashboard/analytics')).flush(sample());
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.tiles-3')).toBeNull();
   });
 
   it('cambiar filtros vuelve a pedir, guarda la preferencia y descarta respuestas viejas', () => {

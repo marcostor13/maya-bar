@@ -18,6 +18,8 @@ export interface DashboardAnalytics {
   kpis: {
     wonValue: Kpi; wonDeals: Kpi; newContacts: Kpi; newConversations: Kpi;
     inbound: Kpi; aiShare: Kpi; newLeads: Kpi; conversionRate: Kpi;
+    /** Llamadas de WhatsApp; la duración media va en segundos. */
+    calls?: Kpi; callsMissed?: Kpi; callAvgDuration?: Kpi;
   };
   pipeline: { open: number; openValue: number; weightedValue: number };
   activity: { inbound: number[]; ai: number[]; human: number[] };

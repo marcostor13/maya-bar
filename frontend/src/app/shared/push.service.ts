@@ -38,6 +38,7 @@ export interface PushPrefs {
   forms: boolean;
   leads: boolean;
   recovery: boolean;
+  calls: boolean;
   muted: boolean;
 }
 
