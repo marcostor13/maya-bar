@@ -233,7 +233,7 @@ describe('ConversationTrashService — papelera', () => {
     const res = await svc.restore(tenantId, String(trashed._id), actor);
 
     expect(res.merged).toBe(true);
-    expect(convModel.findOne.mock.calls[1][0]).toEqual({
+    expect((convModel.findOne.mock.calls[1] as unknown[])[0]).toEqual({
       tenantId: tenant,
       channel: 'whatsapp',
       accountId: trashed.accountId,
@@ -334,7 +334,7 @@ describe('ConversationTrashService — borrado definitivo', () => {
     const now = new Date('2026-12-31T00:00:00Z');
 
     expect(await svc.purgeExpired(now)).toBe(1);
-    const filter = convModel.find.mock.calls[0][0] as {
+    const filter = (convModel.find.mock.calls[0] as unknown[])[0] as {
       trashedAt: { $lt: Date };
     };
     expect(filter).toMatchObject({ inTrash: true });

@@ -76,7 +76,8 @@ describe('BlockedContactsService', () => {
 
     expect(out).toHaveLength(2);
     expect(blocks.findOneAndUpdate).toHaveBeenCalledTimes(2);
-    const [filter, update, opts] = blocks.findOneAndUpdate.mock.calls[0] as [
+    const [filter, update, opts] = blocks.findOneAndUpdate.mock
+      .calls[0] as unknown as [
       object,
       { $set: Record<string, unknown> },
       object,

@@ -7,7 +7,7 @@
   - 2.ª vuelta: 20 CUMPLE · 3 PARCIAL (C10, C15, C20).
   - Después se corrigieron C10 y C15 (ver abajo). No hubo 3.ª vuelta.
   - C20 queda PARCIAL por el gateway, que es anterior a esta historia.
-- **Commits:** sin commit
+- **Commits:** 15eadd1
 
 Pedido: `hu.md` · Spec: `spec.md` · Plan: `plan.md` · Tareas: `tasks.md` · ADR: `../../decisiones/0001-papelera-por-filtro-de-esquema.md`
 
