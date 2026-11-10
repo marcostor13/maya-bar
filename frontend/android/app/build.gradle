@@ -17,7 +17,8 @@ android {
         applicationId "site.mayacrm.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
+        // La CI pasa -PversionCode (número de run + 100) para que Play reciba siempre uno mayor.
+        versionCode((project.findProperty("versionCode") ?: "2") as Integer)
         versionName "1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

@@ -71,10 +71,11 @@ jobs:
         # vea aquí y no a mitad del despliegue en Coolify.
         run: node scripts/set-env.js && npx ng build frontend --configuration production
 
-  # Navegador real contra frontend + backend. Solo en PR: tarda varios minutos y
-  # no se quiere frenar cada despliegue; antes de desplegar, `npm run verify`.
+  # Navegador real contra frontend + backend. En cada PR y antes de cada
+  # despliegue (deploy.yml): añade unos minutos, pero nada llega a producción
+  # con un flujo de punta a punta roto.
   e2e:
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' || inputs.backend || inputs.frontend }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -106,6 +106,21 @@ npm run provision         # aplica; imprime los UUID para los secrets
 3. **deploy-backend / deploy-frontend** — solo si CI pasa. Llaman a
    `scripts/deploy.js`, que lanza el despliegue por la API de Coolify y espera
    a que el deployment termine, fallando el job si el build falla.
+4. **smoke** — tras desplegar, comprueba que `https://mayacrm.site/healthz`,
+   `https://api.mayacrm.site/healthz` y la portada responden 200 desde fuera
+   (DNS, Traefik y certificado incluidos). Reintenta durante 2 minutos.
+
+**ci** incluye los e2e de navegador (Playwright): ningún despliegue sale con un
+flujo de punta a punta roto. Cada push a `main` tarda unos 15 minutos en total.
+Basta con `git push`; no hace falta `npm run deploy` (construiría dos veces).
+
+`main` está protegida: no admite force push ni borrado, y en un PR exige que
+pasen `backend`, `frontend` y `e2e`. El administrador puede seguir subiendo
+directo a `main` (la protección no se aplica a administradores); el despliegue
+igualmente no sale si la CI falla.
+
+La app Android tiene su propio workflow, `.github/workflows/android.yml`: ver
+`docs/android-app.md` › *Compilación en GitHub*.
 
 `workflow_dispatch` permite lanzar `all | backend | frontend` a mano.
 

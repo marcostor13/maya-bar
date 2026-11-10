@@ -119,3 +119,26 @@ jobs:
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
           COOLIFY_FRONTEND_UUID: ${{ secrets.COOLIFY_FRONTEND_UUID }}
         run: node scripts/deploy.js frontend
+
+  # Después de desplegar: la web y la API responden en producción. Coolify da el
+  # despliegue por bueno al pasar su healthcheck interno; esto comprueba además
+  # el camino público (DNS, Traefik, certificado), que ya falló otras veces.
+  smoke:
+    needs: [deploy-backend, deploy-frontend]
+    if: ${{ !cancelled() && (needs.deploy-backend.result == 'success' || needs.deploy-frontend.result == 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Web y API responden
+        run: |
+          set -u
+          check() {
+            for i in $(seq 1 12); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$1" || true)
+              [ "$code" = "200" ] && { echo "OK $1"; return 0; }
+              echo "Intento $i: $1 -> $code"; sleep 10
+            done
+            echo "::error::$1 no responde 200 tras desplegar"; return 1
+          }
+          check https://mayacrm.site/healthz
+          check https://api.mayacrm.site/healthz
+          check https://mayacrm.site/

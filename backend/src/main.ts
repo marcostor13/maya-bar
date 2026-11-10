@@ -20,6 +20,13 @@ async function bootstrap() {
     rawBody: true,
   });
   configureApp(app);
+  // Salud para la comprobación posterior al despliegue (deploy.yml): pública y
+  // fuera de Nest, sin guards ni base de datos.
+  app
+    .getHttpAdapter()
+    .get('/healthz', (_req, res: { json: (b: object) => void }) =>
+      res.json({ ok: true }),
+    );
 
   const port = app.get(ConfigService).get<number>('PORT') || 3000;
   await app.listen(port, '0.0.0.0');

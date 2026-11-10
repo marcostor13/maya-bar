@@ -109,7 +109,8 @@ Disparadores actuales:
    contraseñas. Ambos archivos, el keystore y `key.properties`, están fuera del
    control de versiones.
 
-3. Subir `versionCode` y `versionName` en `android/app/build.gradle`.
+3. Subir `versionName` en `android/app/build.gradle` (y `versionCode` si compilas
+   en local; la CI lo calcula sola con `-PversionCode`).
 
 4. Construir el bundle para Play Console:
 
@@ -125,6 +126,32 @@ que es lo correcto en un entorno que no debe poder publicar.
 Para la ficha de Play hacen falta además: política de privacidad (hay dominio
 propio), y la declaración de los permisos de cámara (lectura de QR) y
 notificaciones.
+
+## Compilación en GitHub
+
+`.github/workflows/android.yml` compila la app en cada push a `main` que toque
+`frontend/` (o a mano: *Actions › Android › Run workflow*). El resultado queda en
+el run como artefacto `maya-android-<versionCode>` durante 30 días.
+
+- `versionCode` = número de run + 100, siempre creciente (Play lo exige).
+  `versionName` sigue saliendo de `build.gradle`.
+- **Sin secrets de firma** genera un APK de depuración, para instalar y probar.
+- **Con secrets de firma** genera el `.aab` firmado para Play Console y un APK
+  firmado.
+
+Para activar la firma (una vez), en *Settings › Secrets and variables ›
+Actions* del repositorio:
+
+| Secret | Valor |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | El keystore en base64: `base64 -w0 maya-release.keystore` |
+| `ANDROID_KEYSTORE_PASSWORD` | Contraseña del keystore |
+| `ANDROID_KEY_ALIAS` | Alias de la clave (`maya`) |
+| `ANDROID_KEY_PASSWORD` | Contraseña de la clave |
+
+Subir el `.aab` a Play Console sigue siendo manual: la primera publicación de
+una app en Play tiene que hacerse desde la consola. Automatizarla después
+necesita una cuenta de servicio de Google Play.
 
 ## Detalles que conviene no romper
 
