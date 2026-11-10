@@ -22,9 +22,6 @@ jobs:
         working-directory: frontend
     env:
       HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-      # Play exige un versionCode mayor en cada subida; el 100 deja atrás los
-      # que ya se usaron a mano.
-      VERSION_CODE: ${{ github.run_number + 100 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,6 +34,11 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
+
+      # Play exige un versionCode mayor en cada subida; el 100 deja atrás los
+      # que ya se usaron a mano.
+      - name: versionCode
+        run: echo "VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
 
       - run: npm ci
       - name: Build web para la app y copia a android/
