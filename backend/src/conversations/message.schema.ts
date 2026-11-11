@@ -124,6 +124,14 @@ export class Message extends Document {
   @Prop()
   error?: string;
 
+  // --- Reintento automático de envíos fallidos (HU7, MessageRetryService) ---
+  /** Reintentos ya hechos. */
+  @Prop() retryCount?: number;
+  /** Próximo intento; mientras se envía, también hace de candado. */
+  @Prop() retryAt?: Date;
+  /** No se reintenta más (error no temporal, superado o fuera de ventana). */
+  @Prop() retryStopped?: boolean;
+
   @Prop({ type: Types.ObjectId, ref: 'User' })
   sentBy?: Types.ObjectId;
 
@@ -137,3 +145,8 @@ export class Message extends Document {
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ conversationId: 1, at: -1 });
+// Candidatos del reintento automático: solo indexa los fallidos, que son pocos.
+MessageSchema.index(
+  { status: 1, at: -1 },
+  { partialFilterExpression: { status: 'failed' } },
+);

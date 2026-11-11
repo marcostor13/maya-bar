@@ -19,6 +19,7 @@ import {
 } from './scheduled-message.schema';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
 import { InboxToolsService } from './inbox-tools.service';
+import { MessageRetryService } from './message-retry.service';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { WhatsAppAccountsModule } from '../whatsapp-accounts/whatsapp-accounts.module';
 import { InstagramModule } from '../instagram/instagram.module';
@@ -102,6 +103,8 @@ import {
     ConversationAssignmentService,
     EmailListenerService,
     InboxToolsService,
+    // Reintento automático de envíos fallidos (HU7).
+    MessageRetryService,
     BlockedContactsService,
     ConversationTrashService,
     // Llamadas (HU6): viven aquí porque el webhook de WhatsApp las despacha.

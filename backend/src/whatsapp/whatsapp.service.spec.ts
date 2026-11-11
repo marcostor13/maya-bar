@@ -136,6 +136,22 @@ describe('WhatsAppService (Cloud API)', () => {
         service.sendMessage('51999888777', 'x', config),
       ).rejects.toThrow('CloudAPI 401: token expired');
     });
+
+    it('incluye el código de Meta en el error para poder clasificarlo', async () => {
+      graph.post.mockRejectedValue(
+        new MetaApiError('Business eligibility payment issue', 400, {
+          error: {
+            code: 131042,
+            message: 'Business eligibility payment issue',
+          },
+        }),
+      );
+      await expect(
+        service.sendMessage('51999888777', 'x', config),
+      ).rejects.toThrow(
+        'CloudAPI 400 #131042: Business eligibility payment issue',
+      );
+    });
   });
 
   describe('setContactBlocked', () => {

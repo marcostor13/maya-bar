@@ -327,8 +327,13 @@ export class WhatsAppService {
       );
       return data.messages?.[0]?.id;
     } catch (err) {
-      if (err instanceof MetaApiError)
-        throw new Error(`${errorLabel} ${err.status}: ${err.message}`);
+      if (err instanceof MetaApiError) {
+        // El código de Meta (#131042…) es lo que permite decidir si reintentar.
+        const code = (err.body as { error?: { code?: number } } | undefined)
+          ?.error?.code;
+        const tag = code ? ` #${code}` : '';
+        throw new Error(`${errorLabel} ${err.status}${tag}: ${err.message}`);
+      }
       throw err;
     }
   }

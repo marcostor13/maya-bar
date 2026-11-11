@@ -1301,6 +1301,14 @@ export class ConversationsService {
     return msg;
   }
 
+  /**
+   * Vuelve a entregar un mensaje ya guardado (reintento automático, HU7).
+   * Solo envía: el estado lo guarda quien llama.
+   */
+  redeliver(conv: Conversation, msg: Message): Promise<string | undefined> {
+    return this.deliver(conv, msg);
+  }
+
   /** Entrega el mensaje por el canal correspondiente y devuelve el id del proveedor. */
   private async deliver(
     conv: Conversation,
