@@ -24,6 +24,21 @@ import {
   AgentBooking,
   AgentBookingSchema,
 } from './calendar/agent-booking.schema';
+import {
+  AgentPromptReview,
+  AgentPromptReviewSchema,
+  AgentPromptVersion,
+  AgentPromptVersionSchema,
+} from './insights/prompt-insights.schemas';
+import {
+  Conversation,
+  ConversationSchema,
+} from '../conversations/conversation.schema';
+import { Message, MessageSchema } from '../conversations/message.schema';
+import { PromptVersionsService } from './insights/prompt-versions.service';
+import { PromptReviewService } from './insights/prompt-review.service';
+import { AgentGeneratorService } from './insights/agent-generator.service';
+import { AgentInsightsController } from './insights/agent-insights.controller';
 
 @Module({
   imports: [
@@ -35,6 +50,11 @@ import {
       { name: AgentFile.name, schema: AgentFileSchema },
       { name: TenantConfig.name, schema: TenantConfigSchema },
       { name: AgentBooking.name, schema: AgentBookingSchema },
+      { name: AgentPromptVersion.name, schema: AgentPromptVersionSchema },
+      { name: AgentPromptReview.name, schema: AgentPromptReviewSchema },
+      // Solo lectura, para analizar lo que respondió cada agente (HU8).
+      { name: Conversation.name, schema: ConversationSchema },
+      { name: Message.name, schema: MessageSchema },
     ]),
     AiModule,
     WhatsAppModule,
@@ -43,12 +63,15 @@ import {
   ],
   // Los webhooks de WhatsApp/Instagram viven ahora en ConversationsModule:
   // así el módulo de agentes no depende de las conversaciones (evita el ciclo).
-  controllers: [AiAgentsController],
+  controllers: [AiAgentsController, AgentInsightsController],
   providers: [
     AiAgentsService,
     RagService,
     EmbeddingsService,
     WooStoreService,
+    PromptVersionsService,
+    PromptReviewService,
+    AgentGeneratorService,
     { provide: EMBEDDINGS_PROVIDER, useClass: HttpEmbeddingsProvider },
   ],
   exports: [AiAgentsService],

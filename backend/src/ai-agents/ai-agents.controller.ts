@@ -67,7 +67,7 @@ export class AiAgentsController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, CRM_ROLES);
-    return this.service.update(id, req.user.tenantId, dto);
+    return this.service.update(id, req.user.tenantId, dto, req.user.userId);
   }
 
   @Delete(':id')

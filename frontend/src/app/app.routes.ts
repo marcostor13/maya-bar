@@ -180,6 +180,16 @@ export const routes: Routes = [
         canActivate: [moduleGuard('ai-agents')],
       },
       {
+        path: 'ai-agents/generar',
+        loadComponent: () => import('./pages/ai-agents/agent-generator').then(m => m.AgentGeneratorComponent),
+        canActivate: [moduleGuard('ai-agents')],
+      },
+      {
+        path: 'ai-agents/:id/mejoras',
+        loadComponent: () => import('./pages/ai-agents/agent-improve').then(m => m.AgentImproveComponent),
+        canActivate: [moduleGuard('ai-agents')],
+      },
+      {
         path: 'inbox',
         loadComponent: () => import('./pages/inbox/inbox').then(m => m.InboxComponent),
         canActivate: [moduleGuard('inbox')],

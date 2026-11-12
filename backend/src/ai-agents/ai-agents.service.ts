@@ -3,6 +3,7 @@ import {
   NotFoundException,
   Logger,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -45,6 +46,8 @@ import {
   type BookingStore,
 } from './calendar/calendar-tools';
 import type { AiToolCall } from '../ai/ai.service';
+import { PromptVersionsService } from './insights/prompt-versions.service';
+import type { PromptVersionSource } from './insights/prompt-insights.schemas';
 
 // Igual que AI_HISTORY_LIMIT de la bandeja: si el chat pasó por manual, el
 // agente tiene que ver lo que escribió la persona antes de retomar.
@@ -143,6 +146,7 @@ export class AiAgentsService {
     private store: WooStoreService,
     private links: LinksService,
     private calendar: CalendarService,
+    private versions: PromptVersionsService,
   ) {}
 
   /** Lee las API keys de IA configuradas por el tenant. */
@@ -212,8 +216,18 @@ export class AiAgentsService {
     });
   }
 
-  async update(id: string, tenantId: string, dto: UpdateAiAgentDto) {
+  async update(
+    id: string,
+    tenantId: string,
+    dto: UpdateAiAgentDto,
+    userId?: string,
+  ) {
     if (dto.calendar) assertAgentCalendar(dto.calendar);
+    // El prompt anterior va al historial para poder volver atrás.
+    const previous =
+      dto.systemPrompt !== undefined
+        ? (await this.findOne(id, tenantId)).systemPrompt
+        : undefined;
     const patch: Record<string, unknown> = { ...dto };
     if (dto.accountIds)
       patch.accountIds = dto.accountIds.map((a) => new Types.ObjectId(a));
@@ -247,6 +261,53 @@ export class AiAgentsService {
       )
       .exec();
     if (!doc) throw new NotFoundException('Agente no encontrado');
+    if (previous !== undefined && previous !== doc.systemPrompt)
+      await this.versions.record({
+        tenantId,
+        agentId: id,
+        previous,
+        source: 'manual',
+        userId,
+      });
+    return doc;
+  }
+
+  /**
+   * Cambia solo el prompt, si sigue siendo `expected` (nadie lo editó entre
+   * medio), y guarda el anterior en el historial.
+   */
+  async replacePrompt(params: {
+    id: string;
+    tenantId: string;
+    expected: string;
+    next: string;
+    source: PromptVersionSource;
+    userId?: string;
+    note?: string;
+  }): Promise<AiAgent> {
+    const doc = await this.agentModel
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(params.id),
+          tenantId: this.tenantMatch(params.tenantId),
+          systemPrompt: params.expected,
+        },
+        { $set: { systemPrompt: params.next } },
+        { new: true },
+      )
+      .exec();
+    if (!doc)
+      throw new ConflictException(
+        'El prompt cambió mientras tanto. Recarga la página e inténtalo de nuevo.',
+      );
+    await this.versions.record({
+      tenantId: params.tenantId,
+      agentId: params.id,
+      previous: params.expected,
+      source: params.source,
+      userId: params.userId,
+      note: params.note,
+    });
     return doc;
   }
 

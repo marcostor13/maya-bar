@@ -1,13 +1,13 @@
 import { Component, inject, signal, OnInit, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
-  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail, ShoppingCart, CalendarDays,
+  Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail, ShoppingCart, CalendarDays, Wand2,
 } from 'lucide-angular';
 import {
   AgentCalendarSection, agentCalendarPayload, blankAgentCalendar, normalizeAgentCalendar,
@@ -172,6 +172,10 @@ function blankAgent(): Agent {
           <p class="page-sub">Crea asistentes que responden por WhatsApp, Instagram, Messenger y correo con tu conocimiento (RAG)</p>
         </div>
         <div class="header-actions">
+          <a class="btn btn-secondary" routerLink="/ai-agents/generar">
+            <lucide-icon [img]="Sparkles" [size]="16" [strokeWidth]="2.5"></lucide-icon>
+            Generar con IA
+          </a>
           <button class="btn btn-primary" (click)="openNew()">
             <lucide-icon [img]="Plus" [size]="16" [strokeWidth]="2.5"></lucide-icon>
             Nuevo agente
@@ -228,6 +232,9 @@ function blankAgent(): Agent {
                 <button class="btn btn-sm btn-secondary" (click)="openPlayground(a)" title="Probar">
                   <lucide-icon [img]="FlaskConical" [size]="14" [strokeWidth]="2.5"></lucide-icon> Probar
                 </button>
+                <a class="btn btn-sm btn-secondary" [routerLink]="['/ai-agents', a._id, 'mejoras']" title="Mejorar con las conversaciones reales">
+                  <lucide-icon [img]="Wand2" [size]="14" [strokeWidth]="2.5"></lucide-icon> Mejorar
+                </a>
                 <button class="btn btn-sm btn-secondary" (click)="openEdit(a)" title="Editar">
                   <lucide-icon [img]="Pencil" [size]="14" [strokeWidth]="2.5"></lucide-icon>
                 </button>
@@ -942,6 +949,8 @@ export class AiAgentsComponent implements OnInit {
   private http = inject(HttpClient);
   private toast = inject(ToastService);
   private confirmSvc = inject(ConfirmService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
   @ViewChild('promptTextarea') promptTextareaEl?: ElementRef<HTMLTextAreaElement>;
 
@@ -952,7 +961,7 @@ export class AiAgentsComponent implements OnInit {
   readonly Bot = Bot; readonly Plus = Plus; readonly X = X; readonly Trash2 = Trash2;
   readonly Send = Send; readonly Upload = Upload; readonly FileText = FileText;
   readonly MessageSquare = MessageSquare; readonly Smartphone = Smartphone; readonly Check = Check;
-  readonly Sparkles = Sparkles; readonly BookOpen = BookOpen; readonly Phone = Phone;
+  readonly Sparkles = Sparkles; readonly Wand2 = Wand2; readonly BookOpen = BookOpen; readonly Phone = Phone;
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
   readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Mail = Mail; readonly Settings = Settings;
@@ -1029,9 +1038,22 @@ export class AiAgentsComponent implements OnInit {
   load() {
     this.loading.set(true);
     this.http.get<Agent[]>(`${API}/ai-agents`).subscribe({
-      next: a => { this.agents.set(a); this.loading.set(false); },
+      next: a => {
+        this.agents.set(a);
+        this.loading.set(false);
+        this.openFromQuery();
+      },
       error: () => this.loading.set(false),
     });
+  }
+
+  /** `?edit=<id>`: abre ese agente (p. ej. recién creado con el generador). */
+  private openFromQuery() {
+    const id = this.route.snapshot.queryParamMap.get('edit');
+    const agent = id ? this.agents().find(a => a._id === id) : undefined;
+    if (!agent) return;
+    this.openEdit(agent);
+    void this.router.navigate([], { queryParams: { edit: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   /** Al cambiar de proveedor el modelo elegido deja de ser válido. */

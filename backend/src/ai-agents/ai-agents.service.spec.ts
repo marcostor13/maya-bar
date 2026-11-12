@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { AiAgentsService, normalizeHandoffTargets } from './ai-agents.service';
 import { AiAgent } from './ai-agent.schema';
@@ -13,6 +17,9 @@ import { WooStoreService } from './store/woo-store.service';
 import { LinksService } from '../links/links.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { AgentBooking } from './calendar/agent-booking.schema';
+import { PromptVersionsService } from './insights/prompt-versions.service';
+
+const mockVersions = { record: jest.fn().mockResolvedValue(undefined) };
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -136,6 +143,7 @@ describe('AiAgentsService', () => {
         { provide: LinksService, useValue: mockLinks },
         { provide: CalendarService, useValue: mockCalendar },
         { provide: getModelToken(AgentBooking.name), useValue: bookingModel },
+        { provide: PromptVersionsService, useValue: mockVersions },
       ],
     }).compile();
 
@@ -797,6 +805,74 @@ describe('AiAgentsService', () => {
       expect(
         agentModel.findOneAndUpdate.mock.calls[1][1].$set.storeUrl,
       ).toBeNull();
+    });
+  });
+
+  // ─── historial del prompt (HU8) ────────────────────────────────────────────
+
+  describe('historial del prompt', () => {
+    it('C7: al editar el prompt guarda la versión anterior como manual', async () => {
+      agentModel.findOne.mockReturnValue(buildQuery(makeAgent()));
+      agentModel.findOneAndUpdate.mockReturnValue(
+        buildQuery(makeAgent({ systemPrompt: 'Nuevo' })),
+      );
+      await service.update(
+        agentOid.toString(),
+        tenantOid.toString(),
+        { systemPrompt: 'Nuevo' },
+        new Types.ObjectId().toString(),
+      );
+      expect(mockVersions.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          previous: 'Eres el asistente del bar.',
+          source: 'manual',
+        }),
+      );
+    });
+
+    it('C7: si el prompt no cambia, o no viene, no guarda versión', async () => {
+      agentModel.findOne.mockReturnValue(buildQuery(makeAgent()));
+      agentModel.findOneAndUpdate.mockReturnValue(buildQuery(makeAgent()));
+      await service.update(agentOid.toString(), tenantOid.toString(), {
+        systemPrompt: 'Eres el asistente del bar.',
+      });
+      await service.update(agentOid.toString(), tenantOid.toString(), {
+        name: 'Otro',
+      });
+      expect(mockVersions.record).not.toHaveBeenCalled();
+    });
+
+    it('replacePrompt cambia solo si el prompt sigue igual y guarda el anterior', async () => {
+      agentModel.findOneAndUpdate.mockReturnValue(
+        buildQuery(makeAgent({ systemPrompt: 'B' })),
+      );
+      await service.replacePrompt({
+        id: agentOid.toString(),
+        tenantId: tenantOid.toString(),
+        expected: 'A',
+        next: 'B',
+        source: 'restore',
+      });
+      const [filter, update] = agentModel.findOneAndUpdate.mock.calls[0];
+      expect(filter.systemPrompt).toBe('A');
+      expect(update).toEqual({ $set: { systemPrompt: 'B' } });
+      expect(mockVersions.record).toHaveBeenCalledWith(
+        expect.objectContaining({ previous: 'A', source: 'restore' }),
+      );
+    });
+
+    it('replacePrompt da 409 si el prompt cambió entre medio', async () => {
+      agentModel.findOneAndUpdate.mockReturnValue(buildQuery(null));
+      await expect(
+        service.replacePrompt({
+          id: agentOid.toString(),
+          tenantId: tenantOid.toString(),
+          expected: 'A',
+          next: 'B',
+          source: 'suggestion',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(mockVersions.record).not.toHaveBeenCalled();
     });
   });
 
