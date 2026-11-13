@@ -11,6 +11,7 @@ import { Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import {
   ContactForm,
   EmailReply,
@@ -97,7 +98,7 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
 @Component({
   selector: 'app-forms',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule],
+  imports: [ReactiveFormsModule, LucideAngularModule, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
 
@@ -218,23 +219,22 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
       }
     </div>
 
-    <!-- ── Editor (drawer) ── -->
+    <!-- ── Editor (pantalla completa) ── -->
     @if (editorOpen()) {
-      <div class="overlay" (click)="closeEditor()" role="dialog" aria-modal="true" aria-label="Editor de formulario">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-
-          <div class="drawer-header">
-            <div class="drawer-title-group">
-              <h2>{{ editing() ? 'Editar formulario' : 'Nuevo formulario' }}</h2>
-              <p class="subtitle">Define los campos que verá el visitante y a dónde va cada dato.</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="closeEditor()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-            </button>
-          </div>
-
-          <div class="drawer-scroll">
-            <form [formGroup]="form" (ngSubmit)="save()">
+      <app-form-page
+        [title]="editing() ? 'Editar formulario' : 'Nuevo formulario'"
+        subtitle="Define los campos que verá el visitante y a dónde va cada dato."
+        backLabel="Formularios"
+        [urlKey]="editing()?._id || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="closeEditor()">
+        <ng-container formActions>
+          <!-- Fuera del <form>: el atributo form lo sigue enviando con ngSubmit. -->
+          <button type="submit" form="contact-form-editor" class="btn btn-primary" [disabled]="saving()">
+            {{ saving() ? 'Guardando...' : 'Guardar formulario' }}
+          </button>
+        </ng-container>
+            <form id="contact-form-editor" [formGroup]="form" (ngSubmit)="save()">
 
               <div class="field">
                 <label class="field-label" for="form-name">Nombre *</label>
@@ -504,22 +504,13 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
               @if (formError()) {
                 <p class="form-error">{{ formError() }}</p>
               }
-
-              <div class="drawer-actions">
-                <button type="button" class="btn btn-secondary" (click)="closeEditor()">Cancelar</button>
-                <button type="submit" class="btn btn-primary" [disabled]="saving()">
-                  {{ saving() ? 'Guardando...' : 'Guardar formulario' }}
-                </button>
-              </div>
             </form>
-          </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
 
     <!-- ── Código de integración ── -->
     @if (embedForm(); as ef) {
-      <div class="overlay overlay-center" (click)="embedForm.set(null)" role="dialog" aria-modal="true" aria-label="Código de integración">
+      <div class="overlay" (click)="embedForm.set(null)" role="dialog" aria-modal="true" aria-label="Código de integración">
         <div class="modal-card modal-wide" (click)="$event.stopPropagation()">
           <div class="modal-header">
             <div>
@@ -565,18 +556,12 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
 
     <!-- ── Envíos ── -->
     @if (submissionsForm(); as sf) {
-      <div class="overlay" (click)="submissionsForm.set(null)" role="dialog" aria-modal="true" aria-label="Envíos del formulario">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div class="drawer-title-group">
-              <h2>Envíos</h2>
-              <p class="subtitle">{{ sf.name }} · {{ submissions().length }} registro(s)</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="submissionsForm.set(null)" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-            </button>
-          </div>
-          <div class="drawer-scroll">
+      <app-form-page
+        title="Envíos"
+        [subtitle]="sf.name + ' · ' + submissions().length + ' registro(s)'"
+        backLabel="Formularios"
+        [urlKey]="sf._id"
+        (closed)="submissionsForm.set(null)">
             @if (loadingSubmissions()) {
               <div class="skeleton-list">
                 @for (i of [1,2,3]; track i) { <div class="skeleton-row"></div> }
@@ -610,9 +595,7 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
                 </div>
               }
             }
-          </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -654,14 +637,7 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
     .empty-icon { color:var(--color-brand); opacity:.3; }
 
     /* ── Overlays ── */
-    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex; align-items:stretch; justify-content:flex-end; z-index:100; }
-    .overlay-center { align-items:center; justify-content:center; }
-    .drawer { width:640px; background:#fff; box-shadow:-10px 0 40px rgba(0,0,0,.15); display:flex; flex-direction:column; height:100vh; animation:slideInRight .25s var(--transition-spring); }
-    @keyframes slideInRight { from{transform:translateX(100%)} to{transform:translateX(0)} }
-    .drawer-header { padding:32px 32px 20px; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
-    .drawer-title-group h2 { margin:0 0 4px; font-size:24px; font-weight:800; letter-spacing:-.5px; }
-    .drawer-scroll { padding:32px; overflow-y:auto; flex:1; }
-    .drawer-actions { display:flex; gap:12px; justify-content:flex-end; padding-top:24px; border-top:1px solid var(--color-border); margin-top:8px; }
+    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; z-index:100; }
 
     .field { display:flex; flex-direction:column; gap:8px; margin-bottom:24px; }
     .field-label { font-size:14px; font-weight:600; color:var(--color-text-main); }
@@ -764,9 +740,6 @@ const EMPTY_MAIL: EmailReply = { enabled: false };
     @media (max-width: 768px) {
       .page { padding:20px 16px; }
       .stats-row { grid-template-columns:1fr; }
-      .drawer { width:100%; }
-      .drawer-header { padding:20px 20px 16px; }
-      .drawer-scroll { padding:20px; }
       .field-card-grid { grid-template-columns:1fr; }
       .modal-header, .modal-body { padding-left:20px; padding-right:20px; }
       .modal-actions { flex-direction:column-reverse; }
@@ -869,8 +842,7 @@ export class FormsComponent implements OnInit {
   @HostListener('document:keydown.escape')
   onEscape() {
     if (this.embedForm()) return this.embedForm.set(null);
-    if (this.submissionsForm()) return this.submissionsForm.set(null);
-    if (this.editorOpen()) this.closeEditor();
+    // Editor y envíos son pantallas completas: manejan su propio ESC.
   }
 
   private load() {
@@ -1022,8 +994,19 @@ export class FormsComponent implements OnInit {
     this.autoWa.set(f?.autoWhatsApp ? { ...f.autoWhatsApp, templateVars: [...(f.autoWhatsApp.templateVars ?? [])] } : { ...EMPTY_WA });
     this.autoMail.set(f?.autoEmail ? { ...f.autoEmail } : { ...EMPTY_MAIL });
     if (this.autoWa().enabled && this.templates().length === 0) this.loadTemplates();
+    this.formSnapshot = this.snapshot();
     this.editorOpen.set(true);
   }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  private snapshot() {
+    return snapshotOf({
+      form: this.form.getRawValue(), fields: this.fields(), tags: this.tags(), listIds: this.listIds(),
+      active: this.active(), autoWa: this.autoWa(), autoMail: this.autoMail(),
+    });
+  }
+  isDirty() { return this.snapshot() !== this.formSnapshot; }
 
   closeEditor() {
     this.editorOpen.set(false);

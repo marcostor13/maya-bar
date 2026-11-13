@@ -1,9 +1,10 @@
-import { Component, ElementRef, Injector, OnInit, afterNextRender, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, inject, input, output, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
-import { LucideAngularModule, Phone, X, Save, TriangleAlert } from 'lucide-angular';
+import { LucideAngularModule, Save, TriangleAlert } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { environment } from '../../../environments/environment';
 
 const API = `${environment.apiUrl}/calls/settings`;
@@ -53,109 +54,95 @@ export const fromHHMM = (v: string) => v.replace(':', '');
 @Component({
   selector: 'app-call-settings',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, FormPageComponent],
   template: `
-    <div class="cs-overlay" (click)="close()">
-      <aside class="cs-drawer" role="dialog" aria-modal="true" aria-labelledby="cs-title"
-             (click)="$event.stopPropagation()" (keydown.escape)="close()">
-        <div class="cs-head">
-          <div>
-            <h2 id="cs-title"><lucide-icon [img]="Phone" [size]="18" /> Llamadas · {{ label() }}</h2>
-            <p>Lo que configures en "WhatsApp" se guarda en Meta; el resto, en Maya.</p>
-          </div>
-          <button type="button" class="btn btn-ghost btn-icon" aria-label="Cerrar" (click)="close()">
-            <lucide-icon [img]="X" [size]="18" />
-          </button>
-        </div>
+    <app-form-page
+      [title]="'Llamadas · ' + label()"
+      subtitle='Lo que configures en "WhatsApp" se guarda en Meta; el resto, en Maya.'
+      backLabel="WhatsApp"
+      [urlKey]="'llamadas-' + accountId()"
+      [dirty]="isDirty()"
+      (closed)="close()">
+      <ng-container formActions>
+        <button type="button" class="btn btn-primary" [disabled]="loading() || saving()" (click)="save()">
+          <lucide-icon [img]="Save" [size]="15" /> {{ saving() ? 'Guardando…' : 'Guardar' }}
+        </button>
+      </ng-container>
+      <div class="cs-body">
+        @if (loading()) {
+          <p class="muted" aria-busy="true">Cargando la configuración…</p>
+        } @else {
+          <section>
+            <h3>WhatsApp (Meta)</h3>
+            @if (metaError()) {
+              <p class="warn" role="alert">
+                <lucide-icon [img]="TriangleAlert" [size]="15" />
+                Meta no devolvió la configuración: {{ metaError() }}
+              </p>
+            }
+            <label class="row">
+              <input type="checkbox" name="enabled" [(ngModel)]="enabled" />
+              <span><strong>Llamadas activadas</strong><small>Los clientes pueden llamar a este número y tú llamarlos.</small></span>
+            </label>
+            <label class="row">
+              <input type="checkbox" name="icon" [(ngModel)]="showIcon" [disabled]="!enabled" />
+              <span><strong>Mostrar el botón de llamada</strong><small>El icono de teléfono en el chat del cliente.</small></span>
+            </label>
+            <label class="row">
+              <input type="checkbox" name="callback" [(ngModel)]="callback" [disabled]="!enabled" />
+              <span><strong>Pedir permiso de devolución</strong><small>Si pierdes una llamada, WhatsApp le ofrece al cliente que lo llames tú.</small></span>
+            </label>
 
-        <div class="cs-body">
-          @if (loading()) {
-            <p class="muted" aria-busy="true">Cargando la configuración…</p>
-          } @else {
-            <section>
-              <h3>WhatsApp (Meta)</h3>
-              @if (metaError()) {
-                <p class="warn" role="alert">
-                  <lucide-icon [img]="TriangleAlert" [size]="15" />
-                  Meta no devolvió la configuración: {{ metaError() }}
-                </p>
-              }
-              <label class="row">
-                <input type="checkbox" name="enabled" [(ngModel)]="enabled" />
-                <span><strong>Llamadas activadas</strong><small>Los clientes pueden llamar a este número y tú llamarlos.</small></span>
-              </label>
-              <label class="row">
-                <input type="checkbox" name="icon" [(ngModel)]="showIcon" [disabled]="!enabled" />
-                <span><strong>Mostrar el botón de llamada</strong><small>El icono de teléfono en el chat del cliente.</small></span>
-              </label>
-              <label class="row">
-                <input type="checkbox" name="callback" [(ngModel)]="callback" [disabled]="!enabled" />
-                <span><strong>Pedir permiso de devolución</strong><small>Si pierdes una llamada, WhatsApp le ofrece al cliente que lo llames tú.</small></span>
-              </label>
-
-              <label class="row">
-                <input type="checkbox" name="hours" [(ngModel)]="hoursOn" [disabled]="!enabled" />
-                <span><strong>Horario de atención</strong><small>Fuera de horario WhatsApp no deja llamar.</small></span>
-              </label>
-              @if (hoursOn && enabled) {
-                <div class="hours">
-                  <label class="field">
-                    <span>Zona horaria</span>
-                    <input class="input" name="tz" [(ngModel)]="timezone" placeholder="America/Lima" />
-                  </label>
-                  @for (d of days(); track d.key) {
-                    <div class="day">
-                      <label class="day-name"><input type="checkbox" [name]="'o' + d.key" [(ngModel)]="d.open" /> {{ d.label }}</label>
-                      <input class="input" type="time" [name]="'f' + d.key" [(ngModel)]="d.from" [disabled]="!d.open" [attr.aria-label]="d.label + ' desde'" />
-                      <input class="input" type="time" [name]="'t' + d.key" [(ngModel)]="d.to" [disabled]="!d.open" [attr.aria-label]="d.label + ' hasta'" />
-                    </div>
-                  }
-                </div>
-              }
-            </section>
-
-            <section>
-              <h3>En Maya</h3>
-              <label class="field">
-                <span>Segundos que suena antes de darla por perdida</span>
-                <input class="input" type="number" name="ring" min="15" max="60" [(ngModel)]="ringTimeoutSec" />
-              </label>
-              <label class="row">
-                <input type="checkbox" name="missed" [(ngModel)]="missedReplyEnabled" />
-                <span><strong>Responder las llamadas perdidas</strong><small>Se envía este mensaje por WhatsApp al cliente.</small></span>
-              </label>
-              @if (missedReplyEnabled) {
+            <label class="row">
+              <input type="checkbox" name="hours" [(ngModel)]="hoursOn" [disabled]="!enabled" />
+              <span><strong>Horario de atención</strong><small>Fuera de horario WhatsApp no deja llamar.</small></span>
+            </label>
+            @if (hoursOn && enabled) {
+              <div class="hours">
                 <label class="field">
-                  <span>Mensaje</span>
-                  <textarea class="textarea" name="missedText" rows="3" maxlength="1000" [(ngModel)]="missedReplyText"
-                    placeholder="¡Hola! No pudimos atender tu llamada. Escríbenos por aquí y te respondemos enseguida."></textarea>
+                  <span>Zona horaria</span>
+                  <input class="input" name="tz" [(ngModel)]="timezone" placeholder="America/Lima" />
                 </label>
-              }
-            </section>
+                @for (d of days(); track d.key) {
+                  <div class="day">
+                    <label class="day-name"><input type="checkbox" [name]="'o' + d.key" [(ngModel)]="d.open" /> {{ d.label }}</label>
+                    <input class="input" type="time" [name]="'f' + d.key" [(ngModel)]="d.from" [disabled]="!d.open" [attr.aria-label]="d.label + ' desde'" />
+                    <input class="input" type="time" [name]="'t' + d.key" [(ngModel)]="d.to" [disabled]="!d.open" [attr.aria-label]="d.label + ' hasta'" />
+                  </div>
+                }
+              </div>
+            }
+          </section>
 
-            @if (formError()) { <p class="cs-error" role="alert">{{ formError() }}</p> }
-          }
-        </div>
+          <section>
+            <h3>En Maya</h3>
+            <label class="field">
+              <span>Segundos que suena antes de darla por perdida</span>
+              <input class="input" type="number" name="ring" min="15" max="60" [(ngModel)]="ringTimeoutSec" />
+            </label>
+            <label class="row">
+              <input type="checkbox" name="missed" [(ngModel)]="missedReplyEnabled" />
+              <span><strong>Responder las llamadas perdidas</strong><small>Se envía este mensaje por WhatsApp al cliente.</small></span>
+            </label>
+            @if (missedReplyEnabled) {
+              <label class="field">
+                <span>Mensaje</span>
+                <textarea class="textarea" name="missedText" rows="3" maxlength="1000" [(ngModel)]="missedReplyText"
+                  placeholder="¡Hola! No pudimos atender tu llamada. Escríbenos por aquí y te respondemos enseguida."></textarea>
+              </label>
+            }
+          </section>
 
-        <div class="cs-foot">
-          <button type="button" class="btn btn-secondary" (click)="close()">Cancelar</button>
-          <button type="button" class="btn btn-primary" [disabled]="loading() || saving()" (click)="save()">
-            <lucide-icon [img]="Save" [size]="15" /> {{ saving() ? 'Guardando…' : 'Guardar' }}
-          </button>
-        </div>
-      </aside>
-    </div>
+          @if (formError()) { <p class="cs-error" role="alert">{{ formError() }}</p> }
+        }
+      </div>
+    </app-form-page>
   `,
   styles: [`
-    .cs-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px);
-      display: flex; justify-content: flex-end; z-index: 110; }
-    .cs-drawer { width: min(520px, 100%); height: 100%; background: var(--color-white); display: flex; flex-direction: column;
-      box-shadow: var(--shadow-lg); animation: cs-in .3s var(--transition-spring, ease-out); }
-    .cs-head { display: flex; justify-content: space-between; gap: 12px; padding: 28px 28px 16px; border-bottom: 1px solid var(--color-border); }
-    .cs-head h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-family: var(--font-heading); font-size: 19px; }
-    .cs-head p { margin: 0; font-size: 13px; color: var(--color-text-muted); }
-    .cs-body { flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 22px; }
-    section { display: flex; flex-direction: column; gap: 12px; }
+    /* Cuerpo a pantalla completa: dos columnas (Meta | Maya) en escritorio, una en móvil. */
+    .cs-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+    .cs-body > .muted, .cs-body > .cs-error { grid-column: 1 / -1; }
+    section { display: flex; background: var(--color-white); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 24px; flex-direction: column; gap: 12px; }
     h3 { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-muted); }
     .row { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
     .row input { margin-top: 3px; accent-color: var(--color-brand); }
@@ -170,10 +157,8 @@ export const fromHHMM = (v: string) => v.replace(':', '');
       background: var(--color-bg-light); color: var(--color-warning, var(--color-text-main)); font-size: 13px; }
     .muted { color: var(--color-text-muted); font-size: 14px; }
     .cs-error { margin: 0; color: var(--color-error); font-size: 13px; }
-    .cs-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px; border-top: 1px solid var(--color-border); }
-    .cs-foot .btn { display: inline-flex; align-items: center; gap: 6px; }
-    @keyframes cs-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
-    @media (max-width: 520px) { .cs-head, .cs-body, .cs-foot { padding-left: 18px; padding-right: 18px; } .day { grid-template-columns: 1fr 1fr; } .day-name { grid-column: 1 / -1; } }
+    @media (max-width: 768px) { .cs-body { grid-template-columns: 1fr; } section { padding: 20px 16px; } }
+    @media (max-width: 520px) { .day { grid-template-columns: 1fr 1fr; } .day-name { grid-column: 1 / -1; } }
   `],
 })
 export class CallSettingsComponent implements OnInit {
@@ -183,11 +168,7 @@ export class CallSettingsComponent implements OnInit {
 
   private http = inject(HttpClient);
   private toast = inject(ToastService);
-  private host: ElementRef<HTMLElement> = inject(ElementRef);
-  private injector = inject(Injector);
 
-  readonly Phone = Phone;
-  readonly X = X;
   readonly Save = Save;
   readonly TriangleAlert = TriangleAlert;
 
@@ -216,11 +197,19 @@ export class CallSettingsComponent implements OnInit {
       this.close();
     } finally {
       this.loading.set(false);
-      afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('input, button')?.focus(), {
-        injector: this.injector,
-      });
+      // Foto al terminar de cargar, para avisar de cambios sin guardar.
+      this.formSnapshot = this.snapshot();
     }
   }
+
+  private formSnapshot = '';
+  private snapshot() {
+    return snapshotOf([
+      this.enabled, this.showIcon, this.callback, this.hoursOn, this.timezone, this.days(),
+      this.ringTimeoutSec, this.missedReplyEnabled, this.missedReplyText,
+    ]);
+  }
+  isDirty() { return !this.loading() && this.snapshot() !== this.formSnapshot; }
 
   fill(res: SettingsResponse) {
     const m = res.meta ?? {};

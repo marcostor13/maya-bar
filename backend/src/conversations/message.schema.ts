@@ -132,6 +132,9 @@ export class Message extends Document {
   /** No se reintenta más (error no temporal, superado o fuera de ventana). */
   @Prop() retryStopped?: boolean;
 
+  /** Entrante que el agente IA todavía no ha respondido (HU11, se agrupan). */
+  @Prop() agentPending?: boolean;
+
   @Prop({ type: Types.ObjectId, ref: 'User' })
   sentBy?: Types.ObjectId;
 
@@ -149,4 +152,9 @@ MessageSchema.index({ conversationId: 1, at: -1 });
 MessageSchema.index(
   { status: 1, at: -1 },
   { partialFilterExpression: { status: 'failed' } },
+);
+// Entrantes pendientes de respuesta del agente: pocos y de vida corta.
+MessageSchema.index(
+  { conversationId: 1, at: 1 },
+  { partialFilterExpression: { agentPending: true } },
 );

@@ -1,12 +1,13 @@
-import { Component, HostListener, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, Mail, Plus, Trash2, Pencil, RefreshCw, CheckCircle2, AlertTriangle,
-  Loader2, Star, Eye, EyeOff, X, Server, Save, Pause, Play,
+  Loader2, Star, Eye, EyeOff, Server, Save, Pause, Play,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { EmailAccountsApiService } from '../../core/api/email-accounts-api.service';
 import {
   EMAIL_PRESETS, EmailAccount, EmailAccountForm, EmailPreset, blankEmailForm,
@@ -15,7 +16,7 @@ import {
 @Component({
   selector: 'app-email-settings',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, DatePipe],
+  imports: [FormsModule, LucideAngularModule, DatePipe, FormPageComponent],
   template: `
     <div class="section-card">
       <div class="section-header">
@@ -116,112 +117,106 @@ import {
     </div>
 
     @if (form(); as f) {
-      <div class="overlay" (click)="closeForm()" role="dialog" aria-modal="true">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div>
-              <h2>{{ editing() ? 'Editar buzón' : 'Conectar buzón' }}</h2>
-              <p class="subtitle">{{ editing() ? editing()!.email : 'Cualquier proveedor con IMAP o POP3 y SMTP' }}</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="closeForm()" aria-label="Cerrar"><lucide-icon [img]="X" [size]="20"></lucide-icon></button>
-          </div>
-
-          <div class="drawer-scroll">
-            @if (!isOAuth()) {
-              @if (!editing()) {
-                <div class="field">
-                  <span class="label">Proveedor</span>
-                  <div class="chips">
-                    @for (p of presets; track p.key) {
-                      <button type="button" class="chip" [class.active]="preset()?.key === p.key" (click)="applyPreset(p)">{{ p.label }}</button>
-                    }
-                    <button type="button" class="chip" [class.active]="!preset()" (click)="preset.set(null)">Otro</button>
-                  </div>
-                  @if (preset()?.hint) { <span class="field-hint">{{ preset()!.hint }}</span> }
-                </div>
-                <div class="field">
-                  <label class="label" for="em-email">Correo *</label>
-                  <input id="em-email" class="input" type="email" [(ngModel)]="f.email" placeholder="ventas@tuempresa.com" autocomplete="off" />
-                </div>
-              }
+      <app-form-page
+        [title]="editing() ? 'Editar buzón' : 'Conectar buzón'"
+        [subtitle]="editing() ? editing()!.email : 'Cualquier proveedor con IMAP o POP3 y SMTP'"
+        backLabel="Configuración"
+        [urlKey]="editing()?._id || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="closeForm()">
+        <ng-container formActions>
+          <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+            <lucide-icon [img]="saving() ? Loader2 : Save" [size]="16" [class.spin]="saving()"></lucide-icon>
+            {{ saving() ? 'Probando conexión…' : 'Guardar' }}
+          </button>
+        </ng-container>
+        <div class="form-body">
+          @if (!isOAuth()) {
+            @if (!editing()) {
               <div class="field">
-                <label class="label" for="em-pass">{{ editing() ? 'Contraseña (déjala vacía para no cambiarla)' : 'Contraseña *' }}</label>
-                <div class="input-wrap">
-                  <input id="em-pass" class="input" [type]="showPass() ? 'text' : 'password'" [(ngModel)]="f.password" autocomplete="new-password" />
-                  <button class="eye-btn" type="button" (click)="showPass.set(!showPass())" [attr.aria-label]="showPass() ? 'Ocultar' : 'Mostrar'">
-                    <lucide-icon [img]="showPass() ? EyeOff : Eye" [size]="16"></lucide-icon>
-                  </button>
+                <span class="label">Proveedor</span>
+                <div class="chips">
+                  @for (p of presets; track p.key) {
+                    <button type="button" class="chip" [class.active]="preset()?.key === p.key" (click)="applyPreset(p)">{{ p.label }}</button>
+                  }
+                  <button type="button" class="chip" [class.active]="!preset()" (click)="preset.set(null)">Otro</button>
                 </div>
-                <span class="field-hint">Se guarda cifrada y nunca se vuelve a mostrar.</span>
+                @if (preset()?.hint) { <span class="field-hint">{{ preset()!.hint }}</span> }
+              </div>
+              <div class="field">
+                <label class="label" for="em-email">Correo *</label>
+                <input id="em-email" class="input" type="email" [(ngModel)]="f.email" placeholder="ventas@tuempresa.com" autocomplete="off" />
               </div>
             }
+            <div class="field">
+              <label class="label" for="em-pass">{{ editing() ? 'Contraseña (déjala vacía para no cambiarla)' : 'Contraseña *' }}</label>
+              <div class="input-wrap">
+                <input id="em-pass" class="input" [type]="showPass() ? 'text' : 'password'" [(ngModel)]="f.password" autocomplete="new-password" />
+                <button class="eye-btn" type="button" (click)="showPass.set(!showPass())" [attr.aria-label]="showPass() ? 'Ocultar' : 'Mostrar'">
+                  <lucide-icon [img]="showPass() ? EyeOff : Eye" [size]="16"></lucide-icon>
+                </button>
+              </div>
+              <span class="field-hint">Se guarda cifrada y nunca se vuelve a mostrar.</span>
+            </div>
+          }
 
-            <div class="field">
-              <label class="label" for="em-label">Nombre del buzón *</label>
-              <input id="em-label" class="input" [(ngModel)]="f.label" placeholder="Ej: Ventas" />
-            </div>
-            <div class="field">
-              <label class="label" for="em-from">Nombre del remitente</label>
-              <input id="em-from" class="input" [(ngModel)]="f.fromName" placeholder="Ej: Maya · Equipo de ventas" />
-            </div>
-            <div class="field">
-              <label class="label" for="em-sig">Firma</label>
-              <textarea id="em-sig" class="textarea" rows="3" [(ngModel)]="f.signature" placeholder="Nombre, cargo, teléfono…"></textarea>
-            </div>
-            <label class="toggle-row">
-              <input type="checkbox" [(ngModel)]="f.skipBulk" />
-              <span>Ignorar boletines y listas de correo</span>
-            </label>
-
-            @if (!isOAuth()) {
-              <details class="advanced" [open]="!preset() || !!editing()">
-                <summary>Servidores</summary>
-                <div class="field">
-                  <span class="label">Recibir con</span>
-                  <div class="chips">
-                    <button type="button" class="chip" [class.active]="f.incomingProtocol === 'imap'" (click)="setProtocol('imap')">IMAP (en vivo)</button>
-                    <button type="button" class="chip" [class.active]="f.incomingProtocol === 'pop3'" (click)="setProtocol('pop3')">POP3</button>
-                  </div>
-                </div>
-                <div class="server-row">
-                  <div class="field grow">
-                    <label class="label" for="em-in-host">Servidor de entrada</label>
-                    <input id="em-in-host" class="input" [(ngModel)]="f.incomingHost" placeholder="imap.tuempresa.com" />
-                  </div>
-                  <div class="field port">
-                    <label class="label" for="em-in-port">Puerto</label>
-                    <input id="em-in-port" class="input" type="number" [(ngModel)]="f.incomingPort" />
-                  </div>
-                </div>
-                <label class="toggle-row"><input type="checkbox" [(ngModel)]="f.incomingSecure" /><span>SSL/TLS</span></label>
-                <div class="server-row">
-                  <div class="field grow">
-                    <label class="label" for="em-out-host">Servidor SMTP</label>
-                    <input id="em-out-host" class="input" [(ngModel)]="f.smtpHost" placeholder="smtp.tuempresa.com" />
-                  </div>
-                  <div class="field port">
-                    <label class="label" for="em-out-port">Puerto</label>
-                    <input id="em-out-port" class="input" type="number" [(ngModel)]="f.smtpPort" />
-                  </div>
-                </div>
-                <label class="toggle-row"><input type="checkbox" [(ngModel)]="f.smtpSecure" /><span>SSL/TLS directo (desmarcado = STARTTLS)</span></label>
-                <div class="field">
-                  <label class="label" for="em-user">Usuario</label>
-                  <input id="em-user" class="input" [(ngModel)]="f.username" [placeholder]="f.email || 'Por defecto, el correo'" autocomplete="off" />
-                </div>
-              </details>
-            }
+          <div class="field">
+            <label class="label" for="em-label">Nombre del buzón *</label>
+            <input id="em-label" class="input" [(ngModel)]="f.label" placeholder="Ej: Ventas" />
           </div>
-
-          <div class="drawer-footer">
-            <button class="btn btn-ghost" (click)="closeForm()">Cancelar</button>
-            <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
-              <lucide-icon [img]="saving() ? Loader2 : Save" [size]="16" [class.spin]="saving()"></lucide-icon>
-              {{ saving() ? 'Probando conexión…' : 'Guardar' }}
-            </button>
+          <div class="field">
+            <label class="label" for="em-from">Nombre del remitente</label>
+            <input id="em-from" class="input" [(ngModel)]="f.fromName" placeholder="Ej: Maya · Equipo de ventas" />
           </div>
-        </aside>
-      </div>
+          <div class="field">
+            <label class="label" for="em-sig">Firma</label>
+            <textarea id="em-sig" class="textarea" rows="3" [(ngModel)]="f.signature" placeholder="Nombre, cargo, teléfono…"></textarea>
+          </div>
+          <label class="toggle-row">
+            <input type="checkbox" [(ngModel)]="f.skipBulk" />
+            <span>Ignorar boletines y listas de correo</span>
+          </label>
+
+          @if (!isOAuth()) {
+            <details class="advanced" [open]="!preset() || !!editing()">
+              <summary>Servidores</summary>
+              <div class="field">
+                <span class="label">Recibir con</span>
+                <div class="chips">
+                  <button type="button" class="chip" [class.active]="f.incomingProtocol === 'imap'" (click)="setProtocol('imap')">IMAP (en vivo)</button>
+                  <button type="button" class="chip" [class.active]="f.incomingProtocol === 'pop3'" (click)="setProtocol('pop3')">POP3</button>
+                </div>
+              </div>
+              <div class="server-row">
+                <div class="field grow">
+                  <label class="label" for="em-in-host">Servidor de entrada</label>
+                  <input id="em-in-host" class="input" [(ngModel)]="f.incomingHost" placeholder="imap.tuempresa.com" />
+                </div>
+                <div class="field port">
+                  <label class="label" for="em-in-port">Puerto</label>
+                  <input id="em-in-port" class="input" type="number" [(ngModel)]="f.incomingPort" />
+                </div>
+              </div>
+              <label class="toggle-row"><input type="checkbox" [(ngModel)]="f.incomingSecure" /><span>SSL/TLS</span></label>
+              <div class="server-row">
+                <div class="field grow">
+                  <label class="label" for="em-out-host">Servidor SMTP</label>
+                  <input id="em-out-host" class="input" [(ngModel)]="f.smtpHost" placeholder="smtp.tuempresa.com" />
+                </div>
+                <div class="field port">
+                  <label class="label" for="em-out-port">Puerto</label>
+                  <input id="em-out-port" class="input" type="number" [(ngModel)]="f.smtpPort" />
+                </div>
+              </div>
+              <label class="toggle-row"><input type="checkbox" [(ngModel)]="f.smtpSecure" /><span>SSL/TLS directo (desmarcado = STARTTLS)</span></label>
+              <div class="field">
+                <label class="label" for="em-user">Usuario</label>
+                <input id="em-user" class="input" [(ngModel)]="f.username" [placeholder]="f.email || 'Por defecto, el correo'" autocomplete="off" />
+              </div>
+            </details>
+          }
+        </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -268,14 +263,9 @@ import {
     .reconnect { margin-top: 10px; }
     .field-hint { display: block; font-size: 12px; color: var(--color-text-muted); margin-top: 12px; line-height: 1.5; }
 
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .drawer { margin-left: auto; height: 100%; width: min(520px, 100%); background: var(--color-white); display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideIn var(--transition-spring); }
-    @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-    .drawer-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 24px 28px 16px; padding-top: calc(24px + var(--safe-top)); border-bottom: 1px solid var(--color-border); }
-    .drawer-header h2 { margin: 0 0 3px; font: 700 20px var(--font-heading); }
-    .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); overflow-wrap: anywhere; }
-    .drawer-scroll { flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 16px; }
-    .drawer-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px; padding-bottom: calc(16px + var(--safe-bottom)); border-top: 1px solid var(--color-border); }
+    /* Cuerpo del formulario a pantalla completa: tarjeta con todo el ancho. */
+    .form-body { display: flex; flex-direction: column; gap: 16px; background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg); padding: 24px; }
     .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .field .field-hint { margin-top: 0; }
     .label { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
@@ -304,8 +294,7 @@ import {
       .section-card { padding: 20px; }
       .connect-row { grid-template-columns: 1fr; }
       .acc-head { flex-wrap: wrap; }
-      .drawer-header, .drawer-scroll, .drawer-footer { padding-left: 16px; padding-right: 16px; }
-      .drawer-footer .btn { flex: 1; justify-content: center; }
+      .form-body { padding: 20px 16px; }
     }
   `],
 })
@@ -317,7 +306,7 @@ export class EmailSettingsComponent implements OnInit, OnDestroy {
   readonly Mail = Mail; readonly Plus = Plus; readonly Trash2 = Trash2; readonly Pencil = Pencil;
   readonly RefreshCw = RefreshCw; readonly CheckCircle2 = CheckCircle2; readonly AlertTriangle = AlertTriangle;
   readonly Loader2 = Loader2; readonly Star = Star; readonly Eye = Eye; readonly EyeOff = EyeOff;
-  readonly X = X; readonly Server = Server; readonly Save = Save; readonly Pause = Pause; readonly Play = Play;
+  readonly Server = Server; readonly Save = Save; readonly Pause = Pause; readonly Play = Play;
 
   readonly presets = EMAIL_PRESETS;
 
@@ -341,9 +330,6 @@ export class EmailSettingsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() { if (this.timer) clearTimeout(this.timer); }
-
-  @HostListener('document:keydown.escape')
-  onEsc() { if (this.form()) this.closeForm(); }
 
   load() {
     if (this.timer) clearTimeout(this.timer);
@@ -405,7 +391,12 @@ export class EmailSettingsComponent implements OnInit, OnDestroy {
       this.editing.set(null);
       this.form.set(blankEmailForm());
     }
+    this.formSnapshot = snapshotOf(this.form());
   }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form()) !== this.formSnapshot; }
 
   closeForm() { this.form.set(null); this.editing.set(null); }
 

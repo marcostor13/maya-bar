@@ -19,10 +19,11 @@ import {
   EmailTemplateSummary, MessagePreview, MessageTemplate, TemplateVariable, TemplatesApiService,
 } from '../../core/api/templates-api.service';
 import { VariableChipsComponent, insertAtCursor } from '../templates/variable-chips';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import type { EmailAccount } from '../../shared/models/email.model';
 import type { AudiencePreview } from '../../shared/models/campaign.model';
 
-/** Drawer de creación/edición de campaña (email / WhatsApp Cloud API / SMS). */
+/** Pantalla completa de creación/edición de campaña (email / WhatsApp Cloud API / SMS). */
 /**
  * De dónde sale el valor de cada hueco de la plantilla. El token es lo que se
  * guarda en `templateVars`; el backend lo sustituye por el dato de cada
@@ -38,17 +39,20 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
 @Component({
   selector: 'app-campaign-editor',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, RouterLink, CampaignMediaComponent, VariableChipsComponent],
+  imports: [FormsModule, LucideAngularModule, RouterLink, CampaignMediaComponent, VariableChipsComponent, FormPageComponent],
   template: `
-    <div class="overlay" (click)="close()"></div>
-    <div class="drawer">
-      <div class="drawer-header">
-        <h2 class="drawer-title">{{ editingId() ? 'Editar campaña' : 'Nueva campaña' }}</h2>
-        <button class="btn btn-icon btn-ghost" (click)="close()">
-          <lucide-icon [img]="X" [size]="20"></lucide-icon>
+    <app-form-page
+      [title]="editingId() ? 'Editar campaña' : 'Nueva campaña'"
+      backLabel="Campañas"
+      [urlKey]="editingId() || 'nuevo'"
+      [dirty]="isDirty()"
+      (closed)="close()">
+      <ng-container formActions>
+        <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+          {{ saving() ? 'Guardando...' : 'Guardar borrador' }}
         </button>
-      </div>
-      <div class="drawer-body">
+      </ng-container>
+      <div class="editor-body">
         @if (formError()) {
           <div class="form-error-box">{{ formError() }}</div>
         }
@@ -512,13 +516,7 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
           </div>
         </div>
       }
-      <div class="drawer-footer">
-        <button class="btn btn-ghost" (click)="close()">Cancelar</button>
-        <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
-          {{ saving() ? 'Guardando...' : 'Guardar borrador' }}
-        </button>
-      </div>
-    </div>
+    </app-form-page>
 
     <!-- Email preview modal -->
     @if (emailPreviewOpen()) {
@@ -548,17 +546,7 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
       background: rgba(15,23,42,.45); backdrop-filter: blur(3px);
       display: flex; align-items: center; justify-content: center; z-index: 100;
     }
-    .drawer {
-      position: fixed; top: 0; right: 0; height: 100vh; width: 520px;
-      background: var(--color-white); box-shadow: var(--shadow-lg);
-      display: flex; flex-direction: column; z-index: 101;
-      animation: slideIn var(--transition-spring);
-    }
-    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-    .drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
-    .drawer-title { font-family: var(--font-heading); font-size: 18px; font-weight: 700; margin: 0; }
-    .drawer-body { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
-    .drawer-footer { padding: 20px 28px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
+    .editor-body { display: flex; flex-direction: column; gap: 20px; }
 
     .field { display: flex; flex-direction: column; gap: 6px; }
     .channel-tab:disabled { opacity:.55; cursor:not-allowed; }
@@ -745,8 +733,6 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
     .email-preview-scroll { flex: 1; overflow-y: auto; background: #f9fafb; }
 
     @media (max-width: 768px) {
-      .drawer { width: 100%; }
-      .drawer-header, .drawer-body, .drawer-footer { padding-left: 18px; padding-right: 18px; }
       .channel-tabs { flex-direction: column; border-radius: var(--radius-lg); }
       .channel-tab { width: 100%; padding: 10px 12px; }
       .targeting-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
@@ -1016,7 +1002,13 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     if (this.form.channel === 'sms') this.onBodyChange();
     this.schedulePreview();
     if (this.form.channel === 'cloudapi') this.loadTemplates();
+    this.formSnapshot = this.snapshot();
   }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  private snapshot() { return snapshotOf({ form: this.form, contacts: this.selectedContactIds() }); }
+  isDirty() { return this.snapshot() !== this.formSnapshot; }
 
   ngOnDestroy() {
     if (this.previewTimer) clearTimeout(this.previewTimer);
@@ -1137,11 +1129,12 @@ export class CampaignEditorComponent implements OnInit, OnDestroy {
     this.schedulePreview();
   }
 
-  @HostListener('document:keydown.escape')
-  onEsc() {
-    if (this.templatePreviewDoc()) { this.templatePreviewDoc.set(null); return; }
-    if (this.emailPreviewOpen()) { this.emailPreviewOpen.set(false); return; }
-    this.close();
+  @HostListener('document:keydown.escape', ['$event'])
+  onEsc(event: Event) {
+    // El formulario a pantalla completa maneja su propio ESC (y pregunta si hay
+    // cambios). Aquí solo se cierran las vistas previas, sin que ESC llegue a él.
+    if (this.templatePreviewDoc()) { event.stopImmediatePropagation(); this.templatePreviewDoc.set(null); return; }
+    if (this.emailPreviewOpen()) { event.stopImmediatePropagation(); this.emailPreviewOpen.set(false); }
   }
 
   close() {

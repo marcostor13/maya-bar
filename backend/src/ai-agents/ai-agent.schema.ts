@@ -44,6 +44,13 @@ export class AiAgent extends Document {
   @Prop({ default: 800 })
   maxTokens: number;
 
+  /**
+   * Segundos que espera antes de responder para juntar los mensajes seguidos
+   * del cliente (0–30). Vacío = AGENT_REPLY_DEBOUNCE_MS.
+   */
+  @Prop()
+  replyDelaySeconds?: number;
+
   @Prop()
   greeting?: string; // saludo inicial opcional
 

@@ -17,7 +17,7 @@ Rules: Read files first. Write complete solution. Test once. No over-engineering
 - Layout de páginas: `width: 100%; box-sizing: border-box; padding: 32px 40px;` — NUNCA `max-width` en páginas dentro del shell.
 - Clases base obligatorias: `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-ghost`, `.input`, `.card`, `.badge-*`, `.table-wrap`.
 - Tipografía: Poppins (`--font-heading`) para H1/títulos. Inter (`--font-base`) para UI.
-- Animaciones: `.animate-fade-in` en page entry, `--transition-spring` para drawers/modales.
+- Animaciones: `.animate-fade-in` en page entry, `--transition-spring` para modales.
 
 ### Modales / Overlays
 - El `.overlay` backdrop NUNCA lleva `padding` exterior — cubre la pantalla completa.
@@ -47,7 +47,7 @@ Rules: Read files first. Write complete solution. Test once. No over-engineering
 - `<app-confirm>` — diálogo de confirmación Promise-based
 
 ### Patrones de formularios
-- Drawers (panel lateral) para formularios complejos — ver menu.ts como referencia.
+- Formularios de crear/editar (> 5 campos) y fichas de detalle: SIEMPRE a pantalla completa con `<app-form-page>` (`src/app/shared/form-page.ts`), nunca panel lateral. Botones en el slot `formActions`, `[urlKey]` (atrás del navegador cierra), `[dirty]` con `snapshotOf()` para avisar de cambios sin guardar. Referencia: `ai-agents.ts`. Ver docs/kitui.md §10.
 - Modales centrados para formularios simples (≤5 campos) — ver tenants.ts / locals.ts.
 - `formError` signal solo para mostrar error inline dentro del form. El toast va siempre además.
 

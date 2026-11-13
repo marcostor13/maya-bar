@@ -1,3 +1,4 @@
+import { provideRouter } from '@angular/router';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -27,7 +28,7 @@ describe('CallSettingsComponent', () => {
     vi.clearAllMocks();
     TestBed.configureTestingModule({
       imports: [CallSettingsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), { provide: ToastService, useValue: toast }],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(), { provide: ToastService, useValue: toast }],
     });
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(CallSettingsComponent);
@@ -94,6 +95,16 @@ describe('CallSettingsComponent', () => {
     await settle();
     expect(toast.error).toHaveBeenCalledWith('WhatsApp: rechazado');
     expect(c().formError()).toBe('WhatsApp: rechazado');
+  });
+
+  it('se muestra a pantalla completa y detecta cambios tras cargar', async () => {
+    await mount();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('app-form-page h1')?.textContent).toContain('Llamadas · Ventas');
+    expect(el.querySelector('.cs-drawer')).toBeNull();
+    expect(c().isDirty()).toBe(false);
+    c().days().find((d) => d.key === 'MONDAY')!.to = '17:00';
+    expect(c().isDirty()).toBe(true);
   });
 
   it('convierte horas', () => {

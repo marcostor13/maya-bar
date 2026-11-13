@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, OnInit, HostListener } from '@angular/core';
+import { Component, computed, inject, signal, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import {
@@ -8,6 +8,7 @@ import {
 import { environment } from '../../../environments/environment';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { AccountsApiService } from '../../core/api/accounts-api.service';
 import {
   WaTemplate, WaTemplateAccount, WaTemplateCategory, WaTemplateStatus,
@@ -55,7 +56,7 @@ function blankForm(): TemplateForm {
 @Component({
   selector: 'app-whatsapp-templates',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -176,18 +177,22 @@ function blankForm(): TemplateForm {
       }
     </div>
 
-    <!-- ══ Drawer de creación / edición ══ -->
+    <!-- ══ Creación / edición (pantalla completa) ══ -->
     @if (form()) {
-      <div class="overlay" (click)="closeForm()">
-        <aside class="drawer" (click)="$event.stopPropagation()" role="dialog" aria-label="Plantilla">
-          <header class="drawer-head">
-            <h2>{{ form()!._id ? 'Editar plantilla' : 'Nueva plantilla' }}</h2>
-            <button class="btn btn-sm btn-ghost btn-icon" (click)="closeForm()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="18"></lucide-icon>
-            </button>
-          </header>
+      <app-form-page
+        [title]="form()!._id ? 'Editar plantilla' : 'Nueva plantilla'"
+        backLabel="Plantillas de WhatsApp"
+        [urlKey]="form()!._id || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="closeForm()">
+        <ng-container formActions>
+          <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+            <lucide-icon [img]="Save" [size]="16"></lucide-icon>
+            {{ saving() ? 'Enviando a Meta…' : (form()!._id ? 'Guardar cambios' : 'Crear plantilla') }}
+          </button>
+        </ng-container>
 
-          <div class="drawer-body">
+          <div class="editor-body">
             @if (formError()) { <div class="error-box">{{ formError() }}</div> }
 
             @if (form()!._id) {
@@ -464,16 +469,7 @@ function blankForm(): TemplateForm {
               </div>
             </div>
           </div>
-
-          <footer class="drawer-foot">
-            <button class="btn btn-ghost" (click)="closeForm()">Cancelar</button>
-            <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
-              <lucide-icon [img]="Save" [size]="16"></lucide-icon>
-              {{ saving() ? 'Enviando a Meta…' : (form()!._id ? 'Guardar cambios' : 'Crear plantilla') }}
-            </button>
-          </footer>
-        </aside>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -549,22 +545,8 @@ function blankForm(): TemplateForm {
     .tpl-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: auto; }
     .quality { font-size: 11px; color: var(--color-text-muted); margin-right: auto; }
 
-    /* Drawer */
-    .overlay {
-      position: fixed; inset: 0; background: rgba(15,23,42,0.45);
-      backdrop-filter: blur(3px); display: flex; align-items: stretch; justify-content: flex-end; z-index: 100;
-    }
-    .drawer {
-      width: 560px; max-width: 100%; background: var(--color-white);
-      display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
-      animation: slide-in var(--transition-spring);
-    }
-    @keyframes slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
-
-    .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
-    .drawer-head h2 { font-family: var(--font-heading); font-size: 18px; font-weight: 700; margin: 0; }
-    .drawer-body { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px; }
-    .drawer-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 20px 28px; border-top: 1px solid var(--color-border); flex-shrink: 0; }
+    /* Formulario a pantalla completa */
+    .editor-body { display: flex; flex-direction: column; gap: 18px; }
 
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -618,8 +600,6 @@ function blankForm(): TemplateForm {
       .header-actions > .btn { flex: 1; justify-content: center; }
       .tpl-grid { grid-template-columns: 1fr; }
       .field-row { grid-template-columns: 1fr; }
-      .drawer { width: 100%; }
-      .drawer-head, .drawer-body, .drawer-foot { padding-left: 20px; padding-right: 20px; }
     }
   `],
 })
@@ -686,9 +666,6 @@ export class WhatsappTemplatesComponent implements OnInit {
     this.loadAccounts();
   }
 
-  @HostListener('document:keydown.escape')
-  onEsc() { if (this.form()) this.closeForm(); }
-
   // ── Datos ──
 
   loadAccounts() {
@@ -741,6 +718,7 @@ export class WhatsappTemplatesComponent implements OnInit {
   newTemplate() {
     this.formError.set('');
     this.form.set(blankForm());
+    this.formSnapshot = snapshotOf(this.form());
   }
 
   editTemplate(t: WaTemplate) {
@@ -767,9 +745,14 @@ export class WhatsappTemplatesComponent implements OnInit {
       auth: this.authOf(t),
     });
     this.syncBodyExamples(t.body);
+    this.formSnapshot = snapshotOf(this.form());
   }
 
   closeForm() { this.form.set(null); this.formError.set(''); }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form()) !== this.formSnapshot; }
 
   normalizeName(value: string) {
     const f = this.form();

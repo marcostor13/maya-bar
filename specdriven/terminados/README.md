@@ -5,6 +5,9 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-12 | [HU11 — Agrupar los mensajes seguidos del cliente](2026-11-12-hu11-agrupar-mensajes-seguidos/cierre.md) | Terminada (pendiente prueba real del usuario) | spec-verifier no ejecutado (bloqueado); autoverificación: 8 CUMPLE · 1 [usuario] |
+| 2026-11-12 | [HU10 — El agente IA puede decidir no responder](2026-11-12-hu10-agente-puede-no-responder/cierre.md) | Terminada (pendiente prompt de Sovereign tras deploy y prueba real) | spec-verifier no ejecutado (bloqueado); autoverificación: 8 CUMPLE · 1 [usuario] |
+| 2026-11-12 | [HU9 — Formularios de crear/editar en pantalla completa](2026-11-12-hu9-formularios-pantalla-completa/cierre.md) | Terminada (pendiente revisión visual del usuario) | 6 CUMPLE · 2 PARCIAL (C2, C3, corregidos sin 2.ª vuelta) · 1 [usuario] |
 | 2026-11-12 | [HU8 — Mejora de prompts y generador de agentes IA](2026-11-12-hu8-mejora-prompts-generador/cierre.md) | Terminada (pendiente prueba real del usuario) | 2.ª vuelta: 13 CUMPLE · 1 [usuario] |
 | 2026-11-11 | [HU7 — Reintento automático de mensajes de WhatsApp fallidos](2026-11-11-hu7-reintento-mensajes-fallidos/cierre.md) | Terminada (pendiente prueba real del usuario) | 13 CUMPLE · 1 PARCIAL (C5, corregido) · 1 [usuario] |
 | 2026-11-09 | [HU6 — Llamadas de WhatsApp](2026-11-09-hu6-llamadas-whatsapp/cierre.md) | Terminada (pendiente configuración en Meta y prueba real del usuario) | spec-verifier no ejecutado (bloqueado); autoverificación: 14 CUMPLE · 1 [usuario] · C15 por pasos |

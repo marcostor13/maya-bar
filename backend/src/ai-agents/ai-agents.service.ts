@@ -55,6 +55,8 @@ const HISTORY_LIMIT = 20;
 const SEND_FILE_TOKEN = /\{\{SEND_FILE:([a-zA-Z0-9_-]+)\}\}/g;
 /** {{HANDOFF}} o {{HANDOFF:motivo breve}} — deriva el chat a una persona. */
 const HANDOFF_TOKEN = /\{\{HANDOFF(?::([^}]*))?\}\}/g;
+/** {{NO_RESPONDER}} o {{NO_RESPONDER:motivo}} — el agente decide no contestar. */
+const SILENCE_TOKEN = /\{\{NO_RESPONDER(?::([^}]*))?\}\}/g;
 
 export interface AgentFileSend {
   url: string;
@@ -82,6 +84,11 @@ export interface AgentHandoff {
   reason?: string;
 }
 
+/** El agente decidió no contestar este mensaje. */
+export interface AgentSilence {
+  reason: string;
+}
+
 /** Contexto de la conversación que necesita el agente para agendar. */
 export interface AgentAnswerOptions {
   channelHint?: string;
@@ -91,6 +98,11 @@ export interface AgentAnswerOptions {
   contactEmail?: string;
   /** Playground: las herramientas que escriben (agendar) solo simulan. */
   simulate?: boolean;
+  /**
+   * Se le ofrece la marca {{NO_RESPONDER}}. Quien llama decide los límites
+   * (nunca en el primer mensaje ni dos veces seguidas).
+   */
+  allowSilence?: boolean;
 }
 
 /** Deja los números en E.164 sin '+' y descarta los vacíos o duplicados. */
@@ -472,6 +484,26 @@ export class AiAgentsService {
     return `\n\n--- DERIVAR A UNA PERSONA ---\nSi el cliente pide hablar con una persona, se molesta, reclama, o la consulta excede lo que puedes resolver, incluye el token exacto {{HANDOFF:motivo breve}} en tu respuesta${agent.storeUrl ? ' (o usa la herramienta derivar_a_humano, que además deja un resumen)' : ''}.\nAl usarlo se avisa a un agente humano para que entre a la plataforma y continúe el chat, y tú dejas de responder esta conversación.\nEscribe antes del token una frase avisando al cliente que lo estás derivando; el token se elimina y nunca se le muestra.${criteria}\nUsa el token una sola vez y solo cuando de verdad haga falta: una vez derivado no podrás volver a contestar.\n--- FIN DERIVAR ---`;
   }
 
+  /** Le enseña al agente a quedarse callado cuando contestar no aporta. */
+  private buildSilencePromptSection(): string {
+    return `\n\n--- NO RESPONDER ---\nSi contestar no aporta nada, puedes no responder: escribe solo el token exacto {{NO_RESPONDER:motivo breve}} y nada más; no se enviará ningún mensaje al cliente y el equipo verá el motivo.\nÚsalo solo cuando el mensaje sea publicidad o promoción de terceros, una cadena reenviada, o un "gracias", "ok" o emoji después de que la conversación ya terminó.\nNunca lo uses si el cliente hace una pregunta, pide algo, se queja o muestra interés: en esos casos responde.\n--- FIN NO RESPONDER ---`;
+  }
+
+  /** Quita SIEMPRE la marca {{NO_RESPONDER}}; devuelve el motivo si apareció. */
+  private parseSilenceToken(reply: string): {
+    text: string;
+    reason: string | null;
+  } {
+    let reason: string | null = null;
+    const text = reply
+      .replace(SILENCE_TOKEN, (_, r?: string) => {
+        reason ??= r?.trim() || 'sin motivo';
+        return '';
+      })
+      .trim();
+    return { text, reason };
+  }
+
   /** Le dice al agente que tiene la tienda en vivo y cómo usar sus herramientas. */
   private buildStorePromptSection(agent: AiAgent): string {
     if (!agent.storeUrl) return '';
@@ -689,6 +721,7 @@ export class AiAgentsService {
     filesToSend: AgentFileSend[];
     handoff: AgentHandoff | null;
     bookings: BookedCita[];
+    silent: AgentSilence | null;
   }> {
     const [ragChunks, agentFiles] = await Promise.all([
       agent.ragEnabled
@@ -724,6 +757,7 @@ export class AiAgentsService {
       this.buildHandoffPromptSection(agent),
       this.buildStorePromptSection(agent),
       calendarOn ? this.buildCalendarPromptSection(cal, new Date()) : '',
+      options.allowSilence ? this.buildSilencePromptSection() : '',
       options.channelHint ? `\n\n${options.channelHint}` : '',
     ].join('');
 
@@ -787,7 +821,12 @@ export class AiAgentsService {
       ...(tools.length ? { tools, runTool } : {}),
     });
 
-    const rawReply = raw.trim() || agent.fallbackMessage;
+    // La marca de silencio se quita siempre: si no se permite callar, se
+    // responde como si no estuviera (texto o respaldo). Una respuesta vacía
+    // SIN la marca es un fallo de la IA y sigue usando el respaldo.
+    const silence = this.parseSilenceToken(raw);
+    const rawReply =
+      silence.text || (silence.reason !== null ? '' : agent.fallbackMessage);
     const { text: withoutHandoff, handoff: tokenHandoff } =
       this.parseHandoffToken(rawReply, agent);
     const handoff = tokenHandoff ?? storeTools?.handoff ?? null;
@@ -795,6 +834,25 @@ export class AiAgentsService {
       withoutHandoff,
       agentFiles,
     );
+    // Derivar, agendar o enviar archivos o fotos son acciones: ganan al silencio.
+    const bookings = calendarTools?.bookings ?? [];
+    if (
+      options.allowSilence &&
+      silence.reason !== null &&
+      !handoff &&
+      !filesToSend.length &&
+      !storeTools?.photos.length &&
+      !bookings.length
+    ) {
+      return {
+        reply: '',
+        sources,
+        filesToSend: [],
+        handoff: null,
+        bookings: [],
+        silent: { reason: silence.reason },
+      };
+    }
     // Al derivar, el texto puede quedar vacío: ahí habla el mensaje de derivación.
     let reply = text || (handoff ? '' : agent.fallbackMessage);
     if (options.channel !== 'email') reply = formatForChat(reply);
@@ -819,7 +877,8 @@ export class AiAgentsService {
       sources,
       filesToSend: [...photos, ...filesToSend],
       handoff,
-      bookings: calendarTools?.bookings ?? [],
+      bookings,
+      silent: null,
     };
   }
 
@@ -868,12 +927,29 @@ export class AiAgentsService {
     const agent = await this.findOne(agentId, tenantId);
     const last = [...messages].reverse().find((m) => m.role === 'user');
     if (!last) throw new BadRequestException('No hay mensaje del usuario');
-    const history = messages.slice(0, messages.lastIndexOf(last));
+    const turns = messages.slice(0, messages.lastIndexOf(last));
+    // Un turno del agente vacío es un silencio anterior: no se manda a la IA
+    // (los proveedores rechazan contenido vacío), pero cuenta para el límite.
+    const lastAgentTurn = [...turns]
+      .reverse()
+      .find((m) => m.role === 'assistant');
+    const history = turns.filter((m) => m.content?.trim());
     const answer = await this.generateAnswer(agent, last.content, history, {
       channel: 'prueba',
       simulate: true,
+      // Mismos límites que en la bandeja: ni en el primer mensaje ni dos
+      // veces seguidas.
+      allowSilence: !!lastAgentTurn?.content?.trim(),
     });
-    const { sources, filesToSend, handoff, bookings } = answer;
+    const { sources, filesToSend, handoff, bookings, silent } = answer;
+    if (silent)
+      return {
+        reply: '',
+        sources,
+        handoff: null,
+        files: [],
+        silent: { reason: silent.reason },
+      };
     const tz = agentCalendar(agent.calendar).timeZone;
     // El pie de la foto es parte de lo que lee el cliente: se muestra con el texto.
     const reply = [
@@ -900,6 +976,7 @@ export class AiAgentsService {
             `Cita (simulada, no se creó): ${formatLocal(b.start, tz)} – ${b.contactName}`,
         ),
       ],
+      silent: null,
     };
   }
 

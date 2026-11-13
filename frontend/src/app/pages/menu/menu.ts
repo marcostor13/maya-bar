@@ -1,9 +1,10 @@
-import { Component, HostListener, inject, signal, OnInit, computed } from '@angular/core';
+import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { LucideAngularModule, Store, UtensilsCrossed, Pencil, Trash2 } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
@@ -26,7 +27,7 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
 @Component({
   selector: 'app-menu',
   standalone: true,
-  imports: [ReactiveFormsModule, DecimalPipe, LucideAngularModule],
+  imports: [ReactiveFormsModule, DecimalPipe, LucideAngularModule, FormPageComponent],
   template: `
 <div class="menu-page animate-fade-in">
 
@@ -239,16 +240,22 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
   }
 </div>
 
-<!-- ══ DRAWER: Categoría ══ -->
+<!-- ══ Formulario: Categoría (pantalla completa) ══ -->
 @if (showCategoryForm()) {
-  <div class="drawer-backdrop" (click)="closeCategoryForm()"></div>
-  <div class="drawer animate-slide-in" role="dialog" aria-modal="true">
-    <div class="drawer-head">
-      <h3>{{ editingCategory() ? 'Editar categoría' : 'Nueva categoría' }}</h3>
-      <button class="drawer-close" (click)="closeCategoryForm()" aria-label="Cerrar formulario">✕</button>
-    </div>
-    <div class="drawer-body">
-      <form [formGroup]="categoryForm" (ngSubmit)="saveCategory()">
+  <app-form-page
+    [title]="editingCategory() ? 'Editar categoría' : 'Nueva categoría'"
+    backLabel="Menú Digital"
+    [urlKey]="editingCategory()?._id ? 'categoria-' + editingCategory()._id : 'nueva-categoria'"
+    [dirty]="isCategoryDirty()"
+    (closed)="closeCategoryForm()">
+    <ng-container formActions>
+      <!-- El botón está en la cabecera: se asocia al formulario con form="category-form". -->
+      <button type="submit" form="category-form" class="btn btn-primary" [disabled]="saving() || categoryForm.invalid">
+        {{ saving() ? 'Guardando...' : 'Guardar categoría' }}
+      </button>
+    </ng-container>
+    <form id="category-form" class="form-card" [formGroup]="categoryForm" (ngSubmit)="saveCategory()">
+      <div class="fields-row">
         <div class="field">
           <label>Nombre *</label>
           <input class="input" formControlName="name" placeholder="ej. Entradas, Principales, Bebidas..." autofocus />
@@ -260,31 +267,27 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
           <label>Descripción</label>
           <input class="input" formControlName="description" placeholder="Opcional" />
         </div>
-        <div class="drawer-actions">
-          <button type="button" class="btn btn-secondary" (click)="closeCategoryForm()">Cancelar</button>
-          <button type="submit" class="btn btn-primary" [disabled]="saving() || categoryForm.invalid">
-            {{ saving() ? 'Guardando...' : 'Guardar categoría' }}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+      </div>
+    </form>
+  </app-form-page>
 }
 
-<!-- ══ DRAWER: Ítem ══ -->
+<!-- ══ Formulario: Ítem (pantalla completa) ══ -->
 @if (showItemForm()) {
-  <div class="drawer-backdrop" (click)="closeItemForm()"></div>
-  <div class="drawer drawer-wide animate-slide-in" role="dialog" aria-modal="true">
-    <div class="drawer-head">
-      <div>
-        <h3>{{ editingItem() ? 'Editar ítem' : 'Nuevo ítem' }}</h3>
-        <p class="drawer-sub">{{ selectedCategory()?.name ?? 'Sin categoría' }}</p>
-      </div>
-      <button class="drawer-close" (click)="closeItemForm()" aria-label="Cerrar formulario">✕</button>
-    </div>
-    <div class="drawer-body">
-      <form [formGroup]="itemForm" (ngSubmit)="saveItem()">
-
+  <app-form-page
+    [title]="editingItem() ? 'Editar ítem' : 'Nuevo ítem'"
+    [subtitle]="selectedCategory()?.name ?? 'Sin categoría'"
+    backLabel="Menú Digital"
+    [urlKey]="editingItem()?._id || 'nuevo'"
+    [dirty]="isItemDirty()"
+    (closed)="closeItemForm()">
+    <ng-container formActions>
+      <button type="submit" form="item-form" class="btn btn-primary" [disabled]="saving() || itemForm.invalid">
+        {{ saving() ? 'Guardando...' : (editingItem() ? 'Guardar cambios' : 'Crear ítem') }}
+      </button>
+    </ng-container>
+    <form id="item-form" class="form-grid" [formGroup]="itemForm" (ngSubmit)="saveItem()">
+      <section class="form-card">
         <div class="field-section-label">Información básica</div>
 
         <div class="field">
@@ -325,8 +328,10 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
             }
           </div>
         </div>
+      </section>
 
-        <div class="field-section-label" style="margin-top:24px">Estaciones de preparación</div>
+      <section class="form-card">
+        <div class="field-section-label">Estaciones de preparación</div>
         <p class="field-hint">¿A qué estación(es) llega este ítem cuando se ordena?</p>
         <div class="pill-group">
           @for (s of stationKeys; track s) {
@@ -358,16 +363,9 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
             </button>
           }
         </div>
-
-        <div class="drawer-actions">
-          <button type="button" class="btn btn-secondary" (click)="closeItemForm()">Cancelar</button>
-          <button type="submit" class="btn btn-primary" [disabled]="saving() || itemForm.invalid">
-            {{ saving() ? 'Guardando...' : (editingItem() ? 'Guardar cambios' : 'Crear ítem') }}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+      </section>
+    </form>
+  </app-form-page>
 }
   `,
   styles: [`
@@ -551,41 +549,16 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
     }
     @keyframes shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
 
-    /* ── Drawer ── */
-    .drawer-backdrop {
-      position: fixed; inset: 0; background: rgba(15,23,42,0.35);
-      z-index: 200; backdrop-filter: blur(2px);
+    /* ── Formularios a pantalla completa ── */
+    .form-card {
+      background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg); padding: 24px;
     }
-    .drawer {
-      position: fixed; top: 0; right: 0; height: 100vh; width: 420px;
-      background: var(--color-white); z-index: 201;
-      box-shadow: -8px 0 40px rgba(0,0,0,0.12);
-      display: flex; flex-direction: column;
-      transform: translateX(0);
-    }
-    .drawer-wide { width: 520px; }
-    .animate-slide-in { animation: slideIn 220ms cubic-bezier(.16,1,.3,1); }
-    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-
-    .drawer-head {
-      display: flex; align-items: flex-start; justify-content: space-between;
-      padding: 24px 28px 20px; border-bottom: 1px solid var(--color-border); flex-shrink: 0;
-    }
-    .drawer-head h3 { margin: 0 0 2px; font-size: 17px; }
-    .drawer-sub { font-size: 12px; color: var(--color-text-muted); margin: 0; }
-    .drawer-close {
-      background: none; border: none; font-size: 16px; cursor: pointer;
-      color: var(--color-text-muted); width: 32px; height: 32px; border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      transition: all var(--transition-fast);
-    }
-    .drawer-close:hover { background: var(--color-bg-light); color: var(--color-text-main); }
-
-    .drawer-body { flex: 1; overflow-y: auto; padding: 24px 28px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
 
     .field { margin-bottom: 16px; }
     .field label { display: block; font-size: 13px; font-weight: 500; color: var(--color-text-muted); margin-bottom: 6px; }
-    .fields-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .fields-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .field-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--color-text-muted); margin-bottom: 8px; }
     .field-hint { font-size: 12px; color: var(--color-text-muted); margin-top: -4px; margin-bottom: 10px; }
     .field-hint-error { display: block; margin-top: 6px; font-size: 12px; color: var(--color-error); }
@@ -615,8 +588,6 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
     }
     .pill-diet.pill-selected { background: #DCFCE7; color: #15803D; border-color: #BBF7D0; }
     .pill-warn.pill-selected { background: #FFFBEB; color: #B45309; border-color: #FDE68A; }
-
-    .drawer-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 24px; margin-top: 8px; border-top: 1px solid var(--color-border); }
 
     @media (max-width: 768px) {
       .menu-page { padding: 20px 16px; }
@@ -655,9 +626,8 @@ const STATION_META: Record<string, { label: string; bg: string; color: string; i
       .item-meta { display: flex; order: 4; flex: 0 0 100%; justify-content: space-between; align-items: center; padding-left: 52px; gap: 8px; }
       .item-cat { text-align: left; }
 
-      .drawer, .drawer-wide { width: 100%; max-width: 100vw; }
-      .drawer-body { padding: 20px 16px; }
-      .drawer-head { padding: 20px 16px 16px; }
+      .form-grid { grid-template-columns: 1fr; gap: 16px; }
+      .form-card { padding: 20px 16px; }
       .fields-row { grid-template-columns: 1fr; }
     }
 
@@ -737,12 +707,6 @@ export class MenuComponent implements OnInit {
     this.http.get<any[]>(`${API}/locals`).subscribe({ next: d => this.locals.set(d) });
   }
 
-  @HostListener('document:keydown.escape')
-  onEsc() {
-    if (this.showItemForm()) { this.closeItemForm(); return; }
-    if (this.showCategoryForm()) this.closeCategoryForm();
-  }
-
   onLocalChange(e: Event) {
     const id = (e.target as HTMLSelectElement).value;
     this.localId.set(id);
@@ -789,7 +753,17 @@ export class MenuComponent implements OnInit {
     } else {
       this.categoryForm.reset();
     }
+    this.categorySnapshot = snapshotOf(this.categoryForm.getRawValue());
     this.showCategoryForm.set(true);
+  }
+
+  /** Fotos de los formularios al abrirlos, para avisar de cambios sin guardar. */
+  private categorySnapshot = '';
+  private itemSnapshot = '';
+  isCategoryDirty() { return snapshotOf(this.categoryForm.getRawValue()) !== this.categorySnapshot; }
+  isItemDirty() { return this.itemState() !== this.itemSnapshot; }
+  private itemState() {
+    return snapshotOf([this.itemForm.getRawValue(), this.selectedStations(), this.selectedDietary(), this.selectedAllergens()]);
   }
 
   closeCategoryForm() { this.showCategoryForm.set(false); this.editingCategory.set(null); this.categoryForm.reset(); }
@@ -856,6 +830,7 @@ export class MenuComponent implements OnInit {
       this.selectedStations.set(['kitchen']);
       this.selectedDietary.set([]); this.selectedAllergens.set([]);
     }
+    this.itemSnapshot = this.itemState();
     this.showItemForm.set(true);
   }
 

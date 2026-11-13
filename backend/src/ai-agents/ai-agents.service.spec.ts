@@ -369,6 +369,93 @@ describe('AiAgentsService', () => {
       expect(result.reply).toBe('texto');
     });
 
+    describe('no responder (HU10)', () => {
+      const FALLBACK = 'Lo siento, no puedo ayudarte con eso.';
+
+      it('C1: enseña la marca solo cuando se permite callar', async () => {
+        await service.generateAnswer(makeAgent(), 'hola');
+        await service.generateAnswer(makeAgent(), 'hola', [], {
+          allowSilence: true,
+        });
+        const sinPermiso = mockAi.chatMessages.mock.calls[0][0][0].content;
+        const conPermiso = mockAi.chatMessages.mock.calls[1][0][0].content;
+        expect(sinPermiso).not.toContain('--- NO RESPONDER ---');
+        expect(conPermiso).toContain('--- NO RESPONDER ---');
+        expect(conPermiso).toContain('{{NO_RESPONDER:motivo breve}}');
+      });
+
+      it('C2: con la marca devuelve silencio con motivo y sin respaldo', async () => {
+        mockAi.chatMessages.mockResolvedValue(
+          '{{NO_RESPONDER:promo de terceros}}',
+        );
+        const r = await service.generateAnswer(makeAgent(), 'promo', [], {
+          allowSilence: true,
+        });
+        expect(r.silent).toEqual({ reason: 'promo de terceros' });
+        expect(r.reply).toBe('');
+        expect(r.filesToSend).toEqual([]);
+      });
+
+      it('C2: si escribe texto además de la marca, calla igual', async () => {
+        mockAi.chatMessages.mockResolvedValue('¡Gracias! {{NO_RESPONDER}}');
+        const r = await service.generateAnswer(makeAgent(), 'gracias', [], {
+          allowSilence: true,
+        });
+        expect(r.silent).toEqual({ reason: 'sin motivo' });
+        expect(r.reply).toBe('');
+      });
+
+      it('C3: una respuesta vacía sin marca usa el respaldo', async () => {
+        mockAi.chatMessages.mockResolvedValue('  ');
+        const r = await service.generateAnswer(makeAgent(), 'hola', [], {
+          allowSilence: true,
+        });
+        expect(r.silent).toBeNull();
+        expect(r.reply).toBe(FALLBACK);
+      });
+
+      it('C4: la derivación gana al silencio', async () => {
+        mockAi.chatMessages.mockResolvedValue(
+          'Te paso con alguien {{HANDOFF:x}} {{NO_RESPONDER:y}}',
+        );
+        const r = await service.generateAnswer(
+          makeAgent({ handoffEnabled: true }),
+          'quiero un humano',
+          [],
+          { allowSilence: true },
+        );
+        expect(r.silent).toBeNull();
+        expect(r.handoff).toEqual({ reason: 'x' });
+        expect(r.reply).toBe('Te paso con alguien');
+      });
+
+      it('enviar un archivo gana al silencio', async () => {
+        fileModel.find.mockReturnValue(buildQuery([makeAgentFile()]));
+        mockAi.chatMessages.mockResolvedValue(
+          '{{SEND_FILE:carta}} {{NO_RESPONDER:x}}',
+        );
+        const r = await service.generateAnswer(makeAgent(), 'carta', [], {
+          allowSilence: true,
+        });
+        expect(r.silent).toBeNull();
+        expect(r.filesToSend).toHaveLength(1);
+      });
+
+      it('C5: sin permiso elimina la marca y responde con el texto', async () => {
+        mockAi.chatMessages.mockResolvedValue('¡Con gusto! {{NO_RESPONDER:x}}');
+        const r = await service.generateAnswer(makeAgent(), 'gracias');
+        expect(r.silent).toBeNull();
+        expect(r.reply).toBe('¡Con gusto!');
+      });
+
+      it('C5: sin permiso y solo la marca, usa el respaldo', async () => {
+        mockAi.chatMessages.mockResolvedValue('{{NO_RESPONDER:x}}');
+        const r = await service.generateAnswer(makeAgent(), 'promo');
+        expect(r.silent).toBeNull();
+        expect(r.reply).toBe(FALLBACK);
+      });
+    });
+
     it('propagates AiService errors', async () => {
       mockAi.chatMessages.mockRejectedValue(
         new BadRequestException('openai API error: boom'),
@@ -927,6 +1014,53 @@ describe('AiAgentsService', () => {
       expect(result.reply).toBe('Te la envío');
       expect(result.files).toEqual(['Carta del bar']);
       expect(result.reply).not.toContain('Se enviaría');
+    });
+
+    it('C8: si el agente calla, lo muestra como anotación y no como mensaje', async () => {
+      mockAi.chatMessages.mockResolvedValue(
+        '{{NO_RESPONDER:es una promoción}}',
+      );
+      const result = await service.testChat(
+        agentOid.toString(),
+        tenantOid.toString(),
+        [
+          { role: 'user', content: 'hola' },
+          { role: 'assistant', content: 'buenas' },
+          { role: 'user', content: 'Gran evento este sábado' },
+        ],
+      );
+      expect(result.reply).toBe('');
+      expect(result.files).toEqual([]);
+      expect(result.silent).toEqual({ reason: 'es una promoción' });
+      expect(mockAi.chatMessages.mock.calls[0][0][0].content).toContain(
+        '--- NO RESPONDER ---',
+      );
+    });
+
+    it('C8: tras un silencio no ofrece callar otra vez ni manda el turno vacío a la IA', async () => {
+      await service.testChat(agentOid.toString(), tenantOid.toString(), [
+        { role: 'user', content: 'hola' },
+        { role: 'assistant', content: 'buenas' },
+        { role: 'user', content: 'promo' },
+        { role: 'assistant', content: '' },
+        { role: 'user', content: 'gracias' },
+      ]);
+      const messages = mockAi.chatMessages.mock.calls[0][0];
+      expect(messages[0].content).not.toContain('--- NO RESPONDER ---');
+      expect(messages.some((m: { content: string }) => m.content === '')).toBe(
+        false,
+      );
+    });
+
+    it('C8: en el primer mensaje no ofrece callar', async () => {
+      mockAi.chatMessages.mockResolvedValue('{{NO_RESPONDER:x}}');
+      const result = await service.testChat(
+        agentOid.toString(),
+        tenantOid.toString(),
+        [{ role: 'user', content: 'promo' }],
+      );
+      expect(result.reply).toBe('Lo siento, no puedo ayudarte con eso.');
+      expect(result.files).toEqual([]);
     });
   });
 

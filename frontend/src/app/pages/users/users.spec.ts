@@ -1,5 +1,6 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { UsersComponent } from './users';
 import { ToastService } from '../../shared/toast';
@@ -25,7 +26,7 @@ describe('UsersComponent', () => {
     Array.from(el().querySelectorAll<HTMLElement>('tbody tr')).find((r) => r.textContent!.includes(email))!;
   const actions = (email: string) =>
     Array.from(row(email).querySelectorAll('.actions button')).map((b) => b.textContent!.trim());
-  const drawer = () => el().querySelector('.drawer') as HTMLElement;
+  const drawer = () => el().querySelector('app-form-page') as HTMLElement;
   /** "Eliminar" exacto (no "Eliminar definitivamente"). */
   const eliminarBtn = (root: ParentNode) =>
     Array.from(root.querySelectorAll<HTMLButtonElement>('.actions button')).find((b) => b.textContent!.trim() === 'Eliminar')!;
@@ -42,7 +43,7 @@ describe('UsersComponent', () => {
     fixture.detectChanges();
   };
   const submit = () => {
-    drawer().querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    drawer().closest('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
     fixture.detectChanges();
   };
   const expectUsers = () => http.expectOne((r) => r.method === 'GET' && r.url.endsWith('/users'));
@@ -51,7 +52,7 @@ describe('UsersComponent', () => {
     await TestBed.configureTestingModule({
       imports: [UsersComponent],
       providers: [
-        provideHttpClient(), provideHttpClientTesting(),
+        provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
         { provide: ToastService, useValue: toast },
         { provide: ConfirmService, useValue: confirm },
         // La sesión es la de la administradora (u1).
@@ -195,8 +196,11 @@ describe('UsersComponent', () => {
     it('exige email y ofrece los roles configurados por la empresa', async () => {
       await setup();
       await openDrawer(() => button('+ Nuevo usuario').click());
-      expect(drawer().querySelector('h2')!.textContent).toContain('Nuevo usuario');
+      expect(drawer().querySelector('h1')!.textContent).toContain('Nuevo usuario');
       expect(button('Guardar', drawer()).disabled).toBe(true);
+      // Guardar está en la cabecera pero sigue siendo el submit del formulario (lo usa el e2e).
+      expect(button('Guardar', drawer()).closest('form')).toBe(drawer().closest('form'));
+      expect(button('Guardar', drawer()).type).toBe('submit');
       const options = Array.from(drawer().querySelectorAll('select[name="role"] option')).map((o) => o.textContent!.trim());
       expect(options).toEqual(['Gerente', 'Mesero', 'Ventas']);
       type('email', 'luis@x.pe');
@@ -265,7 +269,7 @@ describe('UsersComponent', () => {
     it('manda PATCH /users/:id con nombre, email, teléfono, rol y locales y avisa', async () => {
       await setup();
       await openDrawer(() => button('Editar', row(PEDRO.email)).click());
-      expect(drawer().querySelector('h2')!.textContent).toContain('Editar usuario');
+      expect(drawer().querySelector('h1')!.textContent).toContain('Editar usuario');
       type('name', 'Pedro R.');
       type('email', 'pedro.ruiz@x.pe');
       expect(drawer().textContent).toContain('tendrá que iniciar sesión de nuevo');
@@ -299,14 +303,33 @@ describe('UsersComponent', () => {
       req.flush({ ...ADMIN, name: 'Dueña G.' });
     });
 
-    it('el panel es un diálogo accesible y Escape lo cierra', async () => {
+    it('el formulario es un diálogo accesible a pantalla completa y Escape lo cierra', async () => {
       await setup();
       await openDrawer(() => button('+ Nuevo usuario').click());
-      expect(drawer().getAttribute('role')).toBe('dialog');
-      expect(drawer().getAttribute('aria-modal')).toBe('true');
-      expect(drawer().querySelector('button[aria-label="Cerrar"] lucide-icon')).toBeTruthy();
+      const dialog = drawer().querySelector('[role="dialog"]')!;
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+      expect(drawer().querySelector('button.back[aria-label="Volver a Usuarios"] lucide-icon')).toBeTruthy();
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
       fixture.detectChanges();
+      expect(confirm.confirm).not.toHaveBeenCalled();
+      expect(drawer()).toBeNull();
+    });
+
+    it('con cambios sin guardar, volver pide confirmación; si se sigue editando no se cierra', async () => {
+      await setup();
+      await openDrawer(() => button('Editar', row(PEDRO.email)).click());
+      type('name', 'Pedro Cambiado');
+      confirm.confirm.mockResolvedValue(false);
+      click(drawer().querySelector<HTMLButtonElement>('button.back')!);
+      await settle();
+      expect(confirm.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Descartar cambios', danger: true }));
+      expect(drawer()).not.toBeNull();
+      expect((drawer().querySelector('[name="name"]') as HTMLInputElement).value).toBe('Pedro Cambiado');
+
+      confirm.confirm.mockResolvedValue(true);
+      click(drawer().querySelector<HTMLButtonElement>('button.back')!);
+      await settle();
+      expect(confirm.confirm).toHaveBeenCalledTimes(2);
       expect(drawer()).toBeNull();
     });
 

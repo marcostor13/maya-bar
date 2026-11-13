@@ -1,8 +1,8 @@
-import { Component, ElementRef, HostListener, Injector, afterNextRender, computed, inject, signal, viewChild, OnInit } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { LucideAngularModule, Search, KeyRound, Crown, X, RotateCw } from 'lucide-angular';
+import { LucideAngularModule, Search, KeyRound, Crown, RotateCw } from 'lucide-angular';
 import { RolesMatrixComponent } from './roles-matrix';
 import { ROLE_LABELS } from './role-labels';
 import { ResetAccessDialogComponent } from './reset-access-dialog';
@@ -11,6 +11,7 @@ import { TransferAdminDialogComponent } from './transfer-admin-dialog';
 import { UserAuditComponent } from './user-audit';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { AuthService } from '../../auth/auth.service';
 import { environment } from '../../../environments/environment';
 
@@ -36,7 +37,7 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
   standalone: true,
   imports: [
     FormsModule, DatePipe, LucideAngularModule, RolesMatrixComponent, ResetAccessDialogComponent,
-    UserDeleteDialogComponent, TransferAdminDialogComponent, UserAuditComponent,
+    UserDeleteDialogComponent, TransferAdminDialogComponent, UserAuditComponent, FormPageComponent,
   ],
   template: `
     <div class="page animate-fade-in">
@@ -172,18 +173,23 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
       }
     </div>
 
-    <!-- Drawer: create / edit -->
+    <!-- Formulario a pantalla completa: alta / edición -->
     @if (showDrawer()) {
-      <div class="overlay" (click)="closeDrawer()">
-        <div class="drawer" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="u-drawer-title">
-          <div class="drawer-header">
-            <h2 id="u-drawer-title">{{ editingUser() ? 'Editar usuario' : 'Nuevo usuario' }}</h2>
-            <button type="button" class="btn btn-ghost btn-icon" (click)="closeDrawer()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="18" [strokeWidth]="2.4"></lucide-icon>
+      <!-- El form envuelve la pantalla: así el botón Guardar de la cabecera es su submit. -->
+      <form (ngSubmit)="save()" #f="ngForm">
+        <app-form-page
+          [title]="editingUser() ? 'Editar usuario' : 'Nuevo usuario'"
+          backLabel="Usuarios"
+          [urlKey]="editingUser()?._id || 'nuevo'"
+          [dirty]="isDirty()"
+          (closed)="closeDrawer()">
+          <ng-container formActions>
+            <button class="btn btn-primary" type="submit" [disabled]="saving() || !f.valid">
+              {{ saving() ? 'Guardando…' : 'Guardar' }}
             </button>
-          </div>
+          </ng-container>
 
-          <form (ngSubmit)="save()" #f="ngForm" class="drawer-form">
+          <div class="user-form card">
             <div class="field">
               <label for="u-name">Nombre</label>
               <input id="u-name" class="input" name="name" [(ngModel)]="form.name" placeholder="Nombre completo" #nameInput />
@@ -235,18 +241,11 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
             }
 
             @if (formError()) {
-              <p class="form-error">{{ formError() }}</p>
+              <p class="form-error span-2">{{ formError() }}</p>
             }
-
-            <div class="drawer-actions">
-              <button type="button" class="btn btn-secondary" (click)="closeDrawer()">Cancelar</button>
-              <button class="btn btn-primary" type="submit" [disabled]="saving() || !f.valid">
-                {{ saving() ? 'Guardando…' : 'Guardar' }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
+          </div>
+        </app-form-page>
+      </form>
     }
 
     <!-- Modal: temp password revealed after creation -->
@@ -400,7 +399,7 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
       color: #92400E;
     }
 
-    /* Overlay / Drawer */
+    /* Overlay de los modales (credenciales) */
     .overlay {
       position: fixed;
       inset: 0;
@@ -412,48 +411,13 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
       z-index: 100;
     }
 
-    .drawer {
-      position: fixed;
-      top: 0;
-      right: 0;
-      height: 100%;
-      width: 400px;
-      background: var(--color-white);
-      box-shadow: -4px 0 24px rgba(0,0,0,0.1);
-      display: flex;
-      flex-direction: column;
-      animation: slideIn var(--transition-spring) both;
+    /* Formulario a pantalla completa: dos columnas, una en móvil */
+    .user-form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px 24px;
     }
-
-    @keyframes slideIn {
-      from { transform: translateX(100%); }
-      to { transform: translateX(0); }
-    }
-
-    .drawer-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 20px 24px;
-      border-bottom: 1px solid var(--color-border);
-    }
-
-    .drawer-header h2 {
-      font-family: var(--font-heading);
-      font-size: 18px;
-      font-weight: 700;
-      margin: 0;
-      color: var(--color-text-main);
-    }
-
-    .drawer-form {
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-      flex: 1;
-      overflow-y: auto;
-    }
+    .span-2 { grid-column: 1 / -1; }
 
     .field {
       display: flex;
@@ -471,14 +435,6 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
       font-size: 13px;
       color: var(--color-error);
       margin: 0;
-    }
-
-    .drawer-actions {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-      margin-top: auto;
-      padding-top: 16px;
     }
 
     /* Modal */
@@ -561,7 +517,7 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
       td:not(.td-name)::before { content: attr(data-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
       .actions { justify-content: flex-end; flex-wrap: wrap; padding-top: 10px; }
 
-      .drawer { width: 100%; }
+      .user-form { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 480px) {
@@ -583,7 +539,6 @@ export class UsersComponent implements OnInit {
   readonly Search = Search;
   readonly KeyRound = KeyRound;
   readonly Crown = Crown;
-  readonly X = X;
   readonly RotateCw = RotateCw;
   loadError = signal(false);
 
@@ -722,6 +677,7 @@ export class UsersComponent implements OnInit {
     this.editingUser.set(null);
     this.form = { name: '', email: '', phone: '', role: 'SERVER', localIds: [] as string[] };
     this.formError.set('');
+    this.formSnapshot = snapshotOf(this.form);
     this.showDrawer.set(true);
     this.focusFirstField();
   }
@@ -732,6 +688,7 @@ export class UsersComponent implements OnInit {
       name: u.name || '', email: u.email, phone: u.phone || '', role: u.role, localIds: [...(u.localIds ?? [])],
     };
     this.formError.set('');
+    this.formSnapshot = snapshotOf(this.form);
     this.showDrawer.set(true);
     this.focusFirstField();
   }
@@ -740,11 +697,9 @@ export class UsersComponent implements OnInit {
     this.showDrawer.set(false);
   }
 
-  /** Escape cierra el panel (los diálogos gestionan su propio Escape). */
-  @HostListener('document:keydown.escape')
-  onEscape() {
-    if (this.showDrawer() && !this.saving()) this.closeDrawer();
-  }
+  /** Foto del formulario al abrirlo: si cambia, volver pide confirmación. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form) !== this.formSnapshot; }
 
   save() {
     this.formError.set('');

@@ -2,10 +2,11 @@ import { Component, HostListener, OnInit, inject, input, output, signal } from '
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import {
-  LucideAngularModule, X, Plus, Trash2, ChevronUp, ChevronDown, Trophy, Ban, Check,
+  LucideAngularModule, Plus, Trash2, ChevronUp, ChevronDown, Trophy, Ban, Check,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent } from '../../shared/form-page';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -32,28 +33,23 @@ const SWATCHES = [
 ];
 
 /**
- * Panel lateral para configurar el embudo del tenant: renombrar, recolorear,
+ * Pantalla completa para configurar el embudo del tenant: renombrar, recolorear,
  * probabilidad, orden, altas y bajas de etapas. Cada cambio se guarda al
  * momento y avisa a la página (`changed`) para que recargue tablero y selects.
  */
 @Component({
   selector: 'app-lead-stages-config',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, FormPageComponent],
   template: `
-    <div class="overlay" (click)="close.emit()" role="dialog" aria-modal="true" aria-labelledby="funnel-title">
-      <aside class="drawer" (click)="$event.stopPropagation()">
-        <div class="drawer-header">
-          <div>
-            <h2 id="funnel-title">Configurar embudo</h2>
-            <p class="subtitle">Las etapas del seguimiento, en el orden del tablero. Ganado y Perdido cierran la oportunidad.</p>
-          </div>
-          <button class="btn btn-ghost btn-icon" (click)="close.emit()" aria-label="Cerrar">
-            <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5" />
-          </button>
-        </div>
-
-        <div class="drawer-scroll">
+    <!-- Cada cambio se guarda al momento: no hay "cambios sin guardar". -->
+    <app-form-page
+      title="Configurar embudo"
+      subtitle="Las etapas del seguimiento, en el orden del tablero. Ganado y Perdido cierran la oportunidad."
+      backLabel="Seguimiento"
+      urlKey="embudo"
+      (closed)="close.emit()">
+        <div class="stages-list">
           @for (s of rows(); track s.key; let i = $index, first = $first, last = $last) {
             <div class="stage-row" [style.--stage]="s.color">
               <div class="row-main">
@@ -114,15 +110,14 @@ const SWATCHES = [
           }
         </div>
 
-        <div class="drawer-footer">
+        <div class="add-row">
           <input class="input" [(ngModel)]="newLabel" maxlength="40" placeholder="Nombre de la nueva etapa"
             (keydown.enter)="add()" aria-label="Nombre de la nueva etapa" />
           <button class="btn btn-primary" [disabled]="busy() || !newLabel.trim()" (click)="add()">
             <lucide-icon [img]="Plus" [size]="16" [strokeWidth]="2.5" /> Añadir etapa
           </button>
         </div>
-      </aside>
-    </div>
+    </app-form-page>
 
     <!-- Borrar una etapa con oportunidades: hay que elegir adónde pasan. -->
     @if (deleting(); as d) {
@@ -149,17 +144,12 @@ const SWATCHES = [
     }
   `,
   styles: [`
+    /* Overlay del diálogo de borrado (encima de la pantalla completa). */
     .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
     .overlay.top { z-index: 110; }
-    .drawer { margin-left: auto; height: 100%; width: min(520px, 100%); box-sizing: border-box; background: var(--color-white); display: flex; flex-direction: column;
-      box-shadow: var(--shadow-lg); animation: slideIn var(--transition-spring); }
-    @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-    .drawer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 28px 16px; border-bottom: 1px solid var(--color-border); }
-    .drawer-header h2 { margin: 0 0 4px; font-family: var(--font-heading); font-size: 20px; }
-    .subtitle { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--color-text-muted); }
-    .drawer-scroll { flex: 1; overflow-y: auto; padding: 18px 28px; display: flex; flex-direction: column; gap: 12px; }
-    .drawer-footer { display: flex; gap: 10px; padding: 16px 28px calc(20px + var(--safe-bottom, 0px)); border-top: 1px solid var(--color-border); }
-    .drawer-footer .input { flex: 1; min-width: 0; }
+    .stages-list { display: flex; flex-direction: column; gap: 12px; }
+    .add-row { display: flex; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--color-border); }
+    .add-row .input { flex: 1; min-width: 0; }
 
     .stage-row { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--radius-md); background: var(--color-bg-light);
       border-left: 4px solid var(--stage); min-width: 0; }
@@ -194,13 +184,10 @@ const SWATCHES = [
     .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 
     @media (max-width: 640px) {
-      .drawer { width: 100%; }
-      .drawer-header { padding: calc(18px + var(--safe-top, 0px)) 16px 14px; }
-      .drawer-scroll { padding: 14px 16px; }
-      .drawer-footer { flex-direction: column; padding: 14px 16px calc(16px + var(--safe-bottom, 0px)); }
+      .add-row { flex-direction: column; }
       .modal-card { padding: 24px 20px; }
     }
-    @media (prefers-reduced-motion: reduce) { .drawer, .modal-card { animation: none; } }
+    @media (prefers-reduced-motion: reduce) { .modal-card { animation: none; } }
   `],
 })
 export class LeadStagesConfigComponent implements OnInit {
@@ -217,7 +204,7 @@ export class LeadStagesConfigComponent implements OnInit {
   changed = output<void>();
   close = output<void>();
 
-  readonly X = X; readonly Plus = Plus; readonly Trash2 = Trash2; readonly ChevronUp = ChevronUp;
+  readonly Plus = Plus; readonly Trash2 = Trash2; readonly ChevronUp = ChevronUp;
   readonly ChevronDown = ChevronDown; readonly Trophy = Trophy; readonly Ban = Ban; readonly Check = Check;
   readonly swatches = SWATCHES;
 
@@ -228,10 +215,17 @@ export class LeadStagesConfigComponent implements OnInit {
   moveTo = '';
   newLabel = '';
 
-  @HostListener('document:keydown.escape')
-  onEsc() {
-    if (this.deleting()) this.deleting.set(null);
-    else this.close.emit();
+  /**
+   * ESC con el diálogo de borrado abierto: cierra solo el diálogo. Este listener
+   * se registra antes que el de app-form-page (hijo), así que cortar la
+   * propagación evita que también se cierre la pantalla. Sin diálogo, ESC lo
+   * maneja app-form-page.
+   */
+  @HostListener('document:keydown.escape', ['$event'])
+  onEsc(event: Event) {
+    if (!this.deleting()) return;
+    event.stopImmediatePropagation();
+    this.deleting.set(null);
   }
 
   ngOnInit() { this.reload(); }

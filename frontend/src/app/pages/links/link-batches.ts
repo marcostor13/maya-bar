@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -10,6 +10,7 @@ import {
 import { environment } from '../../../environments/environment';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { PermissionsService } from '../../auth/permissions.service';
 import {
   BatchInput, BatchRow, LinkBatch, LinkChannel, LinksApiService, ParsedFile, saveBlob,
@@ -39,7 +40,7 @@ function guess(columns: string[], patterns: RegExp): string {
 @Component({
   selector: 'app-link-batches',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, DatePipe, RouterLink, VariableChipsComponent],
+  imports: [FormsModule, LucideAngularModule, DatePipe, RouterLink, VariableChipsComponent, FormPageComponent],
   template: `
     <div class="bar">
       <p class="lead">
@@ -111,15 +112,20 @@ function guess(columns: string[], patterns: RegExp): string {
 
     <!-- Asistente -->
     @if (wizardOpen()) {
-      <div class="overlay" (click)="wizardOpen.set(false)" role="dialog" aria-modal="true" aria-label="Nuevo lote de links">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <h2>Nuevo lote de links</h2>
-            <button class="btn btn-ghost btn-icon" (click)="wizardOpen.set(false)" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20"></lucide-icon>
-            </button>
-          </div>
-          <div class="drawer-body">
+      <app-form-page
+        title="Nuevo lote de links"
+        backLabel="Links cortos"
+        urlKey="nuevo-lote"
+        [dirty]="isDirty()"
+        (closed)="wizardOpen.set(false)">
+        <ng-container formActions>
+          <span class="hint">{{ summary() }}</span>
+          <button class="btn btn-primary" (click)="create()" [disabled]="creating() || !canSubmit()">
+            {{ creating() ? 'Generando…' : 'Generar links' }}
+          </button>
+        </ng-container>
+          <div class="wizard">
+          <div class="wizard-col">
             <label class="field">
               <span class="label">Nombre del lote</span>
               <input class="input" [(ngModel)]="form.name" maxlength="120" placeholder="Ej. Promo octubre — clientes VIP" />
@@ -227,7 +233,9 @@ function guess(columns: string[], patterns: RegExp): string {
                 }
               }
             </div>
+          </div>
 
+          <div class="wizard-col">
             <div class="field">
               <span class="label">¿Por dónde lo vas a enviar?</span>
               <div class="chips">
@@ -251,30 +259,26 @@ function guess(columns: string[], patterns: RegExp): string {
               <span class="hint">La variable "Link corto" se sustituye por el link de cada persona.</span>
             </div>
           </div>
-          <div class="drawer-footer">
-            <span class="hint">{{ summary() }}</span>
-            <button class="btn btn-primary" (click)="create()" [disabled]="creating() || !canSubmit()">
-              {{ creating() ? 'Generando…' : 'Generar links' }}
-            </button>
           </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
 
     <!-- Detalle -->
     @if (detail(); as d) {
-      <div class="overlay" (click)="detail.set(null)" role="dialog" aria-modal="true" aria-label="Links del lote">
-        <aside class="drawer wide" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div>
-              <h2>{{ d.batch.name }}</h2>
-              <p class="hint">{{ d.rows.length }} links · {{ clicked(d.rows) }} con clic</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="detail.set(null)" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20"></lucide-icon>
-            </button>
-          </div>
-          <div class="drawer-body">
+      <app-form-page
+        [title]="d.batch.name"
+        [subtitle]="d.rows.length + ' links · ' + clicked(d.rows) + ' con clic'"
+        backLabel="Links cortos"
+        [urlKey]="d.batch._id"
+        (closed)="detail.set(null)">
+        <ng-container formActions>
+          <a class="btn btn-secondary" routerLink="/links/analitica" [queryParams]="{ batchId: d.batch._id }">
+            <lucide-icon [img]="BarChart3" [size]="15"></lucide-icon> Analítica
+          </a>
+          <button class="btn btn-primary" (click)="exportBatch(d.batch)">
+            <lucide-icon [img]="Download" [size]="15"></lucide-icon> Descargar CSV
+          </button>
+        </ng-container>
             <ul class="rows">
               @for (r of d.rows.slice(0, 300); track r._id) {
                 <li class="row">
@@ -298,17 +302,7 @@ function guess(columns: string[], patterns: RegExp): string {
             @if (d.rows.length > 300) {
               <p class="hint center">Se muestran 300 de {{ d.rows.length }}. Descarga el CSV para verlos todos.</p>
             }
-          </div>
-          <div class="drawer-footer">
-            <a class="btn btn-secondary" routerLink="/links/analitica" [queryParams]="{ batchId: d.batch._id }">
-              <lucide-icon [img]="BarChart3" [size]="15"></lucide-icon> Analítica
-            </a>
-            <button class="btn btn-primary" (click)="exportBatch(d.batch)">
-              <lucide-icon [img]="Download" [size]="15"></lucide-icon> Descargar CSV
-            </button>
-          </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -324,17 +318,9 @@ function guess(columns: string[], patterns: RegExp): string {
     .t-sub { font-size:12px; color:var(--color-text-muted); overflow-wrap:anywhere; }
     .actions { display:flex; gap:2px; justify-content:flex-end; }
 
-    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex;
-      justify-content:flex-end; z-index:100; }
-    .drawer { width:100%; max-width:560px; height:100%; background:var(--color-white); display:flex; flex-direction:column;
-      box-shadow:var(--shadow-lg); animation:slide-in .35s var(--transition-spring); }
-    .drawer.wide { max-width:680px; }
-    @keyframes slide-in { from { transform:translateX(40px); opacity:0; } to { transform:none; opacity:1; } }
-    .drawer-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:24px 28px 16px; }
-    .drawer-header h2 { margin:0; font-family:var(--font-heading); font-size:20px; overflow-wrap:anywhere; }
-    .drawer-body { flex:1; overflow-y:auto; padding:8px 28px 24px; display:flex; flex-direction:column; gap:18px; }
-    .drawer-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 28px;
-      border-top:1px solid var(--color-border); }
+    /* Asistente a pantalla completa: destino y destinatarios | canal y mensaje */
+    .wizard { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:32px; align-items:start; }
+    .wizard-col { display:flex; flex-direction:column; gap:18px; min-width:0; }
     .field { display:flex; flex-direction:column; gap:8px; }
     .label { font-size:13px; font-weight:600; color:var(--color-text-main); }
     .hint { margin:0; font-size:12px; color:var(--color-text-muted); }
@@ -376,8 +362,10 @@ function guess(columns: string[], patterns: RegExp): string {
       border-radius:var(--radius-pill); padding:4px 10px; overflow-wrap:anywhere; text-align:left; }
     .spin { animation:spin 1s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
+    @media (max-width: 768px) {
+      .wizard { grid-template-columns:1fr; gap:18px; }
+    }
     @media (max-width: 700px) {
-      .drawer, .drawer.wide { max-width:100%; }
       .map { grid-template-columns:1fr; }
     }
   `],
@@ -454,11 +442,17 @@ export class LinkBatchesComponent implements OnInit {
     this.templatesApi.variables().subscribe({ next: v => this.variables.set(v), error: () => {} });
   }
 
-  @HostListener('document:keydown.escape')
-  onEscape() {
-    if (this.detail()) this.detail.set(null);
-    else if (this.wizardOpen()) this.wizardOpen.set(false);
+  // ESC del asistente y del detalle: lo maneja app-form-page.
+
+  /** Foto del asistente al abrirlo, para avisar de cambios sin guardar. */
+  private wizardSnapshot = '';
+  private wizardState() {
+    return {
+      form: this.form, map: this.map, source: this.source(), listIds: this.listIds(),
+      customerIds: this.customerIds(), file: this.file() ? this.fileName() : '',
+    };
   }
+  isDirty() { return snapshotOf(this.wizardState()) !== this.wizardSnapshot; }
 
   private load() {
     this.api.batches().subscribe({
@@ -480,6 +474,7 @@ export class LinkBatchesComponent implements OnInit {
     this.file.set(null);
     this.source.set('lists');
     this.wizardOpen.set(true);
+    this.wizardSnapshot = snapshotOf(this.wizardState());
     if (!this.lists().length) {
       this.http.get<ListMini[]>(environment.apiUrl + '/lists').subscribe({ next: l => this.lists.set(l), error: () => {} });
     }

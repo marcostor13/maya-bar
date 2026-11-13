@@ -1,12 +1,13 @@
-import { Component, HostListener, OnDestroy, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import {
-  LucideAngularModule, X, CheckCircle2, Clock, AlertCircle, MinusCircle, ChevronLeft, ChevronRight,
+  LucideAngularModule, CheckCircle2, Clock, AlertCircle, MinusCircle, ChevronLeft, ChevronRight,
   BarChart3, RefreshCw,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { CampaignsApiService } from '../../core/api/campaigns-api.service';
+import { FormPageComponent } from '../../shared/form-page';
 import {
   Campaign, CampaignRecipient, CampaignStats, RecipientStatus,
 } from '../../shared/models/campaign.model';
@@ -22,19 +23,23 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
 @Component({
   selector: 'app-campaign-recipients',
   standalone: true,
-  imports: [LucideAngularModule, DatePipe, RouterLink],
+  imports: [LucideAngularModule, DatePipe, RouterLink, FormPageComponent],
   template: `
-    <div class="overlay" (click)="closed.emit()" role="dialog" aria-modal="true" aria-label="Destinatarios de la campaña">
-      <aside class="drawer" (click)="$event.stopPropagation()">
-        <div class="drawer-header">
-          <div class="head-text">
-            <h2>{{ campaign().name }}</h2>
-            <p>{{ campaign().type === 'sms' ? 'SMS' : 'Email' }} · detalle de envío</p>
-          </div>
-          <button class="btn btn-ghost btn-icon" (click)="closed.emit()" aria-label="Cerrar">
-            <lucide-icon [img]="X" [size]="20"></lucide-icon>
-          </button>
-        </div>
+    <app-form-page
+      [title]="campaign().name"
+      [subtitle]="(campaign().type === 'sms' ? 'SMS' : 'Email') + ' · detalle de envío'"
+      backLabel="Campañas"
+      [urlKey]="campaign()._id"
+      (closed)="closed.emit()">
+      <ng-container formActions>
+        @if (campaign().linkUrl) {
+          <a class="btn btn-secondary btn-sm" routerLink="/links/analitica"
+            [queryParams]="{ campaignId: campaign()._id }">
+            <lucide-icon [img]="BarChart3" [size]="14"></lucide-icon>
+            Ver quién hizo clic en el link
+          </a>
+        }
+      </ng-container>
 
         @if (stats(); as s) {
           <div class="progress" role="progressbar" [attr.aria-valuenow]="percent()" aria-valuemin="0" aria-valuemax="100">
@@ -61,15 +66,7 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
           </div>
         }
 
-        @if (campaign().linkUrl) {
-          <a class="btn btn-secondary btn-sm clicks-link" routerLink="/links/analitica"
-            [queryParams]="{ campaignId: campaign()._id }">
-            <lucide-icon [img]="BarChart3" [size]="14"></lucide-icon>
-            Ver quién hizo clic en el link
-          </a>
-        }
-
-        <div class="drawer-body">
+        <div class="list">
           @if (loading()) {
             <p class="muted center">
               <lucide-icon [img]="RefreshCw" [size]="16" class="spin"></lucide-icon> Cargando…
@@ -96,7 +93,7 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
           }
         </div>
 
-        <div class="drawer-footer">
+        <div class="pager">
           <button class="btn btn-ghost btn-sm btn-icon" (click)="go(page() - 1)" [disabled]="page() <= 1" aria-label="Página anterior">
             <lucide-icon [img]="ChevronLeft" [size]="16"></lucide-icon>
           </button>
@@ -105,25 +102,15 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
             <lucide-icon [img]="ChevronRight" [size]="16"></lucide-icon>
           </button>
         </div>
-      </aside>
-    </div>
+    </app-form-page>
   `,
   styles: [`
-    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex;
-      justify-content:flex-end; z-index:100; }
-    .drawer { width:100%; max-width:560px; height:100%; background:var(--color-white); display:flex; flex-direction:column;
-      box-shadow:var(--shadow-lg); animation:slide-in .35s var(--transition-spring); }
-    @keyframes slide-in { from { transform:translateX(40px); opacity:0; } to { transform:none; opacity:1; } }
-    .drawer-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:24px 28px 16px; }
-    .head-text { min-width:0; }
-    .head-text h2 { margin:0; font-family:var(--font-heading); font-size:20px; overflow-wrap:anywhere; }
-    .head-text p { margin:4px 0 0; font-size:13px; color:var(--color-text-muted); }
-    .progress { display:flex; height:8px; margin:0 28px; border-radius:var(--radius-pill); background:var(--color-bg-light); overflow:hidden; }
+    .progress { display:flex; height:8px; border-radius:var(--radius-pill); background:var(--color-bg-light); overflow:hidden; }
     .bar { height:100%; transition:width var(--transition-smooth); }
     .bar.sent { background:var(--color-success); }
     .bar.failed { background:var(--color-error); }
     .bar.skipped { background:var(--color-border); }
-    .tiles { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; padding:16px 28px 8px; }
+    .tiles { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; padding:16px 0 8px; }
     .tile { display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 4px; cursor:pointer;
       border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-white); font-family:var(--font-base); }
     .tile.active { border-color:var(--color-brand); background:var(--color-brand-light); }
@@ -132,9 +119,8 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
     .tile-value.bad { color:var(--color-error); }
     .tile-value.muted { color:var(--color-text-muted); }
     .tile-label { font-size:11px; color:var(--color-text-muted); }
-    .clicks-link { margin:8px 28px 0; align-self:flex-start; }
-    .drawer-body { flex:1; overflow-y:auto; padding:8px 28px 16px; }
-    .drawer-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 28px;
+    .list { padding:8px 0 16px; }
+    .pager { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0;
       border-top:1px solid var(--color-border); }
     .muted { color:var(--color-text-muted); font-size:13px; }
     .center { text-align:center; padding:32px 0; }
@@ -153,7 +139,6 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
     .spin { animation:spin 1s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
     @media (max-width: 600px) {
-      .drawer { max-width:100%; }
       .tiles { grid-template-columns:repeat(3, 1fr); }
     }
   `],
@@ -165,7 +150,7 @@ export class CampaignRecipientsComponent implements OnInit, OnDestroy {
   campaign = input.required<Campaign>();
   closed = output<void>();
 
-  readonly X = X; readonly ChevronLeft = ChevronLeft; readonly ChevronRight = ChevronRight;
+  readonly ChevronLeft = ChevronLeft; readonly ChevronRight = ChevronRight;
   readonly BarChart3 = BarChart3; readonly RefreshCw = RefreshCw;
 
   items = signal<CampaignRecipient[]>([]);
@@ -193,9 +178,6 @@ export class CampaignRecipientsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() { if (this.timer) clearInterval(this.timer); }
-
-  @HostListener('document:keydown.escape')
-  onEscape() { this.closed.emit(); }
 
   private load(showSpinner: boolean) {
     if (showSpinner) this.loading.set(true);

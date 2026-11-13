@@ -74,6 +74,24 @@ export class Conversation extends Document {
   autoReply: boolean;
 
   /**
+   * El último turno del agente IA fue no responder ({{NO_RESPONDER}}). Mientras
+   * esté en true no se le permite callar otra vez: responde al siguiente.
+   */
+  @Prop({ default: false })
+  agentSilent: boolean;
+
+  /**
+   * Cuándo vence la espera para que el agente responda los mensajes
+   * pendientes (cada mensaje nuevo la reinicia). Vacío = nada programado.
+   */
+  @Prop({ type: Date })
+  agentDueAt?: Date;
+
+  /** Candado con caducidad: una instancia está generando la respuesta. */
+  @Prop({ type: Date })
+  agentLockUntil?: Date;
+
+  /**
    * Vendedor que atiende el chat. Solo él puede escribir; el resto del equipo
    * lo ve en solo lectura. Vacío con `autoReply` en false = chat en cola, sin
    * asignar.
@@ -173,6 +191,11 @@ export class Conversation extends Document {
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);
 ConversationSchema.index({ tenantId: 1, lastMessageAt: -1 });
+// Recuperación de respuestas programadas que nadie atendió (HU11).
+ConversationSchema.index(
+  { agentDueAt: 1 },
+  { partialFilterExpression: { agentDueAt: { $exists: true } } },
+);
 ConversationSchema.index(
   { tenantId: 1, 'campaign.kind': 1, 'campaign.id': 1 },
   { sparse: true },

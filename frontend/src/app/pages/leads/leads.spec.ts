@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
 import { LeadsComponent } from './leads';
 import { LeadAssignComponent } from './lead-assign';
+import { LeadStagesConfigComponent } from './lead-stages-config';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -114,6 +115,65 @@ describe('LeadsComponent — reparto', () => {
     expect(create.request.body.ownerId).toBe('');
     create.flush(lead('n'));
     http.match(() => true).forEach((r) => r.flush([]));
+  });
+});
+
+describe('LeadsComponent — pantallas completas (HU9)', () => {
+  it('el alta se abre a pantalla completa, sin "Cancelar" y avisa de cambios sin guardar', async () => {
+    await TestBed.configureTestingModule({
+      imports: [LeadsComponent],
+      providers: [
+        provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
+        { provide: AuthService, useValue: { currentUser: signal({ id: ME, email: 'me@x.pe', role: 'MANAGER' }) } },
+        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
+        { provide: ConfirmService, useValue: { confirm: vi.fn().mockResolvedValue(true) } },
+      ],
+    }).compileComponents();
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(LeadsComponent);
+    fixture.detectChanges();
+    http.match(() => true).forEach((r) => r.flush([]));
+    const c = fixture.componentInstance;
+    c.openNew();
+    fixture.detectChanges();
+    const page = fixture.nativeElement.querySelector('app-form-page') as HTMLElement;
+    expect(page).not.toBeNull();
+    expect(page.querySelector('[role="dialog"] h1')?.textContent).toContain('Nueva oportunidad');
+    expect(page.querySelector('.bar-actions')?.textContent).toContain('Crear oportunidad');
+    expect(page.textContent).not.toContain('Cancelar');
+    expect(c.isDirty()).toBe(false);
+    c.form.title = 'Algo';
+    expect(c.isDirty()).toBe(true);
+    http.match(() => true).forEach((r) => r.flush([]));
+  });
+});
+
+describe('LeadStagesConfigComponent — ESC', () => {
+  it('con el diálogo de borrado abierto, ESC cierra solo el diálogo', async () => {
+    await TestBed.configureTestingModule({
+      imports: [LeadStagesConfigComponent],
+      providers: [
+        provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
+        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
+        { provide: ConfirmService, useValue: { confirm: vi.fn().mockResolvedValue(true) } },
+      ],
+    }).compileComponents();
+    const http = TestBed.inject(HttpTestingController);
+    const f = TestBed.createComponent(LeadStagesConfigComponent);
+    f.detectChanges();
+    http.expectOne((r) => r.url.endsWith('/leads/stages')).flush([{ key: 'new', label: 'Nuevo', order: 1, color: '#000', probability: 10 }]);
+    const c = f.componentInstance;
+    const closed = vi.fn();
+    c.close.subscribe(closed);
+    c.deleting.set({ ...c.rows()[0] });
+    f.detectChanges();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await f.whenStable();
+    expect(c.deleting()).toBeNull();
+    expect(closed).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await f.whenStable();
+    expect(closed).toHaveBeenCalled();
   });
 });
 

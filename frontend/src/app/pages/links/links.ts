@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -8,6 +8,7 @@ import {
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { PermissionsService } from '../../auth/permissions.service';
 import { LinkInput, LinksApiService, ShortLink } from '../../core/api/links-api.service';
 import { LinkBatchesComponent } from './link-batches';
@@ -20,7 +21,7 @@ type Tab = 'links' | 'batches' | 'domains';
 @Component({
   selector: 'app-links',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, DatePipe, RouterLink, LinkBatchesComponent, LinkDomainsComponent],
+  imports: [FormsModule, LucideAngularModule, DatePipe, RouterLink, LinkBatchesComponent, LinkDomainsComponent, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -153,15 +154,18 @@ type Tab = 'links' | 'batches' | 'domains';
     </div>
 
     @if (formOpen()) {
-      <div class="overlay" (click)="formOpen.set(false)" role="dialog" aria-modal="true" aria-label="Link corto">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <h2>{{ editing() ? 'Editar link' : 'Nuevo link corto' }}</h2>
-            <button class="btn btn-ghost btn-icon" (click)="formOpen.set(false)" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20"></lucide-icon>
-            </button>
-          </div>
-          <div class="drawer-body">
+      <app-form-page
+        [title]="editing() ? 'Editar link' : 'Nuevo link corto'"
+        backLabel="Links cortos"
+        [urlKey]="editing()?._id || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="formOpen.set(false)">
+        <ng-container formActions>
+          <button class="btn btn-primary" (click)="save()" [disabled]="saving() || !form.destination.trim()">
+            {{ saving() ? 'Guardando…' : (editing() ? 'Guardar cambios' : 'Crear link') }}
+          </button>
+        </ng-container>
+          <div class="link-form">
             <label class="field">
               <span class="label">Dirección de destino</span>
               <input class="input" id="link-destination" [(ngModel)]="form.destination" maxlength="2000"
@@ -215,14 +219,7 @@ type Tab = 'links' | 'batches' | 'domains';
               <p class="hint">Las etiquetas UTM se añaden al destino para que tu analítica web identifique el origen.</p>
             }
           </div>
-          <div class="drawer-footer">
-            <button class="btn btn-ghost" (click)="formOpen.set(false)">Cancelar</button>
-            <button class="btn btn-primary" (click)="save()" [disabled]="saving() || !form.destination.trim()">
-              {{ saving() ? 'Guardando…' : (editing() ? 'Guardar cambios' : 'Crear link') }}
-            </button>
-          </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -257,15 +254,7 @@ type Tab = 'links' | 'batches' | 'domains';
     .dest:hover { color:var(--color-brand); }
     .actions { display:flex; gap:4px; justify-content:flex-end; align-items:center; }
 
-    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex;
-      justify-content:flex-end; z-index:100; }
-    .drawer { width:100%; max-width:520px; height:100%; background:var(--color-white); display:flex; flex-direction:column;
-      box-shadow:var(--shadow-lg); animation:slide-in .35s var(--transition-spring); }
-    @keyframes slide-in { from { transform:translateX(40px); opacity:0; } to { transform:none; opacity:1; } }
-    .drawer-header { display:flex; align-items:center; justify-content:space-between; padding:24px 28px 16px; }
-    .drawer-header h2 { margin:0; font-family:var(--font-heading); font-size:20px; }
-    .drawer-body { flex:1; overflow-y:auto; padding:8px 28px 24px; display:flex; flex-direction:column; gap:16px; }
-    .drawer-footer { display:flex; justify-content:flex-end; gap:10px; padding:16px 28px; border-top:1px solid var(--color-border); }
+    .link-form { display:flex; flex-direction:column; gap:16px; }
     .field { display:flex; flex-direction:column; gap:8px; min-width:0; }
     .label { font-size:13px; font-weight:600; color:var(--color-text-main); }
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
@@ -273,7 +262,6 @@ type Tab = 'links' | 'batches' | 'domains';
     .toggle { align-self:flex-start; }
     @media (max-width: 768px) {
       .page { padding:20px 16px; }
-      .drawer { max-width:100%; }
       .grid2 { grid-template-columns:1fr; }
       .dest { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
     }
@@ -329,8 +317,11 @@ export class LinksComponent implements OnInit {
     this.loadDomains();
   }
 
-  @HostListener('document:keydown.escape')
-  onEscape() { if (this.formOpen()) this.formOpen.set(false); }
+  // ESC del formulario: lo maneja app-form-page (y pregunta si hay cambios).
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf({ form: this.form, utm: this.utm }) !== this.formSnapshot; }
 
   private load() {
     this.api.list().subscribe({
@@ -384,6 +375,7 @@ export class LinksComponent implements OnInit {
     // Al editar se abren si ya tienen algo, para que no pase desapercibido.
     this.moreOpen.set(!!link && (!!link.expiresAt || Object.values(this.utm).some(Boolean)));
     this.formOpen.set(true);
+    this.formSnapshot = snapshotOf({ form: this.form, utm: this.utm });
     setTimeout(() => document.getElementById('link-destination')?.focus());
   }
 

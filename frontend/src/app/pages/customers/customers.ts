@@ -14,6 +14,7 @@ import { CallsService } from '../../shared/calls/calls.service';
 import { ConfirmService } from '../../shared/confirm';
 import { AuthService } from '../../auth/auth.service';
 import { ContactImportComponent } from './contact-import/contact-import';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { ContactCareComponent } from './contact-care';
 import {
   ContactCareApiService,
@@ -146,7 +147,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
 @Component({
   selector: 'app-customers',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule, ContactImportComponent, ContactCareComponent],
+  imports: [ReactiveFormsModule, LucideAngularModule, ContactImportComponent, ContactCareComponent, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
 
@@ -566,38 +567,42 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
       }
     </div>
 
-    <!-- ── Ficha del contacto ── -->
+    <!-- ── Ficha del contacto (pantalla completa, solo lectura) ── -->
     @if (viewing(); as c) {
-      <div class="overlay" (click)="viewing.set(null)" role="dialog" aria-modal="true" aria-label="Ficha del contacto">
-        <aside class="drawer" (click)="$event.stopPropagation()">
+      <app-form-page
+        [title]="c.name"
+        subtitle="Ficha del contacto"
+        backLabel="Clientes"
+        [urlKey]="c._id"
+        (closed)="viewing.set(null)">
+        <ng-container formActions>
+          @if (c.phone && calls.available()) {
+            <button class="btn btn-secondary" (click)="callCustomer(c)" [attr.aria-label]="'Llamar a ' + c.name">
+              <lucide-icon [img]="Phone" [size]="15" [strokeWidth]="2.4"></lucide-icon> Llamar
+            </button>
+          }
+          <button class="btn btn-ghost danger" (click)="deleteFromView(c)">
+            <lucide-icon [img]="Trash2" [size]="15"></lucide-icon>
+            Eliminar
+          </button>
+          <button class="btn btn-primary" (click)="editFromView(c)">
+            <lucide-icon [img]="Pencil" [size]="15"></lucide-icon>
+            Editar
+          </button>
+        </ng-container>
 
-          <div class="view-header">
-            <div class="view-identity">
-              <div class="view-avatar">{{ initials(c.name) }}</div>
-              <div class="view-title-group">
-                <h2>{{ c.name }}</h2>
-                <div class="view-badges">
-                  <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
-                  @if (c.sourceLabel) {
-                    <span class="badge badge-neutral">{{ c.sourceLabel }}</span>
-                  }
-                </div>
-              </div>
-            </div>
-            <div class="view-head-actions">
-              @if (c.phone && calls.available()) {
-                <button class="btn btn-primary btn-sm" (click)="callCustomer(c)" [attr.aria-label]="'Llamar a ' + c.name">
-                  <lucide-icon [img]="Phone" [size]="14" [strokeWidth]="2.4"></lucide-icon> Llamar
-                </button>
+        <div class="view-page">
+          <div class="view-identity">
+            <div class="view-avatar">{{ initials(c.name) }}</div>
+            <div class="view-badges">
+              <span class="badge {{ sourceMeta(c.source).cls }}">{{ sourceMeta(c.source).label }}</span>
+              @if (c.sourceLabel) {
+                <span class="badge badge-neutral">{{ c.sourceLabel }}</span>
               }
-              <button class="btn btn-ghost btn-icon" (click)="viewing.set(null)" aria-label="Cerrar">
-                <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-              </button>
             </div>
           </div>
 
-          <div class="drawer-scroll">
-
+          <div class="view-grid">
             <!-- Datos de contacto -->
             <div class="view-section">
               <span class="view-section-title">Contacto</span>
@@ -745,110 +750,87 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
               }
             </div>
           </div>
-
-          <div class="view-footer">
-            <button class="btn btn-ghost danger" (click)="deleteFromView(c)">
-              <lucide-icon [img]="Trash2" [size]="15"></lucide-icon>
-              Eliminar
-            </button>
-            <span class="view-footer-spacer"></span>
-            <button class="btn btn-secondary" (click)="viewing.set(null)">Cerrar</button>
-            <button class="btn btn-primary" (click)="editFromView(c)">
-              <lucide-icon [img]="Pencil" [size]="15"></lucide-icon>
-              Editar
-            </button>
-          </div>
-        </aside>
-      </div>
+        </div>
+      </app-form-page>
     }
 
-    <!-- ── Edit Drawer ── -->
+    <!-- ── Formulario de contacto a pantalla completa ── -->
     @if (drawerOpen()) {
-      <div class="overlay" (click)="closeDrawer()" role="dialog" aria-modal="true">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-
-          <div class="drawer-header">
-            <div class="drawer-title-group">
-              <h2>{{ editingCustomer() ? 'Editar contacto' : 'Nuevo contacto' }}</h2>
-              <p class="subtitle">{{ editingCustomer()?.email || 'Completa los datos del contacto.' }}</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="closeDrawer()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+      <!-- El form envuelve la pantalla: así el botón de la cabecera es su submit. -->
+      <form [formGroup]="form" (ngSubmit)="saveCustomer()">
+        <app-form-page
+          [title]="editingCustomer() ? 'Editar contacto' : 'Nuevo contacto'"
+          [subtitle]="editingCustomer()?.email || 'Completa los datos del contacto.'"
+          backLabel="Clientes"
+          [urlKey]="editingCustomer()?._id || 'nuevo'"
+          [dirty]="isDirty()"
+          (closed)="closeDrawer()">
+          <ng-container formActions>
+            <button type="submit" class="btn btn-primary" [disabled]="saving()">
+              {{ saving() ? 'Guardando...' : (editingCustomer() ? 'Actualizar' : 'Crear contacto') }}
             </button>
-          </div>
+          </ng-container>
 
-          <div class="drawer-scroll">
-            <form [formGroup]="form" (ngSubmit)="saveCustomer()">
-
-              <div class="field-row">
-                <div class="field">
-                  <label class="field-label">Nombre *</label>
-                  <input class="input" formControlName="name" placeholder="Ej: María García" autofocus />
-                </div>
-                <div class="field">
-                  <label class="field-label">Email *</label>
-                  <input class="input" formControlName="email" type="email" placeholder="maria@email.com" />
-                </div>
-              </div>
-
+          <div class="contact-form card">
+            <div class="field-row">
               <div class="field">
-                <label class="field-label">Teléfono</label>
-                <input class="input" formControlName="phone" placeholder="+51 999 999 999" />
+                <label class="field-label">Nombre *</label>
+                <input class="input" formControlName="name" placeholder="Ej: María García" autofocus />
               </div>
-
               <div class="field">
-                <label class="field-label">Tags</label>
-                <div class="tag-selector">
-                  <div class="preset-tags">
-                    @for (tag of presetTags; track tag) {
-                      <button type="button" class="tag-chip"
-                        [class.selected]="selectedTags().includes(tag)"
-                        (click)="toggleTag(tag)">
-                        {{ tag }}
-                      </button>
-                    }
-                  </div>
-                  <div class="custom-tag-row">
-                    <input #customTagInput class="input input-sm" placeholder="Agregar tag personalizado..."
-                      (keydown.enter)="$event.preventDefault(); addCustomTag(customTagInput)" />
-                    <button type="button" class="btn btn-ghost btn-sm"
-                      (click)="addCustomTag(customTagInput)">
-                      <lucide-icon [img]="Plus" [size]="14"></lucide-icon>
+                <label class="field-label">Email *</label>
+                <input class="input" formControlName="email" type="email" placeholder="maria@email.com" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Teléfono</label>
+              <input class="input" formControlName="phone" placeholder="+51 999 999 999" />
+            </div>
+
+            <div class="field">
+              <label class="field-label">Tags</label>
+              <div class="tag-selector">
+                <div class="preset-tags">
+                  @for (tag of presetTags; track tag) {
+                    <button type="button" class="tag-chip"
+                      [class.selected]="selectedTags().includes(tag)"
+                      (click)="toggleTag(tag)">
+                      {{ tag }}
                     </button>
-                  </div>
-                  @if (selectedTags().length > 0) {
-                    <div class="selected-tags">
-                      @for (tag of selectedTags(); track tag) {
-                        <span class="badge badge-info tag-selected">
-                          {{ tag }}
-                          <button type="button" (click)="removeTag(tag)" aria-label="Quitar tag">
-                            <lucide-icon [img]="X" [size]="10"></lucide-icon>
-                          </button>
-                        </span>
-                      }
-                    </div>
                   }
                 </div>
+                <div class="custom-tag-row">
+                  <input #customTagInput class="input input-sm" placeholder="Agregar tag personalizado..."
+                    (keydown.enter)="$event.preventDefault(); addCustomTag(customTagInput)" />
+                  <button type="button" class="btn btn-ghost btn-sm"
+                    (click)="addCustomTag(customTagInput)">
+                    <lucide-icon [img]="Plus" [size]="14"></lucide-icon>
+                  </button>
+                </div>
+                @if (selectedTags().length > 0) {
+                  <div class="selected-tags">
+                    @for (tag of selectedTags(); track tag) {
+                      <span class="badge badge-info tag-selected">
+                        {{ tag }}
+                        <button type="button" (click)="removeTag(tag)" aria-label="Quitar tag">
+                          <lucide-icon [img]="X" [size]="10"></lucide-icon>
+                        </button>
+                      </span>
+                    }
+                  </div>
+                }
               </div>
+            </div>
 
-              <div class="field">
-                <label class="field-label">Notas internas</label>
-                <textarea class="textarea" formControlName="notes" rows="3"
-                  placeholder="Preferencias, alergias, observaciones..."></textarea>
-              </div>
-
-              <div class="drawer-actions">
-                <button type="button" class="btn btn-secondary" (click)="closeDrawer()">Cerrar</button>
-                <button type="submit" class="btn btn-primary" [disabled]="saving()">
-                  {{ saving() ? 'Guardando...' : (editingCustomer() ? 'Actualizar' : 'Crear contacto') }}
-                </button>
-              </div>
-
-            </form>
+            <div class="field">
+              <label class="field-label">Notas internas</label>
+              <textarea class="textarea" formControlName="notes" rows="3"
+                placeholder="Preferencias, alergias, observaciones..."></textarea>
+            </div>
           </div>
-
-        </aside>
-      </div>
+        </app-form-page>
+      </form>
     }
 
     <!-- ── List Picker Modal ── -->
@@ -1097,15 +1079,12 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
     .contact-cell:hover .contact-name { color:var(--color-brand); }
     .contact-cell:focus-visible { outline:2px solid var(--color-brand); outline-offset:3px; }
 
-    .view-head-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
-    .view-head-actions .btn-sm { display:inline-flex; align-items:center; gap:5px; }
-    .view-header { padding:32px 32px 20px; display:flex; align-items:flex-start; justify-content:space-between;
-      gap:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
+    /* Cabecera de la ficha: avatar y canal; las secciones van en dos columnas */
+    .view-page { display:flex; flex-direction:column; gap:24px; }
     .view-identity { display:flex; align-items:center; gap:16px; min-width:0; }
     .view-avatar { width:56px; height:56px; min-width:56px; border-radius:50%; background:var(--color-brand-light);
       color:var(--color-brand); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; }
-    .view-title-group { min-width:0; }
-    .view-title-group h2 { margin:0 0 6px; font-size:22px; font-weight:800; letter-spacing:-.5px; word-break:break-word; }
+    .view-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:4px 32px; align-items:start; }
     .view-badges { display:flex; flex-wrap:wrap; gap:6px; }
 
     .view-section { margin-bottom:28px; }
@@ -1143,18 +1122,8 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
       background:var(--color-bg-app); border:1px solid var(--color-border); border-radius:var(--radius-sm);
       padding:14px 16px; white-space:pre-wrap; }
 
-    .view-footer { display:flex; align-items:center; gap:10px; padding:20px 32px;
-      border-top:1px solid var(--color-border); flex-shrink:0; }
-    .view-footer-spacer { flex:1; }
-
-    /* ── Edit Drawer ── */
-    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex; align-items:stretch; justify-content:flex-end; z-index:100; }
-    .drawer { width:560px; background:#fff; box-shadow:-10px 0 40px rgba(0,0,0,.15); display:flex; flex-direction:column; height:100vh; animation:slideInRight .25s var(--transition-spring); }
-    @keyframes slideInRight { from{transform:translateX(100%)} to{transform:translateX(0)} }
-    .drawer-header { padding:32px 32px 20px; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
-    .drawer-title-group h2 { margin:0 0 4px; font-size:24px; font-weight:800; letter-spacing:-.5px; }
-    .drawer-scroll { padding:32px; overflow-y:auto; flex:1; }
-    .drawer-actions { display:flex; gap:12px; justify-content:flex-end; padding-top:24px; border-top:1px solid var(--color-border); margin-top:8px; }
+    /* ── Formulario de contacto ── */
+    .contact-form { padding:28px 32px; }
     .field { display:flex; flex-direction:column; gap:8px; margin-bottom:24px; }
     .field-row { display:flex; gap:16px; margin-bottom:24px; }
     .field-row .field { flex:1; margin-bottom:0; }
@@ -1233,9 +1202,8 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
       .bulk-actions { width:100%; }
       .bulk-actions .btn { flex:1; }
 
-      .drawer { width:100%; }
-      .drawer-header { padding:20px 20px 16px; }
-      .drawer-scroll { padding:20px; }
+      .view-grid { grid-template-columns:1fr; }
+      .contact-form { padding:20px; }
       .field-row { flex-direction:column; gap:20px; }
 
       .table-wrap table, .table-wrap thead, .table-wrap tbody,
@@ -1517,8 +1485,14 @@ export class CustomersComponent implements OnInit {
       this.form.reset();
       this.selectedTags.set([]);
     }
+    this.formSnapshot = this.formState();
     this.drawerOpen.set(true);
   }
+
+  /** Foto del formulario (con sus tags) al abrirlo: si cambia, volver pide confirmación. */
+  private formSnapshot = '';
+  private formState() { return snapshotOf({ ...this.form.getRawValue(), tags: this.selectedTags() }); }
+  isDirty() { return this.formState() !== this.formSnapshot; }
 
   closeDrawer() {
     this.drawerOpen.set(false);
@@ -1947,7 +1921,6 @@ export class CustomersComponent implements OnInit {
   onEsc() {
     if (this.columnsOpen()) { this.columnsOpen.set(false); return; }
     if (this.listPickerOpen()) { this.listPickerOpen.set(false); return; }
-    if (this.drawerOpen()) { this.closeDrawer(); return; }
-    if (this.viewing()) this.viewing.set(null);
+    // La ficha y el formulario a pantalla completa manejan su propio ESC.
   }
 }

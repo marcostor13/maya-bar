@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Interval } from '@nestjs/schedule';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
 import { Message, MessageType, MessageStatus } from './message.schema';
@@ -74,6 +75,16 @@ const MAX_AGENT_EMAILS_PER_HOUR = 5;
 
 /** Historial que se le pasa al agente IA en cada respuesta. */
 const AI_HISTORY_LIMIT = 20;
+
+// --- Agrupación de mensajes seguidos (HU11) ---
+/** Espera por defecto antes de responder (AGENT_REPLY_DEBOUNCE_MS la cambia). */
+const DEFAULT_AGENT_DEBOUNCE_MS = 6_000;
+/** Candado de una respuesta en curso; caduca si la instancia muere. */
+const AGENT_LOCK_MS = 90_000;
+/** Pendientes más viejos que esto se descartan en vez de responderse tarde. */
+const AGENT_PENDING_MAX_AGE_MS = 15 * 60_000;
+/** La recuperación solo toca esperas vencidas hace más de esto. */
+const AGENT_RECOVERY_GRACE_MS = 10_000;
 const DEFAULT_PAGE_SIZE = 50;
 /** Tope de etiquetas por contacto: la ficha deja de ser legible más allá. */
 const MAX_TAGS = 12;
@@ -245,6 +256,19 @@ export function inboundPushBody(preview: string, unread: number): string {
 @Injectable()
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
+  /**
+   * Respuestas del agente programadas en esta instancia: el temporizador y
+   * cómo resolver el agente y el "escribiendo…" del canal. El estado que
+   * cuenta (espera, candado, pendientes) vive en Mongo.
+   */
+  private readonly agentTimers = new Map<
+    string,
+    {
+      timer?: ReturnType<typeof setTimeout>;
+      resolveAgent: () => Promise<AiAgent | null>;
+      typing?: (on: boolean) => Promise<void>;
+    }
+  >();
 
   constructor(
     @InjectModel(Conversation.name) private convModel: Model<Conversation>,
@@ -1848,8 +1872,6 @@ export class ConversationsService {
     }
 
     if (params.quiet || params.noAgent || inbound.noAgent) return;
-    // Lo que no se pudo interpretar no se contesta: el agente respondería a ciegas.
-    if (inbound.type === 'unsupported') return;
     if (channel === 'email' && (await this.agentEmailFlood(conv))) return;
     if (!conv.autoReply || conv.status === 'closed') return;
     // Quien pidió no recibir comunicaciones no recibe respuestas automáticas.
@@ -1861,7 +1883,229 @@ export class ConversationsService {
       );
       return;
     }
-    await this.runAgent(conv, msg, params.resolveAgent, params.typing);
+    // El agente no contesta cada mensaje: lo deja pendiente y responde a todos
+    // juntos cuando el cliente deja de escribir unos segundos.
+    msg.agentPending = true;
+    await msg.save();
+    // Lo vacío o lo que no se pudo interpretar no merece respuesta propia (el
+    // agente respondería a ciegas): espera a juntarse con el siguiente mensaje.
+    if (msg.type === 'unsupported' || !this.toAiContent(msg).trim()) return;
+    await this.scheduleAgent(conv, params.resolveAgent, params.typing);
+  }
+
+  /** Espera antes de responder: la del agente o la global. */
+  private agentDelayMs(agent: AiAgent): number {
+    const s = agent.replyDelaySeconds;
+    if (typeof s === 'number' && s >= 0) return Math.min(s, 30) * 1000;
+    const env = Number(process.env.AGENT_REPLY_DEBOUNCE_MS);
+    return process.env.AGENT_REPLY_DEBOUNCE_MS &&
+      Number.isFinite(env) &&
+      env >= 0
+      ? env
+      : DEFAULT_AGENT_DEBOUNCE_MS;
+  }
+
+  /**
+   * (Re)programa la respuesta del agente: cada mensaje nuevo reinicia la
+   * espera. Con espera 0 responde ya, pero igual pasa por el candado.
+   */
+  private async scheduleAgent(
+    conv: Conversation,
+    resolveAgent: () => Promise<AiAgent | null>,
+    typing?: (on: boolean) => Promise<void>,
+  ) {
+    const agent = await resolveAgent();
+    if (!agent) {
+      this.logger.warn(
+        `Sin agente publicado para la cuenta ${String(conv.accountId)} — el chat queda en manual.`,
+      );
+      await this.clearAgentPending(conv._id);
+      return;
+    }
+    const delay = this.agentDelayMs(agent);
+    await this.convModel
+      .updateOne(
+        { _id: conv._id },
+        { $set: { agentDueAt: new Date(Date.now() + delay) } },
+      )
+      .exec();
+    const id = String(conv._id);
+    const prev = this.agentTimers.get(id);
+    if (prev?.timer) clearTimeout(prev.timer);
+    this.agentTimers.set(id, { resolveAgent, typing });
+    if (delay === 0) await this.drainAgent(id);
+    else this.armAgentTimer(id, delay);
+  }
+
+  private armAgentTimer(id: string, delay: number) {
+    const entry = this.agentTimers.get(id);
+    if (entry?.timer) clearTimeout(entry.timer);
+    const timer = setTimeout(() => void this.drainAgent(id), delay);
+    // Un temporizador pendiente no debe impedir que el proceso se cierre.
+    timer.unref?.();
+    if (entry) entry.timer = timer;
+    else
+      this.agentTimers.set(id, {
+        timer,
+        resolveAgent: () => this.resolveAgentFor(id),
+      });
+  }
+
+  /**
+   * Responde los pendientes de una conversación si su espera venció y nadie
+   * más lo está haciendo (reclamo atómico en Mongo: vale con varias
+   * instancias). Lo que llega mientras se genera queda para la pasada
+   * siguiente, nunca en paralelo.
+   */
+  private async drainAgent(id: string): Promise<void> {
+    const now = new Date();
+    const _id = new Types.ObjectId(id);
+    const conv = await this.convModel
+      .findOneAndUpdate(
+        {
+          _id,
+          agentDueAt: { $lte: now },
+          $or: [
+            { agentLockUntil: { $exists: false } },
+            { agentLockUntil: null },
+            { agentLockUntil: { $lt: now } },
+          ],
+        },
+        {
+          $set: { agentLockUntil: new Date(now.getTime() + AGENT_LOCK_MS) },
+          $unset: { agentDueAt: 1 },
+        },
+        { new: true },
+      )
+      .exec();
+    if (!conv) return;
+
+    const ctx = this.agentTimers.get(id);
+    this.agentTimers.delete(id);
+    try {
+      await this.answerPending(
+        conv,
+        ctx?.resolveAgent ?? (() => this.resolveAgentFor(id)),
+        ctx?.typing,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Error respondiendo los pendientes de ${id}: ${String(err)}`,
+      );
+    } finally {
+      const after = await this.convModel
+        .findOneAndUpdate(
+          { _id },
+          { $unset: { agentLockUntil: 1 } },
+          { new: true },
+        )
+        .exec();
+      // Llegó algo mientras se generaba: su temporizador pudo chocar con el
+      // candado, así que se reprograma aquí para cuando venza su espera.
+      if (after?.agentDueAt) {
+        if (ctx && !this.agentTimers.has(id)) this.agentTimers.set(id, ctx);
+        this.armAgentTimer(
+          id,
+          Math.max(0, after.agentDueAt.getTime() - Date.now()),
+        );
+      }
+    }
+  }
+
+  /** Genera una sola respuesta para todos los mensajes pendientes. */
+  private async answerPending(
+    conv: Conversation,
+    resolveAgent: () => Promise<AiAgent | null>,
+    typing?: (on: boolean) => Promise<void>,
+  ) {
+    // Mientras esperaba pudo cambiar todo: una persona tomó el chat, se derivó,
+    // se cerró, se bloqueó o el contacto pidió no ser contactado.
+    if (
+      !conv.autoReply ||
+      conv.status === 'closed' ||
+      conv.blocked ||
+      (await this.isSuppressedContact(conv))
+    ) {
+      await this.clearAgentPending(conv._id);
+      return;
+    }
+    const pending = (
+      await this.msgModel
+        .find({ conversationId: conv._id, agentPending: true })
+        .exec()
+    ).sort((a, b) => (String(a._id) < String(b._id) ? -1 : 1));
+    const since = Date.now() - AGENT_PENDING_MAX_AGE_MS;
+    const isFresh = (m: Message) => m._id.getTimestamp().getTime() >= since;
+    const stale = pending.filter((m) => !isFresh(m));
+    const fresh = pending.filter(isFresh);
+    if (stale.length) await this.unmarkAgentPending(stale);
+    const answerable = fresh.some(
+      (m) => m.type !== 'unsupported' && this.toAiContent(m).trim(),
+    );
+    if (!answerable) return;
+    if (fresh.length > 1)
+      this.logger.log(
+        `Agente responde ${fresh.length} mensajes juntos en ${String(conv._id)}`,
+      );
+    await this.runAgent(conv, fresh, resolveAgent, typing);
+    await this.unmarkAgentPending(fresh);
+  }
+
+  private async unmarkAgentPending(msgs: Message[]) {
+    await this.msgModel
+      .updateMany(
+        { _id: { $in: msgs.map((m) => m._id) } },
+        { $unset: { agentPending: 1 } },
+      )
+      .exec();
+  }
+
+  private async clearAgentPending(conversationId: Types.ObjectId) {
+    await this.msgModel
+      .updateMany(
+        { conversationId, agentPending: true },
+        { $unset: { agentPending: 1 } },
+      )
+      .exec();
+  }
+
+  /** El agente publicado de la cuenta del chat (sin el contexto del webhook). */
+  private async resolveAgentFor(id: string): Promise<AiAgent | null> {
+    const conv = await this.convModel.findOne({ _id: id }).exec();
+    if (!conv) return null;
+    const account = String(conv.accountId);
+    switch (conv.channel) {
+      case 'whatsapp':
+        return this.agents.findPublishedByAccount(account);
+      case 'instagram':
+        return this.agents.findPublishedByInstagramAccount(account);
+      case 'messenger':
+        return this.agents.findPublishedByMessengerAccount(account);
+      case 'email':
+        return this.agents.findPublishedByEmailAccount(account);
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Red de seguridad: si la instancia que programó una respuesta se cayó, su
+   * temporizador se perdió. Otra instancia responde lo que quedó vencido.
+   */
+  @Interval(15_000)
+  async recoverDueAgentReplies(): Promise<void> {
+    const due = await this.convModel
+      .find({
+        agentDueAt: { $lt: new Date(Date.now() - AGENT_RECOVERY_GRACE_MS) },
+      })
+      .select('_id')
+      .limit(20)
+      .exec();
+    if (!due.length) return;
+    this.logger.log(
+      `Recuperación: ${due.length} respuesta(s) del agente pendientes`,
+    );
+    for (const c of due) await this.drainAgent(String(c._id));
   }
 
   /** ¿El contacto de esta conversación pidió no recibir comunicaciones? */
@@ -1909,7 +2153,7 @@ export class ConversationsService {
   /** Genera y envía la respuesta del agente publicado para esta cuenta. */
   private async runAgent(
     conv: Conversation,
-    inboundMsg: Message,
+    pending: Message[],
     resolveAgent: () => Promise<AiAgent | null>,
     typing?: (on: boolean) => Promise<void>,
   ) {
@@ -1922,9 +2166,11 @@ export class ConversationsService {
       return;
     }
 
-    const history = await this.buildAiHistory(conv, inboundMsg);
-    const userMessage =
-      this.toAiContent(inboundMsg) || AI_HINT_BY_TYPE.unsupported;
+    const history = await this.buildAiHistory(conv, pending);
+    // Los mensajes seguidos del cliente van juntos, en orden, como un solo turno.
+    const userMessage = pending
+      .map((m) => this.toAiContent(m) || AI_HINT_BY_TYPE.unsupported)
+      .join('\n');
 
     if (typing) {
       await typing(true);
@@ -1932,8 +2178,11 @@ export class ConversationsService {
     }
 
     try {
-      const { reply, filesToSend, handoff, bookings } =
+      const { reply, filesToSend, handoff, bookings, silent } =
         await this.agents.generateAnswer(agent, userMessage, history, {
+          // Nunca calla ante el primer mensaje ni dos veces seguidas.
+          allowSilence:
+            history.some((m) => m.role === 'assistant') && !conv.agentSilent,
           channel: conv.channel,
           ...(conv.channel === 'email'
             ? { channelHint: EMAIL_CHANNEL_HINT }
@@ -1945,7 +2194,19 @@ export class ConversationsService {
         });
 
       conv.agentId = agent._id;
+      conv.agentSilent = !!silent;
       await conv.save();
+
+      if (silent) {
+        this.logger.log(
+          `Agente ${String(agent._id)} no respondió en ${String(conv._id)}: ${silent.reason}`,
+        );
+        await this.systemNote(
+          conv,
+          `El agente IA no respondió: ${silent.reason}`,
+        );
+        return;
+      }
 
       const sendFile = (file: (typeof filesToSend)[number]) =>
         this.sendFromAgent(conv, {
@@ -2396,12 +2657,12 @@ export class ConversationsService {
    */
   private async buildAiHistory(
     conv: Conversation,
-    current: Message,
+    current: Message[],
   ): Promise<AiHistoryTurn[]> {
     const docs = await this.msgModel
       .find({
         conversationId: conv._id,
-        _id: { $ne: current._id },
+        _id: { $nin: current.map((m) => m._id) },
         author: { $ne: 'system' },
         status: { $ne: 'failed' },
       })

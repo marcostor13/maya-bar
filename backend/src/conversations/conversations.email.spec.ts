@@ -1,6 +1,13 @@
 import { Types } from 'mongoose';
 import { ConversationsService } from './conversations.service';
 import type { ParsedEmail } from '../email-accounts/email-message';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { UpdateAiAgentDto } from '../ai-agents/dto/ai-agent.dto';
+
+// Respuesta inmediata del agente (sin agrupar): estas pruebas no van de la
+// espera de HU11, que tiene las suyas en conversations.agent-batch.spec.ts.
+process.env.AGENT_REPLY_DEBOUNCE_MS = '0';
 
 /** Asignación simulada: escribir le da el chat a quien escribe. */
 const fakeAssignment = {
@@ -48,8 +55,31 @@ function setup(
     return q;
   };
 
+  const applyUpdate = (doc: Doc, u: any) => {
+    Object.assign(doc, u.$set ?? {});
+    for (const k of Object.keys(u.$unset ?? {})) delete doc[k];
+  };
   const convModel = {
     find: jest.fn<unknown, [unknown]>(() => chain(() => [])),
+    updateOne: jest.fn((f: any, u: any) => {
+      const c = convs.find((x) => String(x._id) === String(f._id));
+      if (c) applyUpdate(c, u);
+      return { exec: () => Promise.resolve({}) };
+    }),
+    // Reclamo atómico de HU11: espera vencida y sin candado vigente.
+    findOneAndUpdate: jest.fn((f: any, u: any) =>
+      chain(() => {
+        const c = convs.find((x) => String(x._id) === String(f._id));
+        if (!c) return null;
+        if (f.agentDueAt?.$lte) {
+          const now = f.agentDueAt.$lte as Date;
+          if (!c.agentDueAt || c.agentDueAt > now) return null;
+          if (c.agentLockUntil && c.agentLockUntil >= now) return null;
+        }
+        applyUpdate(c, u);
+        return c;
+      }),
+    ),
     aggregate: jest.fn(() => ({
       exec: () =>
         Promise.resolve([
@@ -113,11 +143,29 @@ function setup(
             (m) =>
               String(m.conversationId) === String(f.conversationId) &&
               m._id !== f._id?.$ne &&
+              !(f._id?.$nin ?? []).some(
+                (id: unknown) => String(id) === String(m._id),
+              ) &&
+              (f.agentPending === undefined ||
+                m.agentPending === f.agentPending) &&
               (!f.author?.$ne || m.author !== f.author.$ne),
           )
           .reverse(),
       ),
     ),
+    updateMany: jest.fn((f: any, u: any) => {
+      for (const m of msgs) {
+        const byId = f._id?.$in?.some(
+          (id: unknown) => String(id) === String(m._id),
+        );
+        const byConv =
+          f.conversationId &&
+          String(m.conversationId) === String(f.conversationId) &&
+          m.agentPending === f.agentPending;
+        if (byId || byConv) applyUpdate(m, u);
+      }
+      return { exec: () => Promise.resolve({}) };
+    }),
     findOne: jest.fn((f: any) =>
       chain(
         () =>
@@ -739,5 +787,284 @@ describe('ConversationsService — correo', () => {
       content: 'Le hago un 20% de descuento si cierra hoy',
     });
     expect(JSON.stringify(history)).not.toContain('Nota interna');
+  });
+
+  describe('el agente decide no responder (HU10)', () => {
+    const answer = (over: Record<string, unknown> = {}) => ({
+      reply: 'Hola Ana, claro que sí.',
+      filesToSend: [],
+      handoff: null,
+      bookings: [],
+      silent: null,
+      ...over,
+    });
+    const silent = answer({
+      reply: '',
+      silent: { reason: 'promoción de terceros' },
+    });
+    const inbound = (n: number) =>
+      email({ messageId: `<hu10-${n}@cliente.pe>`, text: `mensaje ${n}` });
+
+    it('C7: no se permite callar en el primer mensaje ni dos veces seguidas; tras responder, sí', async () => {
+      const h = setup();
+      h.agents.generateAnswer
+        .mockResolvedValueOnce(answer()) // 1.º mensaje: responde
+        .mockResolvedValueOnce(silent) // 2.º: calla
+        .mockResolvedValueOnce(answer()) // 3.º: no puede callar, responde
+        .mockResolvedValueOnce(answer());
+      for (let i = 1; i <= 4; i++) {
+        await h.service.handleEmailInbound(h.account as never, inbound(i));
+        await flush();
+      }
+      const allowed = h.agents.generateAnswer.mock.calls.map(
+        (c) => c[3].allowSilence,
+      );
+      expect(allowed).toEqual([false, true, false, true]);
+      expect(h.convs[0].agentSilent).toBe(false);
+    });
+
+    it('C6: si calla no envía nada, deja la nota interna, marca la conversación y apaga "escribiendo…"', async () => {
+      const h = setup();
+      await h.service.handleEmailInbound(h.account as never, inbound(1));
+      await flush();
+      const conv = h.convs[0];
+      expect(h.emailTransport.send).toHaveBeenCalledTimes(1);
+
+      h.agents.generateAnswer.mockResolvedValueOnce(silent);
+      const msg = {
+        _id: new Types.ObjectId(),
+        conversationId: conv._id,
+        direction: 'in',
+        author: 'contact',
+        type: 'text',
+        text: 'Gran evento este sábado',
+      };
+      const typing = jest.fn().mockResolvedValue(undefined);
+      await (h.service as any).runAgent(
+        conv,
+        [msg],
+        () => Promise.resolve({ _id: new Types.ObjectId(), name: 'Sofía' }),
+        typing,
+      );
+
+      expect(h.agents.generateAnswer.mock.calls.at(-1)[3].allowSilence).toBe(
+        true,
+      );
+      expect(h.emailTransport.send).toHaveBeenCalledTimes(1);
+      expect(h.msgs.filter((m) => m.author === 'agent')).toHaveLength(1);
+      expect(
+        h.msgs.find(
+          (m) =>
+            m.author === 'system' &&
+            m.text === 'El agente IA no respondió: promoción de terceros',
+        ),
+      ).toBeDefined();
+      expect(conv.agentSilent).toBe(true);
+      expect(typing).toHaveBeenNthCalledWith(1, true);
+      expect(typing).toHaveBeenLastCalledWith(false);
+    });
+
+    it('la derivación sigue enviando su mensaje y deriva', async () => {
+      const h = setup();
+      h.agents.generateAnswer.mockResolvedValueOnce(
+        answer({ reply: 'Te paso con una persona', handoff: { reason: 'x' } }),
+      );
+      const svc = h.service as any;
+      const escalate = jest
+        .spyOn(svc, 'escalateToHuman')
+        .mockResolvedValue(undefined);
+      await h.service.handleEmailInbound(h.account as never, inbound(1));
+      await flush();
+      expect(escalate).toHaveBeenCalled();
+      expect(h.emailTransport.send.mock.calls[0][1].text).toContain(
+        'Te paso con una persona',
+      );
+      expect(h.convs[0].agentSilent).toBe(false);
+    });
+  });
+
+  describe('agrupar mensajes seguidos (HU11)', () => {
+    const tick = () => new Promise((r) => setImmediate(r));
+    const settle = async () => {
+      for (let i = 0; i < 20; i++) await tick();
+    };
+    const mail = (n: number, extra: Partial<ParsedEmail> = {}) =>
+      email({
+        messageId: `<hu11-${n}@cliente.pe>`,
+        text: `texto ${n}`,
+        ...extra,
+      });
+    /** Agente con espera propia de 6 s (gana a AGENT_REPLY_DEBOUNCE_MS=0). */
+    const withDelay = (h: ReturnType<typeof setup>, seconds = 6) =>
+      h.agents.findPublishedByEmailAccount.mockResolvedValue({
+        _id: new Types.ObjectId(),
+        name: 'Sofía',
+        handoffMessage: '',
+        replyDelaySeconds: seconds,
+      });
+    const ingest = async (h: ReturnType<typeof setup>, e: ParsedEmail) => {
+      await h.service.handleEmailInbound(h.account as never, e);
+      await settle();
+    };
+    const advance = async (ms: number) => {
+      await jest.advanceTimersByTimeAsync(ms);
+      await settle();
+    };
+
+    beforeEach(() =>
+      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] }),
+    );
+    afterEach(() => jest.useRealTimers());
+
+    it('C1: una ráfaga de 3 mensajes recibe una sola respuesta con los 3 en orden', async () => {
+      const h = setup();
+      withDelay(h);
+      for (let i = 1; i <= 3; i++) await ingest(h, mail(i));
+      expect(h.agents.generateAnswer).not.toHaveBeenCalled();
+
+      await advance(6000);
+      expect(h.agents.generateAnswer).toHaveBeenCalledTimes(1);
+      const userMessage = h.agents.generateAnswer.mock.calls[0][1] as string;
+      expect(userMessage.indexOf('texto 1')).toBeLessThan(
+        userMessage.indexOf('texto 2'),
+      );
+      expect(userMessage.indexOf('texto 2')).toBeLessThan(
+        userMessage.indexOf('texto 3'),
+      );
+      expect(h.emailTransport.send).toHaveBeenCalledTimes(1);
+      expect(h.msgs.some((m) => m.agentPending)).toBe(false);
+    });
+
+    it('C2: cada mensaje reinicia la espera', async () => {
+      const h = setup();
+      withDelay(h);
+      await ingest(h, mail(1));
+      await advance(4000);
+      await ingest(h, mail(2));
+      await advance(2500); // 6,5 s desde el primero: aún no
+      expect(h.agents.generateAnswer).not.toHaveBeenCalled();
+      await advance(3500); // 6 s desde el segundo
+      expect(h.agents.generateAnswer).toHaveBeenCalledTimes(1);
+    });
+
+    it('C3: un mensaje durante la generación no lanza otra en paralelo; se responde después con lo enviado en el historial', async () => {
+      const h = setup();
+      withDelay(h);
+      let release!: () => void;
+      let inFlight = 0;
+      let maxInFlight = 0;
+      h.agents.generateAnswer.mockImplementation(async () => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        if (h.agents.generateAnswer.mock.calls.length === 1)
+          await new Promise<void>((r) => (release = r));
+        inFlight--;
+        return {
+          reply: `respuesta ${h.agents.generateAnswer.mock.calls.length}`,
+          filesToSend: [],
+          handoff: null,
+          bookings: [],
+          silent: null,
+        };
+      });
+
+      await ingest(h, mail(1));
+      await advance(6000); // empieza la 1.ª generación (queda colgada)
+      await ingest(h, mail(2));
+      await advance(6000); // vence la espera del 2.º, pero hay candado
+      expect(h.agents.generateAnswer).toHaveBeenCalledTimes(1);
+
+      release();
+      await settle();
+      await advance(0);
+      expect(h.agents.generateAnswer).toHaveBeenCalledTimes(2);
+      expect(maxInFlight).toBe(1);
+      const [, second, history] = h.agents.generateAnswer.mock.calls[1];
+      expect(second).toContain('texto 2');
+      expect(second).not.toContain('texto 1');
+      expect(history).toContainEqual({
+        role: 'assistant',
+        content: 'respuesta 1',
+      });
+    });
+
+    it('C4: un mensaje sin interpretar no responde solo; se junta con el siguiente', async () => {
+      const h = setup();
+      withDelay(h);
+      // El correo siempre trae texto: se usa la ingesta común, como un chat.
+      await (h.service as any).ingest({
+        channel: 'email',
+        tenantId: String(h.account.tenantId),
+        accountId: String(h.account._id),
+        inbound: { contact: 'ana@cliente.pe', type: 'unsupported', text: '' },
+        downloadMedia: () => Promise.resolve(null),
+        resolveAgent: () =>
+          h.agents.findPublishedByEmailAccount(String(h.account._id)),
+      });
+      await settle();
+      expect(h.msgs[0].agentPending).toBe(true);
+      await advance(10_000);
+      expect(h.agents.generateAnswer).not.toHaveBeenCalled();
+
+      await ingest(h, mail(2));
+      await advance(6000);
+      expect(h.agents.generateAnswer).toHaveBeenCalledTimes(1);
+      const userMessage = h.agents.generateAnswer.mock.calls[0][1] as string;
+      expect(userMessage).toContain('no se pudo interpretar');
+      expect(userMessage).toContain('texto 2');
+    });
+
+    it('C5: si una persona toma el chat durante la espera, no responde y descarta los pendientes', async () => {
+      const h = setup();
+      withDelay(h);
+      await ingest(h, mail(1));
+      h.convs[0].autoReply = false;
+      await advance(6000);
+      expect(h.agents.generateAnswer).not.toHaveBeenCalled();
+      expect(h.msgs.some((m) => m.agentPending)).toBe(false);
+    });
+
+    it('C7: con el candado de otra instancia no responde; la recuperación atiende lo vencido', async () => {
+      const h = setup();
+      withDelay(h);
+      await ingest(h, mail(1));
+      jest.clearAllTimers(); // la instancia que lo programó "se cae"
+      const conv = h.convs[0];
+      conv.agentDueAt = new Date(Date.now() - 20_000);
+      conv.agentLockUntil = new Date(Date.now() + 60_000);
+
+      const due = {
+        select: () => due,
+        limit: () => due,
+        exec: () => Promise.resolve([conv]),
+      };
+      h.convModel.find.mockReturnValue(due);
+      await h.service.recoverDueAgentReplies();
+      await settle();
+      expect(h.agents.generateAnswer).not.toHaveBeenCalled();
+
+      conv.agentLockUntil = new Date(Date.now() - 1); // caducó
+      await h.service.recoverDueAgentReplies();
+      await settle();
+      expect(h.agents.generateAnswer).toHaveBeenCalledTimes(1);
+      expect(conv.agentLockUntil).toBeUndefined();
+      expect(conv.agentDueAt).toBeUndefined();
+    });
+  });
+});
+
+describe('AiAgent DTO — espera antes de responder (HU11, C8)', () => {
+  it('acepta 0–30 s enteros y rechaza lo demás', async () => {
+    const errors = async (v: unknown) =>
+      (
+        await validate(
+          plainToInstance(UpdateAiAgentDto, { replyDelaySeconds: v }),
+        )
+      ).length;
+    expect(await errors(0)).toBe(0);
+    expect(await errors(30)).toBe(0);
+    expect(await errors(31)).toBeGreaterThan(0);
+    expect(await errors(-1)).toBeGreaterThan(0);
+    expect(await errors(2.5)).toBeGreaterThan(0);
   });
 });

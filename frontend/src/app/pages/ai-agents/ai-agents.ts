@@ -8,11 +8,13 @@ import {
   LucideAngularModule, Bot, Plus, X, Trash2, Send, Upload, FileText, MessageSquare,
   Smartphone, Check, Sparkles, BookOpen, Phone, RefreshCw, Power, Pencil, FlaskConical,
   Paperclip, Copy, Instagram, Facebook, Settings, PhoneForwarded, Mail, ShoppingCart, CalendarDays, Wand2,
+  MessageSquareOff,
 } from 'lucide-angular';
 import {
   AgentCalendarSection, agentCalendarPayload, blankAgentCalendar, normalizeAgentCalendar,
   type AgentCalendar,
 } from './agent-calendar-section';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -66,6 +68,8 @@ interface Agent {
   aiModel?: string;
   temperature: number;
   maxTokens: number;
+  /** HU11: espera para juntar mensajes seguidos (0–30 s); vacío = global. */
+  replyDelaySeconds?: number | null;
   greeting?: string;
   fallbackMessage: string;
   ragEnabled: boolean;
@@ -163,7 +167,7 @@ function blankAgent(): Agent {
 @Component({
   selector: 'app-ai-agents',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, RouterLink, AgentCalendarSection],
+  imports: [FormsModule, LucideAngularModule, RouterLink, AgentCalendarSection, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -250,25 +254,24 @@ function blankAgent(): Agent {
 
     <!-- ───────── Editor Drawer ───────── -->
     @if (drawerOpen()) {
-      <div class="overlay" (click)="closeDrawer()" role="dialog" aria-modal="true">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div class="drawer-title-group">
-              <h2>{{ form._id ? 'Editar agente' : 'Nuevo agente' }}</h2>
-              <p class="subtitle">Configura cómo piensa y responde tu asistente.</p>
-            </div>
-            <div class="header-right">
-              <label class="publish-toggle">
-                <input type="checkbox" [(ngModel)]="form.published" />
-                <span><lucide-icon [img]="Power" [size]="14" [strokeWidth]="2.5"></lucide-icon> Publicado</span>
-              </label>
-              <button class="btn btn-ghost btn-icon" (click)="closeDrawer()" aria-label="Cerrar">
-                <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-              </button>
-            </div>
-          </div>
+      <app-form-page
+        [title]="form._id ? 'Editar agente' : 'Nuevo agente'"
+        subtitle="Configura cómo piensa y responde tu asistente."
+        backLabel="Agentes IA"
+        [urlKey]="form._id || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="closeDrawer()">
+        <ng-container formActions>
+          <label class="publish-toggle">
+            <input type="checkbox" [(ngModel)]="form.published" />
+            <span><lucide-icon [img]="Power" [size]="14" [strokeWidth]="2.5"></lucide-icon> Publicado</span>
+          </label>
+          <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Guardando…' : (form._id ? 'Guardar cambios' : 'Crear agente') }}
+          </button>
+        </ng-container>
 
-          <div class="tabs">
+          <div class="tabs" role="tablist">
             @for (t of sections; track t.key) {
               <button class="tab" [class.active]="section() === t.key" (click)="section.set(t.key)">
                 <lucide-icon [img]="t.icon" [size]="15" [strokeWidth]="2.5"></lucide-icon> {{ t.label }}
@@ -276,7 +279,7 @@ function blankAgent(): Agent {
             }
           </div>
 
-          <div class="drawer-scroll">
+          <div class="editor-body">
             <!-- GENERAL -->
             @if (section() === 'general') {
               <div class="field">
@@ -735,17 +738,16 @@ function blankAgent(): Agent {
                 <label class="field-label">Fragmentos a recuperar (topK)</label>
                 <input class="input" type="number" [(ngModel)]="form.topK" min="1" max="15" />
               </div>
+              <div class="field">
+                <label class="field-label" for="reply-delay">Espera antes de responder (segundos)</label>
+                <input id="reply-delay" class="input" type="number" [(ngModel)]="form.replyDelaySeconds"
+                       min="0" max="30" step="1" placeholder="6 (por defecto)" />
+                <p class="field-hint">Si el cliente manda varios mensajes seguidos, el agente espera este tiempo desde el último y responde a todos juntos. Vacío: valor por defecto de la plataforma.</p>
+              </div>
             }
 
-            <div class="drawer-actions">
-              <button type="button" class="btn btn-secondary" (click)="closeDrawer()">Cerrar</button>
-              <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
-                {{ saving() ? 'Guardando…' : (form._id ? 'Guardar cambios' : 'Crear agente') }}
-              </button>
-            </div>
           </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
 
     <!-- ───────── Playground Drawer ───────── -->
@@ -773,9 +775,17 @@ function blankAgent(): Agent {
               </div>
             }
             @for (m of chat(); track $index) {
-              <div class="bubble" [class.user]="m.role === 'user'" [class.assistant]="m.role === 'assistant'">
-                {{ m.content }}
-              </div>
+              @if (m.content) {
+                <div class="bubble" [class.user]="m.role === 'user'" [class.assistant]="m.role === 'assistant'">
+                  {{ m.content }}
+                </div>
+              }
+              @if (m.silent) {
+                <div class="sim-note">
+                  <lucide-icon [img]="MessageSquareOff" [size]="13" [strokeWidth]="2.5"></lucide-icon>
+                  No respondería: <strong>{{ m.silent.reason }}</strong>
+                </div>
+              }
               <!-- El playground muestra exactamente lo que vería el cliente.
                    La derivación no se anota: el backend la sigue devolviendo en
                    el campo handoff por si se quiere mostrar en otro sitio. -->
@@ -828,7 +838,7 @@ function blankAgent(): Agent {
 
     .empty-state { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 64px 24px; text-align: center; color: var(--color-text-muted); }
 
-    /* Overlay + Drawer */
+    /* Overlay + panel (playground) */
     .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: stretch; justify-content: flex-end; z-index: 100; }
     .drawer { width: 600px; max-width: 100%; background: #fff; box-shadow: -10px 0 40px rgba(0,0,0,.15); display: flex; flex-direction: column; height: 100vh; animation: slideInRight .25s var(--transition-spring); }
     @keyframes slideInRight { from { transform: translateX(40px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
@@ -839,12 +849,11 @@ function blankAgent(): Agent {
     .publish-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     .publish-toggle span { display: inline-flex; align-items: center; gap: 5px; }
 
-    .tabs { display: flex; gap: 4px; padding: 12px 32px 0; border-bottom: 1px solid var(--color-border); flex-shrink: 0; overflow-x: auto; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; overflow-x: auto; }
+    .editor-body { display: flex; flex-direction: column; }
     .tab { display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; border: none; background: none; color: var(--color-text-muted); font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
     .tab.active { color: var(--color-brand); border-bottom-color: var(--color-brand); }
 
-    .drawer-scroll { padding: 24px 32px; overflow-y: auto; flex: 1; }
-    .drawer-actions { display: flex; gap: 12px; justify-content: flex-end; padding-top: 20px; border-top: 1px solid var(--color-border); margin-top: 16px; }
 
     .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
     .field-row { display: flex; gap: 16px; }
@@ -928,8 +937,7 @@ function blankAgent(): Agent {
       .grid { grid-template-columns: 1fr; }
       .drawer-header { padding: 20px 18px 14px; flex-wrap: wrap; }
       .header-right { flex-wrap: wrap; }
-      .tabs { padding: 10px 18px 0; }
-      .drawer-scroll { padding: 18px; }
+      .tabs { margin-bottom: 18px; }
       .field-row { flex-direction: column; gap: 0; }
       .chat-scroll { padding: 18px; }
       .chat-input { padding: 12px 16px; }
@@ -940,8 +948,6 @@ function blankAgent(): Agent {
       .page-header h1 { font-size: 22px; }
       .agent-card { padding: 18px; }
       .drawer-title-group h2 { font-size: 19px; }
-      .drawer-actions { flex-wrap: wrap; }
-      .drawer-actions .btn { flex: 1 1 auto; }
     }
   `],
 })
@@ -961,7 +967,7 @@ export class AiAgentsComponent implements OnInit {
   readonly Bot = Bot; readonly Plus = Plus; readonly X = X; readonly Trash2 = Trash2;
   readonly Send = Send; readonly Upload = Upload; readonly FileText = FileText;
   readonly MessageSquare = MessageSquare; readonly Smartphone = Smartphone; readonly Check = Check;
-  readonly Sparkles = Sparkles; readonly Wand2 = Wand2; readonly BookOpen = BookOpen; readonly Phone = Phone;
+  readonly Sparkles = Sparkles; readonly Wand2 = Wand2; readonly MessageSquareOff = MessageSquareOff; readonly BookOpen = BookOpen; readonly Phone = Phone;
   readonly RefreshCw = RefreshCw; readonly Power = Power; readonly Pencil = Pencil;
   readonly FlaskConical = FlaskConical; readonly Paperclip = Paperclip; readonly Copy = Copy;
   readonly Instagram = Instagram; readonly Facebook = Facebook; readonly Mail = Mail; readonly Settings = Settings;
@@ -1017,14 +1023,16 @@ export class AiAgentsComponent implements OnInit {
     content: string;
     files?: string[];
     handoff?: { reason: string | null } | null;
+    /** El agente decidió no responder (HU10): se anota, no es una burbuja. */
+    silent?: { reason: string } | null;
   }[]>([]);
   chatInput = '';
   sending = signal(false);
 
   @HostListener('document:keydown.escape')
   onEsc() {
-    if (this.playgroundAgent()) { this.closePlayground(); return; }
-    if (this.drawerOpen()) this.closeDrawer();
+    // El editor a pantalla completa maneja su propio ESC (y pregunta si hay cambios).
+    if (this.playgroundAgent()) this.closePlayground();
   }
 
   ngOnInit() {
@@ -1052,8 +1060,10 @@ export class AiAgentsComponent implements OnInit {
     const id = this.route.snapshot.queryParamMap.get('edit');
     const agent = id ? this.agents().find(a => a._id === id) : undefined;
     if (!agent) return;
-    this.openEdit(agent);
-    void this.router.navigate([], { queryParams: { edit: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    // Primero se limpia la URL y luego se abre: el editor añade su propio ?form=.
+    void this.router
+      .navigate([], { queryParams: { edit: null }, queryParamsHandling: 'merge', replaceUrl: true })
+      .then(() => this.openEdit(agent));
   }
 
   /** Al cambiar de proveedor el modelo elegido deja de ser válido. */
@@ -1137,6 +1147,7 @@ export class AiAgentsComponent implements OnInit {
     this.section.set('general');
     this.models.set([]);
     this.customModel.set(false);
+    this.formSnapshot = snapshotOf(this.form);
     this.drawerOpen.set(true);
   }
 
@@ -1166,6 +1177,7 @@ export class AiAgentsComponent implements OnInit {
     this.agentFiles.set([]);
     this.newFileAlias = '';
     this.newFileName = '';
+    this.formSnapshot = snapshotOf(this.form);
     this.drawerOpen.set(true);
     this.loadModels(this.form.provider);
     this.loadDocs(a._id);
@@ -1173,6 +1185,10 @@ export class AiAgentsComponent implements OnInit {
   }
 
   closeDrawer() { this.drawerOpen.set(false); }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form) !== this.formSnapshot; }
 
   private mergeLegacyTargets(a: Agent): HandoffTarget[] {
     const targets = (a.handoffTargets || []).map(t => ({ ...t }));
@@ -1468,13 +1484,16 @@ export class AiAgentsComponent implements OnInit {
     this.http.post<{
       reply: string; sources: number;
       handoff: { reason: string | null } | null; files: string[];
+      silent?: { reason: string } | null;
     }>(`${API}/ai-agents/${agent._id}/test`, {
       // Solo el rol y el texto: las anotaciones de simulación no son historial.
+      // Un silencio viaja como turno vacío: el backend lo usa para no dejarlo
+      // callar dos veces seguidas.
       messages: this.chat().map(m => ({ role: m.role, content: m.content })),
     }).subscribe({
       next: (r) => {
         this.chat.update(c => [...c, {
-          role: 'assistant', content: r.reply, files: r.files, handoff: r.handoff,
+          role: 'assistant', content: r.reply, files: r.files, handoff: r.handoff, silent: r.silent,
         }]);
         this.sending.set(false);
       },

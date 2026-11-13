@@ -1,4 +1,4 @@
-import { Component, HostListener, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -14,6 +14,7 @@ import {
   MessageChannel, MessagePreview, MessageTemplate, TemplateVariable, TemplatesApiService,
 } from '../../core/api/templates-api.service';
 import { VariableChipsComponent, insertAtCursor } from './variable-chips';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 
 type ErrorLike = { error?: { message?: string } };
 
@@ -27,7 +28,7 @@ const CHANNELS: { key: MessageChannel; label: string }[] = [
 @Component({
   selector: 'app-message-templates',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, DatePipe, RouterLink, VariableChipsComponent],
+  imports: [FormsModule, LucideAngularModule, DatePipe, RouterLink, VariableChipsComponent, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -113,16 +114,19 @@ const CHANNELS: { key: MessageChannel; label: string }[] = [
     </div>
 
     @if (drawerOpen()) {
-      <div class="overlay" (click)="close()" role="dialog" aria-modal="true" aria-label="Editar plantilla">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <h2>{{ editingId() ? 'Editar plantilla' : 'Nueva plantilla' }}</h2>
-            <button class="btn btn-ghost btn-icon" (click)="close()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20"></lucide-icon>
-            </button>
-          </div>
+      <app-form-page
+        [title]="editingId() ? 'Editar plantilla' : 'Nueva plantilla'"
+        backLabel="Plantillas de mensaje"
+        [urlKey]="editingId() || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="close()">
+        <ng-container formActions>
+          <button class="btn btn-primary" (click)="save()" [disabled]="saving() || !name.trim() || !body.trim()">
+            {{ saving() ? 'Guardando…' : 'Guardar plantilla' }}
+          </button>
+        </ng-container>
 
-          <div class="drawer-body">
+          <div class="editor-body">
             <label class="field">
               <span class="label">Nombre</span>
               <input class="input" #nameInput [(ngModel)]="name" maxlength="80"
@@ -184,15 +188,7 @@ const CHANNELS: { key: MessageChannel; label: string }[] = [
               </div>
             }
           </div>
-
-          <div class="drawer-footer">
-            <button class="btn btn-ghost" (click)="close()">Cancelar</button>
-            <button class="btn btn-primary" (click)="save()" [disabled]="saving() || !name.trim() || !body.trim()">
-              {{ saving() ? 'Guardando…' : 'Guardar plantilla' }}
-            </button>
-          </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -221,15 +217,7 @@ const CHANNELS: { key: MessageChannel; label: string }[] = [
     .empty h3 { margin:8px 0 0; color:var(--color-text-main); font-family:var(--font-heading); }
     .empty p { margin:0 0 12px; max-width:380px; }
 
-    .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex;
-      justify-content:flex-end; z-index:100; }
-    .drawer { width:100%; max-width:560px; height:100%; background:var(--color-white); display:flex; flex-direction:column;
-      box-shadow:var(--shadow-lg); animation:slide-in .35s var(--transition-spring); }
-    @keyframes slide-in { from { transform:translateX(40px); opacity:0; } to { transform:none; opacity:1; } }
-    .drawer-header { display:flex; align-items:center; justify-content:space-between; padding:24px 28px 16px; }
-    .drawer-header h2 { margin:0; font-family:var(--font-heading); font-size:20px; }
-    .drawer-body { flex:1; overflow-y:auto; padding:8px 28px 24px; display:flex; flex-direction:column; gap:18px; }
-    .drawer-footer { display:flex; justify-content:flex-end; gap:10px; padding:16px 28px; border-top:1px solid var(--color-border); }
+    .editor-body { display:flex; flex-direction:column; gap:18px; }
     .field { display:flex; flex-direction:column; gap:8px; }
     .field .chips { margin-bottom:0; }
     .label { font-size:13px; font-weight:600; color:var(--color-text-main); }
@@ -244,7 +232,6 @@ const CHANNELS: { key: MessageChannel; label: string }[] = [
 
     @media (max-width: 768px) {
       .page { padding:20px 16px; }
-      .drawer { max-width:100%; }
     }
   `],
 })
@@ -300,9 +287,6 @@ export class MessageTemplatesComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() { this.sub?.unsubscribe(); }
 
-  @HostListener('document:keydown.escape')
-  onEscape() { if (this.drawerOpen()) this.close(); }
-
   private load() {
     this.loading.set(true);
     this.api.messageTemplates().subscribe({
@@ -327,12 +311,20 @@ export class MessageTemplatesComponent implements OnInit, OnDestroy {
     this.channel.set(t?.channel ?? (this.filter() || 'sms'));
     this.preview.set(null);
     this.target = null;
+    this.formSnapshot = this.snapshot();
     this.drawerOpen.set(true);
     this.refresh();
-    setTimeout(() => document.querySelector<HTMLInputElement>('.drawer .input')?.focus());
+    setTimeout(() => document.querySelector<HTMLInputElement>('app-form-page .input')?.focus());
   }
 
   close() { this.drawerOpen.set(false); }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  private snapshot() {
+    return snapshotOf({ name: this.name, subject: this.subject, body: this.body, channel: this.channel() });
+  }
+  isDirty() { return this.snapshot() !== this.formSnapshot; }
 
   setChannel(channel: MessageChannel) {
     this.channel.set(channel);

@@ -7,6 +7,7 @@ import {
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { ProspectingApiService } from '../../core/api/prospecting-api.service';
 import {
   PROSPECT_STATUSES, Prospect, ProspectSearch, ProspectingIntegrations, isBusy,
@@ -21,7 +22,7 @@ const SERVICES_KEY = 'prospecting.services';
 @Component({
   selector: 'app-prospecting',
   standalone: true,
-  imports: [FormsModule, RouterLink, LucideAngularModule, ProspectDrawerComponent],
+  imports: [FormsModule, RouterLink, LucideAngularModule, ProspectDrawerComponent, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -142,16 +143,20 @@ const SERVICES_KEY = 'prospecting.services';
 
     <!-- ───── Nueva búsqueda ───── -->
     @if (formOpen()) {
-      <div class="overlay" (click)="formOpen.set(false)" role="dialog" aria-modal="true">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div>
-              <h2>Nueva búsqueda</h2>
-              <p class="subtitle">Cuanto más detalles tus servicios, mejor elige la IA a quién buscar</p>
-            </div>
-            <button class="btn btn-ghost btn-icon" (click)="formOpen.set(false)" aria-label="Cerrar"><lucide-icon [img]="X" [size]="20"></lucide-icon></button>
-          </div>
-          <div class="drawer-scroll">
+      <app-form-page
+        title="Nueva búsqueda"
+        subtitle="Cuanto más detalles tus servicios, mejor elige la IA a quién buscar"
+        backLabel="Prospección"
+        urlKey="nueva-busqueda"
+        [dirty]="isDirty()"
+        (closed)="formOpen.set(false)">
+        <ng-container formActions>
+          <button class="btn btn-primary" (click)="create()" [disabled]="saving() || !form.services.trim()">
+            <lucide-icon [img]="Radar" [size]="16"></lucide-icon> {{ saving() ? 'Creando…' : 'Buscar empresas' }}
+          </button>
+        </ng-container>
+          <div class="search-form">
+          <div class="form-col">
             <div class="field">
               <label class="label" for="svc">Servicios que ofreces *</label>
               <textarea id="svc" class="textarea" rows="8" [(ngModel)]="form.services"
@@ -163,6 +168,8 @@ const SERVICES_KEY = 'prospecting.services';
               <textarea id="ideal" class="textarea" rows="3" [(ngModel)]="form.idealCustomer"
                 placeholder="Ej. negocios locales con 5–50 empleados, con buena reputación en Google pero web anticuada o sin web"></textarea>
             </div>
+          </div>
+          <div class="form-col">
             <div class="field-row">
               <div class="field">
                 <label class="label" for="loc">Zona</label>
@@ -184,14 +191,8 @@ const SERVICES_KEY = 'prospecting.services';
               <input id="name" class="input" [(ngModel)]="form.name" placeholder="Opcional" />
             </div>
           </div>
-          <div class="drawer-footer">
-            <button class="btn btn-ghost" (click)="formOpen.set(false)">Cancelar</button>
-            <button class="btn btn-primary" (click)="create()" [disabled]="saving() || !form.services.trim()">
-              <lucide-icon [img]="Radar" [size]="16"></lucide-icon> {{ saving() ? 'Creando…' : 'Buscar empresas' }}
-            </button>
           </div>
-        </aside>
-      </div>
+      </app-form-page>
     }
 
     @if (selected(); as id) {
@@ -257,14 +258,9 @@ const SERVICES_KEY = 'prospecting.services';
     .fit[data-level="low"] { color: var(--color-error); background: color-mix(in srgb, var(--color-error) 10%, transparent); }
     .empty-row { text-align: center; color: var(--color-text-muted); padding: 32px; }
 
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .drawer { margin-left: auto; height: 100%; width: min(560px, 100%); background: var(--color-white); display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideIn var(--transition-spring); }
-    @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-    .drawer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 28px 16px; padding-top: calc(24px + var(--safe-top)); border-bottom: 1px solid var(--color-border); }
-    .drawer-header h2 { margin: 0 0 3px; font-family: var(--font-heading); font-size: 20px; }
-    .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
-    .drawer-scroll { flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 18px; }
-    .drawer-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px; padding-bottom: calc(16px + var(--safe-bottom)); border-top: 1px solid var(--color-border); }
+    /* Nueva búsqueda a pantalla completa: servicios y cliente | filtros */
+    .search-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+    .form-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
     .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
     .field-row { display: flex; gap: 12px; }
     .label { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
@@ -288,8 +284,7 @@ const SERVICES_KEY = 'prospecting.services';
       .view-tabs { display: flex; }
       .view-tab { flex: 1; }
       .toolbar .select { max-width: none; flex: 1; }
-      .drawer-header, .drawer-scroll, .drawer-footer { padding-left: 16px; padding-right: 16px; }
-      .drawer-footer .btn { flex: 1; justify-content: center; }
+      .search-form { grid-template-columns: 1fr; gap: 18px; }
       .field-row { flex-direction: column; }
     }
   `],
@@ -322,6 +317,9 @@ export class ProspectingComponent implements OnInit {
   integrations = signal<ProspectingIntegrations | null>(null);
   selected = signal<string | null>(null);
   formOpen = signal(false);
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form) !== this.formSnapshot; }
   saving = signal(false);
   q = '';
   statusFilter = '';
@@ -380,6 +378,7 @@ export class ProspectingComponent implements OnInit {
     try { services = localStorage.getItem(SERVICES_KEY) ?? ''; } catch { /* sin almacenamiento */ }
     this.form = { services: services || this.searches()[0]?.services || '', idealCustomer: '', location: '', industries: '', maxResults: 20, name: '' };
     this.formOpen.set(true);
+    this.formSnapshot = snapshotOf(this.form);
   }
 
   create() {

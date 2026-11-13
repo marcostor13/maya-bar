@@ -1,4 +1,4 @@
-import { Component, DestroyRef, EventEmitter, HostListener, Input, OnInit, Output, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, EventEmitter, Input, OnInit, Output, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import {
@@ -8,6 +8,7 @@ import {
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent } from '../../shared/form-page';
 import { ProspectingApiService } from '../../core/api/prospecting-api.service';
 import {
   PROSPECT_STATUSES, Prospect, ProspectStatus, isBusy, PageSpeedResult,
@@ -24,24 +25,21 @@ const NETWORK_LABEL: Record<string, string> = {
 @Component({
   selector: 'app-prospect-drawer',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, FormPageComponent],
   template: `
-    <div class="overlay" (click)="close()" role="dialog" aria-modal="true">
-      <aside class="drawer" (click)="$event.stopPropagation()">
+    <!-- Ficha a pantalla completa (sin "cambios sin guardar": cada acción se guarda al momento). -->
+    <app-form-page
+      [title]="p()?.name || 'Prospecto'"
+      [subtitle]="p() ? subtitle(p()!) : ''"
+      backLabel="Prospección"
+      [urlKey]="prospectId"
+      (closed)="close()">
+      <ng-container formActions>
         @if (p(); as p) {
-          <div class="drawer-header">
-            <div class="title-group">
-              <h2>{{ p.name }}</h2>
-              <p class="subtitle">{{ subtitle(p) }}</p>
-            </div>
-            <div class="header-right">
-              <span class="score" [attr.data-level]="level(p.fitScore)" title="Encaje con tus servicios">{{ p.fitScore }}</span>
-              <button class="btn btn-ghost btn-icon" (click)="close()" aria-label="Cerrar">
-                <lucide-icon [img]="X" [size]="20"></lucide-icon>
-              </button>
-            </div>
-          </div>
-
+          <span class="score" [attr.data-level]="level(p.fitScore)" title="Encaje con tus servicios">{{ p.fitScore }}</span>
+        }
+      </ng-container>
+        @if (p(); as p) {
           <div class="actions">
             <button class="btn btn-sm btn-primary" (click)="research()" [disabled]="busy(p.research.state)">
               <lucide-icon [img]="busy(p.research.state) ? Loader2 : Search" [size]="14" [class.spin]="busy(p.research.state)"></lucide-icon>
@@ -80,7 +78,7 @@ const NETWORK_LABEL: Record<string, string> = {
             }
           </div>
 
-          <div class="drawer-scroll">
+          <div class="detail-body">
             @switch (tab()) {
               <!-- ───── Resumen ───── -->
               @case ('summary') {
@@ -415,18 +413,9 @@ const NETWORK_LABEL: Record<string, string> = {
         } @else {
           <div class="loading"><lucide-icon [img]="Loader2" [size]="28" class="spin"></lucide-icon></div>
         }
-      </aside>
-    </div>
+    </app-form-page>
   `,
   styles: [`
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .drawer { margin-left: auto; height: 100%; width: min(680px, 100%); background: var(--color-white); display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideIn var(--transition-spring); }
-    @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-    .drawer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 28px 12px; padding-top: calc(24px + var(--safe-top)); }
-    .title-group { min-width: 0; }
-    .title-group h2 { margin: 0 0 3px; font-family: var(--font-heading); font-size: 21px; overflow-wrap: anywhere; }
-    .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
-    .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .score, .big-score { display: inline-grid; place-items: center; min-width: 40px; height: 40px; border-radius: var(--radius-pill); font: 700 15px var(--font-heading); background: var(--color-bg-app); color: var(--color-text-muted); padding: 0 8px; box-sizing: border-box; }
     [data-level="high"] { --lvl: var(--color-success); }
     [data-level="mid"] { --lvl: var(--color-warning); }
@@ -434,19 +423,19 @@ const NETWORK_LABEL: Record<string, string> = {
     .score[data-level], .big-score[data-level] { color: var(--lvl); background: color-mix(in srgb, var(--lvl) 12%, transparent); }
     .big-score { min-width: 64px; height: 64px; font-size: 24px; flex-shrink: 0; }
 
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 28px 12px; }
-    .status-row { display: flex; gap: 6px; padding: 0 28px 12px; overflow-x: auto; scrollbar-width: none; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 12px; }
+    .status-row { display: flex; gap: 6px; padding: 0 0 12px; overflow-x: auto; scrollbar-width: none; }
     .chip { flex: 0 0 auto; border: 1.5px solid var(--color-border); background: var(--color-white); color: var(--color-text-muted); font: 600 12px var(--font-base); padding: 6px 12px; border-radius: var(--radius-pill); cursor: pointer; transition: all var(--transition-fast); }
     .chip:hover { border-color: var(--color-brand); color: var(--color-brand); }
     .chip.active { background: var(--color-brand); border-color: var(--color-brand); color: var(--color-white); }
 
-    .tabs { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--color-border); overflow-x: auto; scrollbar-width: none; }
+    .tabs { display: flex; gap: 4px; padding: 0; border-bottom: 1px solid var(--color-border); overflow-x: auto; scrollbar-width: none; }
     .tab { flex: 0 0 auto; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 12px; font: 600 13.5px var(--font-base); color: var(--color-text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
     .tab.active { color: var(--color-brand); border-bottom-color: var(--color-brand); }
     .dot-live { width: 7px; height: 7px; border-radius: 50%; background: var(--color-ai); animation: pulse 1.2s infinite; }
     @keyframes pulse { 50% { opacity: .3; } }
 
-    .drawer-scroll { flex: 1; overflow-y: auto; padding: 20px 28px 32px; padding-bottom: calc(32px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .detail-body { padding-top: 20px; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
     section { min-width: 0; }
     h3 { font: 600 15px var(--font-heading); margin: 0 0 8px; }
     h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--color-text-muted); margin: 12px 0 4px; }
@@ -470,7 +459,7 @@ const NETWORK_LABEL: Record<string, string> = {
 
     .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 36px 16px; color: var(--color-text-muted); }
     .empty p { margin: 0; max-width: 380px; font-size: 14px; line-height: 1.55; }
-    .loading { display: grid; place-items: center; flex: 1; color: var(--color-text-muted); }
+    .loading { display: grid; place-items: center; padding: 48px 0; color: var(--color-text-muted); }
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -533,7 +522,6 @@ const NETWORK_LABEL: Record<string, string> = {
     .danger { color: var(--color-error) !important; }
 
     @media (max-width: 768px) {
-      .drawer-header, .actions, .status-row, .tabs, .drawer-scroll { padding-left: 16px; padding-right: 16px; }
       .facts, .grid-2, .ps-grid { grid-template-columns: 1fr; }
       .actions .btn { flex: 1 1 auto; justify-content: center; }
       .text, ul { font-size: 15px; }
@@ -625,7 +613,7 @@ export class ProspectDrawerComponent implements OnInit {
     this.load();
   }
 
-  @HostListener('document:keydown.escape')
+  // ESC y la flecha de volver los maneja app-form-page, que llama a close().
   close() { this.closed.emit(); }
 
   private load() {

@@ -1,9 +1,10 @@
-import { Component, HostListener, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
-import { LucideAngularModule, Store, Pencil, Copy, Trash2, X } from 'lucide-angular';
+import { LucideAngularModule, Store, Pencil, Copy, Trash2 } from 'lucide-angular';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -11,7 +12,7 @@ const API = environment.apiUrl;
 @Component({
   selector: 'app-locals',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule],
+  imports: [ReactiveFormsModule, LucideAngularModule, FormPageComponent],
   template: `
     <div class="locals-page animate-fade-in">
       <div class="page-header">
@@ -77,16 +78,22 @@ const API = environment.apiUrl;
       }
     </div>
 
-    <!-- ══ DRAWER: Local ══ -->
+    <!-- ══ Formulario de local (pantalla completa) ══ -->
     @if (showForm()) {
-      <div class="drawer-backdrop" (click)="closeForm()"></div>
-      <div class="drawer animate-slide-in" role="dialog" aria-modal="true">
-        <div class="drawer-head">
-          <h3>{{ editingId() ? 'Editar local' : 'Nuevo local' }}</h3>
-          <button class="drawer-close" (click)="closeForm()" aria-label="Cerrar formulario"><lucide-icon [img]="X" [size]="20"></lucide-icon></button>
-        </div>
-        <div class="drawer-body">
-          <form [formGroup]="localForm" (ngSubmit)="save()">
+      <app-form-page
+        [title]="editingId() ? 'Editar local' : 'Nuevo local'"
+        backLabel="Locales"
+        [urlKey]="editingId() || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="closeForm()">
+        <ng-container formActions>
+          <!-- El botón vive en la cabecera: se asocia al formulario con form="local-form". -->
+          <button type="submit" form="local-form" class="btn btn-primary" [disabled]="saving() || localForm.invalid">
+            {{ saving() ? 'Guardando...' : (editingId() ? 'Guardar cambios' : 'Crear local') }}
+          </button>
+        </ng-container>
+        <form id="local-form" class="form-card" [formGroup]="localForm" (ngSubmit)="save()">
+          <div class="fields-row">
             <div class="field">
               <label>Nombre *</label>
               <input class="input" formControlName="name" placeholder="Nombre del local" autofocus />
@@ -104,30 +111,23 @@ const API = environment.apiUrl;
                 <option value="fastfood">Fast Food</option>
               </select>
             </div>
+          </div>
+          <div class="field">
+            <label>Dirección</label>
+            <input class="input" formControlName="address" placeholder="Dirección completa" />
+          </div>
+          <div class="fields-row">
             <div class="field">
-              <label>Dirección</label>
-              <input class="input" formControlName="address" placeholder="Dirección completa" />
+              <label>Teléfono</label>
+              <input class="input" formControlName="phone" />
             </div>
-            <div class="fields-row">
-              <div class="field">
-                <label>Teléfono</label>
-                <input class="input" formControlName="phone" />
-              </div>
-              <div class="field">
-                <label>Mesas</label>
-                <input class="input" type="number" formControlName="tableCount" min="1" />
-              </div>
+            <div class="field">
+              <label>Mesas</label>
+              <input class="input" type="number" formControlName="tableCount" min="1" />
             </div>
-
-            <div class="drawer-actions">
-              <button type="button" class="btn btn-secondary" (click)="closeForm()">Cancelar</button>
-              <button type="submit" class="btn btn-primary" [disabled]="saving() || localForm.invalid">
-                {{ saving() ? 'Guardando...' : (editingId() ? 'Guardar cambios' : 'Crear local') }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
+          </div>
+        </form>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -192,39 +192,11 @@ const API = environment.apiUrl;
     .empty-state h3 { margin-bottom: 8px; }
     .empty-state p { color: var(--color-text-muted); margin-bottom: 24px; }
 
-    /* ── Drawer ── */
-    .drawer-backdrop {
-      position: fixed; inset: 0;
-      background: rgba(15,23,42,0.45);
-      backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
-      z-index: 200;
+    /* ── Formulario a pantalla completa ── */
+    .form-card {
+      background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg); padding: 24px;
     }
-    .drawer {
-      position: fixed; top: 0; right: 0; height: 100vh;
-      width: 460px; max-width: calc(100vw - 32px);
-      background: var(--color-white); z-index: 201;
-      box-shadow: -8px 0 40px rgba(0,0,0,0.12);
-      display: flex; flex-direction: column;
-    }
-    .animate-slide-in { animation: slideIn 220ms cubic-bezier(.16,1,.3,1); }
-    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-
-    .drawer-head {
-      display: flex; align-items: flex-start; justify-content: space-between;
-      padding: 24px 28px 20px; border-bottom: 1px solid var(--color-border);
-      flex-shrink: 0;
-    }
-    .drawer-head h3 { margin: 0; font-size: 17px; }
-    .drawer-close {
-      background: none; border: none; cursor: pointer;
-      color: var(--color-text-muted);
-      width: 32px; height: 32px; border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      transition: all var(--transition-fast);
-    }
-    .drawer-close:hover { background: var(--color-bg-light); color: var(--color-text-main); }
-
-    .drawer-body { flex: 1; overflow-y: auto; padding: 24px 28px; }
 
     .field { margin-bottom: 16px; }
     .field label {
@@ -235,13 +207,7 @@ const API = environment.apiUrl;
       display: block; margin-top: 6px;
       font-size: 12px; color: var(--color-error);
     }
-    .fields-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
-    .drawer-actions {
-      display: flex; gap: 10px; justify-content: flex-end;
-      padding-top: 24px; margin-top: 8px;
-      border-top: 1px solid var(--color-border);
-    }
+    .fields-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
     @media (max-width: 768px) {
       .locals-page { padding: 20px 16px; }
@@ -260,9 +226,7 @@ const API = environment.apiUrl;
       td:last-child { justify-content: flex-end; padding-top: 10px; }
       .row-actions { justify-content: flex-end; }
 
-      .drawer { width: 100%; max-width: 100vw; }
-      .drawer-head { padding: 20px 16px 16px; }
-      .drawer-body { padding: 20px 16px; }
+      .form-card { padding: 20px 16px; }
       .fields-row { grid-template-columns: 1fr; }
     }
 
@@ -282,7 +246,6 @@ export class LocalsComponent implements OnInit {
   readonly Pencil = Pencil;
   readonly Copy = Copy;
   readonly Trash2 = Trash2;
-  readonly X = X;
 
   loading = signal(true);
   locals = signal<any[]>([]);
@@ -305,11 +268,6 @@ export class LocalsComponent implements OnInit {
 
   ngOnInit() { this.loadLocals(); }
 
-  @HostListener('document:keydown.escape')
-  onEsc() {
-    if (this.showForm()) this.closeForm();
-  }
-
   loadLocals() {
     this.http.get<any[]>(`${API}/locals`).subscribe({
       next: (data) => { this.locals.set(data); this.loading.set(false); },
@@ -325,8 +283,13 @@ export class LocalsComponent implements OnInit {
       this.editingId.set(null);
       this.localForm.reset({ type: 'restaurant', tableCount: 10 });
     }
+    this.formSnapshot = snapshotOf(this.localForm.getRawValue());
     this.showForm.set(true);
   }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.localForm.getRawValue()) !== this.formSnapshot; }
 
   closeForm() {
     this.showForm.set(false);
@@ -354,6 +317,7 @@ export class LocalsComponent implements OnInit {
     req.subscribe({
       next: () => {
         this.toast.success(id ? 'Local actualizado' : 'Local creado');
+        this.saving.set(false);
         this.closeForm();
         this.loadLocals();
       },

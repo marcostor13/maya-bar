@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit, HostListener } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import {
@@ -7,6 +7,7 @@ import {
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -66,7 +67,7 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
 @Component({
   selector: 'app-lists',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -169,17 +170,21 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
       }
     </div>
 
-    <!-- Edit Drawer -->
+    <!-- Editor de lista a pantalla completa -->
     @if (drawerOpen()) {
-      <div class="overlay" (click)="closeDrawer()"></div>
-      <div class="drawer">
-        <div class="drawer-header">
-          <h2 class="drawer-title">{{ editingId() ? 'Editar lista' : 'Nueva lista' }}</h2>
-          <button class="btn btn-icon btn-ghost" (click)="closeDrawer()">
-            <lucide-icon [img]="X" [size]="20"></lucide-icon>
+      <app-form-page
+        [title]="editingId() ? 'Editar lista' : 'Nueva lista'"
+        backLabel="Listas"
+        [urlKey]="editingId() || 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="closeDrawer()">
+        <ng-container formActions>
+          <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+            {{ saving() ? 'Guardando...' : 'Guardar lista' }}
           </button>
-        </div>
-        <div class="drawer-body">
+        </ng-container>
+
+        <div class="list-form card">
           @if (formError()) {
             <div class="error-box">{{ formError() }}</div>
           }
@@ -305,30 +310,37 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
             </div>
           }
         </div>
-        <div class="drawer-footer">
-          <button class="btn btn-ghost" (click)="closeDrawer()">Cancelar</button>
-          <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
-            {{ saving() ? 'Guardando...' : 'Guardar lista' }}
-          </button>
-        </div>
-      </div>
+      </app-form-page>
     }
 
-    <!-- Members Drawer -->
+    <!-- Miembros de la lista a pantalla completa (sin cambios que guardar) -->
     @if (membersDrawerOpen()) {
-      <div class="overlay" (click)="closeMembersDrawer()"></div>
-      <div class="drawer">
-        <div class="drawer-header">
-          <div>
-            <h2 class="drawer-title">{{ membersListName() }}</h2>
-            <p style="font-size: 12px; color: var(--color-text-muted); margin: 2px 0 0;">
-              {{ membersEditable() ? 'Lista estática' : 'Lista dinámica' }} · {{ members().length }} miembro(s)
-            </p>
-          </div>
-          <button class="btn btn-icon btn-ghost" (click)="closeMembersDrawer()" aria-label="Cerrar">
-            <lucide-icon [img]="X" [size]="20"></lucide-icon>
-          </button>
-        </div>
+      <app-form-page
+        [title]="membersListName()"
+        [subtitle]="(membersEditable() ? 'Lista estática' : 'Lista dinámica') + ' · ' + members().length + ' miembro(s)'"
+        backLabel="Listas"
+        [urlKey]="membersListId() || ''"
+        (closed)="closeMembersDrawer()">
+        <ng-container formActions>
+          @if (membersTab() === 'add') {
+            <span class="actions-count">{{ pickedIds().length }} seleccionado(s)</span>
+            <button class="btn btn-primary" (click)="addPicked()" [disabled]="!pickedIds().length || membersBusy()">
+              <lucide-icon [img]="UserPlus" [size]="15"></lucide-icon>
+              Agregar a la lista
+            </button>
+          } @else {
+            <span class="actions-count">
+              {{ memberSel().length ? memberSel().length + ' seleccionado(s)' : members().length + ' contacto(s) en esta lista' }}
+            </span>
+            @if (memberSel().length) {
+              <button class="btn btn-danger" (click)="removeSelectedMembers()" [disabled]="membersBusy()">
+                <lucide-icon [img]="UserMinus" [size]="15"></lucide-icon>
+                Quitar seleccionados
+              </button>
+            }
+          }
+        </ng-container>
+
         @if (membersEditable()) {
           <div class="members-tabs" role="tablist">
             <button class="members-tab" role="tab" [class.active]="membersTab() === 'members'"
@@ -343,7 +355,7 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
             </button>
           </div>
         }
-        <div class="drawer-body" style="padding: 16px 20px;">
+        <div class="members-panel card">
           @if (membersTab() === 'add') {
             <div class="picker-search">
               <lucide-icon [img]="Search" [size]="15"></lucide-icon>
@@ -439,30 +451,7 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
             </div>
           }
         </div>
-        <div class="drawer-footer">
-          @if (membersTab() === 'add') {
-            <span style="font-size: 13px; color: var(--color-text-muted);">
-              {{ pickedIds().length }} seleccionado(s)
-            </span>
-            <button class="btn btn-primary" (click)="addPicked()" [disabled]="!pickedIds().length || membersBusy()">
-              <lucide-icon [img]="UserPlus" [size]="15"></lucide-icon>
-              Agregar a la lista
-            </button>
-          } @else {
-            <span style="font-size: 13px; color: var(--color-text-muted);">
-              {{ memberSel().length ? memberSel().length + ' seleccionado(s)' : members().length + ' contacto(s) en esta lista' }}
-            </span>
-            @if (memberSel().length) {
-              <button class="btn btn-danger" (click)="removeSelectedMembers()" [disabled]="membersBusy()">
-                <lucide-icon [img]="UserMinus" [size]="15"></lucide-icon>
-                Quitar seleccionados
-              </button>
-            } @else {
-              <button class="btn btn-ghost" (click)="closeMembersDrawer()">Cerrar</button>
-            }
-          }
-        </div>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -500,14 +489,10 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
     .member-count { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-muted); font-weight: 600; }
     .card-actions { display: flex; gap: 6px; }
 
-    /* Drawer shared */
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 520px; background: var(--color-white); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; z-index: 101; animation: slideIn var(--transition-spring); }
-    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-    .drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
-    .drawer-title { font-family: var(--font-heading); font-size: 18px; font-weight: 700; margin: 0; }
-    .drawer-body { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
-    .drawer-footer { padding: 20px 28px; border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-shrink: 0; }
+    /* Formularios a pantalla completa */
+    .list-form { display: flex; flex-direction: column; gap: 20px; }
+    .members-panel { padding: 16px 20px; }
+    .actions-count { font-size: 13px; color: var(--color-text-muted); }
 
     .field { display: flex; flex-direction: column; gap: 6px; }
     .label { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
@@ -537,8 +522,8 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
     .mini-tag { padding: 3px 9px; border-radius: var(--radius-pill); border: 1.5px solid var(--color-border); background: var(--color-white); font-size: 11px; font-weight: 600; cursor: pointer; color: var(--color-text-muted); transition: all var(--transition-fast); }
     .mini-tag.sel { border-color: var(--color-brand); background: var(--color-brand-light); color: var(--color-brand); }
 
-    /* Members drawer */
-    .members-tabs { display:flex; gap:4px; padding:0 20px; border-bottom:1px solid var(--color-border); }
+    /* Miembros */
+    .members-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--color-border); }
     .members-tab { display:inline-flex; align-items:center; gap:6px; padding:12px 14px; background:none; border:none;
       border-bottom:2px solid transparent; font-family:var(--font-base); font-size:13px; font-weight:500;
       color:var(--color-text-muted); cursor:pointer; transition:all var(--transition-fast); }
@@ -580,11 +565,6 @@ function defaultOperatorsFor(field: RuleField): RuleOperator[] {
       .page { padding: 20px 16px; }
       .stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
       .lists-grid { grid-template-columns: 1fr; }
-
-      .drawer { width: 100%; }
-      .drawer-header { padding: 20px; }
-      .drawer-body { padding: 20px; }
-      .drawer-footer { padding: 16px 20px; flex-wrap: wrap; }
 
       .type-toggle { grid-template-columns: 1fr; }
     }
@@ -673,12 +653,6 @@ export class ListsComponent implements OnInit {
 
   ngOnInit() { this.load(); }
 
-  @HostListener('document:keydown.escape')
-  onEsc() {
-    if (this.membersDrawerOpen()) { this.closeMembersDrawer(); return; }
-    if (this.drawerOpen()) this.closeDrawer();
-  }
-
   load() {
     this.loading.set(true);
     this.http.get<ContactList[]>(`${API}/lists`).subscribe({
@@ -698,10 +672,15 @@ export class ListsComponent implements OnInit {
     this.formError.set('');
     this.previewResult.set(null);
     this.membersDrawerOpen.set(false);
+    this.formSnapshot = snapshotOf(this.form);
     this.drawerOpen.set(true);
   }
 
   closeDrawer() { this.drawerOpen.set(false); }
+
+  /** Foto del formulario al abrirlo: si cambia, volver pide confirmación. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form) !== this.formSnapshot; }
 
   // ── Members drawer ──
   openMembersDrawer(l: ContactList) {

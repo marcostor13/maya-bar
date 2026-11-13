@@ -1,3 +1,4 @@
+import { provideRouter } from '@angular/router';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { EmailSettingsComponent } from './email-settings';
@@ -50,6 +51,7 @@ describe('EmailSettingsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [EmailSettingsComponent],
       providers: [
+        provideRouter([]),
         { provide: EmailAccountsApiService, useValue: api },
         { provide: ToastService, useValue: toast },
         { provide: ConfirmService, useValue: confirm },
@@ -72,6 +74,18 @@ describe('EmailSettingsComponent', () => {
     expect(buttons[0].disabled).toBe(false); // Gmail
     expect(buttons[1].disabled).toBe(true); // Outlook
     expect(buttons[1].textContent).toContain('No habilitado');
+  });
+
+  it('abre el formulario a pantalla completa y avisa de cambios sin guardar', () => {
+    component.openForm(accounts[1]);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('app-form-page h1')?.textContent).toContain('Editar buzón');
+    expect(el.querySelector('.drawer')).toBeNull();
+    expect(el.querySelector('.bar-actions .btn-primary')?.textContent).toContain('Guardar');
+    expect(component.isDirty()).toBe(false);
+    component.form()!.label = 'Soporte 2';
+    expect(component.isDirty()).toBe(true);
   });
 
   it('un proveedor rellena los servidores y POP3 cambia puerto y host', () => {

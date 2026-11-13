@@ -100,6 +100,12 @@ export class CreateAiAgentDto {
   maxTokens?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(30)
+  replyDelaySeconds?: number;
+
+  @IsOptional()
   @IsString()
   greeting?: string;
 

@@ -127,3 +127,38 @@ Los tamaños pensados para una columna de escritorio se quedan cortos en la
 mano: en la bandeja el texto del mensaje estaba a 14px y la vista previa a
 12,5px. En móvil suben a 16px y 14,5px dentro del `@media`, sin tocar el
 escritorio. Como referencia, iOS usa ~17px de cuerpo y Material 14–16sp.
+
+## 10. Formularios a pantalla completa (`app-form-page`)
+
+Crear/editar registros con más de 5 campos, asistentes y fichas de detalle se
+abren a pantalla completa, no en paneles laterales. Los modales centrados
+quedan para formularios simples (≤ 5 campos) y confirmaciones.
+
+```html
+@if (formOpen()) {
+  <app-form-page
+    [title]="editing ? 'Editar contacto' : 'Nuevo contacto'"
+    subtitle="Datos de contacto y etiquetas"
+    backLabel="Contactos"
+    [urlKey]="editingId || 'nuevo'"
+    [dirty]="isDirty()"
+    (closed)="closeForm()">
+    <ng-container formActions>
+      <button type="submit" form="contact-form" class="btn btn-primary">Guardar</button>
+    </ng-container>
+    <form id="contact-form" (ngSubmit)="save()">…campos…</form>
+  </app-form-page>
+}
+```
+
+- Barra superior fija: flecha de volver (con el nombre de la pantalla de
+  origen), título, subtítulo y acciones. Cuerpo con `padding: 32px 40px`
+  (16 px en móvil, con zonas seguras).
+- `urlKey` añade `?form=<clave>` a la URL: el botón atrás del navegador o del
+  móvil cierra el formulario y deja el listado como estaba.
+- `dirty`: compara con `snapshotOf(form)` tomado al abrir (o al terminar de
+  cargar); si hay cambios, volver/ESC piden confirmación con `ConfirmService`.
+- ESC cierra, salvo que haya un modal o confirmación abierto encima.
+- Un botón de envío en la cabecera se enlaza al `<form>` con `form="<id>"`.
+- Usa el ancho: grids de 2 columnas en escritorio, 1 columna en ≤ 768 px.
+

@@ -1,8 +1,9 @@
-import { Component, inject, signal, OnInit, HostListener } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { AuthService } from '../../auth/auth.service';
 import { LucideAngularModule, MapPin, Plus, X, Trash2, Navigation } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
@@ -27,7 +28,7 @@ interface Stats {
 @Component({
   selector: 'app-visits',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule],
+  imports: [FormsModule, LucideAngularModule, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -108,18 +109,25 @@ interface Stats {
       }
     </div>
 
-    <!-- Drawer: Registrar Visita -->
+    <!-- Registrar visita (pantalla completa) -->
     @if (drawerOpen()) {
-      <div class="overlay" (click)="closeDrawer()" role="dialog" aria-modal="true" aria-label="Registrar visita">
-        <div class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <h2>Registrar Visita</h2>
-            <button class="btn btn-icon btn-ghost" (click)="closeDrawer()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-            </button>
-          </div>
+      <app-form-page
+        title="Registrar Visita"
+        backLabel="Visitas"
+        urlKey="nueva"
+        [dirty]="isDirty()"
+        (closed)="closeDrawer()">
+        <ng-container formActions>
+          <button
+            class="btn btn-primary"
+            (click)="saveVisit()"
+            [disabled]="saving() || !form.reference.trim() || !locationOk()"
+          >
+            {{ saving() ? 'Guardando…' : 'Registrar visita' }}
+          </button>
+        </ng-container>
 
-          <div class="drawer-body">
+          <div class="visit-form">
             <div class="form-group">
               <label class="form-label">Referencia *</label>
               <input
@@ -155,19 +163,7 @@ interface Stats {
               </button>
             </div>
           </div>
-
-          <div class="drawer-footer">
-            <button class="btn btn-ghost" (click)="closeDrawer()">Cancelar</button>
-            <button
-              class="btn btn-primary"
-              (click)="saveVisit()"
-              [disabled]="saving() || !form.reference.trim() || !locationOk()"
-            >
-              {{ saving() ? 'Guardando…' : 'Registrar visita' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -196,14 +192,8 @@ interface Stats {
     .date-cell { color: var(--color-text-muted); font-size: 13px; white-space: nowrap; }
     .actions-cell { width: 48px; text-align: right; }
 
-    /* Drawer */
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: flex-end; z-index: 100; }
-    .drawer { width: 460px; max-width: calc(100vw - 24px); height: 100%; background: var(--color-white); display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideInRight var(--transition-spring) both; }
-    @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-    .drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; border-bottom: 1px solid var(--color-border); }
-    .drawer-header h2 { font-family: var(--font-heading); font-size: 20px; font-weight: 700; color: var(--color-text-main); margin: 0; }
-    .drawer-body { flex: 1; padding: 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
-    .drawer-footer { padding: 20px 28px; border-top: 1px solid var(--color-border); display: flex; gap: 12px; justify-content: flex-end; }
+    /* Registrar visita: referencia | ubicación */
+    .visit-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
 
     .form-group { display: flex; flex-direction: column; gap: 6px; }
     .form-label { font-size: 13px; font-weight: 600; color: var(--color-text-main); }
@@ -230,13 +220,7 @@ interface Stats {
       td.actions-cell { justify-content: flex-end; padding-top: 6px; }
       td.actions-cell::before { content: none; }
 
-      .drawer-header { padding: 20px; }
-      .drawer-body { padding: 20px; }
-      .drawer-footer { padding: 16px 20px; }
-    }
-
-    @media (max-width: 480px) {
-      .drawer { width: 100vw; max-width: 100vw; }
+      .visit-form { grid-template-columns: 1fr; gap: 20px; }
     }
   `],
 })
@@ -266,8 +250,14 @@ export class VisitsComponent implements OnInit {
     location: null,
   };
 
-  @HostListener('document:keydown.escape')
-  onEsc() { this.closeDrawer(); }
+  // ESC del formulario: lo maneja app-form-page (y pregunta si hay cambios).
+
+  /**
+   * Foto de la referencia al abrir. La ubicación se captura sola al abrir, así
+   * que no cuenta como cambio del usuario.
+   */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form.reference) !== this.formSnapshot; }
 
   ngOnInit() {
     this.load();
@@ -290,6 +280,7 @@ export class VisitsComponent implements OnInit {
     this.locationOk.set(false);
     this.geoError.set('');
     this.drawerOpen.set(true);
+    this.formSnapshot = snapshotOf(this.form.reference);
     setTimeout(() => this.getLocation(), 200);
   }
 

@@ -1,5 +1,6 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ListsComponent } from './lists';
 import { ToastService } from '../../shared/toast';
@@ -33,7 +34,7 @@ describe('ListsComponent', () => {
     Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent!.includes(label))!;
   const card = (name: string) =>
     Array.from(el().querySelectorAll<HTMLElement>('.list-card')).find((c) => c.textContent!.includes(name))!;
-  const drawer = () => el().querySelector('.drawer') as HTMLElement;
+  const drawer = () => el().querySelector('app-form-page') as HTMLElement;
   const type = (input: HTMLInputElement, value: string) => {
     input.value = value;
     input.dispatchEvent(new Event('input'));
@@ -51,7 +52,7 @@ describe('ListsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ListsComponent],
       providers: [
-        provideHttpClient(), provideHttpClientTesting(),
+        provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
         { provide: ToastService, useValue: toast },
         { provide: ConfirmService, useValue: confirm },
       ],
@@ -135,7 +136,7 @@ describe('ListsComponent', () => {
     it('crea una estática con POST /lists, avisa, cierra y recarga', async () => {
       await setup();
       click(button('Nueva Lista'));
-      expect(drawer().querySelector('.drawer-title')!.textContent).toContain('Nueva lista');
+      expect(drawer().querySelector('h1')!.textContent).toContain('Nueva lista');
       const [name, description] = Array.from(drawer().querySelectorAll<HTMLInputElement>('input.input'));
       type(name, '  Cumpleañeros  ');
       type(description, ' Del mes ');
@@ -212,7 +213,7 @@ describe('ListsComponent', () => {
     it('edita con PATCH /lists/:id conservando lo que no se toca y sin ofrecer cambiar el tipo', async () => {
       await setup();
       click(card('Clientes VIP').querySelector('button[title="Editar"]') as HTMLElement);
-      expect(drawer().querySelector('.drawer-title')!.textContent).toContain('Editar lista');
+      expect(drawer().querySelector('h1')!.textContent).toContain('Editar lista');
       expect(drawer().querySelector('.type-toggle')).toBeNull();
       type(drawer().querySelector('input.input') as HTMLInputElement, 'Clientes Oro');
       click(button('Guardar lista'));
@@ -304,7 +305,7 @@ describe('ListsComponent', () => {
       http.expectOne((r) => r.url.endsWith('/lists/l1/members')).flush([ANA, BETO]);
       fixture.detectChanges();
       expect(drawer().querySelector('.spin')).toBeNull();
-      expect(drawer().querySelector('.drawer-title')!.textContent).toContain('Clientes VIP');
+      expect(drawer().querySelector('h1')!.textContent).toContain('Clientes VIP');
       expect(names()).toEqual(['Ana Pérez', 'Beto Ruiz']);
       expect(rows()[0].querySelector('.member-avatar')!.textContent).toContain('AP');
       const tags = Array.from(rows()[0].querySelectorAll('.member-tag')).map((t) => t.textContent!.trim());

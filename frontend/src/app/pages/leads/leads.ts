@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit, HostListener } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -13,6 +13,7 @@ import { LeadAssignComponent, type AssignMode } from './lead-assign';
 import { LeadStagesConfigComponent, type LeadStage } from './lead-stages-config';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { FormPageComponent, snapshotOf } from '../../shared/form-page';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -145,7 +146,7 @@ function blankForm(stage: string): LeadForm {
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, LeadAssignComponent, LeadStagesConfigComponent],
+  imports: [FormsModule, LucideAngularModule, LeadAssignComponent, LeadStagesConfigComponent, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -368,29 +369,24 @@ function blankForm(stage: string): LeadForm {
 
     <!-- ───────── Ficha de la oportunidad ───────── -->
     @if (detail(); as lead) {
-      <div class="overlay" (click)="closeDetail()" role="dialog" aria-modal="true">
-        <aside class="drawer" (click)="$event.stopPropagation()">
-          <div class="drawer-header">
-            <div class="drawer-title-group">
-              <h2>{{ lead.title }}</h2>
-              <p class="subtitle">
-                {{ customerName(lead) }}
-                @if (customerPhone(lead)) { · {{ customerPhone(lead) }} }
-              </p>
-            </div>
-            <div class="header-right">
-              @if (canWork(lead)) {
-                <button class="btn btn-sm btn-secondary" (click)="editDetail()">
-                  <lucide-icon [img]="Pencil" [size]="14" [strokeWidth]="2.5"></lucide-icon> Editar
-                </button>
-              }
-              <button class="btn btn-ghost btn-icon" (click)="closeDetail()" aria-label="Cerrar">
-                <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-              </button>
-            </div>
-          </div>
+      <!-- Mientras se edita, la ficha se oculta: así ESC y la flecha cierran solo el formulario. -->
+      @if (!formOpen()) {
+      <app-form-page
+        [title]="lead.title"
+        [subtitle]="customerName(lead) + (customerPhone(lead) ? ' · ' + customerPhone(lead) : '')"
+        backLabel="Seguimiento"
+        [urlKey]="lead._id"
+        (closed)="closeDetail()">
+        <ng-container formActions>
+          @if (canWork(lead)) {
+            <button class="btn btn-sm btn-secondary" (click)="editDetail()">
+              <lucide-icon [img]="Pencil" [size]="14" [strokeWidth]="2.5"></lucide-icon> Editar
+            </button>
+          }
+        </ng-container>
 
-          <div class="drawer-scroll">
+          <div class="detail-grid">
+          <div class="detail-col">
             <div class="owner-bar" [class.pool]="!lead.ownerId">
               <span class="owner big" [class.me]="ownerIdOf(lead) === meId()">{{ ownerInitials(lead) }}</span>
               <div class="owner-info">
@@ -488,7 +484,9 @@ function blankForm(stage: string): LeadForm {
                 </button>
               }
             </div>
+          </div>
 
+          <div class="detail-col">
             <!-- Registrar actividad -->
             @if (canWork(lead)) {
             <div class="activity-form">
@@ -561,8 +559,9 @@ function blankForm(stage: string): LeadForm {
               }
             </ul>
           </div>
-        </aside>
-      </div>
+          </div>
+      </app-form-page>
+      }
       @if (assignMode(); as m) {
         <app-lead-assign [mode]="m" [leadTitle]="lead.title" [owners]="owners()" [currentOwnerId]="ownerIdOf(lead)"
           [meId]="meId()" [busy]="assigning()" (confirm)="doAssign($event)" (cancel)="assignMode.set(null)" />
@@ -577,16 +576,21 @@ function blankForm(stage: string): LeadForm {
 
     <!-- ───────── Alta / edición ───────── -->
     @if (formOpen()) {
-      <div class="overlay" (click)="closeForm()" role="dialog" aria-modal="true">
-        <div class="modal card" (click)="$event.stopPropagation()">
-          <div class="modal-head">
-            <h2>{{ form._id ? 'Editar oportunidad' : 'Nueva oportunidad' }}</h2>
-            <button class="btn btn-ghost btn-icon" (click)="closeForm()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
-            </button>
-          </div>
+      <!-- La edición se abre desde la ficha: app-form-page reemplaza la entrada
+           ?form= de la ficha por la suya, así atrás cierra la edición. -->
+      <app-form-page
+        [title]="form._id ? 'Editar oportunidad' : 'Nueva oportunidad'"
+        [backLabel]="form._id ? (detail()?.title || 'Seguimiento') : 'Seguimiento'"
+        [urlKey]="form._id ? 'editar-' + form._id : 'nuevo'"
+        [dirty]="isDirty()"
+        (closed)="closeForm()">
+        <ng-container formActions>
+          <button class="btn btn-primary" [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Guardando…' : (form._id ? 'Guardar cambios' : 'Crear oportunidad') }}
+          </button>
+        </ng-container>
 
-          <div class="modal-body">
+          <div class="lead-form">
             <div class="field">
               <label class="field-label">Título *</label>
               <input class="input" [(ngModel)]="form.title" placeholder="Ej: Evento corporativo de fin de año" />
@@ -681,15 +685,7 @@ function blankForm(stage: string): LeadForm {
               </div>
             }
           </div>
-
-          <div class="modal-actions">
-            <button class="btn btn-secondary" (click)="closeForm()">Cancelar</button>
-            <button class="btn btn-primary" [disabled]="saving()" (click)="save()">
-              {{ saving() ? 'Guardando…' : (form._id ? 'Guardar cambios' : 'Crear oportunidad') }}
-            </button>
-          </div>
-        </div>
-      </div>
+      </app-form-page>
     }
   `,
   styles: [`
@@ -773,15 +769,10 @@ function blankForm(stage: string): LeadForm {
     .muted { color: var(--color-text-muted); }
     .overdue-text { color: #B91C1C; font-weight: 600; }
 
-    /* Overlay / drawer / modal */
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .drawer { margin-left: auto; height: 100%; width: min(560px, 100%); background: var(--color-white); display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideIn var(--transition-spring, 400ms cubic-bezier(0.16,1,0.3,1)); }
-    @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-    .drawer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 28px 16px; border-bottom: 1px solid var(--color-border); }
-    .drawer-title-group h2 { margin: 0 0 3px; font-family: var(--font-heading); font-size: 20px; }
-    .subtitle { margin: 0; font-size: 12.5px; color: var(--color-text-muted); }
-    .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-    .drawer-scroll { flex: 1; overflow-y: auto; padding: 20px 28px 32px; display: flex; flex-direction: column; gap: 18px; }
+    /* Ficha a pantalla completa: datos a la izquierda, actividad a la derecha */
+    .detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+    .detail-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+    .lead-form { display: flex; flex-direction: column; gap: 14px; }
 
     .owner-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--color-bg-light); border-radius: var(--radius-md); flex-wrap: wrap; }
     .owner-bar.pool { background: var(--color-brand-light); }
@@ -832,12 +823,6 @@ function blankForm(stage: string): LeadForm {
     .tl-due { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--color-text-muted); }
     .tl-item.done .tl-text { text-decoration: line-through; color: var(--color-text-muted); }
 
-    .modal { width: calc(100% - 48px); max-width: 520px; max-height: calc(100vh - 80px); display: flex; flex-direction: column; padding: 0; }
-    .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px 12px; }
-    .modal-head h2 { margin: 0; font-family: var(--font-heading); font-size: 20px; }
-    .modal-body { flex: 1; overflow-y: auto; padding: 8px 28px 16px; display: flex; flex-direction: column; gap: 14px; }
-    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px 24px; border-top: 1px solid var(--color-border); }
-
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field-label { font-size: 12px; font-weight: 600; color: var(--color-text-main); }
     .check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
@@ -859,6 +844,7 @@ function blankForm(stage: string): LeadForm {
          no aporta nada ahí, la fila entera ya es pulsable. */
       .table-cards td.right { display: none; }
       .table-cards .empty-row { text-align: center; }
+      .detail-grid { grid-template-columns: 1fr; gap: 18px; }
     }
 
     @media (max-width: 640px) {
@@ -945,13 +931,7 @@ export class LeadsComponent implements OnInit {
     Object.fromEntries(this.columns().map(c => [c.stage, c.count])) as Record<string, number>);
   hasFilters = computed(() => !!(this.search().trim() || this.ownerFilter() || this.overdue()));
 
-  @HostListener('document:keydown.escape')
-  onEsc() {
-    // El panel del embudo gestiona su propio Escape.
-    if (this.stagesOpen()) return;
-    if (this.formOpen()) { this.closeForm(); return; }
-    if (this.detail()) this.closeDetail();
-  }
+  // ESC: la ficha, el formulario y el embudo (pantallas completas) lo manejan solos.
 
   ngOnInit() {
     this.loadStages();
@@ -1241,6 +1221,7 @@ export class LeadsComponent implements OnInit {
     this.customerQuery.set('');
     this.customerOptions.set([]);
     this.formOpen.set(true);
+    this.formSnapshot = snapshotOf(this.form);
   }
 
   editDetail() {
@@ -1260,9 +1241,14 @@ export class LeadsComponent implements OnInit {
       customerId: '', newCustomerName: '', newCustomerPhone: '', newCustomerEmail: '',
     };
     this.formOpen.set(true);
+    this.formSnapshot = snapshotOf(this.form);
   }
 
   closeForm() { this.formOpen.set(false); }
+
+  /** Foto del formulario al abrirlo, para avisar de cambios sin guardar. */
+  private formSnapshot = '';
+  isDirty() { return snapshotOf(this.form) !== this.formSnapshot; }
 
   onCustomerSearch(value: string) {
     this.customerQuery.set(value);
