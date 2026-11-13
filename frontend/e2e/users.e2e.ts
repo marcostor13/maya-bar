@@ -57,8 +57,14 @@ test.describe('Usuarios: recuperar, restablecer y eliminar', () => {
 
     await page.goto('/login');
     await page.getByRole('button', { name: '¿Olvidaste tu contraseña?' }).click();
-    await page.getByPlaceholder('tu@email.com').fill(account.email);
-    await page.getByRole('button', { name: 'Enviar código' }).click();
+    // En CI el texto puede escribirse antes de que la vista termine de hidratarse
+    // y perderse; se reescribe hasta que el botón se habilita.
+    const send = page.getByRole('button', { name: 'Enviar código' });
+    await expect(async () => {
+      await page.getByPlaceholder('tu@email.com').fill(account.email);
+      await expect(send).toBeEnabled({ timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
+    await send.click();
     await expect(page.getByText('Se ha enviado un código de 6 dígitos')).toBeVisible();
 
     const code = await resetCodeOf(account.email);
