@@ -143,7 +143,9 @@ describe('PromptReviewService', () => {
       const firstConvs = msgModel.find.mock.calls
         .slice(0, 2)
         .map((c) =>
-          String((c as [{ conversationId: unknown }])[0].conversationId),
+          String(
+            (c as unknown as [{ conversationId: unknown }])[0].conversationId,
+          ),
         );
       expect(firstConvs).toEqual([
         String(escalated._id),
@@ -334,7 +336,9 @@ describe('PromptReviewService', () => {
         service.discard(TENANT, AGENT, new Types.ObjectId().toString(), 0),
       ).rejects.toThrow(NotFoundException);
       const filter = (
-        reviewModel.findOne.mock.calls[0] as [Record<string, unknown>]
+        reviewModel.findOne.mock.calls[0] as unknown as [
+          Record<string, unknown>,
+        ]
       )[0];
       expect(String(filter.tenantId)).toBe(TENANT);
       expect(String(filter.agentId)).toBe(AGENT);
