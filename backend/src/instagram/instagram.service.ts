@@ -41,7 +41,9 @@ export class InstagramService {
       return;
     }
     if (!config.pageAccessToken || !config.igBusinessAccountId) {
-      this.logger.log(`[MOCK IG] To: ${to} | ${body.substring(0, 80)}`);
+      this.logger.log(
+        `[MOCK IG] To: …${to.slice(-4)} (${body.length} caracteres)`,
+      );
       return;
     }
 

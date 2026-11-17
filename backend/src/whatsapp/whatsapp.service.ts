@@ -80,11 +80,11 @@ export class WhatsAppService {
     vars: string[],
     config: WaConfig,
     header?: TemplateHeader,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const phone = this.formatPhone(to);
     if (!phone) {
       this.logger.warn(`Skipping template — invalid phone: ${to}`);
-      return;
+      return undefined;
     }
     const components: object[] = [];
 
@@ -105,7 +105,7 @@ export class WhatsAppService {
         parameters: vars.map((v) => ({ type: 'text', text: v })),
       });
     }
-    await this.postCloudApiMessage(config, 'CloudAPI template', {
+    return this.postCloudApiMessage(config, 'CloudAPI template', {
       to: phone,
       type: 'template',
       template: {

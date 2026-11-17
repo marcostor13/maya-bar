@@ -138,6 +138,15 @@ export class Message extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User' })
   sentBy?: Types.ObjectId;
 
+  // --- Enviado por la API de integraciones (HU13) ---
+  /** Acceso de API que lo envió. */
+  @Prop({ type: Types.ObjectId, ref: 'ApiAccess' })
+  apiAccessId?: Types.ObjectId;
+  /** Nombre del acceso al enviarlo, para pintarlo en la bandeja. */
+  @Prop() apiAccessName?: string;
+  /** `Idempotency-Key` del envío: un reintento no lo duplica. */
+  @Prop() apiIdempotencyKey?: string;
+
   /** Su chat está en la papelera: no cuenta en los paneles. */
   @Prop()
   inTrash?: boolean;
@@ -148,6 +157,14 @@ export class Message extends Document {
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ conversationId: 1, at: -1 });
+// Idempotencia de la API (HU13): una clave por acceso, solo en los que la traen.
+MessageSchema.index(
+  { apiAccessId: 1, apiIdempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { apiIdempotencyKey: { $type: 'string' } },
+  },
+);
 // Candidatos del reintento automático: solo indexa los fallidos, que son pocos.
 MessageSchema.index(
   { status: 1, at: -1 },

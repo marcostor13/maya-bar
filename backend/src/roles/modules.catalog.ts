@@ -50,6 +50,7 @@ const ALL_MODULES: PlatformModule[] = [
   // Gestión
   { key: 'users', label: 'Usuarios', group: 'Gestión', route: 'users' },
   { key: 'settings', label: 'Configuración', group: 'Gestión', route: 'settings' },
+  { key: 'integrations', label: 'Integraciones', group: 'Gestión', route: 'integraciones' },
 ];
 
 /**
@@ -87,7 +88,7 @@ export const MODULE_KEYS = MODULES.map((m) => m.key);
  * Módulos que el administrador conserva siempre. Sin esta barandilla, quitarse
  * `users` deja la empresa sin acceso a la pantalla que permitiría revertirlo.
  */
-export const ADMIN_LOCKED_MODULES = ['users', 'settings'];
+export const ADMIN_LOCKED_MODULES = ['users', 'settings', 'integrations'];
 
 /**
  * Matriz de partida: exactamente los accesos que tenía la plataforma cuando los

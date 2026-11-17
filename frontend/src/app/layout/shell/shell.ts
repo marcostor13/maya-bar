@@ -19,7 +19,7 @@ import {
   LayoutTemplate,
   MailPlus,
   Link2,
-  MessageSquareText, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, Phone, type LucideIconData,
+  MessageSquareText, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, Phone, Plug, type LucideIconData,
 } from 'lucide-angular';
 
 /** Una entrada del menú. La misma alimenta el lateral, la barra inferior y la hoja "Más". */
@@ -841,6 +841,7 @@ export class ShellComponent {
     const management = keep([
       { key: 'users', label: 'Usuarios', icon: Users, route: '/users' },
       { key: 'settings', label: 'Configuración', short: 'Ajustes', icon: Settings, route: '/settings' },
+      { key: 'integrations', label: 'Integraciones', short: 'API', icon: Plug, route: '/integraciones' },
     ]);
 
     if (operations.length) groups.push({ label: 'OPERACIONES', items: operations });

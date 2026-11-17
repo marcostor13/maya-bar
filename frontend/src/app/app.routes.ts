@@ -232,6 +232,12 @@ export const routes: Routes = [
         canActivate: [moduleGuard('settings')],
       },
       {
+        path: 'integraciones',
+        loadComponent: () =>
+          import('./pages/integrations/integrations').then(m => m.IntegrationsComponent),
+        canActivate: [moduleGuard('integrations')],
+      },
+      {
         path: 'users',
         loadComponent: () => import('./pages/users/users').then(m => m.UsersComponent),
         canActivate: [moduleGuard('users')],

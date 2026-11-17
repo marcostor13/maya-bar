@@ -69,7 +69,7 @@ export class SettingsService {
       templateName,
       templateLang,
     );
-    return this.wa.sendCloudApiTemplate(
+    await this.wa.sendCloudApiTemplate(
       to,
       templateName,
       templateLang,

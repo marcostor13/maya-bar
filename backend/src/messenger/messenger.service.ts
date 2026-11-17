@@ -54,7 +54,9 @@ export class MessengerService {
       return undefined;
     }
     if (!config.pageAccessToken || !config.pageId) {
-      this.logger.log(`[MOCK MS] To: ${to} | ${body.substring(0, 80)}`);
+      this.logger.log(
+        `[MOCK MS] To: …${to.slice(-4)} (${body.length} caracteres)`,
+      );
       return undefined;
     }
 

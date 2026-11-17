@@ -22,6 +22,7 @@ import { UploadModule } from './upload/upload.module';
 import { CustomersModule } from './customers/customers.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { ApiAccessModule } from './api-access/api-access.module';
 import { SettingsModule } from './settings/settings.module';
 import { ListsModule } from './lists/lists.module';
 import { VisitsModule } from './visits/visits.module';
@@ -101,6 +102,7 @@ import { CalendarModule } from './calendar/calendar.module';
     SmsModule,
     LinksModule,
     ResendModule,
+    ApiAccessModule,
   ],
   controllers: [AppController],
   providers: [AppService],

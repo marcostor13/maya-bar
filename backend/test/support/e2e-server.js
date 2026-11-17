@@ -18,7 +18,8 @@ const MONGO_URI_FILE = path.join(os.tmpdir(), 'maya-e2e-mongo-uri');
 const GRAPH_LOG_FILE = path.join(os.tmpdir(), 'maya-e2e-graph-calls.log');
 
 /**
- * Simula la Calling API de WhatsApp: en e2e no hay credenciales y nunca se
+ * Simula la Calling API de WhatsApp y el envío de mensajes (`/messages`, que
+ * usa la API de integraciones de HU13): en e2e no hay credenciales y nunca se
  * habla con Meta. El resto de Graph sigue sin red útil, como antes.
  */
 function stubMetaCalling() {
@@ -32,21 +33,42 @@ function stubMetaCalling() {
     });
   globalThis.fetch = async (input, init = {}) => {
     const url = String(typeof input === 'string' ? input : input.url);
-    const m = /^https:\/\/graph\.facebook\.com\/v[\d.]+\/[^/]+\/(calls|call_permissions|settings)(\?|$)/.exec(url);
+    const m =
+      /^https:\/\/graph\.facebook\.com\/v[\d.]+\/[^/]+\/(calls|call_permissions|settings|messages)(\?|$)/.exec(
+        url,
+      );
     if (!m) return realFetch(input, init);
     const body = init.body ? JSON.parse(String(init.body)) : {};
     fs.appendFileSync(
       GRAPH_LOG_FILE,
-      JSON.stringify({ method: init.method || 'GET', kind: m[1], action: body.action, hasSdp: !!body.session?.sdp }) + '\n',
+      JSON.stringify({
+        method: init.method || 'GET',
+        kind: m[1],
+        action: body.action,
+        hasSdp: !!body.session?.sdp,
+      }) + '\n',
     );
+    if (m[1] === 'messages')
+      return json({ messages: [{ id: `wamid.e2e-${++out}` }] });
     if (m[1] === 'calls')
-      return json(body.action === 'connect' ? { calls: [{ id: `wacid.e2e-out-${++out}` }] } : { success: true });
+      return json(
+        body.action === 'connect'
+          ? { calls: [{ id: `wacid.e2e-out-${++out}` }] }
+          : { success: true },
+      );
     if (m[1] === 'call_permissions')
       return json({
-        permission: { status: 'temporary', expiration_time: Math.floor(Date.now() / 1000) + 7 * 86400 },
+        permission: {
+          status: 'temporary',
+          expiration_time: Math.floor(Date.now() / 1000) + 7 * 86400,
+        },
         actions: [{ action_name: 'start_call', can_perform_action: true }],
       });
-    return json(init.method === 'POST' ? { success: true } : { calling: { status: 'ENABLED', call_icon_visibility: 'DEFAULT' } });
+    return json(
+      init.method === 'POST'
+        ? { success: true }
+        : { calling: { status: 'ENABLED', call_icon_visibility: 'DEFAULT' } },
+    );
   };
 }
 

@@ -6,7 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
-  Mic, Square, Bot, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
+  Mic, Square, Bot, Plug, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
   Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
@@ -59,6 +59,8 @@ interface Msg {
   conversationId: string;
   direction: 'in' | 'out';
   author: 'customer' | 'agent' | 'human' | 'system';
+  /** Enviado por la API de integraciones (HU13): nombre del acceso. */
+  apiAccessName?: string;
   type: MsgType;
   text: string;
   mediaUrl?: string;
@@ -790,6 +792,9 @@ const EMOJIS = [
 
                     @if (m.author === 'agent') {
                       <span class="by-agent"><lucide-icon [img]="Bot" [size]="11" [strokeWidth]="2.4"></lucide-icon> Agente IA</span>
+                    }
+                    @if (m.apiAccessName) {
+                      <span class="by-agent by-api"><lucide-icon [img]="Plug" [size]="11" [strokeWidth]="2.4"></lucide-icon> API · {{ m.apiAccessName }}</span>
                     }
 
                     @if (m.mediaUnavailable && !m.mediaUrl) {
@@ -1864,6 +1869,7 @@ const EMOJIS = [
       to   { opacity: 1; transform: none; }
     }
 
+    .by-api { color: var(--color-text-muted); text-transform: none; letter-spacing: 0; }
     .by-agent {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: 10.5px; font-weight: 700; color: var(--color-ai);
@@ -2216,6 +2222,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Mic = Mic;
   readonly Square = Square;
   readonly Bot = Bot;
+  readonly Plug = Plug;
   readonly Search = Search;
   readonly Check = Check;
   readonly CheckCheck = CheckCheck;

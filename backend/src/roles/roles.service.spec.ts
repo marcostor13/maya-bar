@@ -219,14 +219,19 @@ describe('RolesService', () => {
       expect(access.modules).toEqual(['dashboard']);
     });
 
-    it('el administrador conserva Usuarios y Configuración aunque se los hayan quitado', async () => {
+    it('el administrador conserva Usuarios, Configuración e Integraciones aunque se los hayan quitado', async () => {
       roleModel.findOne.mockReturnValue(
         buildQuery(role('TENANT_ADMIN', { modules: ['dashboard'] })),
       );
 
       const access = await service.accessFor(tenantId, 'TENANT_ADMIN');
 
-      expect(access.modules).toEqual(['dashboard', 'users', 'settings']);
+      expect(access.modules).toEqual([
+        'dashboard',
+        'users',
+        'settings',
+        'integrations',
+      ]);
     });
 
     it('los módulos bloqueados no se regalan a otros roles', async () => {
@@ -418,7 +423,12 @@ describe('RolesService', () => {
       });
 
       const change = roleModel.findOneAndUpdate.mock.calls[0][1];
-      expect(change.$set.modules).toEqual(['dashboard', 'users', 'settings']);
+      expect(change.$set.modules).toEqual([
+        'dashboard',
+        'users',
+        'settings',
+        'integrations',
+      ]);
       expect(change.$set.actions).toEqual({ users: ['create'] });
     });
 

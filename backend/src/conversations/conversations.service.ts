@@ -18,6 +18,7 @@ import {
   WhatsAppService,
   WaConfig,
   WaMediaType,
+  type TemplateHeader,
 } from '../whatsapp/whatsapp.service';
 import { InstagramService, IgConfig } from '../instagram/instagram.service';
 import { MessengerService, MsConfig } from '../messenger/messenger.service';
@@ -126,6 +127,31 @@ export interface InboundMedia {
 }
 
 /** Mensaje entrante ya normalizado por el webhook del proveedor. */
+/** Envío de la API de integraciones (HU13), ya validado. */
+export interface ExternalSend {
+  tenantId: string;
+  channel: ConversationChannel;
+  accountId: string;
+  /** Teléfono en dígitos (WhatsApp) o id del contacto en el canal. */
+  contact: string;
+  type: MessageType;
+  /** Texto, caption o, en una plantilla, el cuerpo ya resuelto. */
+  text: string;
+  mediaUrl?: string;
+  filename?: string;
+  template?: {
+    name: string;
+    language: string;
+    variables: string[];
+    header?: TemplateHeader;
+  };
+  api: {
+    accessId: Types.ObjectId;
+    accessName: string;
+    idempotencyKey?: string;
+  };
+}
+
 export interface InboundMessage {
   contact: string;
   chatId?: string;
@@ -1323,6 +1349,104 @@ export class ConversationsService {
     await msg.save();
     this.gateway.emitMessageUpdated(tenantId, msg);
     return msg;
+  }
+
+  /**
+   * Envío desde la API de integraciones (HU13). Quien llama ya validó la
+   * cuenta, la ventana de 24 h, los bloqueos y la plantilla: aquí solo se abre
+   * (o crea) el chat, se guarda el mensaje y se entrega. No cambia quién
+   * atiende el chat ni pausa al agente IA.
+   *
+   * Con `idempotencyKey` repetida devuelve el mensaje ya guardado sin enviar
+   * otra vez (el índice único resuelve también la carrera entre dos peticiones).
+   */
+  async sendExternal(input: ExternalSend): Promise<{
+    conversation: Conversation;
+    message: Message;
+    duplicate: boolean;
+  }> {
+    const conv = await this.upsertConversation(
+      input.channel,
+      input.tenantId,
+      input.accountId,
+      {
+        contact: input.contact,
+        chatId: input.contact,
+        type: 'text',
+        at: new Date(),
+      },
+    );
+
+    let msg: Message;
+    try {
+      msg = await this.msgModel.create({
+        tenantId: conv.tenantId,
+        conversationId: conv._id,
+        direction: 'out',
+        author: 'human',
+        type: input.type,
+        text: input.text,
+        mediaUrl: input.mediaUrl,
+        filename: input.filename,
+        status: 'pending',
+        apiAccessId: input.api.accessId,
+        apiAccessName: input.api.accessName,
+        apiIdempotencyKey: input.api.idempotencyKey,
+        at: new Date(),
+      });
+    } catch (err) {
+      if (
+        (err as { code?: number }).code === 11000 &&
+        input.api.idempotencyKey
+      ) {
+        const existing = await this.msgModel
+          .findOne({
+            apiAccessId: input.api.accessId,
+            apiIdempotencyKey: input.api.idempotencyKey,
+          })
+          .exec();
+        if (existing)
+          return { conversation: conv, message: existing, duplicate: true };
+      }
+      throw err;
+    }
+
+    await this.touchConversation(conv, msg);
+    this.gateway.emitMessage(input.tenantId, msg);
+
+    try {
+      const externalId = input.template
+        ? await this.wa.sendCloudApiTemplate(
+            conv.contact,
+            input.template.name,
+            input.template.language,
+            input.template.variables,
+            await this.waConfigFor(conv),
+            input.template.header,
+          )
+        : await this.deliver(conv, msg);
+      msg.status = 'sent';
+      if (externalId) msg.externalId = externalId;
+    } catch (err) {
+      msg.status = 'failed';
+      msg.error = String(err);
+      // El reintento automático (HU7) reenvía el texto guardado: una plantilla
+      // saldría como texto libre, que Meta no acepta fuera de la ventana.
+      if (input.template) msg.retryStopped = true;
+      this.logger.error(
+        `Error enviando mensaje por API ${String(msg._id)} (acceso ${String(input.api.accessId)}): ${String(err)}`,
+      );
+    }
+    await msg.save();
+    this.gateway.emitMessageUpdated(input.tenantId, msg);
+    return { conversation: conv, message: msg, duplicate: false };
+  }
+
+  private async waConfigFor(conv: Conversation): Promise<WaConfig> {
+    const account = await this.waAccounts.findById(String(conv.accountId));
+    if (!account) throw new Error('La cuenta de WhatsApp ya no existe');
+    if (!account.active) throw new Error('La cuenta de WhatsApp está inactiva');
+    return this.waAccounts.toConfig(account);
   }
 
   /**
