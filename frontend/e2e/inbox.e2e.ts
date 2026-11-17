@@ -12,7 +12,7 @@ import { API, loginByUi, registerByApi, watchForFailures, type Account } from '.
 async function seedConversations(
   request: APIRequestContext,
   account: Account,
-  convs: { contact: string; contactName: string; preview: string }[],
+  convs: { contact: string; contactName: string; preview: string; message?: string }[],
 ) {
   const login = await request.post(`${API}/auth/login`, {
     data: { email: account.email, password: account.password },
@@ -28,7 +28,7 @@ async function seedConversations(
   const client = await MongoClient.connect(uri);
   try {
     const now = Date.now();
-    await client.db().collection('conversations').insertMany(
+    const res = await client.db().collection('conversations').insertMany(
       convs.map((c, i) => ({
         tenantId: new ObjectId(user.tenantId),
         channel: 'instagram',
@@ -49,6 +49,23 @@ async function seedConversations(
         updatedAt: new Date(now),
       })),
     );
+    const messages = convs.flatMap((c, i) =>
+      c.message
+        ? [{
+            tenantId: new ObjectId(user.tenantId),
+            conversationId: res.insertedIds[i],
+            direction: 'in',
+            author: 'customer',
+            type: 'text',
+            text: c.message,
+            status: 'read',
+            at: new Date(now - i * 60_000),
+            createdAt: new Date(now),
+            updatedAt: new Date(now),
+          }]
+        : [],
+    );
+    if (messages.length) await client.db().collection('messages').insertMany(messages);
   } finally {
     await client.close();
   }
@@ -144,6 +161,36 @@ test.describe('Bandeja: papelera y bloqueos', () => {
     // El chat se desmarca por tiempo real (o al recargar si el socket tarda).
     await page.reload();
     await expect(page.locator('.chat-item', { hasText: CLIENTE }).getByText('Bloqueado')).toHaveCount(0);
+    expect(failures).toEqual([]);
+  });
+});
+
+test.describe('Bandeja: links en los mensajes (HU12)', () => {
+  test('un link del cliente se ve como link y abre otra pestaña', async ({ page, request }) => {
+    const account = await registerByApi(request);
+    const stamp = Date.now();
+    const NAME = `Links ${stamp}`;
+    await seedConversations(request, account, [
+      {
+        contact: `ig-link-${stamp}`,
+        contactName: NAME,
+        preview: 'mira esto',
+        message: 'Hola, mira https://example.com/oferta?x=1. <b>gracias</b>',
+      },
+    ]);
+    const failures = watchForFailures(page);
+    await loginByUi(page, account.email, account.password);
+    await expect(page).toHaveURL(/\/dashboard/);
+    await page.goto('/inbox');
+    await page.locator('.chat-item', { hasText: NAME }).click();
+
+    const bubble = page.locator('.bubble-text', { hasText: 'mira' });
+    const link = bubble.getByRole('link', { name: 'https://example.com/oferta?x=1' });
+    await expect(link).toHaveAttribute('href', 'https://example.com/oferta?x=1');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(bubble).toHaveText('Hola, mira https://example.com/oferta?x=1. <b>gracias</b>');
+    await expect(bubble.locator('b')).toHaveCount(0);
     expect(failures).toEqual([]);
   });
 });

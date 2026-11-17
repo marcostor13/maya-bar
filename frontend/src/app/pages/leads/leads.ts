@@ -14,6 +14,7 @@ import { LeadStagesConfigComponent, type LeadStage } from './lead-stages-config'
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { FormPageComponent, snapshotOf } from '../../shared/form-page';
+import { RichText } from '../../shared/rich-text';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -146,7 +147,7 @@ function blankForm(stage: string): LeadForm {
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, LeadAssignComponent, LeadStagesConfigComponent, FormPageComponent],
+  imports: [FormsModule, RichText, LucideAngularModule, LeadAssignComponent, LeadStagesConfigComponent, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -548,7 +549,7 @@ function blankForm(stage: string): LeadForm {
                       }
                     </div>
                     <p class="tl-text">{{ a.title }}</p>
-                    @if (a.body) { <p class="tl-note">{{ a.body }}</p> }
+                    @if (a.body) { <p class="tl-note"><app-rich-text [text]="a.body" /></p> }
                     @if (a.dueAt) {
                       <span class="tl-due" [class.overdue-text]="!a.done && isOverdue(a.dueAt)">
                         Vence {{ shortDate(a.dueAt) }}

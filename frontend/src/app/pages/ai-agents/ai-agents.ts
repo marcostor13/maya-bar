@@ -15,6 +15,7 @@ import {
   type AgentCalendar,
 } from './agent-calendar-section';
 import { FormPageComponent, snapshotOf } from '../../shared/form-page';
+import { RichText } from '../../shared/rich-text';
 import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
@@ -167,7 +168,7 @@ function blankAgent(): Agent {
 @Component({
   selector: 'app-ai-agents',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, RouterLink, AgentCalendarSection, FormPageComponent],
+  imports: [FormsModule, RichText, LucideAngularModule, RouterLink, AgentCalendarSection, FormPageComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -777,7 +778,7 @@ function blankAgent(): Agent {
             @for (m of chat(); track $index) {
               @if (m.content) {
                 <div class="bubble" [class.user]="m.role === 'user'" [class.assistant]="m.role === 'assistant'">
-                  {{ m.content }}
+                  <app-rich-text [text]="m.content" />
                 </div>
               }
               @if (m.silent) {
@@ -918,7 +919,7 @@ function blankAgent(): Agent {
     .chat-scroll { flex: 1; overflow-y: auto; padding: 24px 32px; display: flex; flex-direction: column; gap: 12px; background: var(--color-bg-app); }
     .chat-empty { margin: auto; text-align: center; color: var(--color-text-muted); display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 280px; }
     .bubble { max-width: 80%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
-    .bubble.user { align-self: flex-end; background: var(--color-brand); color: #fff; border-bottom-right-radius: 6px; }
+    .bubble.user { --rich-text-link: inherit; align-self: flex-end; background: var(--color-brand); color: #fff; border-bottom-right-radius: 6px; }
     .bubble.assistant { align-self: flex-start; background: #fff; color: var(--color-text-main); border: 1px solid var(--color-border); border-bottom-left-radius: 6px; }
     .bubble.typing { opacity: .6; font-style: italic; }
     /* Anotación de simulación: se distingue a propósito de una burbuja, para

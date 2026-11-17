@@ -17,6 +17,7 @@ import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
 import { CallsService } from '../../shared/calls/calls.service';
 import { ConfirmService } from '../../shared/confirm';
+import { RichText } from '../../shared/rich-text';
 import { AppChromeService } from '../../shared/app-chrome';
 import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
 import { PushService } from '../../shared/push.service';
@@ -204,7 +205,7 @@ const EMOJIS = [
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent,
+  imports: [FormsModule, RichText, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent,
     BlockDialogComponent, InboxTrashComponent, InboxBlockedComponent],
   host: { '(document:paste)': 'onPaste($event)' },
   template: `
@@ -765,7 +766,7 @@ const EMOJIS = [
                 @if (m.author === 'system') {
                   <div class="system-note">
                     <lucide-icon [img]="PhoneForwarded" [size]="13" [strokeWidth]="2.4"></lucide-icon>
-                    <span>{{ m.text }}</span>
+                    <span><app-rich-text [text]="m.text" /></span>
                   </div>
                 } @else {
                 <div class="row" [class.out]="m.direction === 'out'" [id]="'msg-' + m._id">
@@ -838,7 +839,7 @@ const EMOJIS = [
                     }
 
                     @if (m.text && m.type !== 'location') {
-                      <p class="bubble-text">{{ m.text }}</p>
+                      <p class="bubble-text"><app-rich-text [text]="m.text" /></p>
                     }
 
                     @if (m.transcript) {
@@ -847,7 +848,7 @@ const EMOJIS = [
                           <lucide-icon [img]="Sparkles" [size]="11" [strokeWidth]="2.4"></lucide-icon>
                           {{ transcriptLabel(m.type) }}
                         </span>
-                        <p>{{ m.transcript }}</p>
+                        <p><app-rich-text [text]="m.transcript" /></p>
                       </div>
                     }
 

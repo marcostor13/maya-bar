@@ -32,6 +32,7 @@ import {
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { RichText } from '../../shared/rich-text';
 import { AuthService } from '../../auth/auth.service';
 import {
   ContactActivityType,
@@ -79,7 +80,7 @@ function toLocalInput(date: Date): string {
 @Component({
   selector: 'app-contact-care',
   standalone: true,
-  imports: [FormsModule, LucideAngularModule, DatePipe],
+  imports: [FormsModule, RichText, LucideAngularModule, DatePipe],
   template: `
     <section class="care">
       <!-- Responsable -->
@@ -194,7 +195,7 @@ function toLocalInput(date: Date): string {
                     </span>
                   }
                 </div>
-                @if (item.body) { <p class="tl-text">{{ item.body }}</p> }
+                @if (item.body) { <p class="tl-text"><app-rich-text [text]="item.body" /></p> }
                 <div class="tl-meta">
                   <span>{{ typeLabel(item.type) }}</span>
                   <span>{{ item.at | date: 'dd/MM/yyyy HH:mm' }}</span>

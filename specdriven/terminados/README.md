@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-14 | [HU12 — Links clicables en los mensajes de los chats](2026-11-14-hu12-links-clicables/cierre.md) | Terminada (pendiente prueba en Android del usuario) | spec-verifier no ejecutado (bloqueado); autoverificación: 10 CUMPLE · 1 [usuario] |
 | 2026-11-12 | [HU11 — Agrupar los mensajes seguidos del cliente](2026-11-12-hu11-agrupar-mensajes-seguidos/cierre.md) | Terminada (pendiente prueba real del usuario) | spec-verifier no ejecutado (bloqueado); autoverificación: 8 CUMPLE · 1 [usuario] |
 | 2026-11-12 | [HU10 — El agente IA puede decidir no responder](2026-11-12-hu10-agente-puede-no-responder/cierre.md) | Terminada (pendiente prompt de Sovereign tras deploy y prueba real) | spec-verifier no ejecutado (bloqueado); autoverificación: 8 CUMPLE · 1 [usuario] |
 | 2026-11-12 | [HU9 — Formularios de crear/editar en pantalla completa](2026-11-12-hu9-formularios-pantalla-completa/cierre.md) | Terminada (pendiente revisión visual del usuario) | 6 CUMPLE · 2 PARCIAL (C2, C3, corregidos sin 2.ª vuelta) · 1 [usuario] |
