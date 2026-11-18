@@ -7,6 +7,7 @@ export const USER_AUDIT_ACTIONS = [
   'activate',
   'deactivate',
   'reset_access',
+  'revoke_sessions',
   'transfer_admin',
   'delete',
 ] as const;

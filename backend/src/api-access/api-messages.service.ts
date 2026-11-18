@@ -95,6 +95,9 @@ export class ApiMessagesService {
         };
     }
 
+    if (access.channel === 'sms')
+      throw new BadRequestException('Los SMS los envía ApiSmsService.');
+    const channel = access.channel;
     const content = this.content(access, dto);
     const contact = this.recipient(access, dto.to);
 
@@ -102,7 +105,7 @@ export class ApiMessagesService {
     await this.accesses.liveAccount(access);
 
     const tenantId = String(access.tenantId);
-    if (await this.blocked.isBlocked(tenantId, access.channel, contact))
+    if (await this.blocked.isBlocked(tenantId, channel, contact))
       throw new UnprocessableEntityException(
         'El contacto está bloqueado en la plataforma.',
       );
@@ -142,7 +145,7 @@ export class ApiMessagesService {
     const { conversation, message, duplicate } =
       await this.conversations.sendExternal({
         tenantId,
-        channel: access.channel,
+        channel,
         accountId: String(access.accountId),
         contact,
         type: template ? 'text' : content.type,

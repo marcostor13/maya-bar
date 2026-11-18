@@ -58,7 +58,11 @@ describe('AuthService', () => {
     registerResetFailure: jest.fn(),
     resetPassword: jest.fn(),
   };
-  const tenantsService = { create: jest.fn(), remove: jest.fn() };
+  const tenantsService = {
+    create: jest.fn(),
+    remove: jest.fn(),
+    isActive: jest.fn(() => Promise.resolve(true)),
+  };
   const sessions = {
     revoke: jest.fn().mockResolvedValue(undefined),
     touchAccess: jest.fn().mockResolvedValue(undefined),

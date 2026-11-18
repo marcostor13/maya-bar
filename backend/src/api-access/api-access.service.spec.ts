@@ -98,8 +98,16 @@ function harness() {
     ),
   };
   const ms: any = { findAll: jest.fn(() => Promise.resolve([])) };
-  const service = new ApiAccessService(model, usage, wa, ig, ms);
-  return { service, model, usage, docs, account, wa };
+  let smsCfg: any = null;
+  const sms: any = {
+    findConfig: jest.fn(() => Promise.resolve(smsCfg)),
+    isUsable: (c: any) => !!c && c.enabled && !!c.url,
+  };
+  const setSms = (cfg: any) => {
+    smsCfg = cfg;
+  };
+  const service = new ApiAccessService(model, usage, wa, ig, ms, sms);
+  return { service, model, usage, docs, account, wa, setSms };
 }
 
 const createDto = {
@@ -349,5 +357,54 @@ describe('ApiAccessService', () => {
         active: false,
       }),
     ]);
+  });
+
+  describe('proveedor SMS como cuenta (HU14)', () => {
+    const SMS_ID = new Types.ObjectId();
+    const cfg = (enabled: boolean) => ({
+      _id: SMS_ID,
+      tenantId: new Types.ObjectId(TENANT),
+      name: 'Proveedor X',
+      from: 'MAYA',
+      enabled,
+      url: 'https://sms.example.com',
+    });
+
+    it('C1: lista el proveedor SMS, inactivo si está desactivado', async () => {
+      const { service, setSms } = harness();
+      setSms(cfg(false));
+      const list = await service.accounts(TENANT);
+      expect(list).toContainEqual({
+        channel: 'sms',
+        id: String(SMS_ID),
+        label: 'Proveedor X',
+        detail: 'MAYA',
+        active: false,
+      });
+    });
+
+    it('C2: crear un acceso SMS con un id que no es el de la empresa da 404', async () => {
+      const { service, setSms } = harness();
+      setSms(cfg(true));
+      await expect(
+        service.create(TENANT, USER, {
+          ...createDto,
+          channel: 'sms',
+          accountId: String(new Types.ObjectId()),
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('C6: un proveedor desactivado no deja enviar (409)', async () => {
+      const { service, setSms } = harness();
+      setSms(cfg(false));
+      await expect(
+        service.liveAccount({
+          channel: 'sms',
+          tenantId: new Types.ObjectId(TENANT),
+          accountId: SMS_ID,
+        } as any),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
   });
 });

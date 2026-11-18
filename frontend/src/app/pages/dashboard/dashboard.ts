@@ -11,6 +11,7 @@ import {
 } from 'lucide-angular';
 import { NgTemplateOutlet } from '@angular/common';
 import { environment } from '../../../environments/environment';
+import { MessageCostsCardComponent } from './message-costs-card';
 import {
   BarListComponent, ChartCardComponent, CountUpComponent, FunnelComponent, HeatmapComponent,
   RingComponent, SparklineComponent, TimeChartComponent, bucketLabel, formatMinutes, formatValue,
@@ -55,7 +56,8 @@ export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [
+  imports: [MessageCostsCardComponent,
+    
     RouterLink, NgTemplateOutlet, LucideAngularModule, BarListComponent, ChartCardComponent, CountUpComponent,
     FunnelComponent, HeatmapComponent, RingComponent, SparklineComponent, TimeChartComponent,
   ],
@@ -218,6 +220,10 @@ export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
                           [table]="agentsTable()" [style.--i]="5">
             <app-bar-list [items]="agentItems()" color="var(--chart-2)" empty="Tus agentes aún no han respondido en este periodo" />
           </app-chart-card>
+
+          @if (isAdmin()) {
+            <app-message-costs-card [range]="range()" />
+          }
 
           <h2 class="section">Ventas <small>{{ d.channel ? 'No se filtran por canal' : '' }}</small></h2>
           <div class="grid g-11">
@@ -446,6 +452,8 @@ export class DashboardComponent implements OnInit {
   loading = signal(true);
   error = signal('');
   range = signal<AnalyticsRange>('30d');
+  /** Los costos de mensajes solo los ve el administrador (HU18). */
+  isAdmin = computed(() => this.auth.currentUser()?.role === 'TENANT_ADMIN');
   channel = signal<AnalyticsChannel>('');
   private requestId = 0;
 

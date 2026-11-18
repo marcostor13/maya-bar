@@ -7,6 +7,10 @@ import { WhatsAppAccount } from '../src/whatsapp-accounts/whatsapp-account.schem
 import { Conversation } from '../src/conversations/conversation.schema';
 import { Message } from '../src/conversations/message.schema';
 import { ApiAccess } from '../src/api-access/api-access.schema';
+import { SmsConfig } from '../src/sms/sms-config.schema';
+import { SmsService } from '../src/sms/sms.service';
+import { signMetaBody } from '../src/shared/meta-signature';
+import { ApiWebhookService } from '../src/api-access/api-webhook.service';
 import {
   bearer,
   createApp,
@@ -280,5 +284,269 @@ describe('API de envío de mensajes (HU13, e2e)', () => {
     await send(key, { to: phone(), mediaUrl: 'http://x.com/a.png' }).expect(
       400,
     );
+  });
+
+  describe('SMS por la API (HU14)', () => {
+    let smsId: string;
+    let dispatch: jest.SpyInstance;
+
+    beforeAll(async () => {
+      const cfg = await app
+        .get<Model<SmsConfig>>(getModelToken(SmsConfig.name))
+        .create({
+          tenantId: new Types.ObjectId(owner.user.tenantId!),
+          enabled: true,
+          name: 'Proveedor X',
+          url: 'https://sms.example.com/send',
+          from: 'MAYA',
+        });
+      smsId = String(cfg._id);
+      let n = 0;
+      dispatch = jest
+        .spyOn(app.get(SmsService), 'dispatch')
+        .mockImplementation(() =>
+          Promise.resolve({ id: `sms-${++n}`, status: 200, response: 'ok' }),
+        );
+    });
+
+    const smsAccess = async () =>
+      (
+        await http()
+          .post('/api-access')
+          .set(bearer(owner))
+          .send({
+            name: 'Web SMS',
+            channel: 'sms',
+            accountId: smsId,
+            allowedDomains: ['mitienda.pe'],
+          })
+          .expect(201)
+      ).body as { access: Doc; key: string };
+
+    it('C1: el proveedor SMS aparece entre las cuentas compartibles', async () => {
+      const list = (
+        await http().get('/api-access/accounts').set(bearer(owner)).expect(200)
+      ).body as Doc[];
+      expect(list).toContainEqual(
+        expect.objectContaining({ channel: 'sms', id: smsId, active: true }),
+      );
+    });
+
+    it('C2: otra empresa no puede crear un acceso con este proveedor (404)', async () => {
+      await http()
+        .post('/api-access')
+        .set(bearer(other))
+        .send({
+          name: 'Robo',
+          channel: 'sms',
+          accountId: smsId,
+          allowedDomains: ['x.pe'],
+        })
+        .expect(404);
+    });
+
+    it('C3, C7, C8: envía, no duplica con Idempotency-Key y consulta el estado', async () => {
+      const { key } = await smsAccess();
+      const first = await send(key, {
+        to: '+51 988 776 655',
+        text: 'Tu código es 1234',
+      })
+        .set('Idempotency-Key', 'sms-1')
+        .expect(201);
+      expect(first.body).toMatchObject({
+        status: 'sent',
+        channel: 'sms',
+        to: '+51988776655',
+        segments: 1,
+      });
+      await send(key, { to: '+51988776655', text: 'Tu código es 1234' })
+        .set('Idempotency-Key', 'sms-1')
+        .expect(200);
+      expect(
+        dispatch.mock.calls.filter(([, to]) => to === '+51988776655'),
+      ).toHaveLength(1);
+
+      const id = (first.body as Doc).id as string;
+      const status = await http()
+        .get(`/public/v1/messages/${id}`)
+        .set('Authorization', `Bearer ${key}`)
+        .set('Origin', ORIGIN)
+        .expect(200);
+      expect((status.body as Doc).status).toBe('sent');
+
+      const { key: otherKey } = await smsAccess();
+      await http()
+        .get(`/public/v1/messages/${id}`)
+        .set('Authorization', `Bearer ${otherKey}`)
+        .set('Origin', ORIGIN)
+        .expect(404);
+    });
+
+    it('C4: un número en "No contactar" da 422 sin llamar al proveedor', async () => {
+      const { key } = await smsAccess();
+      await http()
+        .post('/suppression')
+        .set(bearer(owner))
+        .send({ phone: '+51977665544', reason: 'pidió baja' })
+        .expect(201);
+      const before = dispatch.mock.calls.length;
+      await send(key, { to: '+51977665544', text: 'Hola' }).expect(422);
+      expect(dispatch.mock.calls.length).toBe(before);
+    });
+  });
+
+  describe('Webhook de salida (HU15)', () => {
+    const HOOK = 'https://8.8.8.8/maya';
+    let hookPost: jest.SpyInstance;
+
+    beforeAll(() => {
+      hookPost = jest
+        .spyOn(app.get(ApiWebhookService), 'post')
+        .mockResolvedValue({ status: 200 });
+    });
+
+    async function metaWebhook(value: Record<string, unknown>) {
+      const raw = JSON.stringify({
+        entry: [
+          {
+            changes: [
+              {
+                field: 'messages',
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: { phone_number_id: phoneNumberId },
+                  ...value,
+                },
+              },
+            ],
+          },
+        ],
+      });
+      await http()
+        .post('/wa/webhook/cloud')
+        .set('Content-Type', 'application/json')
+        .set('x-hub-signature-256', signMetaBody(raw, 'e2e-app-secret'))
+        .send(raw)
+        .expect(200);
+    }
+
+    async function until<T>(fn: () => Promise<T | undefined | null | false>) {
+      const end = Date.now() + 4000;
+      for (;;) {
+        const v = await fn();
+        if (v) return v;
+        if (Date.now() > end) throw new Error('Tiempo de espera agotado');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+
+    const hooks = (accessId: string) =>
+      http()
+        .get(`/api-access/${accessId}/webhook/deliveries`)
+        .set(bearer(owner))
+        .expect(200)
+        .then((r) => r.body as Doc[]);
+
+    it('C1, C8: guarda la URL, devuelve el secreto una vez y aísla entre empresas', async () => {
+      const { access } = await createAccess();
+      const id = access._id as string;
+      await http()
+        .put(`/api-access/${id}/webhook`)
+        .set(bearer(owner))
+        .send({ url: 'http://8.8.8.8/x' })
+        .expect(400);
+      const res = await http()
+        .put(`/api-access/${id}/webhook`)
+        .set(bearer(owner))
+        .send({ url: HOOK })
+        .expect(200);
+      const secret = (res.body as Doc).secret as string;
+      expect(secret).toMatch(/^whsec_/);
+      const list = (
+        await http().get('/api-access').set(bearer(owner)).expect(200)
+      ).body as Doc[];
+      expect(JSON.stringify(list)).not.toContain(secret);
+      expect(list.find((a) => a._id === id)?.webhookUrl).toBe(HOOK);
+
+      await http()
+        .put(`/api-access/${id}/webhook`)
+        .set(bearer(other))
+        .send({ url: HOOK })
+        .expect(404);
+      await http()
+        .get(`/api-access/${id}/webhook/deliveries`)
+        .set(bearer(other))
+        .expect(404);
+    });
+
+    it('C3, C4, C7: avisa delivered (una vez), read, la respuesta del contacto y la prueba', async () => {
+      const { access, key } = await createAccess();
+      const id = access._id as string;
+      await http()
+        .put(`/api-access/${id}/webhook`)
+        .set(bearer(owner))
+        .send({ url: HOOK })
+        .expect(200);
+
+      const to = phone();
+      await openChat(to);
+      const sent = await send(key, { to, text: 'Pedido listo' }).expect(201);
+      const msg = await messages.findById((sent.body as Doc).id).lean();
+      const wamid = msg!.externalId!;
+
+      const status = (s: string) =>
+        metaWebhook({
+          statuses: [
+            {
+              id: wamid,
+              status: s,
+              timestamp: String(Math.floor(Date.now() / 1000)),
+              recipient_id: to,
+            },
+          ],
+        });
+      await status('delivered');
+      await status('delivered');
+      await status('read');
+      await metaWebhook({
+        contacts: [{ wa_id: to, profile: { name: 'Cliente' } }],
+        messages: [
+          {
+            from: to,
+            id: `wamid.in${Date.now()}`,
+            timestamp: String(Math.floor(Date.now() / 1000)),
+            type: 'text',
+            text: { body: 'Gracias, paso a recoger' },
+          },
+        ],
+      });
+
+      const events = await until(async () => {
+        const list = await hooks(id);
+        const names = list.map((d) => d.event);
+        return names.includes('message.received') &&
+          names.includes('message.read')
+          ? names
+          : null;
+      });
+      expect(events.filter((e) => e === 'message.delivered')).toHaveLength(1);
+      expect(events).toEqual(
+        expect.arrayContaining(['message.sent', 'message.read']),
+      );
+      const received = hookPost.mock.calls
+        .map(([, body]) => JSON.parse(body as string) as Doc)
+        .find((b) => b.event === 'message.received');
+      expect((received!.data as Doc).text).toBe('Gracias, paso a recoger');
+
+      await http()
+        .post(`/api-access/${id}/webhook/test`)
+        .set(bearer(owner))
+        .expect(201);
+      const withPing = await until(async () => {
+        const list = await hooks(id);
+        return list.find((d) => d.event === 'ping' && d.status === 'delivered');
+      });
+      expect(withPing).toMatchObject({ attempts: 1, lastStatus: 200 });
+    });
   });
 });

@@ -8,6 +8,7 @@ import {
 import type { Request } from 'express';
 import { ApiAccess } from './api-access.schema';
 import { ApiAccessService } from './api-access.service';
+import { TenantsService } from '../tenants/tenants.service';
 
 export interface ApiKeyReq extends Request {
   apiAccess: ApiAccess;
@@ -20,13 +21,21 @@ export interface ApiKeyReq extends Request {
  */
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
-  constructor(private accesses: ApiAccessService) {}
+  constructor(
+    private accesses: ApiAccessService,
+    private tenants: TenantsService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<ApiKeyReq>();
     const auth = req.headers.authorization ?? '';
     const key = /^Bearer\s+(\S+)$/i.exec(auth)?.[1];
-    const access = await this.accesses.authenticate(key);
+    const found = await this.accesses.authenticate(key);
+    // Una empresa suspendida (HU16) no puede usar sus claves.
+    const access =
+      found && (await this.tenants.isActive(String(found.tenantId)))
+        ? found
+        : null;
     if (!access)
       throw new UnauthorizedException(
         'Clave de API inválida o revocada. Envía "Authorization: Bearer <clave>".',

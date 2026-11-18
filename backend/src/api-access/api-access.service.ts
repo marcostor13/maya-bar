@@ -13,10 +13,12 @@ import { Model, Types } from 'mongoose';
 import { WhatsAppAccountsService } from '../whatsapp-accounts/whatsapp-accounts.service';
 import { InstagramAccountsService } from '../instagram-accounts/instagram-accounts.service';
 import { MessengerAccountsService } from '../messenger-accounts/messenger-accounts.service';
+import { SmsService } from '../sms/sms.service';
 import {
   ApiAccess,
   ApiChannel,
   ApiUsage,
+  ChatChannel,
   DEFAULT_PER_DAY,
   DEFAULT_PER_MINUTE,
 } from './api-access.schema';
@@ -43,6 +45,8 @@ export interface ApiAccessView {
   revokedAt?: Date;
   lastUsedAt?: Date;
   sentCount: number;
+  /** URL de aviso (HU15); el secreto nunca se devuelve. */
+  webhookUrl?: string;
   createdAt?: Date;
 }
 
@@ -138,6 +142,7 @@ export class ApiAccessService {
     private waAccounts: WhatsAppAccountsService,
     private igAccounts: InstagramAccountsService,
     private msAccounts: MessengerAccountsService,
+    private sms: SmsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -154,12 +159,13 @@ export class ApiAccessService {
 
   /** Cuentas conectadas que se pueden compartir. */
   async accounts(tenantId: string): Promise<ShareableAccount[]> {
-    const [wa, ig, ms] = await Promise.all([
+    const [wa, ig, ms, sms] = await Promise.all([
       this.waAccounts.findAll(tenantId),
       this.igAccounts.findAll(tenantId),
       this.msAccounts.findAll(tenantId),
+      this.sms.findConfig(tenantId),
     ]);
-    const map = (channel: ApiChannel, list: AnyAccount[]) =>
+    const map = (channel: ChatChannel, list: AnyAccount[]) =>
       list.map((a) => ({
         channel,
         id: String(a._id),
@@ -176,6 +182,17 @@ export class ApiAccessService {
       ...map('whatsapp', wa),
       ...map('instagram', ig),
       ...map('messenger', ms),
+      ...(sms
+        ? [
+            {
+              channel: 'sms' as const,
+              id: String(sms._id),
+              label: sms.name || 'Proveedor SMS',
+              detail: sms.from || undefined,
+              active: this.sms.isUsable(sms),
+            },
+          ]
+        : []),
     ];
   }
 
@@ -322,6 +339,18 @@ export class ApiAccessService {
    * Se revalida en cada envío: la cuenta pudo borrarse o desconectarse.
    */
   async liveAccount(access: ApiAccess): Promise<AnyAccount> {
+    if (access.channel === 'sms') {
+      const cfg = await this.sms.findConfig(String(access.tenantId));
+      if (!cfg || String(cfg._id) !== String(access.accountId))
+        throw new ConflictException(
+          'El proveedor SMS de este acceso ya no existe en la plataforma.',
+        );
+      if (!this.sms.isUsable(cfg))
+        throw new ConflictException(
+          'El proveedor SMS de este acceso está desactivado o sin URL.',
+        );
+      return this.smsAccount(cfg);
+    }
     const account = (await this.servicesFor(access.channel).findById(
       String(access.accountId),
     )) as AnyAccount | null;
@@ -353,7 +382,23 @@ export class ApiAccessService {
     return doc?.count ?? 1;
   }
 
-  private servicesFor(channel: ApiChannel) {
+  private smsAccount(cfg: {
+    _id: unknown;
+    tenantId: Types.ObjectId;
+    name: string;
+    from: string;
+    enabled: boolean;
+  }): AnyAccount {
+    return {
+      _id: cfg._id,
+      tenantId: cfg.tenantId,
+      label: cfg.name || 'Proveedor SMS',
+      active: cfg.enabled,
+      phoneNumber: cfg.from,
+    };
+  }
+
+  private servicesFor(channel: ChatChannel) {
     if (channel === 'whatsapp') return this.waAccounts;
     if (channel === 'instagram') return this.igAccounts;
     return this.msAccounts;
@@ -364,6 +409,12 @@ export class ApiAccessService {
     accountId: string,
     tenantId: string,
   ): Promise<AnyAccount> {
+    if (channel === 'sms') {
+      const cfg = await this.sms.findConfig(tenantId);
+      if (!cfg || String(cfg._id) !== accountId)
+        throw new NotFoundException('Proveedor SMS no encontrado');
+      return this.smsAccount(cfg);
+    }
     // findOne de cada servicio filtra por tenant y lanza 404 si no es suya.
     return await this.servicesFor(channel).findOne(accountId, tenantId);
   }
@@ -425,6 +476,7 @@ export class ApiAccessService {
       revokedAt: doc.revokedAt,
       lastUsedAt: doc.lastUsedAt,
       sentCount: doc.sentCount,
+      webhookUrl: doc.webhookUrl,
       createdAt: doc.createdAt,
     };
   }

@@ -45,6 +45,10 @@ export class Tenant extends Document {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  /** Tarifas que la empresa paga a sus proveedores, para estimar costos (HU18). */
+  @Prop({ type: Object })
+  messageCosts?: { smsPerSegment?: number; emailPer1000?: number };
 }
 
 export const TenantSchema = SchemaFactory.createForClass(Tenant);

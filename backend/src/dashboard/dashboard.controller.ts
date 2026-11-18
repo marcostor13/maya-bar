@@ -1,10 +1,20 @@
-import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Put,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ModuleGuard } from '../roles/module.guard';
 import type { AuthReq } from '../auth/permissions';
 import { DashboardService } from './dashboard.service';
 import { DashboardAnalyticsService } from './dashboard-analytics.service';
-import { AnalyticsQueryDto } from './dto';
+import { AnalyticsQueryDto, CostSettingsDto } from './dto';
+import { DashboardCostsService } from './dashboard-costs.service';
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, ModuleGuard('dashboard'))
@@ -12,7 +22,13 @@ export class DashboardController {
   constructor(
     private service: DashboardService,
     private analytics: DashboardAnalyticsService,
+    private costsService: DashboardCostsService,
   ) {}
+
+  /** Los costos son del administrador de la empresa (HU18). */
+  private assertAdmin(req: AuthReq) {
+    if (req.user.role !== 'TENANT_ADMIN') throw new ForbiddenException();
+  }
 
   /** Resumen del CRM. El alcance del seguimiento depende del rol. */
   @Get('crm')
@@ -29,5 +45,26 @@ export class DashboardController {
       req.user.role,
       query,
     );
+  }
+
+  /** Costos estimados de los mensajes del periodo (HU18). */
+  @Get('costs')
+  costs(@Query() query: AnalyticsQueryDto, @Request() req: AuthReq) {
+    this.assertAdmin(req);
+    return this.costsService.costs(req.user.tenantId, query.range, query.tz);
+  }
+
+  @Put('costs/settings')
+  saveCostSettings(@Body() body: CostSettingsDto, @Request() req: AuthReq) {
+    this.assertAdmin(req);
+    const changes: {
+      smsPerSegment?: number | null;
+      emailPer1000?: number | null;
+    } = {};
+    if (body.smsPerSegment !== undefined)
+      changes.smsPerSegment = body.smsPerSegment;
+    if (body.emailPer1000 !== undefined)
+      changes.emailPer1000 = body.emailPer1000;
+    return this.costsService.saveSettings(req.user.tenantId, changes);
   }
 }

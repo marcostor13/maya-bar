@@ -1,3 +1,4 @@
+import { MessageEvents } from './message-events';
 import { CampaignAttributionModule } from '../campaign-attribution/campaign-attribution.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -99,6 +100,7 @@ import {
   providers: [
     ConversationsService,
     ConversationsGateway,
+    MessageEvents,
     HandoffService,
     ConversationAssignmentService,
     EmailListenerService,
@@ -111,6 +113,6 @@ import {
     CallsService,
     CallsMetaService,
   ],
-  exports: [ConversationsService, BlockedContactsService],
+  exports: [ConversationsService, BlockedContactsService, MessageEvents],
 })
 export class ConversationsModule {}

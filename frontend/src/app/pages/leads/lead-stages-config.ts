@@ -48,7 +48,7 @@ const SWATCHES = [
       subtitle="Las etapas del seguimiento, en el orden del tablero. Ganado y Perdido cierran la oportunidad."
       backLabel="Seguimiento"
       urlKey="embudo"
-      (closed)="close.emit()">
+      (closed)="closed.emit()">
         <div class="stages-list">
           @for (s of rows(); track s.key; let i = $index, first = $first, last = $last) {
             <div class="stage-row" [style.--stage]="s.color">
@@ -202,7 +202,7 @@ export class LeadStagesConfigComponent implements OnInit {
 
   /** Algo cambió en el embudo: la página recarga etapas, tablero y KPIs. */
   changed = output<void>();
-  close = output<void>();
+  closed = output<void>();
 
   readonly Plus = Plus; readonly Trash2 = Trash2; readonly ChevronUp = ChevronUp;
   readonly ChevronDown = ChevronDown; readonly Trophy = Trophy; readonly Ban = Ban; readonly Check = Check;

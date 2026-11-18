@@ -629,7 +629,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
             <!-- Atención: responsable y bitácora -->
             <div class="view-section">
               <span class="view-section-title">Atención</span>
-              <app-contact-care [customerId]="c._id" [owner]="c.ownerId"
+              <app-contact-care [customerId]="c._id" [ownerRef]="c.ownerId"
                 (ownerChanged)="onOwnerChanged(c, $event)" />
             </div>
 

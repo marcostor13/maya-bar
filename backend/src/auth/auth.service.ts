@@ -28,6 +28,8 @@ function hashToken(token: string): string {
 const EMAIL_CODE_TTL_MS = 30 * 60 * 1000;
 /** Intentos fallidos con un mismo código antes de invalidarlo. */
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
+const TENANT_SUSPENDED =
+  'Tu empresa está suspendida. Contacta con soporte de Maya CRM.';
 const GENERIC_RESEND_MESSAGE =
   'Si la cuenta está pendiente de confirmar, te enviamos un código nuevo.';
 
@@ -66,6 +68,8 @@ export class AuthService {
       throw new UnauthorizedException(
         'Tu cuenta está desactivada. Contacta con el administrador de tu empresa.',
       );
+    if (!(await this.tenantsService.isActive(this.tenantOf(user))))
+      throw new UnauthorizedException(TENANT_SUSPENDED);
 
     // Como el aviso de cuenta desactivada, solo se revela con la contraseña
     // correcta. El código permite al frontend llevar a la pantalla del código.
@@ -121,6 +125,8 @@ export class AuthService {
       await this.revokeAllFor(String(registro.userId));
       throw new UnauthorizedException('Tu cuenta ya no está activa');
     }
+    if (!(await this.tenantsService.isActive(this.tenantOf(user))))
+      throw new UnauthorizedException(TENANT_SUSPENDED);
 
     registro.revokedAt = new Date();
     await registro.save();
@@ -132,6 +138,12 @@ export class AuthService {
       plano,
       await this.issueRefreshToken(String(user._id), userAgent),
     );
+  }
+
+  private tenantOf(user: {
+    tenantId?: { toString(): string } | null;
+  }): string | undefined {
+    return user.tenantId ? user.tenantId.toString() : undefined;
   }
 
   /** Cierre de sesión: invalida el token de este dispositivo. */

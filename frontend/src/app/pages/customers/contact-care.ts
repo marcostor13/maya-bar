@@ -268,7 +268,7 @@ export class ContactCareComponent {
   /** Contacto atendido. Al cambiar se recarga todo. */
   customerId = input.required<string>();
   /** Responsable actual, tal como viene en el contacto. */
-  ownerRef = input<OwnerRef | null | undefined>(null, { alias: 'owner' });
+  ownerRef = input<OwnerRef | null | undefined>(null);
   /** Conversación desde la que se registra, si se usa en el inbox. */
   conversationId = input<string | undefined>(undefined);
 

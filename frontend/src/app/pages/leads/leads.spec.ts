@@ -164,7 +164,7 @@ describe('LeadStagesConfigComponent — ESC', () => {
     http.expectOne((r) => r.url.endsWith('/leads/stages')).flush([{ key: 'new', label: 'Nuevo', order: 1, color: '#000', probability: 10 }]);
     const c = f.componentInstance;
     const closed = vi.fn();
-    c.close.subscribe(closed);
+    c.closed.subscribe(closed);
     c.deleting.set({ ...c.rows()[0] });
     f.detectChanges();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));

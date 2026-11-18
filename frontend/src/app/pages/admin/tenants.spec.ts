@@ -1,6 +1,7 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { AdminTenantsComponent } from './tenants';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -47,7 +48,7 @@ describe('AdminTenantsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminTenantsComponent],
       providers: [
-        provideHttpClient(), provideHttpClientTesting(),
+        provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
         { provide: ToastService, useValue: toast },
         { provide: ConfirmService, useValue: confirm },
       ],
@@ -85,13 +86,43 @@ describe('AdminTenantsComponent', () => {
       expect(row('La Mar').querySelector('td[data-label="RUC"]')!.textContent).toContain('20123456789');
       expect(row('La Mar').querySelector('.badge-plan-pro')!.textContent).toContain('pro');
       expect(row('La Mar').querySelector('td[data-label="Trial hasta"]')!.textContent).toContain('20/10/2026');
-      expect(row('La Mar').querySelector('.badge-active')!.textContent).toContain('Activo');
-      expect(action('La Mar', 'Desactivar')).toBeTruthy();
+      expect(row('La Mar').querySelector('.badge-active')!.textContent).toContain('Activa');
 
       expect(row('Bar Cerrado').querySelector('td[data-label="RUC"]')!.textContent).toContain('—');
       expect(row('Bar Cerrado').querySelector('td[data-label="Trial hasta"]')!.textContent).toContain('—');
-      expect(row('Bar Cerrado').querySelector('.badge-inactive')!.textContent).toContain('Inactivo');
-      expect(action('Bar Cerrado', 'Activar')).toBeTruthy();
+      expect(row('Bar Cerrado').querySelector('.badge-inactive')!.textContent).toContain('Suspendida');
+    });
+
+    it('HU16 C1: busca por nombre, correo o RUC y filtra por plan y estado', async () => {
+      await setup();
+      const setValue = (selector: string, value: string) => {
+        const input = el().querySelector(selector) as HTMLInputElement;
+        input.value = value;
+        input.dispatchEvent(new Event(input.tagName === 'SELECT' ? 'change' : 'input'));
+        fixture.detectChanges();
+      };
+      setValue('input[name="q"]', '2012345');
+      expect(row('La Mar')).toBeTruthy();
+      expect(row('Bar Cerrado')).toBeUndefined();
+
+      setValue('input[name="q"]', '');
+      setValue('select[name="status"]', 'suspended');
+      expect(row('La Mar')).toBeUndefined();
+      expect(row('Bar Cerrado')).toBeTruthy();
+
+      setValue('select[name="plan"]', 'pro');
+      expect(el().textContent).toContain('Ninguna empresa coincide');
+    });
+
+    it('HU16: "Ficha" abre la ficha de la empresa', async () => {
+      await setup();
+      click(action('La Mar', 'Abrir ficha de La Mar S.A.C.'));
+      http.expectOne((r) => r.url.endsWith('/admin/tenants/t1/overview')).flush({
+        tenant: LAMAR, users: [], usage: { contacts: 0, conversations: 0, messagesOut30d: 0, accounts: { whatsapp: 0, instagram: 0, messenger: 0, email: 0 }, apiAccesses: 0 },
+      });
+      http.expectOne((r) => r.url.endsWith('/admin/tenants/t1/audit')).flush([]);
+      fixture.detectChanges();
+      expect(el().querySelector('app-tenant-detail')).not.toBeNull();
     });
   });
 
@@ -218,125 +249,4 @@ describe('AdminTenantsComponent', () => {
     });
   });
 
-  describe('editar', () => {
-    it('abre con los datos de la empresa, sin pedir administrador, y manda PATCH /tenants/:id', async () => {
-      await setup();
-      click(action('La Mar', 'Editar'));
-      expect(modal().querySelector('h3')!.textContent).toContain('Editar empresa');
-      expect(modal().querySelector('[formControlName="ownerName"]')).toBeNull();
-      expect((modal().querySelector('[formControlName="name"]') as HTMLInputElement).value).toBe('La Mar S.A.C.');
-      expect((modal().querySelector('[formControlName="email"]') as HTMLInputElement).value).toBe('admin@lamar.pe');
-      expect(button('Guardar', modal()).disabled).toBe(false);
-
-      fill({ name: 'La Mar Perú', plan: 'enterprise' });
-      submit();
-      const req = http.expectOne((r) => r.url.endsWith('/tenants/t1'));
-      expect(req.request.method).toBe('PATCH');
-      expect(req.request.body).toEqual(expect.objectContaining({
-        name: 'La Mar Perú', email: 'admin@lamar.pe', ruc: '20123456789', phone: '+51 999', plan: 'enterprise',
-      }));
-      req.flush({ ...LAMAR, name: 'La Mar Perú' });
-      expectTenants().flush([{ ...LAMAR, name: 'La Mar Perú', plan: 'enterprise' }, CERRADA]);
-      fixture.detectChanges();
-
-      expect(toast.success).toHaveBeenCalledWith('Empresa actualizada');
-      expect(modal()).toBeNull();
-      expect(row('La Mar Perú')).toBeTruthy();
-    });
-
-    it('si falla muestra el mensaje del servidor', async () => {
-      await setup();
-      click(action('La Mar', 'Editar'));
-      submit();
-      http.expectOne((r) => r.url.endsWith('/tenants/t1'))
-        .flush({ message: 'RUC inválido' }, { status: 400, statusText: 'Bad Request' });
-      expect(toast.error).toHaveBeenCalledWith('RUC inválido');
-    });
-  });
-
-  describe('activar y desactivar', () => {
-    it('desactivar pide confirmación; cancelada no manda nada', async () => {
-      await setup();
-      confirm.confirm.mockResolvedValue(false);
-      click(action('La Mar', 'Desactivar'));
-      await settle();
-      expect(confirm.confirm).toHaveBeenCalledWith(expect.objectContaining({
-        title: '¿Desactivar esta empresa?', confirmText: 'Desactivar', danger: true,
-      }));
-      http.expectNone((r) => r.method === 'PATCH');
-    });
-
-    it('confirmada manda PATCH /tenants/:id con isActive: false, avisa y recarga', async () => {
-      await setup();
-      click(action('La Mar', 'Desactivar'));
-      await settle();
-      const req = http.expectOne((r) => r.url.endsWith('/tenants/t1'));
-      expect(req.request.method).toBe('PATCH');
-      expect(req.request.body).toEqual({ isActive: false });
-      req.flush({});
-      expect(toast.success).toHaveBeenCalledWith('Empresa desactivada');
-      expectTenants().flush([{ ...LAMAR, isActive: false }, CERRADA]);
-      fixture.detectChanges();
-      expect(action('La Mar', 'Activar')).toBeTruthy();
-    });
-
-    it('activar no pide confirmación y manda isActive: true', async () => {
-      await setup();
-      click(action('Bar Cerrado', 'Activar'));
-      await settle();
-      expect(confirm.confirm).not.toHaveBeenCalled();
-      const req = http.expectOne((r) => r.url.endsWith('/tenants/t2'));
-      expect(req.request.method).toBe('PATCH');
-      expect(req.request.body).toEqual({ isActive: true });
-      req.flush({});
-      expect(toast.success).toHaveBeenCalledWith('Empresa activada');
-      expectTenants().flush([LAMAR, { ...CERRADA, isActive: true }]);
-    });
-
-    it('si falla el cambio de estado avisa con un toast de error', async () => {
-      await setup();
-      click(action('Bar Cerrado', 'Activar'));
-      await settle();
-      http.expectOne((r) => r.url.endsWith('/tenants/t2')).flush(null, { status: 500, statusText: 'Error' });
-      expect(toast.error).toHaveBeenCalledWith('Error al cambiar estado');
-      expect(toast.success).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('eliminar', () => {
-    it('pide confirmación nombrando la empresa; cancelada no manda nada', async () => {
-      await setup();
-      confirm.confirm.mockResolvedValue(false);
-      click(action('La Mar', 'Eliminar'));
-      await settle();
-      expect(confirm.confirm).toHaveBeenCalledWith(expect.objectContaining({
-        title: '¿Eliminar esta empresa?', confirmText: 'Eliminar', danger: true,
-        message: expect.stringContaining('La Mar S.A.C.'),
-      }));
-      http.expectNone((r) => r.method === 'DELETE');
-    });
-
-    it('confirmada manda DELETE /tenants/:id, avisa y recarga', async () => {
-      await setup();
-      click(action('La Mar', 'Eliminar'));
-      await settle();
-      const req = http.expectOne((r) => r.url.endsWith('/tenants/t1'));
-      expect(req.request.method).toBe('DELETE');
-      req.flush(null);
-      expect(toast.success).toHaveBeenCalledWith('Empresa eliminada');
-      expectTenants().flush([CERRADA]);
-      fixture.detectChanges();
-      expect(row('La Mar')).toBeUndefined();
-    });
-
-    it('si el servidor no deja eliminar muestra su mensaje', async () => {
-      await setup();
-      click(action('La Mar', 'Eliminar'));
-      await settle();
-      http.expectOne((r) => r.url.endsWith('/tenants/t1'))
-        .flush({ message: 'Tiene facturas pendientes' }, { status: 400, statusText: 'Bad Request' });
-      expect(toast.error).toHaveBeenCalledWith('Tiene facturas pendientes');
-      expect(row('La Mar')).toBeTruthy();
-    });
-  });
 });

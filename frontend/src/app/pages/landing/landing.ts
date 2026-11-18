@@ -1284,7 +1284,9 @@ export class LandingComponent implements OnInit {
       let saved: string | null = null;
       try {
         saved = localStorage.getItem(CURRENCY_KEY);
-      } catch {}
+      } catch {
+        /* almacenamiento no disponible: se usa la moneda por defecto */
+      }
       if (saved === 'usd' || saved === 'pen') {
         this.currency.set(saved);
       } else if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'America/Lima') {
@@ -1297,7 +1299,9 @@ export class LandingComponent implements OnInit {
     this.currency.set(c);
     try {
       localStorage.setItem(CURRENCY_KEY, c);
-    } catch {}
+    } catch {
+      /* almacenamiento no disponible: la elección no se recuerda */
+    }
   }
 
   private prices(plan: Plan): { monthly: number; annual: number } | null {

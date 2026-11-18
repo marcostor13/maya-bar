@@ -198,6 +198,7 @@ describe('UserAdminService — restablecer el acceso', () => {
     });
     expect(audit.record).toHaveBeenCalledWith(admin, target, 'reset_access', {
       mode: { to: 'temp' },
+      mustChangePassword: { to: true },
     });
     // La temporal no viaja al registro.
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain(

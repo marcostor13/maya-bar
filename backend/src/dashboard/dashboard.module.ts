@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { DashboardController } from './dashboard.controller';
+import { DashboardCostsService } from './dashboard-costs.service';
 import { DashboardService } from './dashboard.service';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
 import {
@@ -55,6 +56,10 @@ import { Call, CallSchema } from '../calls/call.schema';
     LeadsModule,
   ],
   controllers: [DashboardController],
-  providers: [DashboardService, DashboardAnalyticsService],
+  providers: [
+    DashboardCostsService,
+    DashboardService,
+    DashboardAnalyticsService,
+  ],
 })
 export class DashboardModule {}

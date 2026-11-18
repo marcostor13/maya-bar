@@ -177,6 +177,9 @@ export class WhatsAppWebhookController {
             st.id,
             this.cloudStatus(st.status),
             error,
+            st.pricing?.category
+              ? { ...st.pricing, to: st.recipient_id }
+              : undefined,
           );
         }
       }
@@ -626,6 +629,7 @@ interface CloudValue {
     status?: string;
     recipient_id?: string;
     errors?: CloudStatusError[];
+    pricing?: { category?: string; type?: string; billable?: boolean };
   }[];
 }
 

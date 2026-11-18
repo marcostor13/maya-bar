@@ -151,6 +151,13 @@ export class Message extends Document {
   @Prop()
   inTrash?: boolean;
 
+  /**
+   * Cobro que informa Meta en el estado (`statuses[].pricing`) y su costo de
+   * lista en USD según el mercado del destinatario (HU18).
+   */
+  @Prop({ type: Object })
+  pricing?: { category?: string; type?: string; market?: string; usd?: number };
+
   @Prop({ type: Date, default: Date.now, index: true })
   at: Date;
 }

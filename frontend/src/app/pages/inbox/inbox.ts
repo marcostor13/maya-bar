@@ -1294,7 +1294,7 @@ const EMOJIS = [
             @if (selected()?.customerId; as customerId) {
               <div class="cm-field">
                 <span class="cm-label">Atención y bitácora</span>
-                <app-contact-care [customerId]="customerId" [owner]="crmOwner()"
+                <app-contact-care [customerId]="customerId" [ownerRef]="crmOwner()"
                   [conversationId]="selected()!._id" (ownerChanged)="crmOwner.set($event)" />
               </div>
             }

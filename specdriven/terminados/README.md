@@ -5,6 +5,12 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-18 | [HU18 — Costos de los mensajes en el dashboard](2026-11-18-hu18-costos-mensajes/cierre.md) | Terminada (pendiente prueba real y corrida completa final) | 6 CUMPLE |
+| 2026-11-18 | [HU19 — Administración total de usuarios y contraseñas](2026-11-18-hu19-usuarios-contrasenas/cierre.md) | Terminada (pendiente revisión del usuario) | 6 CUMPLE · 1 PARCIAL (C7, corregido) |
+| 2026-11-18 | [HU17 — Restablecer la cuenta del usuario principal](2026-11-18-hu17-cuenta-principal/cierre.md) | Terminada (pendiente revisión del usuario) | 4 CUMPLE · 3 PARCIAL (C1, C2, C5, corregidos) |
+| 2026-11-18 | [HU16 — Administración total de las empresas](2026-11-18-hu16-admin-empresas/cierre.md) | Terminada (pendiente revisión del usuario) | 8 CUMPLE |
+| 2026-11-18 | [HU15 — Webhook de salida para las integraciones](2026-11-18-hu15-webhook-salida/cierre.md) | Terminada (pendiente prueba real del usuario) | 8 CUMPLE · 1 PARCIAL (C2, corregido) |
+| 2026-11-18 | [HU14 — Enviar SMS desde la API de integraciones](2026-11-18-hu14-sms-api/cierre.md) | Terminada (pendiente prueba real del usuario) | 10 CUMPLE |
 | 2026-11-14 | [HU13 — API de envío de mensajes por las cuentas conectadas](2026-11-14-hu13-api-envio-mensajes/cierre.md) | Terminada (pendiente prueba real del usuario) | 14 CUMPLE · 2 PARCIAL corregidos · 1 [usuario] |
 | 2026-11-14 | [HU12 — Links clicables en los mensajes de los chats](2026-11-14-hu12-links-clicables/cierre.md) | Terminada (pendiente prueba en Android del usuario) | spec-verifier no ejecutado (bloqueado); autoverificación: 10 CUMPLE · 1 [usuario] |
 | 2026-11-12 | [HU11 — Agrupar los mensajes seguidos del cliente](2026-11-12-hu11-agrupar-mensajes-seguidos/cierre.md) | Terminada (pendiente prueba real del usuario) | spec-verifier no ejecutado (bloqueado); autoverificación: 8 CUMPLE · 1 [usuario] |

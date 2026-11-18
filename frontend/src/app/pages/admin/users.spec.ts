@@ -128,6 +128,16 @@ describe('AdminUsersComponent', () => {
     http.expectOne((r) => r.url.endsWith('/admin/users/u1/reassign-candidates')).flush([]);
   });
 
+  it('HU19: marca la contraseña pendiente y cierra sesiones con confirmación', async () => {
+    await searchFor('ana', [{ ...ANA, mustChangePassword: true }]);
+    expect(row('ana@x.pe').textContent).toContain('Debe cambiar la contraseña');
+    button('Cerrar sesiones', row('ana@x.pe')).click();
+    await settle();
+    expect(confirm.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Cerrar sesiones' }));
+    http.expectOne((r) => r.method === 'POST' && r.url.endsWith('/admin/users/u1/sessions/revoke')).flush({ revoked: true });
+    expect(toast.success).toHaveBeenCalledWith('Sesiones cerradas');
+  });
+
   it('la pestaña Registro carga el registro de toda la plataforma', () => {
     button('Registro').click();
     fixture.detectChanges();

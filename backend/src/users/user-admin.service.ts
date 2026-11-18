@@ -16,7 +16,7 @@ import { UserSessionsService } from './user-sessions.service';
 import { AuditActor, UserAuditService, diff } from './user-audit.service';
 import { MailService } from '../mail/mail.service';
 
-export type ResetMode = 'email' | 'temp';
+export type ResetMode = 'email' | 'temp' | 'manual';
 
 export interface UserUpdate {
   name?: string;
@@ -237,6 +237,7 @@ export class UserAdminService {
     tenantId: string,
     mode: ResetMode,
     actor: AuditActor,
+    opts: { password?: string; mustChange?: boolean } = {},
   ): Promise<{ mode: ResetMode; tempPassword?: string }> {
     const target = await this.target(id, tenantId);
     if (String(target._id) === actor.userId)
@@ -247,10 +248,7 @@ export class UserAdminService {
     let tempPassword: string | undefined;
     let set: Record<string, unknown>;
     if (mode === 'email') {
-      if (!this.mail.isConfigured)
-        throw new BadRequestException(
-          'No hay un proveedor de correo configurado. Usa una contraseña temporal.',
-        );
+      this.assertResetPossible(mode);
       const code = crypto.randomInt(100000, 1000000).toString();
       await this.mail.sendPasswordResetEmail(target.email, code);
       set = {
@@ -259,6 +257,19 @@ export class UserAdminService {
         resetPasswordExpires: new Date(Date.now() + RESET_CODE_TTL_MS),
         resetPasswordAttempts: 0,
         mustChangePassword: false,
+      };
+    } else if (mode === 'manual') {
+      // La elige el administrador (HU19); el DTO ya validó la longitud.
+      if (!opts.password || opts.password.length < 8)
+        throw new BadRequestException(
+          'La contraseña debe tener al menos 8 caracteres',
+        );
+      // bcrypt solo usa los primeros 72 bytes: con tildes o emojis se pasa antes.
+      if (Buffer.byteLength(opts.password, 'utf8') > 72)
+        throw new BadRequestException('La contraseña es demasiado larga');
+      set = {
+        password: await bcrypt.hash(opts.password, 10),
+        mustChangePassword: opts.mustChange !== false,
       };
     } else {
       tempPassword = 'Tmp@' + crypto.randomBytes(4).toString('hex');
@@ -270,7 +281,7 @@ export class UserAdminService {
     await this.userModel
       .updateOne(
         { _id: target._id },
-        mode === 'temp'
+        mode !== 'email'
           ? {
               $set: set,
               $unset: {
@@ -285,11 +296,41 @@ export class UserAdminService {
     await this.sessions.revoke(String(target._id), { refresh: true });
     await this.audit.record(actor, target, 'reset_access', {
       mode: { to: mode },
+      ...(mode === 'email'
+        ? {}
+        : { mustChangePassword: { to: set.mustChangePassword } }),
     });
     this.logger.log(
       `Acceso restablecido (${mode}) para el usuario ${String(target._id)}`,
     );
     return tempPassword ? { mode, tempPassword } : { mode };
+  }
+
+  /** El modo `email` necesita un proveedor de correo; se comprueba antes de tocar nada. */
+  assertResetPossible(mode: ResetMode): void {
+    if (mode === 'email' && !this.mail.isConfigured)
+      throw new BadRequestException(
+        'No hay un proveedor de correo configurado. Usa una contraseña temporal.',
+      );
+  }
+
+  /**
+   * Cierra todas las sesiones del usuario (móvil perdido, cambio de turno) sin
+   * tocar su contraseña (HU19).
+   */
+  async revokeSessions(
+    id: string,
+    tenantId: string,
+    actor: AuditActor,
+  ): Promise<{ revoked: true }> {
+    const target = await this.target(id, tenantId);
+    if (String(target._id) === actor.userId)
+      throw new ForbiddenException(
+        'Para cerrar tus sesiones usa "Cerrar sesión" en tu perfil',
+      );
+    await this.sessions.revoke(String(target._id), { refresh: true });
+    await this.audit.record(actor, target, 'revoke_sessions');
+    return { revoked: true };
   }
 
   // ── Traspaso de la administración ────────────────────────────────────────

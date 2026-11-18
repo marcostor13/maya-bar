@@ -433,4 +433,90 @@ describe('Administración de usuarios (e2e)', () => {
       .expect(200);
     expect(await users.findById(exAdmin.user.id)).toBeNull();
   });
+
+  describe('contraseña elegida y cerrar sesiones (HU19)', () => {
+    it('C1, C2, C3: manual con y sin cambio obligatorio; validación', async () => {
+      const victim = await createUser(app, owner, 'MARKETING');
+      const url = `/users/${victim.user.id}/reset-access`;
+      await http()
+        .post(url)
+        .set(bearer(owner))
+        .send({ mode: 'manual' })
+        .expect(400);
+      await http()
+        .post(url)
+        .set(bearer(owner))
+        .send({ mode: 'manual', password: '1234567' })
+        .expect(400);
+
+      const res = await http()
+        .post(url)
+        .set(bearer(owner))
+        .send({ mode: 'manual', password: 'Elegida-2026' })
+        .expect(201);
+      expect(res.body).toEqual({ mode: 'manual' });
+      await http().get('/conversations').set(bearer(victim)).expect(401);
+      const fresh = await login(app, victim.user.email, 'Elegida-2026');
+      expect(
+        (await users.findById(fresh.user.id).lean())?.mustChangePassword,
+      ).toBe(true);
+
+      await http()
+        .post(url)
+        .set(bearer(owner))
+        .send({ mode: 'manual', password: 'Otra-Clave-99', mustChange: false })
+        .expect(201);
+      await http()
+        .post('/auth/login')
+        .send({ email: victim.user.email, password: 'Elegida-2026' })
+        .expect(401);
+      const again = await login(app, victim.user.email, 'Otra-Clave-99');
+      expect(
+        (await users.findById(again.user.id).lean())?.mustChangePassword,
+      ).toBe(false);
+    });
+
+    it('C4, C5, C6: cerrar sesiones sin tocar la contraseña; ni a sí mismo ni a otra empresa; registro', async () => {
+      const victim = await createUser(app, owner, 'MARKETING');
+      await http()
+        .post(`/users/${victim.user.id}/reset-access`)
+        .set(bearer(owner))
+        .send({ mode: 'manual', password: 'Sesiones-123', mustChange: false })
+        .expect(201);
+      const victimLogin = await login(app, victim.user.email, 'Sesiones-123');
+
+      await http()
+        .post(`/users/${victim.user.id}/sessions/revoke`)
+        .set(bearer(owner))
+        .expect(201);
+      await http().get('/conversations').set(bearer(victimLogin)).expect(401);
+      await http()
+        .post('/auth/refresh')
+        .send({ refreshToken: victimLogin.refreshToken })
+        .expect(401);
+      await login(app, victim.user.email, 'Sesiones-123');
+
+      await http()
+        .post(`/users/${owner.user.id}/sessions/revoke`)
+        .set(bearer(owner))
+        .expect(403);
+      await http()
+        .post(`/users/${victim.user.id}/sessions/revoke`)
+        .set(bearer(other))
+        .expect(404);
+      await http()
+        .post(`/admin/users/${victim.user.id}/sessions/revoke`)
+        .set(bearer(superadmin))
+        .expect(201);
+
+      const log = await audit();
+      const mine = log.filter((a) => a.targetEmail === victim.user.email);
+      expect(mine.map((a) => a.action)).toEqual(
+        expect.arrayContaining(['reset_access', 'revoke_sessions']),
+      );
+      const reset = mine.find((a) => a.action === 'reset_access')!;
+      expect(reset.changes).toMatchObject({ mode: { to: 'manual' } });
+      expect(JSON.stringify(log)).not.toContain('Sesiones-123');
+    });
+  });
 });

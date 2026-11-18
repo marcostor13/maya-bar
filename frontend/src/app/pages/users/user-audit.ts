@@ -21,6 +21,7 @@ const ACTION_LABELS: Record<string, string> = {
   activate: 'Activación',
   deactivate: 'Desactivación',
   reset_access: 'Acceso restablecido',
+  revoke_sessions: 'Sesiones cerradas',
   transfer_admin: 'Traspaso de administración',
   delete: 'Eliminación',
 };

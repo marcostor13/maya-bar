@@ -1,5 +1,10 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
+import { getModelToken } from '@nestjs/mongoose';
+import { Types, type Model } from 'mongoose';
+import { ApiAccess } from '../src/api-access/api-access.schema';
+import { hashKey } from '../src/api-access/api-access.service';
+import { User } from '../src/users/user.schema';
 import {
   ADMIN,
   bearer,
@@ -89,9 +94,20 @@ describe('Empresas, eventos, campañas y entradas públicas (e2e)', () => {
           .expect(201)
       ).body as Doc;
 
+      const name = (
+        (await http().get('/tenants/me').set(bearer(owner)).expect(200))
+          .body as Doc
+      ).name as string;
+      // HU16 C5: sin el nombre exacto no se borra nada.
       await http()
         .delete(`/tenants/${owner.user.tenantId}`)
         .set(bearer(root))
+        .send({ confirmName: 'otro nombre' })
+        .expect(400);
+      await http()
+        .delete(`/tenants/${owner.user.tenantId}`)
+        .set(bearer(root))
+        .send({ confirmName: name })
         .expect(200);
 
       await http()
@@ -142,6 +158,304 @@ describe('Empresas, eventos, campañas y entradas públicas (e2e)', () => {
         .patch('/tenants/me')
         .set(bearer(marketing))
         .send({ name: 'Renombrada' })
+        .expect(403);
+    });
+  });
+
+  describe('administración total de empresas (HU16)', () => {
+    it('C4: suspender corta login, sesiones, refresh y claves de API; reactivar lo devuelve', async () => {
+      const owner = await registerTenant(app, 'Suspendible');
+      const tid = owner.user.tenantId!;
+      const key = `mk_e2e_${Date.now()}`;
+      await app.get<Model<ApiAccess>>(getModelToken(ApiAccess.name)).create({
+        tenantId: new Types.ObjectId(tid),
+        name: 'Web',
+        channel: 'whatsapp',
+        accountId: new Types.ObjectId(),
+        keyHash: hashKey(key),
+        keyPrefix: key.slice(0, 10),
+        allowedDomains: ['x.pe'],
+      });
+      const apiStatus = () =>
+        http()
+          .get(`/public/v1/messages/${String(new Types.ObjectId())}`)
+          .set('Authorization', `Bearer ${key}`)
+          .set('Origin', 'https://x.pe');
+      // Clave válida: el mensaje no existe (404), pero la clave pasa.
+      await apiStatus().expect(404);
+
+      await http()
+        .patch(`/tenants/${tid}`)
+        .set(bearer(root))
+        .send({ isActive: false })
+        .expect(200);
+
+      await http().get('/customers').set(bearer(owner)).expect(401);
+      const login401 = await http()
+        .post('/auth/login')
+        .send({ email: owner.email, password: owner.password })
+        .expect(401);
+      expect(JSON.stringify(login401.body)).toContain('suspendida');
+      await http()
+        .post('/auth/refresh')
+        .send({ refreshToken: owner.refreshToken })
+        .expect(401);
+      await apiStatus().expect(401);
+
+      await http()
+        .patch(`/tenants/${tid}`)
+        .set(bearer(root))
+        .send({ isActive: true })
+        .expect(200);
+      const back = await login(app, owner.email, owner.password);
+      await http().get('/customers').set(bearer(back)).expect(200);
+      await apiStatus().expect(404);
+
+      const audit = (
+        await http()
+          .get(`/admin/tenants/${tid}/audit`)
+          .set(bearer(root))
+          .expect(200)
+      ).body as Doc[];
+      expect(audit.map((a) => a.action)).toEqual(
+        expect.arrayContaining(['suspend', 'reactivate']),
+      );
+    });
+
+    it('C2, C3, C6, C7: ficha con usuarios y uso; edición con plan y fechas; 409 y 403', async () => {
+      const owner = await registerTenant(app, 'Ficha');
+      const other = await registerTenant(app, 'Otra Ficha');
+      const tid = owner.user.tenantId!;
+      await http()
+        .post('/customers')
+        .set(bearer(owner))
+        .send({ name: 'Cliente uno' })
+        .expect(201);
+
+      const overview = (
+        await http()
+          .get(`/admin/tenants/${tid}/overview`)
+          .set(bearer(root))
+          .expect(200)
+      ).body as {
+        tenant: Doc;
+        users: Doc[];
+        usage: { contacts: number; accounts: Record<string, number> };
+      };
+      expect(overview.tenant._id).toBe(tid);
+      expect(overview.users.map((u) => u.email)).toContain(owner.email);
+      expect(JSON.stringify(overview.users)).not.toContain('password');
+      expect(overview.usage.contacts).toBe(1);
+      expect(overview.usage.accounts.whatsapp).toBe(0);
+
+      const patched = (
+        await http()
+          .patch(`/tenants/${tid}`)
+          .set(bearer(root))
+          .send({
+            plan: 'enterprise',
+            planExpiresAt: '2027-01-31',
+            trialEndsAt: null,
+          })
+          .expect(200)
+      ).body as Doc;
+      expect(patched.plan).toBe('enterprise');
+      expect(String(patched.planExpiresAt)).toContain('2027-01-31');
+      expect(patched.trialEndsAt).toBeUndefined();
+
+      await http()
+        .patch(`/tenants/${tid}`)
+        .set(bearer(root))
+        .send({ plan: 'gratis' })
+        .expect(400);
+      const otherEmail = (
+        (await http().get('/tenants/me').set(bearer(other)).expect(200))
+          .body as Doc
+      ).email;
+      await http()
+        .patch(`/tenants/${tid}`)
+        .set(bearer(root))
+        .send({ email: otherEmail })
+        .expect(409);
+
+      const audit = (
+        await http()
+          .get(`/admin/tenants/${tid}/audit`)
+          .set(bearer(root))
+          .expect(200)
+      ).body as Doc[];
+      const update = audit.find((a) => a.action === 'update')!;
+      expect(update.changes).toMatchObject({
+        plan: { to: 'enterprise' },
+        planExpiresAt: { to: '2027-01-31' },
+      });
+
+      await http()
+        .get(`/admin/tenants/${tid}/overview`)
+        .set(bearer(owner))
+        .expect(403);
+      await http()
+        .get(`/admin/tenants/${tid}/audit`)
+        .set(bearer(owner))
+        .expect(403);
+    });
+  });
+
+  describe('usuario principal de la empresa (HU17)', () => {
+    type Overview = { owner: Doc | null; users: Doc[] };
+    const overview = async (tid: string) =>
+      (
+        await http()
+          .get(`/admin/tenants/${tid}/overview`)
+          .set(bearer(root))
+          .expect(200)
+      ).body as Overview;
+
+    it('C1, C2, C5: recupera la cuenta con correo nuevo, reactivación y contraseña temporal', async () => {
+      const owner = await registerTenant(app, 'Recuperable');
+      const tid = owner.user.tenantId!;
+      expect((await overview(tid)).owner?.email).toBe(owner.email);
+
+      // Con la cuenta activa: su token deja de valer al recuperarla.
+      const first = await http()
+        .post(`/admin/tenants/${tid}/owner/recover`)
+        .set(bearer(root))
+        .send({ userId: owner.user.id, mode: 'temp' })
+        .expect(201);
+      await http().get('/customers').set(bearer(owner)).expect(401);
+      owner.password = (first.body as { tempPassword: string }).tempPassword;
+
+      // Sin proveedor de correo, el modo email se rechaza sin cambiar nada.
+      await http()
+        .post(`/admin/tenants/${tid}/owner/recover`)
+        .set(bearer(root))
+        .send({
+          userId: owner.user.id,
+          email: `no-${Date.now()}@e2e.test`,
+          mode: 'email',
+        })
+        .expect(400);
+      expect((await overview(tid)).owner?.email).toBe(owner.email);
+
+      const uid = owner.user.id;
+      // Un segundo admin para poder desactivar al principal.
+      await http()
+        .post(`/admin/tenants/${tid}/owner/assign`)
+        .set(bearer(root))
+        .send({ name: 'Segundo', email: `segundo-${Date.now()}@e2e.test` })
+        .expect(201);
+      // El principal sigue siendo el más antiguo aunque haya otro admin.
+      expect((await overview(tid)).owner?.email).toBe(owner.email);
+      await http()
+        .patch(`/admin/users/${String(uid)}/active`)
+        .set(bearer(root))
+        .send({ isActive: false })
+        .expect(200);
+      expect((await overview(tid)).owner?.email).not.toBe(owner.email);
+
+      const newEmail = `recuperado-${Date.now()}@e2e.test`;
+      const res = await http()
+        .post(`/admin/tenants/${tid}/owner/recover`)
+        .set(bearer(root))
+        .send({ userId: uid, email: newEmail, mode: 'temp' })
+        .expect(201);
+      const { tempPassword, user } = res.body as {
+        tempPassword: string;
+        user: Doc;
+      };
+      expect(user.email).toBe(newEmail);
+      expect(user.isActive).toBe(true);
+      expect(JSON.stringify(res.body)).not.toContain('$2');
+
+      await http().get('/customers').set(bearer(owner)).expect(401);
+      await http()
+        .post('/auth/login')
+        .send({ email: newEmail, password: owner.password })
+        .expect(401);
+      const back = await login(app, newEmail, tempPassword);
+      expect(
+        (back.user as { mustChangePassword?: boolean }).mustChangePassword,
+      ).toBe(true);
+
+      const audit = (
+        await http()
+          .get(`/admin/tenants/${tid}/audit`)
+          .set(bearer(root))
+          .expect(200)
+      ).body as Doc[];
+      const reset = audit.find((a) => a.action === 'owner_reset')!;
+      expect(reset.changes).toMatchObject({
+        email: { from: owner.email, to: newEmail },
+        mode: { to: 'temp' },
+      });
+      expect(audit.map((a) => a.action)).toContain('owner_assign');
+      expect(JSON.stringify(audit)).not.toContain(tempPassword);
+      // También en el registro de usuarios, sin la contraseña.
+      const userLog = (
+        await http().get('/users/audit').set(bearer(back)).expect(200)
+      ).body as Doc[];
+      expect(userLog.map((a) => a.action)).toEqual(
+        expect.arrayContaining(['reset_access', 'activate']),
+      );
+      expect(JSON.stringify(userLog)).not.toContain(tempPassword);
+    });
+
+    it('C3, C4, C6: solo administradores de esa empresa; nombrar a uno existente; 403', async () => {
+      const owner = await registerTenant(app, 'Nombrable');
+      const other = await registerTenant(app, 'Ajena');
+      const tid = owner.user.tenantId!;
+      const sales = await createUser(app, owner, 'MARKETING');
+      const salesId = sales.user.id;
+
+      await http()
+        .post(`/admin/tenants/${tid}/owner/recover`)
+        .set(bearer(root))
+        .send({ userId: other.user.id, mode: 'temp' })
+        .expect(404);
+      await http()
+        .post(`/admin/tenants/${tid}/owner/recover`)
+        .set(bearer(root))
+        .send({ userId: salesId, mode: 'temp' })
+        .expect(400);
+
+      const assigned = await http()
+        .post(`/admin/tenants/${tid}/owner/assign`)
+        .set(bearer(root))
+        .send({ userId: salesId })
+        .expect(201);
+      expect((assigned.body as { user: Doc }).user.role).toBe('TENANT_ADMIN');
+      const created = await http()
+        .post(`/admin/tenants/${tid}/owner/assign`)
+        .set(bearer(root))
+        .send({
+          name: 'Nuevo admin',
+          email: `nuevo-admin-${Date.now()}@e2e.test`,
+        })
+        .expect(201);
+      const { user, tempPassword } = created.body as {
+        user: Doc;
+        tempPassword: string;
+      };
+      const fresh = await login(app, user.email as string, tempPassword);
+      expect(fresh.user.role).toBe('TENANT_ADMIN');
+
+      // Sin administradores activos, la ficha no tiene principal.
+      const lone = await registerTenant(app, 'Sin admin');
+      // El último admin no se desactiva por la API (HU5): se fuerza en la base.
+      await app
+        .get<Model<User>>(getModelToken(User.name))
+        .updateOne({ email: lone.email }, { $set: { isActive: false } });
+      expect((await overview(lone.user.tenantId!)).owner).toBeNull();
+
+      await http()
+        .post(`/admin/tenants/${tid}/owner/assign`)
+        .set(bearer(owner))
+        .send({ userId: salesId })
+        .expect(403);
+      await http()
+        .post(`/admin/tenants/${tid}/owner/recover`)
+        .set(bearer(owner))
+        .send({ userId: salesId, mode: 'temp' })
         .expect(403);
     });
   });

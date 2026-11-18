@@ -13,6 +13,7 @@ import {
 import type { Response } from 'express';
 import { ApiKeyGuard, type ApiKeyReq } from './api-key.guard';
 import { ApiMessagesService } from './api-messages.service';
+import { ApiSmsService } from './api-sms.service';
 import { QuotaExceededException } from './api-access.service';
 import { SendApiMessageDto } from './dto/api-access.dto';
 
@@ -20,7 +21,10 @@ import { SendApiMessageDto } from './dto/api-access.dto';
 @Controller('public/v1/messages')
 @UseGuards(ApiKeyGuard)
 export class PublicApiController {
-  constructor(private messages: ApiMessagesService) {}
+  constructor(
+    private messages: ApiMessagesService,
+    private sms: ApiSmsService,
+  ) {}
 
   @Post()
   @HttpCode(201)
@@ -31,7 +35,8 @@ export class PublicApiController {
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     try {
-      const { message, duplicate } = await this.messages.send(
+      const sender = req.apiAccess.channel === 'sms' ? this.sms : this.messages;
+      const { message, duplicate } = await sender.send(
         req.apiAccess,
         dto,
         idempotencyKey,
@@ -47,6 +52,8 @@ export class PublicApiController {
 
   @Get(':id')
   status(@Param('id') id: string, @Request() req: ApiKeyReq) {
-    return this.messages.status(req.apiAccess, id);
+    return req.apiAccess.channel === 'sms'
+      ? this.sms.status(req.apiAccess, id)
+      : this.messages.status(req.apiAccess, id);
   }
 }

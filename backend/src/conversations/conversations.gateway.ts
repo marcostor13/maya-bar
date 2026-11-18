@@ -4,12 +4,13 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { ActiveUserCache } from '../auth/active-user.cache';
 import { RolesService } from '../roles/roles.service';
+import { MessageEvents } from './message-events';
 
 interface TokenPayload {
   sub: string;
@@ -43,6 +44,7 @@ export class ConversationsGateway
     config: ConfigService,
     private activeUsers: ActiveUserCache,
     private roles: RolesService,
+    @Optional() private events?: MessageEvents,
   ) {
     this.jwt = new JwtService({
       secret: config.getOrThrow<string>('JWT_SECRET'),
@@ -93,10 +95,12 @@ export class ConversationsGateway
 
   emitMessage(tenantId: string, payload: unknown) {
     this.server?.to(tenantRoom(tenantId)).emit('message:new', payload);
+    this.events?.publish('created', tenantId, payload);
   }
 
   emitMessageUpdated(tenantId: string, payload: unknown) {
     this.server?.to(tenantRoom(tenantId)).emit('message:updated', payload);
+    this.events?.publish('updated', tenantId, payload);
   }
 
   emitConversation(tenantId: string, payload: unknown) {

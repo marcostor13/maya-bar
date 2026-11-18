@@ -22,11 +22,11 @@ export type AssignMode = 'transfer' | 'release';
   standalone: true,
   imports: [FormsModule, LucideAngularModule],
   template: `
-    <div class="overlay" (click)="cancel.emit()" role="dialog" aria-modal="true">
+    <div class="overlay" (click)="dismissed.emit()" role="dialog" aria-modal="true">
       <div class="modal-card" (click)="$event.stopPropagation()">
         <div class="head">
           <h2>{{ mode() === 'transfer' ? 'Derivar oportunidad' : 'Soltar oportunidad' }}</h2>
-          <button class="btn btn-ghost btn-icon" (click)="cancel.emit()" aria-label="Cerrar">
+          <button class="btn btn-ghost btn-icon" (click)="dismissed.emit()" aria-label="Cerrar">
             <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5" />
           </button>
         </div>
@@ -57,7 +57,7 @@ export type AssignMode = 'transfer' | 'release';
         }
 
         <div class="actions">
-          <button class="btn btn-secondary" (click)="cancel.emit()">Cancelar</button>
+          <button class="btn btn-secondary" (click)="dismissed.emit()">Cancelar</button>
           <button class="btn btn-primary" [disabled]="busy() || (mode() === 'transfer' && !to())" (click)="submit()">
             {{ busy() ? 'Guardando…' : mode() === 'transfer' ? 'Derivar' : 'Soltar' }}
           </button>
@@ -102,7 +102,7 @@ export class LeadAssignComponent {
   busy = input(false);
 
   confirm = output<{ toUserId?: string; text: string }>();
-  cancel = output<void>();
+  dismissed = output<void>();
 
   readonly X = X;
   to = signal('');

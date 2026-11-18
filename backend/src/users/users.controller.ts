@@ -112,6 +112,18 @@ export class UsersController {
       req.user.tenantId,
       body.mode,
       await actorOf(req, this.usersService),
+      { password: body.password, mustChange: body.mustChange },
+    );
+  }
+
+  /** Cierra todas las sesiones del usuario sin cambiar su contraseña (HU19). */
+  @Post(':id/sessions/revoke')
+  async revokeSessions(@Param('id') id: string, @Request() req: AuthReq) {
+    this.assertAdmin(req);
+    return this.admin.revokeSessions(
+      id,
+      req.user.tenantId,
+      await actorOf(req, this.usersService),
     );
   }
 

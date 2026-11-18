@@ -1,4 +1,8 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { TenantsService } from './tenants.service';
 
@@ -48,11 +52,17 @@ describe('TenantsService', () => {
   let service: TenantsService;
   let tenantModel: any;
   let connection: { models: Record<string, any> };
+  let auditModel: { create: jest.Mock };
 
   beforeEach(() => {
     tenantModel = createTenantModel();
     connection = { models: {} };
-    service = new TenantsService(tenantModel as never, connection as never);
+    auditModel = { create: jest.fn().mockResolvedValue({}) };
+    service = new TenantsService(
+      tenantModel as never,
+      connection as never,
+      auditModel as never,
+    );
   });
 
   afterEach(() => {
@@ -154,7 +164,20 @@ describe('TenantsService', () => {
   });
 
   describe('update', () => {
+    const doc = (data: Record<string, unknown>) => ({
+      _id: tenantOid,
+      ...data,
+      get: (k: string) => data[k],
+    });
+    const actor = {
+      userId: new Types.ObjectId().toString(),
+      email: 'root@maya.pe',
+    };
+
     it('aplica los cambios a esa empresa y devuelve el documento nuevo', async () => {
+      tenantModel.findById.mockReturnValue(
+        buildQuery(doc({ name: 'Viejo', isActive: true })),
+      );
       const updated = { _id: tenantOid, name: 'Nuevo nombre' };
       tenantModel.findByIdAndUpdate.mockReturnValue(buildQuery(updated));
 
@@ -162,16 +185,81 @@ describe('TenantsService', () => {
 
       expect(tenantModel.findByIdAndUpdate).toHaveBeenCalledWith(
         tenantId,
-        { name: 'Nuevo nombre' },
-        { new: true },
+        { $set: { name: 'Nuevo nombre' } },
+        { new: true, runValidators: true },
       );
       expect(result).toBe(updated);
+      expect(auditModel.create).not.toHaveBeenCalled();
     });
 
     it('id inexistente lanza NotFoundException', async () => {
       await expect(service.update(tenantId, { name: 'X' })).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('HU16 C3: un correo que ya usa otra empresa da 409 sin guardar', async () => {
+      tenantModel.findById.mockReturnValue(
+        buildQuery(doc({ email: 'a@a.pe' })),
+      );
+      tenantModel.exists = jest.fn().mockReturnValue(buildQuery({ _id: 'x' }));
+      await expect(
+        service.update(tenantId, { email: 'b@b.pe' }, actor),
+      ).rejects.toThrow(ConflictException);
+      expect(tenantModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('HU16 C6: registra los cambios y la suspensión; quita fechas con null', async () => {
+      tenantModel.findById.mockReturnValue(
+        buildQuery(
+          doc({
+            plan: 'starter',
+            isActive: true,
+            trialEndsAt: new Date('2026-10-20'),
+          }),
+        ),
+      );
+      tenantModel.findByIdAndUpdate.mockReturnValue(
+        buildQuery({ _id: tenantOid, name: 'La Mar' }),
+      );
+      await service.update(
+        tenantId,
+        { plan: 'pro', trialEndsAt: null, isActive: false },
+        actor,
+      );
+
+      const [, update] = tenantModel.findByIdAndUpdate.mock.calls[0];
+      expect(update).toEqual({
+        $set: { plan: 'pro', isActive: false },
+        $unset: { trialEndsAt: 1 },
+      });
+      const actions = auditModel.create.mock.calls.map(([d]) => d.action);
+      expect(actions).toEqual(['update', 'suspend']);
+      expect(auditModel.create.mock.calls[0][0].changes).toEqual({
+        plan: { from: 'starter', to: 'pro' },
+        trialEndsAt: { from: '2026-10-20', to: undefined },
+      });
+    });
+
+    it('HU16 C4: isActive se cachea y update lo invalida', async () => {
+      const lean = (v: unknown) => ({
+        select: () => ({ lean: () => ({ exec: () => Promise.resolve(v) }) }),
+      });
+      tenantModel.findById.mockReturnValueOnce(lean({ isActive: true }));
+      await expect(service.isActive(tenantId)).resolves.toBe(true);
+      await expect(service.isActive(tenantId)).resolves.toBe(true);
+      expect(tenantModel.findById).toHaveBeenCalledTimes(1);
+
+      tenantModel.findById.mockReturnValueOnce(
+        buildQuery(doc({ isActive: true })),
+      );
+      tenantModel.findByIdAndUpdate.mockReturnValue(
+        buildQuery({ _id: tenantOid, isActive: false }),
+      );
+      await service.update(tenantId, { isActive: false });
+      tenantModel.findById.mockReturnValueOnce(lean({ isActive: false }));
+      await expect(service.isActive(tenantId)).resolves.toBe(false);
+      await expect(service.isActive(undefined)).resolves.toBe(true);
     });
   });
 
@@ -257,6 +345,30 @@ describe('TenantsService', () => {
       expect(users.deleteMany.mock.invocationCallOrder[0]).toBeLessThan(
         tenantModel.deleteOne.mock.invocationCallOrder[0],
       );
+    });
+  });
+
+  describe('remove con confirmación (HU16 C5)', () => {
+    const actor = { userId: new Types.ObjectId().toString() };
+    it('sin el nombre exacto da 400 y no borra nada', async () => {
+      tenantModel.findById.mockReturnValue(
+        buildQuery({ _id: tenantOid, name: 'La Mar' }),
+      );
+      const users = registeredModel('ObjectId');
+      connection.models = { User: users };
+      await expect(
+        service.remove(tenantId, { confirmName: 'la mar', actor }),
+      ).rejects.toThrow(BadRequestException);
+      expect(users.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('con el nombre borra y registra la eliminación', async () => {
+      tenantModel.findById.mockReturnValue(
+        buildQuery({ _id: tenantOid, name: 'La Mar' }),
+      );
+      await service.remove(tenantId, { confirmName: 'La Mar', actor });
+      expect(tenantModel.deleteOne).toHaveBeenCalled();
+      expect(auditModel.create.mock.calls[0][0].action).toBe('delete');
     });
   });
 });

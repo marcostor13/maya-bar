@@ -70,6 +70,7 @@ import {
   type ConversationCampaign,
 } from '../campaign-attribution/campaign-attribution';
 import { Lead } from '../leads/lead.schema';
+import { waCost, waMarket } from '../dashboard/message-pricing';
 
 /** Respuestas del agente por hora en un mismo hilo de correo antes de pausarlo. */
 const MAX_AGENT_EMAILS_PER_HOUR = 5;
@@ -1860,10 +1861,27 @@ export class ConversationsService {
   }
 
   /** Actualiza el estado de un mensaje saliente a partir del ack del proveedor. */
-  async handleAck(externalId: string, status: MessageStatus, error?: string) {
+  async handleAck(
+    externalId: string,
+    status: MessageStatus,
+    error?: string,
+    pricing?: { category?: string; type?: string; to?: string },
+  ) {
     if (!externalId) return;
     const msg = await this.msgModel.findOne({ externalId }).exec();
     if (!msg) return;
+    let priced = false;
+    // Meta manda el cobro en `sent` o en `delivered`, una sola vez (HU18).
+    if (pricing?.category && !msg.pricing?.category) {
+      msg.pricing = {
+        category: pricing.category,
+        type: pricing.type,
+        market: waMarket(pricing.to),
+        usd: waCost(pricing.to, pricing.category, pricing.type),
+      };
+      msg.markModified('pricing');
+      priced = true;
+    }
     if (status === 'failed') {
       // El rechazo del proveedor manda sobre cualquier estado previo: Meta
       // primero confirma el envío ('sent') y después avisa de que falló.
@@ -1875,8 +1893,10 @@ export class ConversationsService {
       if (
         msg.status !== 'failed' &&
         order.indexOf(status) <= order.indexOf(msg.status)
-      )
+      ) {
+        if (priced) await msg.save();
         return;
+      }
       msg.status = status;
     }
     await msg.save();

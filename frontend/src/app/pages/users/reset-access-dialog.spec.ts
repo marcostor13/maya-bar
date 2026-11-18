@@ -88,4 +88,49 @@ describe('ResetAccessDialogComponent', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(closed).toHaveBeenCalled();
   });
+
+  describe('elegir contraseña (HU19 C7)', () => {
+    const type = (sel: string, v: string) => {
+      const i = el().querySelector(sel) as HTMLInputElement;
+      i.value = v;
+      i.dispatchEvent(new Event('input'));
+    };
+    const pickManual = () => {
+      el().querySelectorAll<HTMLInputElement>('input[type="radio"]')[2].dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    it('no envía si es corta o no coincide', () => {
+      pickManual();
+      type('#ra-pass', '1234567');
+      type('#ra-pass2', '1234567');
+      button('Restablecer acceso').click();
+      fixture.detectChanges();
+      expect(el().querySelector('.ud-error')!.textContent).toContain('al menos 8');
+      type('#ra-pass', 'Clave-Larga-1');
+      type('#ra-pass2', 'Clave-Larga-2');
+      button('Restablecer acceso').click();
+      fixture.detectChanges();
+      expect(el().querySelector('.ud-error')!.textContent).toContain('no coinciden');
+      http.expectNone(`${API}/u2/reset-access`);
+    });
+
+    it('envía la contraseña y la casilla, y cierra sin mostrarla', () => {
+      const closed = vi.fn();
+      fixture.componentInstance.closed.subscribe(closed);
+      pickManual();
+      expect((el().querySelector('#ra-must') as HTMLInputElement).checked).toBe(true);
+      type('#ra-pass', 'Clave-Larga-1');
+      type('#ra-pass2', 'Clave-Larga-1');
+      const must = el().querySelector('#ra-must') as HTMLInputElement;
+      must.checked = false;
+      must.dispatchEvent(new Event('change'));
+      button('Restablecer acceso').click();
+      const req = http.expectOne(`${API}/u2/reset-access`);
+      expect(req.request.body).toEqual({ mode: 'manual', password: 'Clave-Larga-1', mustChange: false });
+      req.flush({ mode: 'manual' });
+      expect(toast.success).toHaveBeenCalledWith('Contraseña cambiada; sus sesiones se cerraron');
+      expect(closed).toHaveBeenCalled();
+    });
+  });
 });

@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { LucideAngularModule, Search, KeyRound, Users, RotateCw } from 'lucide-angular';
+import { LucideAngularModule, Search, KeyRound, Users, RotateCw, LogOut } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { ResetAccessDialogComponent } from '../users/reset-access-dialog';
@@ -20,6 +20,7 @@ interface PlatformUser {
   tenantId: string;
   tenantName?: string;
   lastAccessAt?: string;
+  mustChangePassword?: boolean;
 }
 
 
@@ -75,7 +76,12 @@ interface PlatformUser {
               <tbody>
                 @for (u of results(); track u._id) {
                   <tr [class.row-inactive]="!u.isActive">
-                    <td data-label="Nombre">{{ u.name || '—' }}</td>
+                    <td data-label="Nombre">
+                      {{ u.name || '—' }}
+                      @if (u.mustChangePassword) {
+                        <span class="badge-warning" title="Al entrar tendrá que elegir una contraseña nueva">Debe cambiar la contraseña</span>
+                      }
+                    </td>
                     <td data-label="Email">{{ u.email }}</td>
                     <td data-label="Empresa" class="td-tenant">{{ u.tenantName || '—' }}</td>
                     <td data-label="Rol">{{ roleLabels[u.role] || u.role }}</td>
@@ -88,6 +94,10 @@ interface PlatformUser {
                     <td class="actions">
                       <button class="btn btn-ghost btn-sm" (click)="resetting.set(u)">
                         <lucide-icon [img]="KeyRound" [size]="14" [strokeWidth]="2.3"></lucide-icon> Restablecer
+                      </button>
+                      <button class="btn btn-ghost btn-sm" (click)="revokeSessions(u)"
+                        [attr.aria-label]="'Cerrar sesiones de ' + (u.name || u.email)">
+                        <lucide-icon [img]="LogOut" [size]="14" [strokeWidth]="2.3"></lucide-icon> Cerrar sesiones
                       </button>
                       @if (u.isActive) {
                         <button class="btn btn-danger btn-sm" (click)="setActive(u, false)">Desactivar</button>
@@ -161,6 +171,7 @@ export class AdminUsersComponent {
   readonly api = environment.apiUrl + '/admin/users';
   readonly Search = Search;
   readonly KeyRound = KeyRound;
+  readonly LogOut = LogOut;
   readonly Users = Users;
   readonly RotateCw = RotateCw;
   searchError = signal(false);
@@ -192,6 +203,21 @@ export class AdminUsersComponent {
         this.searchError.set(true);
         this.toast.error(err.error?.message || 'No se pudo buscar');
       },
+    });
+  }
+
+  /** Cierra todas sus sesiones sin cambiar la contraseña (HU19). */
+  async revokeSessions(u: PlatformUser) {
+    const ok = await this.confirm.confirm({
+      title: 'Cerrar sesiones',
+      message: `${u.name || u.email} saldrá de todos sus dispositivos y tendrá que volver a entrar con su contraseña.`,
+      confirmText: 'Cerrar sesiones',
+      danger: true,
+    });
+    if (!ok) return;
+    this.http.post(`${this.api}/${u._id}/sessions/revoke`, {}).subscribe({
+      next: () => this.toast.success('Sesiones cerradas'),
+      error: (err) => this.toast.error(err.error?.message || 'No se pudieron cerrar las sesiones'),
     });
   }
 

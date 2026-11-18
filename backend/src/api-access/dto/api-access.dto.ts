@@ -148,3 +148,11 @@ export class SendApiMessageDto {
   @Type(() => ApiTemplateDto)
   template?: ApiTemplateDto;
 }
+
+/** URL de aviso del acceso (HU15). */
+export class SetWebhookDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2048)
+  url: string;
+}

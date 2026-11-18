@@ -565,14 +565,14 @@ function blankForm(stage: string): LeadForm {
       }
       @if (assignMode(); as m) {
         <app-lead-assign [mode]="m" [leadTitle]="lead.title" [owners]="owners()" [currentOwnerId]="ownerIdOf(lead)"
-          [meId]="meId()" [busy]="assigning()" (confirm)="doAssign($event)" (cancel)="assignMode.set(null)" />
+          [meId]="meId()" [busy]="assigning()" (confirm)="doAssign($event)" (dismissed)="assignMode.set(null)" />
       }
     }
 
     <!-- ───────── Configuración del embudo ───────── -->
     @if (stagesOpen()) {
       <app-lead-stages-config [counts]="stageCounts()" [filtered]="hasFilters()"
-        (changed)="onStagesChanged()" (close)="stagesOpen.set(false)" />
+        (changed)="onStagesChanged()" (closed)="stagesOpen.set(false)" />
     }
 
     <!-- ───────── Alta / edición ───────── -->

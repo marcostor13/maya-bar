@@ -75,6 +75,11 @@ export class SmsService {
       .exec();
   }
 
+  /** Configuración guardada de la empresa (con secretos sellados) o `null`. */
+  findConfig(tenantId: string): Promise<SmsConfig | null> {
+    return this.find(tenantId);
+  }
+
   async getConfig(tenantId: string): Promise<SmsConfigView> {
     return this.view(await this.find(tenantId));
   }
@@ -274,7 +279,7 @@ export class SmsService {
     };
   }
 
-  private isUsable(cfg: SmsConfig | null): boolean {
+  isUsable(cfg: SmsConfig | null): boolean {
     return !!cfg && cfg.enabled && !!cfg.url;
   }
 

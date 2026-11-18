@@ -1,9 +1,10 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import type { Observable } from 'rxjs';
 import {
   LucideAngularModule, Plug, Plus, KeyRound, Copy, RefreshCw, Ban, Pencil, Globe,
-  BookOpen, MessageCircle, Instagram, Facebook, X, Check, ShieldCheck,
+  BookOpen, MessageCircle, MessageSquare, Instagram, Facebook, X, Check, ShieldCheck, Webhook, Send,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
@@ -12,7 +13,7 @@ import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
 
-type Channel = 'whatsapp' | 'instagram' | 'messenger';
+type Channel = 'whatsapp' | 'instagram' | 'messenger' | 'sms';
 
 export interface ApiAccess {
   _id: string;
@@ -29,6 +30,19 @@ export interface ApiAccess {
   revokedAt?: string;
   lastUsedAt?: string;
   sentCount: number;
+  webhookUrl?: string;
+  createdAt?: string;
+}
+
+export interface WebhookDelivery {
+  _id: string;
+  event: string;
+  status: 'pending' | 'delivered' | 'failed';
+  attempts: number;
+  lastStatus?: number;
+  lastError?: string;
+  nextAttemptAt?: string;
+  deliveredAt?: string;
   createdAt?: string;
 }
 
@@ -44,6 +58,7 @@ const CHANNEL_LABELS: Record<Channel, string> = {
   whatsapp: 'WhatsApp',
   instagram: 'Instagram',
   messenger: 'Messenger',
+  sms: 'SMS',
 };
 
 interface AccessForm {
@@ -53,6 +68,7 @@ interface AccessForm {
   ips: string;
   perMinuteLimit: number;
   perDayLimit: number;
+  webhookUrl: string;
 }
 
 const emptyForm = (): AccessForm => ({
@@ -62,6 +78,7 @@ const emptyForm = (): AccessForm => ({
   ips: '',
   perMinuteLimit: 60,
   perDayLimit: 2000,
+  webhookUrl: '',
 });
 
 const lines = (text: string) =>
@@ -110,13 +127,14 @@ const lines = (text: string) =>
             </ul>
             <p><strong>Cuerpo (JSON):</strong></p>
             <ul>
-              <li><code>to</code> — WhatsApp: número internacional (<code>+51999888777</code>). Instagram/Messenger: id del contacto en ese canal.</li>
-              <li><code>text</code> — texto del mensaje.</li>
+              <li><code>to</code> — WhatsApp y SMS: número internacional (<code>+51999888777</code>). Instagram/Messenger: id del contacto en ese canal.</li>
+              <li><code>text</code> — texto del mensaje. Por SMS solo se envía texto (hasta 1600 caracteres; la respuesta indica en cuántas partes, <code>segments</code>, lo divide el operador). En SMS no hay <code>conversationId</code>, y un <code>201</code> puede traer <code>status: "failed"</code> con <code>error</code> si el proveedor lo rechazó.</li>
               <li><code>mediaUrl</code> + <code>mediaType</code> (<code>image</code>, <code>video</code>, <code>audio</code>, <code>document</code>) + <code>filename</code> — archivo por URL https.</li>
               <li><code>template</code> — solo WhatsApp: <code>{{ templateExample }}</code>. Obligatoria si el contacto no te escribió en las últimas 24 h.</li>
             </ul>
             <p><strong>Respuestas:</strong> <code>201</code> enviado · <code>400</code> datos inválidos · <code>401</code> clave inválida o revocada · <code>403</code> dominio o IP no autorizados · <code>409</code> la cuenta ya no está conectada · <code>422</code> fuera de la ventana de 24 h, plantilla no válida o contacto bloqueado · <code>429</code> límite superado (mira <code>Retry-After</code>).</p>
             <p>Estado de un mensaje: <code>GET {{ endpoint }}/&lt;id&gt;</code> → <code>pending</code>, <code>sent</code>, <code>delivered</code>, <code>read</code> o <code>failed</code>.</p>
+            <p><strong>Avisos a tu sistema (webhook):</strong> si el acceso tiene URL de aviso, Maya hace un <code>POST</code> JSON con <code>message.sent</code>, <code>message.delivered</code>, <code>message.read</code>, <code>message.failed</code> y <code>message.received</code> (respuesta del contacto). Comprueba la firma: <code>X-Maya-Signature = sha256=HMAC_SHA256(secreto, X-Maya-Timestamp + "." + cuerpo)</code>. Responde 2xx; si no, se reintenta a 1 min, 5 min, 30 min, 2 h y 6 h.</p>
           </div>
         }
       </div>
@@ -158,6 +176,9 @@ const lines = (text: string) =>
                 @if (a.allowedIps.length) {
                   <span class="meta-item"><lucide-icon [img]="ShieldCheck" [size]="14" [strokeWidth]="2.4"></lucide-icon> {{ a.allowedIps.join(', ') }}</span>
                 }
+                @if (a.webhookUrl) {
+                  <span class="meta-item"><lucide-icon [img]="Webhook" [size]="14" [strokeWidth]="2.4"></lucide-icon> {{ a.webhookUrl }}</span>
+                }
               </div>
               <div class="ac-stats">
                 @if (a.createdAt) { <span>Creado: {{ shortDate(a.createdAt) }}</span> }
@@ -173,6 +194,11 @@ const lines = (text: string) =>
                   <button class="btn btn-sm btn-secondary" (click)="regenerate(a)" [attr.aria-label]="'Regenerar la clave de ' + a.name">
                     <lucide-icon [img]="RefreshCw" [size]="14" [strokeWidth]="2.4"></lucide-icon> Regenerar clave
                   </button>
+                  @if (a.webhookUrl) {
+                    <button class="btn btn-sm btn-secondary" (click)="openHooks(a)" [attr.aria-label]="'Avisos de ' + a.name">
+                      <lucide-icon [img]="Webhook" [size]="14" [strokeWidth]="2.4"></lucide-icon> Avisos
+                    </button>
+                  }
                   <button class="btn btn-sm btn-danger" (click)="revoke(a)" [attr.aria-label]="'Revocar ' + a.name">
                     <lucide-icon [img]="Ban" [size]="14" [strokeWidth]="2.4"></lucide-icon> Revocar
                   </button>
@@ -208,7 +234,7 @@ const lines = (text: string) =>
               <div class="field">
                 <label class="label" for="ia-account">Cuenta que compartes</label>
                 @if (accounts().length === 0) {
-                  <p class="hint warn">No tienes cuentas de WhatsApp, Instagram o Messenger conectadas. Conéctalas en Configuración.</p>
+                  <p class="hint warn">No tienes cuentas de WhatsApp, Instagram, Messenger ni proveedor SMS. Conéctalos en Configuración.</p>
                 } @else {
                   <select id="ia-account" class="select" name="account" [(ngModel)]="form.accountKey" required>
                     <option value="" disabled>Elige una cuenta</option>
@@ -245,6 +271,11 @@ const lines = (text: string) =>
                 <input id="ia-day" class="input" type="number" name="perDay" min="1" max="100000" [(ngModel)]="form.perDayLimit" />
               </div>
             </div>
+            <div class="field">
+              <label class="label" for="ia-hook">URL de aviso (opcional)</label>
+              <input id="ia-hook" class="input" name="webhookUrl" type="url" [(ngModel)]="form.webhookUrl" maxlength="2048" placeholder="https://mitienda.pe/webhooks/maya" />
+              <p class="hint">Maya avisará a esta URL (https) cuando un mensaje se envíe, se entregue, se lea, falle o el contacto responda. Al guardarla por primera vez verás el secreto para comprobar la firma.</p>
+            </div>
             @if (formError()) { <p class="form-error" role="alert">{{ formError() }}</p> }
           </div>
         </app-form-page>
@@ -267,6 +298,15 @@ const lines = (text: string) =>
               <lucide-icon [img]="Copy" [size]="14" [strokeWidth]="2.4"></lucide-icon> Copiar
             </button>
           </div>
+          @if (k.webhookSecret) {
+            <p class="km-sub secret-label">Secreto de los avisos (firma <code>X-Maya-Signature</code>):</p>
+            <div class="key-box">
+              <code class="key-value">{{ k.webhookSecret }}</code>
+              <button class="btn btn-sm btn-secondary" type="button" (click)="copy(k.webhookSecret, 'Secreto copiado')">
+                <lucide-icon [img]="Copy" [size]="14" [strokeWidth]="2.4"></lucide-icon> Copiar
+              </button>
+            </div>
+          }
           <div class="example-tabs" role="tablist">
             <button type="button" role="tab" class="tab" [class.active]="exampleTab() === 'curl'" [attr.aria-selected]="exampleTab() === 'curl'" (click)="exampleTab.set('curl')">cURL</button>
             <button type="button" role="tab" class="tab" [class.active]="exampleTab() === 'js'" [attr.aria-selected]="exampleTab() === 'js'" (click)="exampleTab.set('js')">JavaScript</button>
@@ -278,6 +318,73 @@ const lines = (text: string) =>
             </button>
             <button class="btn btn-primary" type="button" (click)="closeKey()">
               <lucide-icon [img]="Check" [size]="15" [strokeWidth]="2.6"></lucide-icon> Ya la guardé
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (newSecret(); as sec) {
+      <div class="overlay overlay-top" role="dialog" aria-modal="true" aria-labelledby="secret-title" (keydown.escape)="newSecret.set(null)">
+        <div class="card key-modal">
+          <div class="km-head">
+            <h2 id="secret-title">Guarda el secreto de los avisos</h2>
+            <button class="btn-icon btn-ghost" type="button" (click)="newSecret.set(null)" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.4"></lucide-icon>
+            </button>
+          </div>
+          <p class="km-sub">Es la única vez que se muestra. Con él compruebas la cabecera <code>X-Maya-Signature</code>.</p>
+          <div class="key-box">
+            <code class="key-value">{{ sec }}</code>
+            <button class="btn btn-sm btn-primary" type="button" (click)="copy(sec, 'Secreto copiado')">
+              <lucide-icon [img]="Copy" [size]="14" [strokeWidth]="2.4"></lucide-icon> Copiar
+            </button>
+          </div>
+          <div class="km-actions">
+            <button class="btn btn-primary" type="button" (click)="newSecret.set(null)">
+              <lucide-icon [img]="Check" [size]="15" [strokeWidth]="2.6"></lucide-icon> Ya lo guardé
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (hooksFor(); as h) {
+      <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="hooks-title" (keydown.escape)="hooksFor.set(null)">
+        <div class="card key-modal">
+          <div class="km-head">
+            <h2 id="hooks-title">Avisos de {{ h.name }}</h2>
+            <button class="btn-icon btn-ghost" type="button" (click)="hooksFor.set(null)" aria-label="Cerrar">
+              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.4"></lucide-icon>
+            </button>
+          </div>
+          <p class="km-sub">{{ h.webhookUrl }} · últimos 20 avisos</p>
+          @if (hooksLoading()) {
+            <p class="hint">Cargando…</p>
+          } @else if (deliveries().length === 0) {
+            <p class="hint">Todavía no hay avisos. Envía una prueba.</p>
+          } @else {
+            <ul class="hook-list">
+              @for (d of deliveries(); track d._id) {
+                <li class="hook-row">
+                  <span class="hook-event"><code>{{ d.event }}</code></span>
+                  <span class="badge" [class.badge-success]="d.status === 'delivered'" [class.badge-danger]="d.status === 'failed'" [class.badge-neutral]="d.status === 'pending'">{{ hookStatus(d.status) }}</span>
+                  <span class="hook-meta">
+                    {{ d.attempts }} {{ d.attempts === 1 ? 'intento' : 'intentos' }}
+                    @if (d.lastStatus) { · HTTP {{ d.lastStatus }} }
+                    @if (d.createdAt) { · {{ shortDate(d.createdAt) }} }
+                  </span>
+                  @if (d.lastError && d.status !== 'delivered') { <span class="hook-error">{{ d.lastError }}</span> }
+                </li>
+              }
+            </ul>
+          }
+          <div class="km-actions">
+            <button class="btn btn-secondary" type="button" (click)="rotateSecret(h)">
+              <lucide-icon [img]="RefreshCw" [size]="15" [strokeWidth]="2.4"></lucide-icon> Rotar secreto
+            </button>
+            <button class="btn btn-primary" type="button" (click)="sendTest(h)">
+              <lucide-icon [img]="Send" [size]="15" [strokeWidth]="2.4"></lucide-icon> Enviar prueba
             </button>
           </div>
         </div>
@@ -329,6 +436,8 @@ const lines = (text: string) =>
     .form-error { margin: 0; font-size: 13px; color: var(--color-error); font-weight: 600; }
 
     .overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    /* El secreto rotado se abre encima del modal de avisos. */
+    .overlay-top { z-index: 110; }
     .key-modal { width: calc(100% - 48px); max-width: 640px; padding: 28px 32px; max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; }
     .km-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .km-head h2 { margin: 0; font-family: var(--font-heading); font-size: 19px; }
@@ -341,6 +450,12 @@ const lines = (text: string) =>
     .example { margin: 0; padding: 14px; border-radius: var(--radius-md); background: var(--color-text-main); color: var(--color-white); font-size: 12px; line-height: 1.55; overflow-x: auto; white-space: pre; }
     .km-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
     .km-actions .btn { gap: 6px; }
+    .secret-label { margin: 16px 0 8px; }
+    .hook-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .hook-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 13px; }
+    .hook-event { flex: 1; min-width: 140px; }
+    .hook-meta { font-size: 12px; color: var(--color-text-muted); }
+    .hook-error { flex-basis: 100%; font-size: 12px; color: var(--color-error); overflow-wrap: anywhere; }
 
     @media (max-width: 768px) {
       .page { padding: 20px 16px; }
@@ -364,6 +479,7 @@ export class IntegrationsComponent implements OnInit {
   readonly Plug = Plug; readonly Plus = Plus; readonly KeyRound = KeyRound; readonly Copy = Copy;
   readonly RefreshCw = RefreshCw; readonly Ban = Ban; readonly Pencil = Pencil; readonly Globe = Globe;
   readonly BookOpen = BookOpen; readonly X = X; readonly Check = Check; readonly ShieldCheck = ShieldCheck;
+  readonly Webhook = Webhook; readonly Send = Send;
 
   readonly endpoint = `${API}/public/v1/messages`;
   readonly templateExample = '{ "name": "pedido_listo", "language": "es", "variables": ["Ana", "#123"] }';
@@ -381,14 +497,18 @@ export class IntegrationsComponent implements OnInit {
   form: AccessForm = emptyForm();
   private formSnapshot = '';
 
-  newKey = signal<{ key: string; access: ApiAccess } | null>(null);
+  newKey = signal<{ key: string; access: ApiAccess; webhookSecret?: string } | null>(null);
+  newSecret = signal<string | null>(null);
+  hooksFor = signal<ApiAccess | null>(null);
+  deliveries = signal<WebhookDelivery[]>([]);
+  hooksLoading = signal(false);
   exampleTab = signal<'curl' | 'js'>('curl');
 
   example = computed(() => {
     const k = this.newKey();
     if (!k) return '';
     const origin = `https://${(k.access.allowedDomains[0] ?? 'tudominio.com').replace(/^\*\./, '')}`;
-    const to = k.access.channel === 'whatsapp' ? '+51999888777' : 'ID_DEL_CONTACTO';
+    const to = k.access.channel === 'whatsapp' || k.access.channel === 'sms' ? '+51999888777' : 'ID_DEL_CONTACTO';
     if (this.exampleTab() === 'curl') {
       return [
         `curl -X POST ${this.endpoint} \\`,
@@ -432,7 +552,7 @@ export class IntegrationsComponent implements OnInit {
   }
 
   channelLabel(c: Channel) { return CHANNEL_LABELS[c] ?? c; }
-  channelIcon(c: Channel) { return c === 'instagram' ? Instagram : c === 'messenger' ? Facebook : MessageCircle; }
+  channelIcon(c: Channel) { return c === 'instagram' ? Instagram : c === 'messenger' ? Facebook : c === 'sms' ? MessageSquare : MessageCircle; }
 
   openCreate() {
     this.editing.set(null);
@@ -451,6 +571,7 @@ export class IntegrationsComponent implements OnInit {
       ips: a.allowedIps.join('\n'),
       perMinuteLimit: a.perMinuteLimit,
       perDayLimit: a.perDayLimit,
+      webhookUrl: a.webhookUrl ?? '',
     };
     this.openForm();
   }
@@ -479,22 +600,85 @@ export class IntegrationsComponent implements OnInit {
     this.formError.set('');
     if (editing) {
       this.http.patch<ApiAccess>(`${API}/api-access/${editing._id}`, common).subscribe({
-        next: () => { this.saving.set(false); this.formOpen.set(false); this.toast.success('Acceso actualizado'); this.load(); },
+        next: () => this.syncWebhook(editing._id, editing.webhookUrl ?? '', secret => {
+          this.saving.set(false);
+          this.formOpen.set(false);
+          this.toast.success('Acceso actualizado');
+          if (secret) this.newSecret.set(secret);
+          this.load();
+        }),
         error: err => this.fail(err, 'No se pudo guardar el acceso'),
       });
       return;
     }
     const [channel, accountId] = this.form.accountKey.split(':');
     this.http.post<{ access: ApiAccess; key: string }>(`${API}/api-access`, { ...common, channel, accountId }).subscribe({
-      next: res => {
+      next: res => this.syncWebhook(res.access._id, '', secret => {
         this.saving.set(false);
         this.formOpen.set(false);
         this.toast.success('Acceso creado');
-        this.showKey(res);
+        this.showKey({ ...res, webhookSecret: secret });
         this.load();
-      },
+      }),
       error: err => this.fail(err, 'No se pudo crear el acceso'),
     });
+  }
+
+  /**
+   * Guarda o quita la URL de aviso si cambió. Si falla, el acceso ya quedó
+   * guardado: se avisa y se sigue (la URL se corrige editando).
+   */
+  private syncWebhook(id: string, previous: string, done: (secret?: string) => void) {
+    const url = this.form.webhookUrl.trim();
+    if (url === previous) { done(); return; }
+    const req: Observable<{ secret?: string }> = url
+      ? this.http.put<{ webhookUrl: string; secret?: string }>(`${API}/api-access/${id}/webhook`, { url })
+      : this.http.delete<{ secret?: string }>(`${API}/api-access/${id}/webhook`);
+    req.subscribe({
+      next: res => done(res.secret),
+      error: (err: { error?: { message?: string } }) => {
+        this.toast.error(err.error?.message || 'No se pudo guardar la URL de aviso');
+        done();
+      },
+    });
+  }
+
+  openHooks(a: ApiAccess) {
+    this.hooksFor.set(a);
+    this.loadHooks(a);
+  }
+
+  private loadHooks(a: ApiAccess) {
+    this.hooksLoading.set(true);
+    this.http.get<WebhookDelivery[]>(`${API}/api-access/${a._id}/webhook/deliveries`).subscribe({
+      next: list => { this.deliveries.set(list); this.hooksLoading.set(false); },
+      error: err => { this.hooksLoading.set(false); this.toast.error(err.error?.message || 'No se pudieron cargar los avisos'); },
+    });
+  }
+
+  sendTest(a: ApiAccess) {
+    this.http.post<WebhookDelivery>(`${API}/api-access/${a._id}/webhook/test`, {}).subscribe({
+      next: () => { this.toast.success('Prueba enviada'); this.loadHooks(a); },
+      error: err => this.toast.error(err.error?.message || 'No se pudo enviar la prueba'),
+    });
+  }
+
+  async rotateSecret(a: ApiAccess) {
+    const ok = await this.confirm.confirm({
+      title: 'Rotar secreto',
+      message: `Los avisos de "${a.name}" se firmarán con un secreto nuevo desde este momento. Tendrás que actualizarlo en tu sistema.`,
+      confirmText: 'Rotar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.http.post<{ secret: string }>(`${API}/api-access/${a._id}/webhook/rotate`, {}).subscribe({
+      next: res => { this.toast.success('Secreto rotado'); this.newSecret.set(res.secret); },
+      error: err => this.toast.error(err.error?.message || 'No se pudo rotar el secreto'),
+    });
+  }
+
+  hookStatus(s: WebhookDelivery['status']) {
+    return s === 'delivered' ? 'Entregado' : s === 'failed' ? 'Fallido' : 'Pendiente';
   }
 
   private validate(): string {
@@ -505,6 +689,8 @@ export class IntegrationsComponent implements OnInit {
     const perDay = Number(this.form.perDayLimit);
     if (!Number.isInteger(perMin) || perMin < 1 || perMin > 600) return 'Los envíos por minuto van de 1 a 600.';
     if (!Number.isInteger(perDay) || perDay < 1 || perDay > 100000) return 'Los envíos por día van de 1 a 100 000.';
+    const hook = this.form.webhookUrl.trim();
+    if (hook && !/^https:\/\//i.test(hook)) return 'La URL de aviso debe empezar por https://';
     return '';
   }
 
@@ -544,7 +730,7 @@ export class IntegrationsComponent implements OnInit {
     });
   }
 
-  private showKey(res: { access: ApiAccess; key: string }) {
+  private showKey(res: { access: ApiAccess; key: string; webhookSecret?: string }) {
     this.exampleTab.set('curl');
     this.newKey.set(res);
   }

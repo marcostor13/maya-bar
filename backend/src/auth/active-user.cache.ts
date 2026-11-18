@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
+import { TenantsService } from '../tenants/tenants.service';
 
 /**
  * Caché de "¿este usuario sigue activo?" para que `JwtStrategy` pueda revocar
@@ -13,6 +14,8 @@ const TTL_MS = 60_000;
 
 interface Entry {
   active: boolean;
+  /** Empresa del usuario: si se suspende, el usuario deja de estar activo (HU16). */
+  tenantId?: string;
   /** Milisegundos epoch: los tokens emitidos antes ya no valen. */
   validFromMs: number;
   expiresAt: number;
@@ -25,7 +28,8 @@ export class ActiveUserCache {
   private readonly entries = new Map<string, Entry>();
 
   async isActive(userId: string): Promise<boolean> {
-    return (await this.entry(userId)).active;
+    const e = await this.entry(userId);
+    return e.active && (await this.tenantActive(e));
   }
 
   /**
@@ -36,7 +40,7 @@ export class ActiveUserCache {
    */
   async check(userId: string, issuedAtMs?: number): Promise<SessionState> {
     const e = await this.entry(userId);
-    if (!e.active) return 'inactive';
+    if (!e.active || !(await this.tenantActive(e))) return 'inactive';
     if (issuedAtMs !== undefined && issuedAtMs < e.validFromMs)
       return 'revoked';
     return 'ok';
@@ -50,6 +54,7 @@ export class ActiveUserCache {
     const entry: Entry = {
       // Un usuario borrado tampoco debe poder seguir usando su token.
       active: !!user && user.isActive !== false,
+      tenantId: user?.tenantId ? String(user.tenantId) : undefined,
       validFromMs: user?.sessionsValidFrom
         ? new Date(user.sessionsValidFrom).getTime()
         : 0,
@@ -64,5 +69,15 @@ export class ActiveUserCache {
     this.entries.delete(userId);
   }
 
-  constructor(private users: UsersService) {}
+  /** La caché de empresas se invalida al suspender: el corte es inmediato. */
+  private tenantActive(e: Entry): Promise<boolean> {
+    return this.tenants && e.tenantId
+      ? this.tenants.isActive(e.tenantId)
+      : Promise.resolve(true);
+  }
+
+  constructor(
+    private users: UsersService,
+    @Optional() private tenants?: TenantsService,
+  ) {}
 }

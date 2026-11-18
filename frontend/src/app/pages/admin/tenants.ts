@@ -1,10 +1,10 @@
-import { Component, HostListener, inject, signal, OnInit } from '@angular/core';
+import { Component, HostListener, computed, inject, signal, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ToastService } from '../../shared/toast';
-import { ConfirmService } from '../../shared/confirm';
-import { LucideAngularModule, Building2, Pencil, Trash2, X, CircleCheckBig, Power } from 'lucide-angular';
+import { LucideAngularModule, Building2, X, CircleCheckBig, Search, ChevronRight } from 'lucide-angular';
+import { TenantDetailComponent, type TenantRow } from './tenant-detail';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -12,7 +12,7 @@ const API = environment.apiUrl;
 @Component({
   selector: 'app-admin-tenants',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule, DatePipe],
+  imports: [ReactiveFormsModule, FormsModule, LucideAngularModule, DatePipe, TenantDetailComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -20,15 +20,35 @@ const API = environment.apiUrl;
           <h1>Empresas</h1>
           <p class="subtitle">Gestión de todos los tenants registrados en la plataforma.</p>
         </div>
-        <button class="btn btn-primary" (click)="openForm(null)">+ Nueva empresa</button>
+        <button class="btn btn-primary" (click)="openForm()">+ Nueva empresa</button>
       </div>
+
+      @if (!loading() && tenants().length > 0) {
+        <div class="filters">
+          <label class="search">
+            <lucide-icon [img]="Search" [size]="16"></lucide-icon>
+            <input class="input" type="search" name="q" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Buscar por nombre, correo o RUC" aria-label="Buscar empresas" />
+          </label>
+          <select class="select" name="plan" [ngModel]="planFilter()" (ngModelChange)="planFilter.set($event)" aria-label="Filtrar por plan">
+            <option value="">Todos los planes</option>
+            <option value="starter">Starter</option>
+            <option value="pro">Pro</option>
+            <option value="enterprise">Enterprise</option>
+          </select>
+          <select class="select" name="status" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)" aria-label="Filtrar por estado">
+            <option value="">Todas</option>
+            <option value="active">Activas</option>
+            <option value="suspended">Suspendidas</option>
+          </select>
+        </div>
+      }
 
       <!-- Form modal -->
       @if (showForm()) {
         <div class="overlay" (click)="closeForm()">
           <div class="modal card animate-fade-in" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
             <div class="modal-header">
-              <h3>{{ editing() ? 'Editar empresa' : 'Nueva empresa' }}</h3>
+              <h3>Nueva empresa</h3>
               <button class="close-btn" (click)="closeForm()" aria-label="Cerrar formulario"><lucide-icon [img]="X" [size]="18"></lucide-icon></button>
             </div>
             <form [formGroup]="form" (ngSubmit)="save()">
@@ -46,15 +66,13 @@ const API = environment.apiUrl;
                   <span class="field-hint-error">Ingresa un email válido.</span>
                 }
               </div>
-              @if (!editing()) {
-                <div class="form-group">
-                  <label>Nombre del administrador *</label>
-                  <input class="input" formControlName="ownerName" placeholder="Juan García" />
-                  @if (showFieldError('ownerName')) {
-                    <span class="field-hint-error">El nombre del administrador es obligatorio.</span>
-                  }
-                </div>
-              }
+              <div class="form-group">
+                <label>Nombre del administrador *</label>
+                <input class="input" formControlName="ownerName" placeholder="Juan García" />
+                @if (showFieldError('ownerName')) {
+                  <span class="field-hint-error">El nombre del administrador es obligatorio.</span>
+                }
+              </div>
               <div class="form-row">
                 <div class="form-group">
                   <label>RUC / NIF</label>
@@ -121,7 +139,12 @@ const API = environment.apiUrl;
           <div class="empty-icon"><lucide-icon [img]="Building2" [size]="48" [strokeWidth]="2"></lucide-icon></div>
           <h3>Sin empresas registradas</h3>
           <p>Crea la primera empresa para comenzar.</p>
-          <button class="btn btn-primary" (click)="openForm(null)">Crear empresa</button>
+          <button class="btn btn-primary" (click)="openForm()">Crear empresa</button>
+        </div>
+      } @else if (filtered().length === 0) {
+        <div class="empty-state card">
+          <h3>Ninguna empresa coincide</h3>
+          <p>Cambia la búsqueda o los filtros.</p>
         </div>
       } @else {
         <div class="table-card table-cards card">
@@ -138,10 +161,10 @@ const API = environment.apiUrl;
               </tr>
             </thead>
             <tbody>
-              @for (t of tenants(); track t._id) {
+              @for (t of filtered(); track t._id) {
                 <tr>
                   <td>
-                    <div class="tenant-name">{{ t.name }}</div>
+                    <button type="button" class="tenant-name link" (click)="openDetail(t)">{{ t.name }}</button>
                     <div class="tenant-slug">{{ t.slug }}</div>
                   </td>
                   <td class="td-muted" data-label="Email">{{ t.email }}</td>
@@ -152,14 +175,12 @@ const API = environment.apiUrl;
                   <td class="td-muted" data-label="Trial hasta">{{ t.trialEndsAt ? (t.trialEndsAt | date:'dd/MM/yyyy') : '—' }}</td>
                   <td data-label="Estado">
                     <span class="badge" [class.badge-active]="t.isActive" [class.badge-inactive]="!t.isActive">
-                      {{ t.isActive ? 'Activo' : 'Inactivo' }}
+                      {{ t.isActive ? 'Activa' : 'Suspendida' }}
                     </span>
                   </td>
                   <td>
                     <div class="row-actions">
-                      <button class="btn-icon" aria-label="Editar" (click)="openForm(t)"><lucide-icon [img]="Pencil" [size]="16"></lucide-icon></button>
-                      <button class="btn-icon" [attr.aria-label]="t.isActive ? 'Desactivar' : 'Activar'" [attr.title]="t.isActive ? 'Desactivar' : 'Activar'" (click)="toggleActive(t)"><lucide-icon [img]="Power" [size]="16"></lucide-icon></button>
-                      <button class="btn-icon btn-icon-danger" aria-label="Eliminar" title="Eliminar" (click)="remove(t)"><lucide-icon [img]="Trash2" [size]="16"></lucide-icon></button>
+                      <button class="btn btn-sm btn-secondary" [attr.aria-label]="'Abrir ficha de ' + t.name" (click)="openDetail(t)">Ficha <lucide-icon [img]="ChevronRight" [size]="15"></lucide-icon></button>
                     </div>
                   </td>
                 </tr>
@@ -169,11 +190,22 @@ const API = environment.apiUrl;
         </div>
       }
     </div>
+
+    @if (detailId(); as id) {
+      <app-tenant-detail [tenantId]="id" (closed)="detailId.set(null)" (changed)="load()" />
+    }
   `,
   styles: [`
     .page { padding: 32px 40px; width: 100%; box-sizing: border-box; }
     .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; }
     .page-header h1 { margin-bottom: 4px; font-size: 26px; }
+    .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .search { position: relative; flex: 1; min-width: 220px; }
+    .search lucide-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); pointer-events: none; }
+    .search .input { padding-left: 40px; width: 100%; box-sizing: border-box; }
+    .filters .select { width: auto; min-width: 170px; }
+    .link { background: none; border: none; padding: 0; font: inherit; font-weight: 500; color: var(--color-text-main); cursor: pointer; text-align: left; }
+    .link:hover { color: var(--color-brand); text-decoration: underline; }
     .subtitle { color: var(--color-text-muted); font-size: 14px; margin: 0; }
 
     .overlay {
@@ -281,21 +313,33 @@ export class AdminTenantsComponent implements OnInit {
   private http = inject(HttpClient);
   private fb = inject(FormBuilder);
   private toast = inject(ToastService);
-  private confirm = inject(ConfirmService);
 
-  tenants = signal<any[]>([]);
+  tenants = signal<TenantRow[]>([]);
   loading = signal(true);
   showForm = signal(false);
 
   // Icons
   readonly Building2 = Building2;
-  readonly Pencil = Pencil;
-  readonly Trash2 = Trash2;
   readonly X = X;
   readonly CircleCheckBig = CircleCheckBig;
-  readonly Power = Power;
+  readonly Search = Search;
+  readonly ChevronRight = ChevronRight;
 
-  editing = signal<any>(null);
+  query = signal('');
+  planFilter = signal('');
+  statusFilter = signal('');
+  detailId = signal<string | null>(null);
+
+  filtered = computed(() => {
+    const q = this.query().trim().toLowerCase();
+    const plan = this.planFilter();
+    const status = this.statusFilter();
+    return this.tenants().filter((t: TenantRow) =>
+      (!q || [t.name, t.email, t.ruc ?? '', t.slug].some(v => v.toLowerCase().includes(q))) &&
+      (!plan || t.plan === plan) &&
+      (!status || (status === 'active' ? t.isActive : !t.isActive)));
+  });
+
   saving = signal(false);
   newCredentials = signal<{ email: string; password: string } | null>(null);
   copied = signal(false);
@@ -303,13 +347,15 @@ export class AdminTenantsComponent implements OnInit {
   form = this.fb.group({
     name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
-    ownerName: [''],
+    ownerName: ['', Validators.required],
     ruc: [''],
     phone: [''],
     plan: ['starter'],
   });
 
   ngOnInit() { this.load(); }
+
+  openDetail(t: TenantRow) { this.detailId.set(t._id); }
 
   @HostListener('document:keydown.escape')
   onEsc() {
@@ -323,7 +369,7 @@ export class AdminTenantsComponent implements OnInit {
   }
 
   load() {
-    this.http.get<any[]>(`${API}/tenants`).subscribe({
+    this.http.get<TenantRow[]>(`${API}/tenants`).subscribe({
       next: (data) => { this.tenants.set(data); this.loading.set(false); },
       error: (err) => {
         this.loading.set(false);
@@ -332,22 +378,13 @@ export class AdminTenantsComponent implements OnInit {
     });
   }
 
-  openForm(tenant: any) {
-    this.editing.set(tenant);
-    if (tenant) {
-      this.form.patchValue({ name: tenant.name, email: tenant.email, ruc: tenant.ruc || '', phone: tenant.phone || '', plan: tenant.plan });
-      this.form.get('ownerName')?.clearValidators();
-    } else {
-      this.form.reset({ plan: 'starter' });
-      this.form.get('ownerName')?.setValidators(Validators.required);
-    }
-    this.form.get('ownerName')?.updateValueAndValidity();
+  openForm() {
+    this.form.reset({ plan: 'starter' });
     this.showForm.set(true);
   }
 
   closeForm() {
     this.showForm.set(false);
-    this.editing.set(null);
     this.form.reset({ plan: 'starter' });
   }
 
@@ -357,66 +394,21 @@ export class AdminTenantsComponent implements OnInit {
       return;
     }
     this.saving.set(true);
-
-    const ed = this.editing();
-    const req = ed
-      ? this.http.patch(`${API}/tenants/${ed._id}`, this.form.value)
-      : this.http.post<any>(`${API}/tenants`, this.form.value);
-
-    req.subscribe({
-      next: (res: any) => {
+    this.http.post<{ credentials?: { email: string; password: string } }>(`${API}/tenants`, this.form.value).subscribe({
+      next: res => {
         this.closeForm();
         this.load();
         this.saving.set(false);
-        if (!ed && res.credentials) {
+        if (res.credentials) {
           this.newCredentials.set(res.credentials);
           this.copied.set(false);
           this.toast.success('Empresa creada', 'Credenciales generadas');
-        } else if (ed) {
-          this.toast.success('Empresa actualizada');
         }
       },
-      error: (err: any) => {
+      error: (err: { error?: { message?: string } }) => {
         this.toast.error(err.error?.message || 'Error al guardar');
         this.saving.set(false);
       },
-    });
-  }
-
-  async toggleActive(tenant: any) {
-    const next = !tenant.isActive;
-    if (!next) {
-      const ok = await this.confirm.confirm({
-        title: '¿Desactivar esta empresa?',
-        message: 'El tenant y sus usuarios perderán acceso a la plataforma. Podrás reactivarla más adelante.',
-        confirmText: 'Desactivar',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    this.http.patch(`${API}/tenants/${tenant._id}`, { isActive: next }).subscribe({
-      next: () => {
-        this.toast.success(next ? 'Empresa activada' : 'Empresa desactivada');
-        this.load();
-      },
-      error: (err) => this.toast.error(err.error?.message || 'Error al cambiar estado'),
-    });
-  }
-
-  async remove(tenant: any) {
-    const ok = await this.confirm.confirm({
-      title: '¿Eliminar esta empresa?',
-      message: `Se eliminará "${tenant.name}" junto con todos sus usuarios y datos. Esta acción no se puede deshacer.`,
-      confirmText: 'Eliminar',
-      danger: true,
-    });
-    if (!ok) return;
-    this.http.delete(`${API}/tenants/${tenant._id}`).subscribe({
-      next: () => {
-        this.toast.success('Empresa eliminada');
-        this.load();
-      },
-      error: (err: any) => this.toast.error(err.error?.message || 'Error al eliminar'),
     });
   }
 

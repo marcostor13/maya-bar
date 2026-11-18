@@ -14,12 +14,20 @@ import {
   WaTemplateSchema,
 } from '../whatsapp-templates/wa-template.schema';
 import { RolesModule } from '../roles/roles.module';
+import { SmsModule } from '../sms/sms.module';
+import { TenantsModule } from '../tenants/tenants.module';
 import {
   ApiAccess,
   ApiAccessSchema,
   ApiUsage,
   ApiUsageSchema,
+  ApiSmsMessage,
+  ApiSmsMessageSchema,
+  ApiWebhookDelivery,
+  ApiWebhookDeliverySchema,
 } from './api-access.schema';
+import { ApiWebhookService } from './api-webhook.service';
+import { ApiSmsService } from './api-sms.service';
 import { ApiAccessService } from './api-access.service';
 import { ApiMessagesService } from './api-messages.service';
 import { ApiKeyGuard } from './api-key.guard';
@@ -32,6 +40,8 @@ import { PublicApiController } from './public-api.controller';
     MongooseModule.forFeature([
       { name: ApiAccess.name, schema: ApiAccessSchema },
       { name: ApiUsage.name, schema: ApiUsageSchema },
+      { name: ApiSmsMessage.name, schema: ApiSmsMessageSchema },
+      { name: ApiWebhookDelivery.name, schema: ApiWebhookDeliverySchema },
       { name: Conversation.name, schema: ConversationSchema },
       { name: Message.name, schema: MessageSchema },
       { name: WaTemplate.name, schema: WaTemplateSchema },
@@ -41,8 +51,16 @@ import { PublicApiController } from './public-api.controller';
     InstagramAccountsModule,
     MessengerAccountsModule,
     RolesModule,
+    SmsModule,
+    TenantsModule,
   ],
   controllers: [ApiAccessController, PublicApiController],
-  providers: [ApiAccessService, ApiMessagesService, ApiKeyGuard],
+  providers: [
+    ApiAccessService,
+    ApiMessagesService,
+    ApiSmsService,
+    ApiWebhookService,
+    ApiKeyGuard,
+  ],
 })
 export class ApiAccessModule {}

@@ -10,7 +10,7 @@ export interface ManagedUser {
   email: string;
 }
 
-type Mode = 'email' | 'temp';
+type Mode = 'email' | 'temp' | 'manual';
 
 /**
  * Restablecer el acceso de otra persona: su contraseña actual deja de valer y
@@ -66,7 +66,30 @@ type Mode = 'email' | 'temp';
                 <small>Te la mostramos ahora para que se la pases. Tendrá que cambiarla al entrar.</small>
               </span>
             </label>
+            <label class="ud-option" [class.on]="mode() === 'manual'">
+              <input type="radio" name="ra-mode" [checked]="mode() === 'manual'" (change)="mode.set('manual')" />
+              <span>
+                <strong>Elegir contraseña</strong>
+                <small>Escribes tú la contraseña nueva (mínimo 8 caracteres).</small>
+              </span>
+            </label>
           </div>
+          @if (mode() === 'manual') {
+            <label class="ud-field">
+              <span>Contraseña nueva</span>
+              <input id="ra-pass" class="input" type="password" autocomplete="new-password" maxlength="72"
+                [value]="password()" (input)="password.set($any($event.target).value)" />
+            </label>
+            <label class="ud-field">
+              <span>Repite la contraseña</span>
+              <input id="ra-pass2" class="input" type="password" autocomplete="new-password" maxlength="72"
+                [value]="password2()" (input)="password2.set($any($event.target).value)" />
+            </label>
+            <label class="ud-check">
+              <input id="ra-must" type="checkbox" [checked]="mustChange()" (change)="mustChange.set($any($event.target).checked)" />
+              Pedir que la cambie al entrar
+            </label>
+          }
           @if (error()) { <p class="ud-error" role="alert">{{ error() }}</p> }
           <div class="ud-actions">
             <button type="button" class="btn btn-secondary" (click)="close()">Cancelar</button>
@@ -78,7 +101,10 @@ type Mode = 'email' | 'temp';
       </div>
     </div>
   `,
-  styles: [USER_DIALOG_STYLES],
+  styles: [USER_DIALOG_STYLES, `
+    .ud-check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 16px; cursor: pointer; }
+    .ud-check input { accent-color: var(--color-brand); width: 16px; height: 16px; }
+  `],
 })
 export class ResetAccessDialogComponent {
   private http = inject(HttpClient);
@@ -96,6 +122,9 @@ export class ResetAccessDialogComponent {
   busy = signal(false);
   error = signal('');
   tempPassword = signal<string | null>(null);
+  password = signal('');
+  password2 = signal('');
+  mustChange = signal(true);
 
   private firstOption = viewChild<ElementRef<HTMLInputElement>>('firstOption');
 
@@ -114,18 +143,37 @@ export class ResetAccessDialogComponent {
   }
 
   submit() {
+    const manual = this.mode() === 'manual';
+    if (manual) {
+      const msg =
+        this.password().length < 8
+          ? 'La contraseña debe tener al menos 8 caracteres'
+          : this.password() !== this.password2()
+            ? 'Las contraseñas no coinciden'
+            : '';
+      if (msg) {
+        this.error.set(msg);
+        this.toast.error(msg);
+        return;
+      }
+    }
     this.busy.set(true);
     this.error.set('');
     this.http
-      .post<{ mode: Mode; tempPassword?: string }>(`${this.apiBase()}/${this.user()._id}/reset-access`, {
-        mode: this.mode(),
-      })
+      .post<{ mode: Mode; tempPassword?: string }>(`${this.apiBase()}/${this.user()._id}/reset-access`,
+        manual
+          ? { mode: 'manual', password: this.password(), mustChange: this.mustChange() }
+          : { mode: this.mode() },
+      )
       .subscribe({
         next: (res) => {
           this.busy.set(false);
           if (res.tempPassword) {
             this.tempPassword.set(res.tempPassword);
             this.toast.success('Acceso restablecido');
+          } else if (manual) {
+            this.toast.success('Contraseña cambiada; sus sesiones se cerraron');
+            this.closed.emit();
           } else {
             this.toast.success(`Código enviado a ${this.user().email}`);
             this.closed.emit();

@@ -29,6 +29,6 @@ import { MailModule } from '../mail/mail.module';
     UserAuditService,
     UserAdminService,
   ],
-  exports: [UsersService, UserSessionsService],
+  exports: [UsersService, UserSessionsService, UserAdminService],
 })
 export class UsersModule {}

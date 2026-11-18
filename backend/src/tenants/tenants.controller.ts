@@ -15,7 +15,16 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthReq } from '../auth/permissions';
 import { TenantsService } from './tenants.service';
 import { UsersService } from '../users/users.service';
-import { CreateTenantDto, UpdateTenantDto } from './dto/create-tenant.dto';
+import {
+  CreateTenantDto,
+  DeleteTenantDto,
+  UpdateTenantDto,
+} from './dto/create-tenant.dto';
+
+export const actorOf = (req: AuthReq) => ({
+  userId: req.user.userId,
+  email: req.user.email,
+});
 
 @Controller('tenants')
 @UseGuards(JwtAuthGuard)
@@ -48,6 +57,7 @@ export class TenantsController {
       tenantId: tenant._id,
       mustChangePassword: true,
     });
+    await this.tenantsService.audit(actorOf(req), tenant, 'create');
 
     return {
       tenant,
@@ -89,13 +99,20 @@ export class TenantsController {
     @Request() req: AuthReq,
   ) {
     if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
-    return this.tenantsService.update(id, body);
+    return this.tenantsService.update(id, body, actorOf(req));
   }
 
   // SUPERADMIN: eliminar tenant y todos sus datos
   @Delete(':id')
-  removeTenant(@Param('id') id: string, @Request() req: AuthReq) {
+  removeTenant(
+    @Param('id') id: string,
+    @Body() body: DeleteTenantDto,
+    @Request() req: AuthReq,
+  ) {
     if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
-    return this.tenantsService.remove(id);
+    return this.tenantsService.remove(id, {
+      confirmName: body?.confirmName,
+      actor: actorOf(req),
+    });
   }
 }

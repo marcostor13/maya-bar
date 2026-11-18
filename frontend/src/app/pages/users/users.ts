@@ -2,7 +2,7 @@ import { Component, ElementRef, Injector, afterNextRender, computed, inject, sig
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { LucideAngularModule, Search, KeyRound, Crown, RotateCw } from 'lucide-angular';
+import { LucideAngularModule, Search, KeyRound, Crown, RotateCw, LogOut } from 'lucide-angular';
 import { RolesMatrixComponent } from './roles-matrix';
 import { ROLE_LABELS } from './role-labels';
 import { ResetAccessDialogComponent } from './reset-access-dialog';
@@ -134,7 +134,7 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
                         <span class="badge-me">Tú</span>
                       }
                       @if (u.mustChangePassword) {
-                        <span class="badge-warning" title="Contraseña temporal">Temp</span>
+                        <span class="badge-warning" title="Al entrar tendrá que elegir una contraseña nueva">Debe cambiar la contraseña</span>
                       }
                     </td>
                     <td data-label="Email">{{ u.email }}</td>
@@ -154,6 +154,10 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
                         <button class="btn btn-ghost btn-sm" (click)="resetting.set(u)"
                           [attr.aria-label]="'Restablecer acceso de ' + (u.name || u.email)">
                           <lucide-icon [img]="KeyRound" [size]="14" [strokeWidth]="2.3"></lucide-icon> Restablecer
+                        </button>
+                        <button class="btn btn-ghost btn-sm" (click)="revokeSessions(u)"
+                          [attr.aria-label]="'Cerrar sesiones de ' + (u.name || u.email)">
+                          <lucide-icon [img]="LogOut" [size]="14" [strokeWidth]="2.3"></lucide-icon> Cerrar sesiones
                         </button>
                         @if (u.isActive) {
                           <button class="btn btn-danger btn-sm" (click)="deactivate(u)">Desactivar</button>
@@ -538,6 +542,7 @@ export class UsersComponent implements OnInit {
   readonly api = environment.apiUrl + '/users';
   readonly Search = Search;
   readonly KeyRound = KeyRound;
+  readonly LogOut = LogOut;
   readonly Crown = Crown;
   readonly RotateCw = RotateCw;
   loadError = signal(false);
@@ -780,6 +785,21 @@ export class UsersComponent implements OnInit {
         this.toast.success('Usuario desactivado');
       },
       error: (err) => this.toast.error(err.error?.message || 'Error al desactivar usuario'),
+    });
+  }
+
+  /** Cierra todas sus sesiones sin cambiar la contraseña (HU19). */
+  async revokeSessions(u: TenantUser) {
+    const ok = await this.confirm.confirm({
+      title: 'Cerrar sesiones',
+      message: `${u.name || u.email} saldrá de todos sus dispositivos y tendrá que volver a entrar con su contraseña.`,
+      confirmText: 'Cerrar sesiones',
+      danger: true,
+    });
+    if (!ok) return;
+    this.http.post(`${this.api}/${u._id}/sessions/revoke`, {}).subscribe({
+      next: () => this.toast.success('Sesiones cerradas'),
+      error: (err) => this.toast.error(err.error?.message || 'No se pudieron cerrar las sesiones'),
     });
   }
 

@@ -8,6 +8,8 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -65,9 +67,23 @@ export class UpdateUserDto {
 }
 
 export class ResetAccessDto {
-  /** `email`: código de recuperación por correo. `temp`: contraseña temporal. */
-  @IsIn(['email', 'temp'])
-  mode!: 'email' | 'temp';
+  /**
+   * `email`: código de recuperación por correo. `temp`: contraseña temporal.
+   * `manual`: la contraseña que elige el administrador (HU19).
+   */
+  @IsIn(['email', 'temp', 'manual'])
+  mode!: 'email' | 'temp' | 'manual';
+
+  @ValidateIf((o: ResetAccessDto) => o.mode === 'manual')
+  @IsString()
+  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  @MaxLength(72, { message: 'La contraseña no puede pasar de 72 caracteres' })
+  password?: string;
+
+  /** Solo en `manual`: pedir que la cambie al entrar. Por defecto, sí. */
+  @IsOptional()
+  @IsBoolean()
+  mustChange?: boolean;
 }
 
 export class TransferAdminDto {

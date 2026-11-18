@@ -39,7 +39,10 @@ describe('Llamadas de WhatsApp (e2e)', () => {
   let accountId: string;
   let phoneNumberId: string;
   let accounts: Model<WhatsAppAccount>;
-  let graphPost: jest.SpyInstance;
+  let graphPost: jest.SpyInstance<
+    Promise<unknown>,
+    [string, { json?: unknown }?]
+  >;
   let graphGet: jest.SpyInstance;
   const sockets: Socket[] = [];
   let seq = 0;
@@ -92,7 +95,12 @@ describe('Llamadas de WhatsApp (e2e)', () => {
 
   /** El webhook responde antes de procesar: se espera al efecto. */
   async function until<T>(
-    fn: () => Promise<T | undefined | null | false>,
+    fn: () =>
+      | T
+      | undefined
+      | null
+      | false
+      | Promise<T | undefined | null | false>,
     ms = 4000,
   ): Promise<T> {
     const end = Date.now() + ms;
@@ -218,7 +226,7 @@ describe('Llamadas de WhatsApp (e2e)', () => {
     const noCalls = await connectSocket(server);
     const from = phone();
     await incoming('wacid.in1', from, 'Luis');
-    const ev = await until(async () =>
+    const ev = await until(() =>
       admin.events.find((e) => e.event === 'call:incoming'),
     );
     expect(JSON.stringify(ev.payload)).not.toContain('OFERTA');
@@ -255,7 +263,7 @@ describe('Llamadas de WhatsApp (e2e)', () => {
     expect((second.body as { message: string }).message).toBe(
       'Esta llamada ya fue atendida',
     );
-    await until(async () =>
+    await until(() =>
       managerSocket.events.find((e) => e.event === 'call:taken'),
     );
 
@@ -326,7 +334,7 @@ describe('Llamadas de WhatsApp (e2e)', () => {
     await callByContact(from);
     await terminate('wacid.in3');
     await until(async () => (await callByContact(from)).status === 'missed');
-    const sent = await until(async () =>
+    const sent = await until(() =>
       graphPost.mock.calls.find(
         ([path, opts]) =>
           String(path).endsWith('/messages') &&
@@ -407,7 +415,7 @@ describe('Llamadas de WhatsApp (e2e)', () => {
         },
       ],
     });
-    const answer = await until(async () =>
+    const answer = await until(() =>
       caller.events.find((e) => e.event === 'call:answer'),
     );
     expect(answer.payload).toEqual({
@@ -496,9 +504,9 @@ describe('Llamadas de WhatsApp (e2e)', () => {
       .set(bearer(owner))
       .expect(200);
     expect(stats.body).toMatchObject({
-      total: expect.any(Number),
-      missed: expect.any(Number),
-      avgDurationSec: expect.any(Number),
+      total: expect.any(Number) as number,
+      missed: expect.any(Number) as number,
+      avgDurationSec: expect.any(Number) as number,
     });
     expect((stats.body as { total: number }).total).toBeGreaterThanOrEqual(5);
   });

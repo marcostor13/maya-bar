@@ -78,6 +78,18 @@ export class AdminUsersController {
       tenantId,
       body.mode,
       await actorOf(req, this.users),
+      { password: body.password, mustChange: body.mustChange },
+    );
+  }
+
+  @Post(':id/sessions/revoke')
+  async revokeSessions(@Param('id') id: string, @Request() req: AuthReq) {
+    this.assertSuper(req);
+    const tenantId = await this.admin.tenantOf(id);
+    return this.admin.revokeSessions(
+      id,
+      tenantId,
+      await actorOf(req, this.users),
     );
   }
 
