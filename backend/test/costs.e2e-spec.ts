@@ -2,7 +2,10 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { getModelToken } from '@nestjs/mongoose';
 import { Types, type Model } from 'mongoose';
-import { Conversation } from '../src/conversations/conversation.schema';
+import {
+  Conversation,
+  type ConversationChannel,
+} from '../src/conversations/conversation.schema';
 import { Message } from '../src/conversations/message.schema';
 import { ApiSmsMessage } from '../src/api-access/api-access.schema';
 import { Campaign } from '../src/campaigns/campaign.schema';
@@ -84,7 +87,7 @@ describe('Costos de mensajes (HU18, e2e)', () => {
 
   async function seed(
     tenantId: string,
-    channel: string,
+    channel: ConversationChannel,
     n: number,
     wamid?: string,
   ) {
@@ -97,7 +100,7 @@ describe('Costos de mensajes (HU18, e2e)', () => {
     for (let i = 0; i < n; i++)
       await model<Message>(Message.name).create({
         tenantId: new Types.ObjectId(tenantId),
-        conversationId: conv._id as Types.ObjectId,
+        conversationId: conv._id,
         direction: 'out',
         author: 'human',
         text: 'hola',
