@@ -55,7 +55,12 @@ describe('DashboardComponent', () => {
     fixture.detectChanges();
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // La tarjeta de rendimiento por usuario (HU20) tiene su propio spec.
+    http.match((r) => r.url.endsWith('/dashboard/users'))
+      .forEach((r) => r.flush({ scope: 'team', channel: null, users: [], totals: {} }));
+    http.verify();
+  });
 
   it('pide la analítica del periodo y pinta los KPIs', () => {
     const req = http.expectOne((r) => r.url.endsWith('/dashboard/analytics'));

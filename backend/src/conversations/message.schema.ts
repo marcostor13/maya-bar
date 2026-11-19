@@ -164,6 +164,11 @@ export class Message extends Document {
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ conversationId: 1, at: -1 });
+// Rendimiento por usuario en el dashboard (HU20): solo los enviados a mano.
+MessageSchema.index(
+  { tenantId: 1, sentBy: 1, at: 1 },
+  { partialFilterExpression: { sentBy: { $exists: true } } },
+);
 // Idempotencia de la API (HU13): una clave por acceso, solo en los que la traen.
 MessageSchema.index(
   { apiAccessId: 1, apiIdempotencyKey: 1 },

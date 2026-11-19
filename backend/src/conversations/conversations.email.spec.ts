@@ -734,6 +734,21 @@ describe('ConversationsService — correo', () => {
     ).toBe(true);
   });
 
+  it('HU20: la respuesta manual guarda quién la envió', async () => {
+    const h = setup({ agent: false });
+    await h.service.handleEmailInbound(h.account as never, email());
+    await flush();
+    const userId = new Types.ObjectId().toString();
+    await h.service.sendManual(
+      String(h.convs[0]._id),
+      String(h.account.tenantId),
+      userId,
+      { text: 'Hola' },
+    );
+    const sent = h.msgs.find((m) => m.author === 'human');
+    expect(String(sent?.sentBy)).toBe(userId);
+  });
+
   it('las respuestas manuales no llevan la marca de respuesta automática', async () => {
     const h = setup({ agent: false });
     await h.service.handleEmailInbound(h.account as never, email());

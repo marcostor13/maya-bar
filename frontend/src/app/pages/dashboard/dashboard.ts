@@ -12,6 +12,7 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { environment } from '../../../environments/environment';
 import { MessageCostsCardComponent } from './message-costs-card';
+import { UserPerformanceCardComponent } from './user-performance-card';
 import {
   BarListComponent, ChartCardComponent, CountUpComponent, FunnelComponent, HeatmapComponent,
   RingComponent, SparklineComponent, TimeChartComponent, bucketLabel, formatMinutes, formatValue,
@@ -56,7 +57,7 @@ export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [MessageCostsCardComponent,
+  imports: [MessageCostsCardComponent, UserPerformanceCardComponent,
     
     RouterLink, NgTemplateOutlet, LucideAngularModule, BarListComponent, ChartCardComponent, CountUpComponent,
     FunnelComponent, HeatmapComponent, RingComponent, SparklineComponent, TimeChartComponent,
@@ -224,6 +225,8 @@ export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
           @if (isAdmin()) {
             <app-message-costs-card [range]="range()" />
           }
+
+          <app-user-performance-card [range]="range()" [channel]="channel()" />
 
           <h2 class="section">Ventas <small>{{ d.channel ? 'No se filtran por canal' : '' }}</small></h2>
           <div class="grid g-11">

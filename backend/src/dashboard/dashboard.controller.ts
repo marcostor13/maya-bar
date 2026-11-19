@@ -15,6 +15,7 @@ import { DashboardService } from './dashboard.service';
 import { DashboardAnalyticsService } from './dashboard-analytics.service';
 import { AnalyticsQueryDto, CostSettingsDto } from './dto';
 import { DashboardCostsService } from './dashboard-costs.service';
+import { DashboardUsersService } from './dashboard-users.service';
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, ModuleGuard('dashboard'))
@@ -23,6 +24,7 @@ export class DashboardController {
     private service: DashboardService,
     private analytics: DashboardAnalyticsService,
     private costsService: DashboardCostsService,
+    private usersService: DashboardUsersService,
   ) {}
 
   /** Los costos son del administrador de la empresa (HU18). */
@@ -40,6 +42,17 @@ export class DashboardController {
   @Get('analytics')
   analyticsView(@Query() query: AnalyticsQueryDto, @Request() req: AuthReq) {
     return this.analytics.analytics(
+      req.user.tenantId,
+      req.user.userId,
+      req.user.role,
+      query,
+    );
+  }
+
+  /** Rendimiento por usuario (HU20): supervisores ven a todos; el resto, su fila. */
+  @Get('users')
+  users(@Query() query: AnalyticsQueryDto, @Request() req: AuthReq) {
+    return this.usersService.performance(
       req.user.tenantId,
       req.user.userId,
       req.user.role,

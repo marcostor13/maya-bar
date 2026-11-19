@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-18 | [HU20 — Datos por usuario en el dashboard](2026-11-18-hu20-dashboard-por-usuario/cierre.md) | Terminada (pendiente revisión del usuario) | 3 CUMPLE · 2 PARCIAL (C2, C4, corregidos) |
 | 2026-11-18 | [HU18 — Costos de los mensajes en el dashboard](2026-11-18-hu18-costos-mensajes/cierre.md) | Terminada (pendiente prueba real y corrida completa final) | 6 CUMPLE |
 | 2026-11-18 | [HU19 — Administración total de usuarios y contraseñas](2026-11-18-hu19-usuarios-contrasenas/cierre.md) | Terminada (pendiente revisión del usuario) | 6 CUMPLE · 1 PARCIAL (C7, corregido) |
 | 2026-11-18 | [HU17 — Restablecer la cuenta del usuario principal](2026-11-18-hu17-cuenta-principal/cierre.md) | Terminada (pendiente revisión del usuario) | 4 CUMPLE · 3 PARCIAL (C1, C2, C5, corregidos) |
