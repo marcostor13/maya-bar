@@ -61,7 +61,8 @@ export function configureApp(app: NestExpressApplication): void {
     // añade `Authorization` y, si no se acepta, el navegador bloquea la landing.
     res.setHeader(
       'Access-Control-Allow-Headers',
-      req.headers['access-control-request-headers'] ?? 'Content-Type, Authorization',
+      req.headers['access-control-request-headers'] ??
+        'Content-Type, Authorization',
     );
     if (req.method === 'OPTIONS') {
       res.status(204).end();
