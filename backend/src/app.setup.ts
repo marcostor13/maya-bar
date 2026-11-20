@@ -57,7 +57,12 @@ export function configureApp(app: NestExpressApplication): void {
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // Se reflejan las cabeceras pedidas: con sesión abierta el interceptor
+    // añade `Authorization` y, si no se acepta, el navegador bloquea la landing.
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      req.headers['access-control-request-headers'] ?? 'Content-Type, Authorization',
+    );
     if (req.method === 'OPTIONS') {
       res.status(204).end();
       return;

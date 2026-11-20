@@ -202,6 +202,17 @@ describe('Dominios propios de landings (HU25)', () => {
     expect(ev.headers['access-control-allow-origin']).toBe(
       'https://fiesta.miempresa.com',
     );
+    // Con sesión abierta el interceptor añade Authorization: el preflight
+    // debe aceptarlo o el navegador bloquea la landing.
+    const auth = await http()
+      .options('/public/events/x')
+      .set('Origin', 'https://mayacrm.site')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Headers', 'authorization')
+      .expect(204);
+    expect(auth.headers['access-control-allow-headers']).toMatch(
+      /authorization/i,
+    );
   });
 
   it('C6: cambia el evento, quita el dominio, aísla empresas y roles', async () => {
