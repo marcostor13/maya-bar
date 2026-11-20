@@ -134,6 +134,27 @@ describe('LoginComponent', () => {
       http.expectOne((r) => r.url.endsWith('/auth/login')).flush({ access_token: 't', user: { id: 'u', email: 'a', role: 'MANAGER' } });
     });
 
+    it('C3: con la empresa suspendida muestra ese motivo, no «Credenciales incorrectas»', () => {
+      fillLogin();
+      submit();
+      http.expectOne((r) => r.url.endsWith('/auth/login')).flush(
+        { message: 'Tu empresa está suspendida. Contacta con soporte de Maya CRM.' },
+        { status: 401, statusText: 'Unauthorized' },
+      );
+      fixture.detectChanges();
+      expect(el().querySelector('.alert-error')!.textContent).toContain('Tu empresa está suspendida');
+    });
+
+    it('C3: con demasiados intentos lo dice en vez de culpar a la conexión', () => {
+      fillLogin();
+      submit();
+      http.expectOne((r) => r.url.endsWith('/auth/login'))
+        .flush({ message: 'ThrottlerException: Too Many Requests' }, { status: 429, statusText: 'Too Many Requests' });
+      fixture.detectChanges();
+      expect(el().querySelector('.alert-error')!.textContent).toContain('Demasiados intentos');
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Demasiados intentos'));
+    });
+
     it('el ojo alterna entre ocultar y mostrar la contraseña', () => {
       const eye = el().querySelector('.eye-btn') as HTMLButtonElement;
       expect(inputs()[1].type).toBe('password');
@@ -189,6 +210,18 @@ describe('LoginComponent', () => {
       expect(toast.success).toHaveBeenCalledWith('Si el correo existe, se ha enviado un código.');
       expect(toast.error).not.toHaveBeenCalled();
       expect(el().textContent).toContain('Código de recuperación');
+    });
+
+    it('C4: con demasiados intentos avisa y no pasa a pedir el código', () => {
+      goForgot();
+      submit();
+      http.expectOne((r) => r.url.endsWith('/auth/forgot-password'))
+        .flush(null, { status: 429, statusText: 'Too Many Requests' });
+      fixture.detectChanges();
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Demasiados intentos'));
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(el().textContent).toContain('Email de tu cuenta');
+      expect(el().textContent).not.toContain('Código de recuperación');
     });
 
     it('exige código y nueva contraseña antes de enviar', () => {

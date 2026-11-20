@@ -7,10 +7,12 @@ import {
   NotFoundException,
   UnauthorizedException,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from './user.schema';
+import { RefreshToken } from '../auth/refresh-token.schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { RolesService } from '../roles/roles.service';
@@ -56,12 +58,17 @@ export class UsersService implements OnModuleInit {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     private roles: RolesService,
+    @Optional()
+    @InjectModel(RefreshToken.name)
+    private refreshTokens?: Model<RefreshToken>,
   ) {}
 
   async onModuleInit() {
     // Reparar emails con mayúsculas/espacios ANTES de buscar el superadmin,
     // si no la comparación exacta podría no encontrarlo.
     await this.normalizeEmails();
+    if (process.env.SEED_ADMIN_RESET === 'true')
+      await this.resetSuperadminFromEnv();
     const superadmin = await this.userModel.findOne({ role: 'SUPERADMIN' });
     if (!superadmin) {
       const email = process.env.SEED_ADMIN_EMAIL;
@@ -81,6 +88,78 @@ export class UsersService implements OnModuleInit {
       }
     }
     await this.normalizeTenantIds();
+  }
+
+  /**
+   * Recuperación de emergencia (HU21): quien administra el servidor pone
+   * `SEED_ADMIN_RESET=true` y, al arrancar, el superadmin queda con el correo y
+   * la contraseña de `SEED_ADMIN_*`, activo, sin empresa y sin sesiones. Nunca
+   * asciende a un usuario de empresa: si el correo es de otro rol, no toca nada.
+   */
+  private async resetSuperadminFromEnv(): Promise<void> {
+    const rawEmail = process.env.SEED_ADMIN_EMAIL;
+    const password = process.env.SEED_ADMIN_PASSWORD;
+    if (!rawEmail || !password) {
+      this.logger.error(
+        'SEED_ADMIN_RESET activo pero faltan SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD — reinicio omitido',
+      );
+      return;
+    }
+    const email = this.normalizeEmail(rawEmail);
+    const byEmail = await this.userModel.findOne({ email }).exec();
+    let target: User | null = null;
+    if (byEmail) {
+      if (byEmail.role !== 'SUPERADMIN') {
+        this.logger.error(
+          `SEED_ADMIN_RESET: ${email} pertenece a un usuario ${byEmail.role}, no al superadmin — reinicio omitido`,
+        );
+        return;
+      }
+      target = byEmail;
+    } else {
+      const supers = await this.userModel.find({ role: 'SUPERADMIN' }).exec();
+      if (supers.length > 1) {
+        this.logger.error(
+          `SEED_ADMIN_RESET: hay ${supers.length} superadmins y ninguno con ${email} — reinicio omitido`,
+        );
+        return;
+      }
+      target = supers[0] ?? null;
+    }
+    // Sin superadmin, el seed normal lo crea a continuación.
+    if (!target) return;
+
+    const now = new Date();
+    await this.userModel
+      .updateOne(
+        { _id: target._id },
+        {
+          $set: {
+            email,
+            password: await bcrypt.hash(password, 10),
+            isActive: true,
+            emailVerified: true,
+            mustChangePassword: false,
+            sessionsValidFrom: now,
+          },
+          $unset: {
+            tenantId: 1,
+            resetPasswordCode: 1,
+            resetPasswordExpires: 1,
+            resetPasswordAttempts: 1,
+          },
+        },
+      )
+      .exec();
+    await this.refreshTokens
+      ?.updateMany(
+        { userId: target._id, revokedAt: null },
+        { $set: { revokedAt: now } },
+      )
+      .exec();
+    this.logger.warn(
+      `Superadmin reiniciado desde SEED_ADMIN_RESET — email: ${email}. Quita SEED_ADMIN_RESET del entorno.`,
+    );
   }
 
   /**

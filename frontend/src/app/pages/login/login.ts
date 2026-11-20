@@ -5,6 +5,22 @@ import { AuthService } from '../../auth/auth.service';
 
 import { ToastService } from '../../shared/toast';
 
+const TOO_MANY = 'Demasiados intentos. Espera un momento y vuelve a intentarlo.';
+
+/**
+ * Motivo legible de un login fallido (HU21). El backend solo da el motivo de
+ * cuenta (desactivada, empresa suspendida) cuando la contraseña es correcta,
+ * así que mostrarlo no revela qué correos existen.
+ */
+export function loginErrorMessage(err: { status?: number; error?: { message?: unknown } }): string {
+  if (err.status === 429) return TOO_MANY;
+  if (err.status === 401) {
+    const m = typeof err.error?.message === 'string' ? err.error.message : '';
+    return /desactivada|suspendida/i.test(m) ? m : 'Credenciales incorrectas';
+  }
+  return 'No pudimos conectar con el servidor. Inténtalo de nuevo.';
+}
+
 @Component({
   selector: 'app-login',
   standalone: true,
@@ -248,9 +264,7 @@ export class LoginComponent {
         }
         // Solo un 401 es culpa de los datos; lo demás (sin red, 5xx) no debe
         // hacer creer a la persona que escribió mal su contraseña.
-        const msg = err.status === 401
-          ? (/desactivada/i.test(err.error?.message ?? '') ? err.error.message : 'Credenciales incorrectas')
-          : 'No pudimos conectar con el servidor. Inténtalo de nuevo.';
+        const msg = loginErrorMessage(err);
         this.error.set(msg);
         this.toast.error(msg);
         this.loading.set(false);
@@ -269,7 +283,14 @@ export class LoginComponent {
         this.loading.set(false);
         this.view.set('reset');
       },
-      error: () => {
+      error: (err) => {
+        // El límite de intentos no revela nada de la cuenta: decirlo evita esperar un código que no saldrá.
+        if (err.status === 429) {
+          this.error.set(TOO_MANY);
+          this.toast.error(TOO_MANY);
+          this.loading.set(false);
+          return;
+        }
         this.toast.success('Si el correo existe, se ha enviado un código.'); // Prevent enumeration
         this.loading.set(false);
         this.view.set('reset');

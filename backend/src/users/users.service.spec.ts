@@ -15,6 +15,7 @@ import {
   hashResetCode,
 } from './users.service';
 import { User } from './user.schema';
+import { RefreshToken } from '../auth/refresh-token.schema';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ function createUserModel() {
 describe('UsersService', () => {
   let service: UsersService;
   let userModel: any;
+  let refreshModel: any;
   let logSpy: jest.SpyInstance;
   let warnSpy: jest.SpyInstance;
   let errorSpy: jest.SpyInstance;
@@ -71,12 +73,14 @@ describe('UsersService', () => {
     process.env = { ...ORIGINAL_ENV };
     delete process.env.SEED_ADMIN_EMAIL;
     delete process.env.SEED_ADMIN_PASSWORD;
+    delete process.env.SEED_ADMIN_RESET;
 
     logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
 
     userModel = createUserModel();
+    refreshModel = { updateMany: jest.fn().mockReturnValue(buildQuery({})) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -88,6 +92,7 @@ describe('UsersService', () => {
           useValue: { assignableKeys: jest.fn().mockResolvedValue([]) },
         },
         { provide: getModelToken(User.name), useValue: userModel },
+        { provide: getModelToken(RefreshToken.name), useValue: refreshModel },
       ],
     }).compile();
 
@@ -165,6 +170,108 @@ describe('UsersService', () => {
 
       expect(userModel).not.toHaveBeenCalled();
       expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── SEED_ADMIN_RESET (HU21) ───────────────────────────────────────────────
+
+  describe('SEED_ADMIN_RESET', () => {
+    const superOid = new Types.ObjectId();
+    beforeEach(() => {
+      process.env.SEED_ADMIN_EMAIL = ' Admin@Seed.com ';
+      process.env.SEED_ADMIN_PASSWORD = 'NuevaClave!42';
+    });
+
+    it('C1: reinicia al superadmin con ese correo: contraseña, activo, sin empresa y sin sesiones', async () => {
+      process.env.SEED_ADMIN_RESET = 'true';
+      userModel.findOne.mockReturnValue(
+        buildQuery({
+          _id: superOid,
+          role: 'SUPERADMIN',
+          email: 'admin@seed.com',
+        }),
+      );
+
+      await service.onModuleInit();
+
+      expect(userModel.updateOne).toHaveBeenCalledTimes(1);
+      const [filter, update] = userModel.updateOne.mock.calls[0];
+      expect(filter).toEqual({ _id: superOid });
+      expect(update.$set).toMatchObject({
+        email: 'admin@seed.com',
+        isActive: true,
+        emailVerified: true,
+        mustChangePassword: false,
+      });
+      expect(update.$set.sessionsValidFrom).toBeInstanceOf(Date);
+      expect(bcrypt.compareSync('NuevaClave!42', update.$set.password)).toBe(
+        true,
+      );
+      expect(update.$unset).toMatchObject({
+        tenantId: 1,
+        resetPasswordCode: 1,
+      });
+      expect(refreshModel.updateMany).toHaveBeenCalledWith(
+        { userId: superOid, revokedAt: null },
+        { $set: { revokedAt: expect.any(Date) } },
+      );
+      expect(allLoggedText()).not.toContain('NuevaClave!42');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Quita SEED_ADMIN_RESET'),
+      );
+    });
+
+    it('C1: sin la variable no toca al superadmin existente', async () => {
+      userModel.findOne.mockReturnValue(
+        buildQuery({ _id: superOid, role: 'SUPERADMIN' }),
+      );
+      await service.onModuleInit();
+      expect(userModel.updateOne).not.toHaveBeenCalled();
+      expect(refreshModel.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('C2: si el correo es de un usuario de empresa no asciende ni cambia a nadie', async () => {
+      process.env.SEED_ADMIN_RESET = 'true';
+      userModel.findOne.mockReturnValue(
+        buildQuery({ _id: userOid, role: 'TENANT_ADMIN', tenantId: tenantOid }),
+      );
+      await service.onModuleInit();
+      expect(userModel.updateOne).not.toHaveBeenCalled();
+      expect(refreshModel.updateMany).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('reinicio omitido'),
+      );
+    });
+
+    it('C2: sin superadmin con ese correo, reinicia al único que hay y le cambia el correo', async () => {
+      process.env.SEED_ADMIN_RESET = 'true';
+      userModel.findOne
+        .mockReturnValueOnce(buildQuery(null)) // por correo
+        .mockReturnValue(buildQuery({ _id: superOid, role: 'SUPERADMIN' }));
+      userModel.find.mockReturnValue(
+        buildQuery([
+          { _id: superOid, role: 'SUPERADMIN', email: 'viejo@x.com' },
+        ]),
+      );
+      await service.onModuleInit();
+      const [filter, update] = userModel.updateOne.mock.calls[0];
+      expect(filter).toEqual({ _id: superOid });
+      expect(update.$set.email).toBe('admin@seed.com');
+    });
+
+    it('C2: con varios superadmins y ninguno con ese correo no toca nada', async () => {
+      process.env.SEED_ADMIN_RESET = 'true';
+      userModel.findOne
+        .mockReturnValueOnce(buildQuery(null))
+        .mockReturnValue(buildQuery({ _id: superOid, role: 'SUPERADMIN' }));
+      userModel.find.mockReturnValue(
+        buildQuery([{ _id: superOid }, { _id: new Types.ObjectId() }]),
+      );
+      await service.onModuleInit();
+      expect(userModel.updateOne).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('2 superadmins'),
+      );
     });
   });
 

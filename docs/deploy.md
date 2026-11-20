@@ -170,6 +170,28 @@ node scripts/deploy.js all --force      # ignora la caché de Docker
 node scripts/deploy.js backend --no-wait
 ```
 
+## Recuperar el acceso del superadmin (emergencia)
+
+`SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` solo crean el superadmin si no existe:
+cambiarlas después no cambia su contraseña. Si el superadmin no puede entrar
+(contraseña perdida, correo de recuperación que no llega):
+
+1. En Coolify, variables del backend: pon `SEED_ADMIN_EMAIL` (tu correo),
+   `SEED_ADMIN_PASSWORD` (la nueva, 8+ caracteres) y `SEED_ADMIN_RESET=true`.
+2. Redespliega el backend. En el log debe salir `Superadmin reiniciado desde
+   SEED_ADMIN_RESET`. Si sale `reinicio omitido`, el motivo va en la misma línea
+   (el correo es de un usuario de empresa, o hay varios superadmins).
+3. Entra con ese correo y esa contraseña.
+4. **Quita `SEED_ADMIN_RESET`** y redespliega. Mientras esté puesta, cada
+   arranque vuelve a esa contraseña y cierra todas las sesiones del superadmin.
+
+El reinicio deja la cuenta activa, con el correo confirmado, sin empresa
+asociada y sin cambio de contraseña obligatorio. Nunca convierte en superadmin a
+un usuario de empresa.
+
+Si el correo de recuperación no llega, busca en el log del backend
+`Failed to send email to …`: trae el motivo que devolvió Resend.
+
 ## Variables que incrusta el build del frontend
 
 `frontend/scripts/set-env.js` reescribe `src/environments/environment.prod.ts`

@@ -150,7 +150,7 @@ export class MailService {
 
     if (this.resend) {
       try {
-        await this.resend.emails.send({
+        const sent = await this.resend.emails.send({
           from: MailService.PLATFORM_FROM,
           to: email,
           subject,
@@ -166,6 +166,8 @@ export class MailService {
               ]
             : [],
         });
+        // El SDK no lanza: un rechazo (dominio sin verificar, clave inválida) llega en `error`.
+        if (sent.error) throw new Error(sent.error.message);
         this.logger.log(`${subject} → ${email}`);
       } catch (error) {
         this.logger.error(`Failed to send email to ${email}`, error);
@@ -243,7 +245,7 @@ export class MailService {
 
     if (this.resend) {
       try {
-        await this.resend.emails.send({
+        const sent = await this.resend.emails.send({
           from: MailService.PLATFORM_FROM,
           to: data.email,
           subject,
@@ -259,6 +261,8 @@ export class MailService {
               ]
             : [],
         });
+        // El SDK no lanza: un rechazo (dominio sin verificar, clave inválida) llega en `error`.
+        if (sent.error) throw new Error(sent.error.message);
         this.logger.log(`Reservation email sent to ${data.email}`);
       } catch (error) {
         this.logger.error(
@@ -396,13 +400,15 @@ export class MailService {
             cid: 'ticketqr',
           });
         }
-        await this.resend.emails.send({
+        const sent = await this.resend.emails.send({
           from: MailService.PLATFORM_FROM,
           to: data.email,
           subject,
           html,
           attachments,
         });
+        // El SDK no lanza: un rechazo (dominio sin verificar, clave inválida) llega en `error`.
+        if (sent.error) throw new Error(sent.error.message);
         this.logger.log(`Event confirmation email sent to ${data.email}`);
       } catch (error) {
         this.logger.error(`Failed to send event email to ${data.email}`, error);
@@ -482,7 +488,7 @@ export class MailService {
     `;
 
     if (this.resend) {
-      await this.resend.emails.send({
+      const sent = await this.resend.emails.send({
         from: MailService.PLATFORM_FROM,
         to: params.to,
         subject: params.subject,
@@ -498,6 +504,8 @@ export class MailService {
             ]
           : [],
       });
+      // Quien llama decide qué hacer con el fallo; no debe contarlo como enviado.
+      if (sent.error) throw new Error(sent.error.message);
     } else {
       this.logger.log(
         `[MOCK CAMPAIGN] To: ${params.to} | Subject: ${params.subject}`,
