@@ -375,6 +375,14 @@ export class LinksService {
       )
     )
       throw new BadRequestException('Ese dominio ya es el de la plataforma');
+    // Un mismo host no puede servir links (API) y una landing (frontend).
+    const landing = await this.domainModel.db?.models?.['LandingDomain']
+      ?.exists({ domain })
+      .exec();
+    if (landing)
+      throw new ConflictException(
+        'Ese dominio ya se usa para la landing de un evento',
+      );
     const taken = await this.domainModel.findOne({ domain }).lean().exec();
     if (taken)
       throw new ConflictException(

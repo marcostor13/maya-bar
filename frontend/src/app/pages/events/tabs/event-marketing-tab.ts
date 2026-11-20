@@ -4,13 +4,17 @@ import { ToastService } from '../../../shared/toast';
 import { EventsApiService } from '../../../core/api/events-api.service';
 import { AiTool } from '../../../shared/models/event.model';
 import { EventDetailStore } from '../event-detail.store';
+import { EventDomainCardComponent } from '../event-domain-card';
 
 @Component({
   selector: 'app-event-marketing-tab',
   standalone: true,
-  imports: [LucideAngularModule],
+  imports: [LucideAngularModule, EventDomainCardComponent],
   template: `
     <div class="p-6 animate-fade-in">
+      @if (eventId(); as id) {
+        <app-event-domain-card [eventId]="id" />
+      }
       <div class="ai-hero-card">
         <lucide-icon [img]="Zap" [size]="32" class="ai-hero-icon"></lucide-icon>
         <div class="ai-hero-text">
@@ -123,6 +127,7 @@ export class EventMarketingTabComponent {
   readonly Check = Check; readonly Copy = Copy; readonly Hash = Hash;
   readonly Mail = Mail; readonly Share2 = Share2; readonly Wand2 = Wand2; readonly Zap = Zap;
 
+  eventId = this.store.eventId;
   aiLoading = signal(false);
   aiResult = signal('');
   aiTool = signal<AiTool | null>(null);

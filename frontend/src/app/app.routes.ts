@@ -10,6 +10,7 @@ import { rootEntryGuard } from './core/root-entry.guard';
 import { PermissionsService } from './auth/permissions.service';
 import { AuthService } from './auth/auth.service';
 import { ShellComponent } from './layout/shell/shell';
+import { isCustomDomain } from './shared/custom-domain';
 
 /**
  * Todas las páginas se cargan bajo demanda (`loadComponent`). Importarlas
@@ -42,6 +43,15 @@ export const routes: Routes = [
   // `app.routes.server.ts`), por eso vive fuera del Shell.
   // `rootEntryGuard` solo actúa dentro de la app nativa, donde `/` es el punto
   // de arranque del WebView y debe llevar a la aplicación, no a la landing.
+  // Dominio propio de un cliente (HU25): su raíz es la landing de un evento,
+  // que se busca por el host. En el servidor (prerender) nunca coincide.
+  {
+    path: '',
+    pathMatch: 'full',
+    canMatch: [() => isCustomDomain()],
+    loadComponent: () =>
+      import('./pages/public-event/public-event').then(m => m.PublicEventComponent),
+  },
   {
     path: '',
     pathMatch: 'full',

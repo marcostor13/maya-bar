@@ -5,6 +5,13 @@ import type { NextFunction, Request, Response } from 'express';
 import { AllExceptionsFilter } from './shared/http-exception.filter';
 import { ShortDomainMiddleware } from './links/redirect.controller';
 
+/** Rutas públicas que aceptan cualquier origen. */
+const PUBLIC_CORS_PREFIXES = [
+  '/public/forms',
+  '/public/events',
+  '/public/landing-domains',
+];
+
 /**
  * Todo lo que se le monta a la app entre crearla y ponerla a escuchar. Vive
  * aparte de `main.ts` para que las pruebas e2e arranquen exactamente la misma
@@ -43,7 +50,10 @@ export function configureApp(app: NestExpressApplication): void {
   // debe aceptar cualquier origen. Va ANTES de enableCors: el middleware de
   // `cors` no pisa la cabecera si el origen no está en su lista blanca.
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (!req.originalUrl.startsWith('/public/forms')) return next();
+    // También la landing de eventos: con dominio propio (HU25) llama a la API
+    // desde un origen que no está en la lista blanca.
+    if (!PUBLIC_CORS_PREFIXES.some((p) => req.originalUrl.startsWith(p)))
+      return next();
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');

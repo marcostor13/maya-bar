@@ -94,6 +94,39 @@ npm run provision:check   # dry-run
 npm run provision         # aplica; imprime los UUID para los secrets
 ```
 
+### Dominios propios de landings de eventos (HU25)
+
+La landing de un evento (`mayacrm.site/e/<slug>`) puede verse en un dominio del
+cliente. Se registra en el evento → **Marketing → Dominio propio**, y el cliente
+crea un **CNAME** hacia `mayacrm.site` (subdominio, p. ej. `fiesta.empresa.com`)
+o un registro **A** hacia `SERVER_IP` (dominio raíz), sin proxy de Cloudflare,
+y además el **TXT** `_maya-verify.<dominio>` = `maya-verify=<token>` que muestra
+la tarjeta: es la prueba de que el dominio es suyo (un CNAME hacia la
+plataforma lo podría aprovechar cualquier empresa). Al pulsar «Verificar» con
+DNS y TXT bien, el backend:
+
+1. busca la app del **frontend** en Coolify (la que tiene el dominio de
+   `FRONTEND_URL`, o `COOLIFY_FRONTEND_APP_UUID` si está definida),
+2. le añade el dominio y la redespliega (Traefik emite el certificado),
+3. marca el dominio *Activo* cuando `https://<dominio>/healthz` responde.
+
+En un dominio que no es de la plataforma, `server.ts` entrega la app de cliente
+(`index.csr.html`) en vez de la landing de marketing, y la ruta raíz monta la
+landing del evento que `GET /public/landing-domains/resolve?host=` asigna a ese
+host (dominio activo y evento publicado). Las rutas `/public/events*` y
+`/public/landing-domains*` aceptan cualquier origen (CORS).
+
+- **Cada alta redespliega el frontend** (rodante: unos segundos de relevo).
+- Usa las mismas `COOLIFY_URL` y `COOLIFY_TOKEN` que los dominios de links.
+- Si algún día `mayacrm.site` se pone con proxy naranja, los CNAME de los
+  clientes dejarán de apuntar a `SERVER_IP` y no validarán.
+- Un mismo host no puede ser a la vez dominio de links y de landing.
+- Máximo 10 dominios por empresa y un alta en Coolify cada 10 min por dominio.
+- Un dominio que otra empresa registró y no verificó se libera a las 72 h.
+- En el dominio del cliente solo existe `/`: cualquier otra ruta redirige ahí.
+- Quitar un dominio lo saca de Coolify sin redesplegar: deja de servirse en el
+  siguiente despliegue del frontend.
+
 ## CI/CD
 
 `.github/workflows/deploy.yml` corre en cada push a `main`:

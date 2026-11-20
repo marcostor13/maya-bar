@@ -241,6 +241,11 @@ async function main() {
             COOLIFY_URL: cfg.coolify.url,
             COOLIFY_TOKEN: cfg.coolify.token,
             COOLIFY_APP_UUID: cfg.coolify.backendUuid,
+            // Dominios propios de landings (HU25): van a la app del frontend.
+            // Sin el UUID, el backend la busca por el dominio de FRONTEND_URL.
+            ...(cfg.coolify.frontendUuid
+              ? { COOLIFY_FRONTEND_APP_UUID: cfg.coolify.frontendUuid }
+              : {}),
           }
         : {}),
     },
@@ -254,6 +259,8 @@ async function main() {
     port: cfg.ports.frontend,
     domains: `${siteUrl},https://www.${cfg.frontendDomain}`,
     watchPaths: 'frontend/**',
+    // Los dominios propios de landings (HU25) los añade el backend: no se pisan.
+    keepExtraDomains: true,
     // `/healthz` lo sirve Express antes de pasar por Angular, así que responde
     // aunque el host de la petición interna no esté en `allowedHosts`.
     policy: {

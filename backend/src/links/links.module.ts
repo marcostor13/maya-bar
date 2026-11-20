@@ -21,6 +21,10 @@ import { ProxyDomainsService } from './proxy-domains.service';
 import { Customer, CustomerSchema } from '../customers/customer.schema';
 import { Tenant, TenantSchema } from '../tenants/tenant.schema';
 import { ListsModule } from '../lists/lists.module';
+import { LandingDomain, LandingDomainSchema } from './landing-domain.schema';
+import { LandingDomainsService } from './landing-domains.service';
+import { LandingDomainsController } from './landing-domains.controller';
+import { Event, EventSchema } from '../events/event.schema';
 
 @Module({
   imports: [
@@ -31,15 +35,18 @@ import { ListsModule } from '../lists/lists.module';
       { name: LinkBatch.name, schema: LinkBatchSchema },
       { name: Customer.name, schema: CustomerSchema },
       { name: Tenant.name, schema: TenantSchema },
+      { name: LandingDomain.name, schema: LandingDomainSchema },
+      { name: Event.name, schema: EventSchema },
     ]),
     ListsModule,
   ],
-  controllers: [LinksController, RedirectController],
+  controllers: [LinksController, RedirectController, LandingDomainsController],
   providers: [
     LinksService,
     LinkTrackingService,
     ProxyDomainsService,
     ShortDomainMiddleware,
+    LandingDomainsService,
   ],
   // El middleware se exporta para registrarlo en `main.ts` a nivel de Express:
   // montado con `forRoutes('*')` solo corre en rutas que existen, y un link de

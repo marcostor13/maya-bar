@@ -18,6 +18,7 @@ import { LucideAngularModule, Calendar, Clock, Tag, Users, CheckCircle, X, Chevr
 
 import { environment } from '../../../environments/environment';
 import { loadSpotifyIframeApi, spotifyUri, type SpotifyController } from '../../shared/landing-music';
+import { currentHost, isCustomDomain } from '../../shared/custom-domain';
 const API = environment.apiUrl;
 
 type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone' | 'date';
@@ -841,7 +842,34 @@ export class PublicEventComponent implements OnInit, OnDestroy {
   }
 
   loadEvent() {
-    const slug = this.route.snapshot.paramMap.get('slug') ?? '';
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (!slug && isCustomDomain()) {
+      this.loadByHost();
+      return;
+    }
+    this.fetchEvent(slug ?? '');
+  }
+
+  /** Dominio propio (HU25): el evento es el que tiene asignado este host. */
+  private loadByHost() {
+    this.loading.set(true);
+    this.notFound.set(false);
+    this.loadError.set(false);
+    this.http
+      .get<{ slug: string }>(`${API}/public/landing-domains/resolve`, {
+        params: { host: currentHost() },
+      })
+      .subscribe({
+        next: (res) => this.fetchEvent(res.slug),
+        error: (err) => {
+          if (err?.status === 404) this.notFound.set(true);
+          else this.loadError.set(true);
+          this.loading.set(false);
+        },
+      });
+  }
+
+  private fetchEvent(slug: string) {
     this.loading.set(true);
     this.notFound.set(false);
     this.loadError.set(false);

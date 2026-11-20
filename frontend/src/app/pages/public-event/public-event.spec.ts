@@ -5,6 +5,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { PublicEventComponent } from './public-event';
 import type { SpotifyController, SpotifyIframeApi } from '../../shared/landing-music';
 import { resetSpotifyIframeApiForTests } from '../../shared/landing-music';
+import { setHostForTests } from '../../shared/custom-domain';
 
 type Music = { embedCode: string; audioUrl?: string };
 
@@ -157,5 +158,50 @@ describe('PublicEventComponent: música (HU22)', () => {
     await click();
     const iframe = el().querySelector('.pe-music-compact iframe');
     expect(iframe!.getAttribute('src')).toContain('auto_play=true');
+  });
+});
+
+describe('PublicEventComponent: dominio propio (HU25)', () => {
+  let http: HttpTestingController;
+  let fixture: ComponentFixture<PublicEventComponent>;
+
+  beforeEach(async () => {
+    setHostForTests('fiesta.miempresa.com');
+    await TestBed.configureTestingModule({
+      imports: [PublicEventComponent],
+      providers: [
+        provideHttpClient(), provideHttpClientTesting(),
+        // La raíz del dominio no trae slug.
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({}), queryParamMap: convertToParamMap({}) } } },
+      ],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(PublicEventComponent);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    http.verify();
+    setHostForTests(null);
+  });
+
+  it('C4: sin slug busca el evento por el host y lo carga', () => {
+    const resolve = http.expectOne((r) => r.url.endsWith('/public/landing-domains/resolve'));
+    expect(resolve.request.params.get('host')).toBe('fiesta.miempresa.com');
+    resolve.flush({ slug: 'fiesta-2030' });
+    http.expectOne((r) => r.url.endsWith('/public/events/fiesta-2030')).flush({
+      event: { _id: 'e1', title: 'Fiesta 2030', date: '2030-01-01', capacity: 0, price: 0, status: 'published' },
+      registrationsCount: 0,
+    });
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Fiesta 2030');
+  });
+
+  it('C4: un dominio sin evento activo muestra «no encontrado»', () => {
+    http.expectOne((r) => r.url.endsWith('/public/landing-domains/resolve'))
+      .flush({ message: 'x' }, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.notFound()).toBe(true);
+    http.expectNone((r) => r.url.includes('/public/events/'));
   });
 });

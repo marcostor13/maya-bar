@@ -6,6 +6,7 @@ import {
 } from '@angular/ssr/node';
 import express from 'express';
 import { join } from 'node:path';
+import { isPlatformHost } from './app/shared/custom-domain';
 
 /**
  * Servidor SSR de la aplicación. El despliegue es un contenedor Node en Coolify
@@ -74,6 +75,24 @@ app.get(
     );
   },
 );
+
+/**
+ * Dominio propio de un cliente (HU25): ahí la raíz es la landing de un evento,
+ * no la de marketing, así que no se entrega la página prerenderizada sino la
+ * app de cliente, que busca el evento por el host. Cualquier otra ruta vuelve
+ * a la raíz. Lo que lleva extensión
+ * (JS, CSS, imágenes) sigue al `express.static` de abajo.
+ */
+app.use((req, res, next) => {
+  const forwarded = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim();
+  const host = forwarded || req.headers.host || '';
+  if (isPlatformHost(host, extraAllowedHosts) || /\.[a-z0-9]+$/i.test(req.path)) return next();
+  // En el dominio del cliente solo existe la landing: nada de /login ni del
+  // resto de la app bajo su marca.
+  if (req.path !== '/') return res.redirect(302, '/');
+  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+  res.sendFile('index.csr.html', { root: browserDistFolder }, (err) => (err ? next() : undefined));
+});
 
 /**
  * Landing prerenderizada. `app.routes.server.ts` la declara como

@@ -16,7 +16,7 @@ import { Type } from 'class-transformer';
 import { LINK_CHANNELS } from '../link.schemas';
 
 const ALIAS_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,39}$/;
-const DOMAIN_RE =
+export const DOMAIN_RE =
   /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/i;
 
 export class UtmDto {
