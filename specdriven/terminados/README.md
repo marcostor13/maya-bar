@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-19 | [HU22 — Música de la landing con un solo clic](2026-11-19-hu22-musica-landing/cierre.md) | Terminada (pendiente prueba en móvil) | 4 CUMPLE · 1 PARCIAL (C1) · hallazgos corregidos |
 | 2026-11-19 | [HU21 — Recuperar el acceso del superadministrador](2026-11-19-hu21-acceso-superadmin/cierre.md) | Terminada (pendiente uso en producción) | 4 CUMPLE · 2 PARCIAL (C5, C6, corregidos) |
 | 2026-11-18 | [HU20 — Datos por usuario en el dashboard](2026-11-18-hu20-dashboard-por-usuario/cierre.md) | Terminada (pendiente revisión del usuario) | 3 CUMPLE · 2 PARCIAL (C2, C4, corregidos) |
 | 2026-11-18 | [HU18 — Costos de los mensajes en el dashboard](2026-11-18-hu18-costos-mensajes/cierre.md) | Terminada (pendiente prueba real y corrida completa final) | 6 CUMPLE |

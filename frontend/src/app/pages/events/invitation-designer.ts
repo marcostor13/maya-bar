@@ -12,11 +12,11 @@ import {
   HostListener,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom } from 'rxjs';
 import { LucideAngularModule, Sparkles, Plus, Trash2, AlignCenter, AlignLeft, AlignRight, Image as ImageIcon, Type, Save, X, BookmarkPlus, Film, Wand2, ChevronDown, CopyPlus, Eye, MousePointerClick, Palette, CheckCircle, Music, Mail, Menu, Layers } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { LandingMusicPickerComponent, type LandingMusic } from './landing-music-picker';
 
 import { environment } from '../../../environments/environment';
 const API = environment.apiUrl;
@@ -74,9 +74,7 @@ export interface LandingTheme {
   successMessage: string;  // mensaje de confirmación ('' = default dinámico)
 }
 
-export interface DesignMusic {
-  embedCode: string;
-}
+export type DesignMusic = LandingMusic;
 
 export interface EmailDesign {
   subject: string;          // asunto ('' = default; admite {eventTitle})
@@ -222,7 +220,7 @@ function rgbaOpacity(rgba: string): number {
 @Component({
   selector: 'app-invitation-designer',
   standalone: true,
-  imports: [LucideAngularModule],
+  imports: [LucideAngularModule, LandingMusicPickerComponent],
   template: `
     <div class="designer" (mousemove)="onMouseMove($event)">
 
@@ -626,7 +624,7 @@ function rgbaOpacity(rgba: string): number {
             <button class="d-btn-sm" (click)="leftTab.set('media')">
               <lucide-icon [img]="ImageIcon" [size]="15"></lucide-icon> Imagen
             </button>
-            <button class="d-btn-sm" [class.d-btn-sm-on]="musicEmbed().trim()" (click)="showMusicModal.set(true)">
+            <button class="d-btn-sm" [class.d-btn-sm-on]="hasMusic()" (click)="showMusicModal.set(true)">
               <lucide-icon [img]="Music" [size]="15"></lucide-icon> Música
             </button>
             <button class="d-btn-sm" (click)="centerAll()" [disabled]="design().elements.length === 0">
@@ -1235,19 +1233,10 @@ function rgbaOpacity(rgba: string): number {
                 <lucide-icon [img]="X" [size]="18"></lucide-icon>
               </button>
             </div>
-            <p class="d-hint-sm" style="text-align:left;margin:0;">
-              Pega el código <strong>embed</strong> de una canción (Spotify, YouTube, SoundCloud…). En la landing aparecerá un botón de play para reproducirla.
-            </p>
-            <textarea class="d-input" rows="5"
-              [value]="musicEmbed()"
-              (input)="updateMusicEmbed($any($event.target).value)"
-              placeholder='Ej: <iframe src="https://open.spotify.com/embed/track/..."></iframe>'></textarea>
-            @if (musicEmbed().trim()) {
-              <div class="music-preview" [innerHTML]="musicPreviewHtml()"></div>
-            }
+            <app-landing-music-picker [music]="design().music ?? { embedCode: '' }" (musicChange)="updateMusic($event)" />
             <div class="music-modal-actions">
-              @if (musicEmbed().trim()) {
-                <button class="d-btn-ghost" (click)="updateMusicEmbed('')">
+              @if (hasMusic()) {
+                <button class="d-btn-ghost" (click)="updateMusic({ embedCode: '' })">
                   <lucide-icon [img]="Trash2" [size]="14"></lucide-icon> Quitar
                 </button>
               }
@@ -2120,12 +2109,6 @@ function rgbaOpacity(rgba: string): number {
 
     .mt-4 { margin-top: 4px; }
 
-    .music-preview {
-      margin-top: 8px;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .music-preview iframe { width: 100%; border: none; border-radius: 12px; display: block; }
 
     /* ── Toolbar music active state ── */
     .d-btn-sm-on {
@@ -2310,7 +2293,6 @@ export class InvitationDesignerComponent implements OnInit {
   private http = inject(HttpClient);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
-  private sanitizer = inject(DomSanitizer);
 
   readonly Sparkles = Sparkles; readonly Plus = Plus; readonly Trash2 = Trash2;
   readonly AlignCenter = AlignCenter; readonly AlignLeft = AlignLeft; readonly AlignRight = AlignRight;
@@ -2728,11 +2710,10 @@ export class InvitationDesignerComponent implements OnInit {
 
   // ── Música embebida ───────────────────────────────────────────────────────
 
-  musicEmbed = computed(() => this.design().music?.embedCode ?? '');
-  musicPreviewHtml = computed<SafeHtml>(() => this.sanitizer.bypassSecurityTrustHtml(this.design().music?.embedCode ?? ''));
+  hasMusic = computed(() => !!(this.design().music?.embedCode?.trim() || this.design().music?.audioUrl));
 
-  updateMusicEmbed(code: string) {
-    this.design.update(d => ({ ...d, music: { embedCode: code } }));
+  updateMusic(music: DesignMusic) {
+    this.design.update(d => ({ ...d, music }));
     this.emitChange();
   }
 

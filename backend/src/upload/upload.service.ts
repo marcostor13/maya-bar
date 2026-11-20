@@ -17,6 +17,8 @@ const ALLOWED_VIDEO = [
 const ALLOWED_AUDIO = [
   'audio/mpeg',
   'audio/mp4',
+  // Chrome y Windows suben los .m4a con este tipo.
+  'audio/x-m4a',
   'audio/mp3',
   'audio/aac',
   'audio/amr',
@@ -67,6 +69,8 @@ const EXT_BY_MIME: Record<string, string> = {
   'video/3gpp': '3gp',
   'audio/mpeg': 'mp3',
   'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/x-wav': 'wav',
   'audio/aac': 'aac',
   'audio/amr': 'amr',
   'audio/ogg': 'ogg',

@@ -5,6 +5,9 @@ import {
   signal,
   computed,
   HostListener,
+  ElementRef,
+  OnDestroy,
+  viewChild,
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
@@ -14,6 +17,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { LucideAngularModule, Calendar, Clock, Tag, Users, CheckCircle, X, ChevronUp, Play, Pause, Music } from 'lucide-angular';
 
 import { environment } from '../../../environments/environment';
+import { loadSpotifyIframeApi, spotifyUri, type SpotifyController } from '../../shared/landing-music';
 const API = environment.apiUrl;
 
 type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone' | 'date';
@@ -82,7 +86,7 @@ interface InvitationDesign {
   background: DesignBackground;
   elements: DesignElement[];
   theme?: LandingTheme;
-  music?: { embedCode: string };
+  music?: { embedCode: string; audioUrl?: string; audioName?: string };
 }
 
 const DEFAULT_THEME: LandingTheme = {
@@ -233,13 +237,23 @@ function hexToRgba(hex: string, opacity: number): string {
         <!-- ══════════════════════════════════════════ -->
         <!-- Embedded music player                      -->
         <!-- ══════════════════════════════════════════ -->
-        @if (hasMusic()) {
-          <button class="pe-music-btn" [class.playing]="musicPlaying()" (click)="toggleMusic()"
+        @if (musicMode() !== 'none') {
+          <button class="pe-music-btn" type="button" [class.playing]="musicPlaying()" (click)="toggleMusic()"
+            [attr.aria-pressed]="musicPlaying()"
             [attr.aria-label]="musicPlaying() ? 'Pausar música' : 'Reproducir música'">
-            <lucide-icon [img]="musicPlaying() ? Pause : Play" [size]="22" [strokeWidth]="2.5"></lucide-icon>
+            <lucide-icon [img]="musicPlaying() ? Pause : Play" [size]="18" [strokeWidth]="2.5"></lucide-icon>
           </button>
-          @if (musicPlaying()) {
-            <div class="pe-music-player" [innerHTML]="safeMusicHtml()"></div>
+          @if (musicMode() === 'audio') {
+            <!-- Audio propio: el botón es todo el reproductor (HU22). -->
+            <audio #musicAudio [src]="musicAudioUrl()" loop preload="none"
+              (play)="musicPlaying.set(true)" (pause)="musicPlaying.set(false)"></audio>
+          } @else if (musicMode() === 'spotify') {
+            <!-- Se crea al cargar, plegado: así el clic solo tiene que ordenar play(). -->
+            <div class="pe-music-player pe-music-compact" [class.pe-music-collapsed]="!spotifyOpen()">
+              <div #spotifyHost></div>
+            </div>
+          } @else if (musicPlaying()) {
+            <div class="pe-music-player pe-music-compact" [innerHTML]="safeMusicHtml()"></div>
           }
         }
 
@@ -651,8 +665,8 @@ function hexToRgba(hex: string, opacity: number): string {
       position: fixed;
       top: calc(16px + env(safe-area-inset-top));
       right: 16px;
-      width: 52px;
-      height: 52px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
       border: none;
       background: rgba(0,0,0,0.55);
@@ -691,6 +705,10 @@ function hexToRgba(hex: string, opacity: number): string {
       animation: fadeIn 0.25s ease;
     }
     .pe-music-player iframe { width: 100%; border: none; display: block; }
+    .pe-music-compact { top: calc(68px + env(safe-area-inset-top)); width: min(300px, calc(100vw - 32px)); border-radius: 12px; }
+    .pe-music-compact iframe { height: 80px; max-height: 80px; }
+    /* Plegado pero montado: el reproductor existe y puede sonar, sin ocupar pantalla. */
+    .pe-music-collapsed { height: 0; opacity: 0; pointer-events: none; box-shadow: none; animation: none; }
 
     @media (max-width: 768px) {
       .pe-title { font-size: 22px; }
@@ -711,13 +729,13 @@ function hexToRgba(hex: string, opacity: number): string {
       .ticket-box { padding: 16px 20px; }
       .ticket-qr { width: 140px; height: 140px; }
       .ticket-code { font-size: 22px; }
-      .pe-music-btn { top: calc(12px + env(safe-area-inset-top)); right: 12px; width: 46px; height: 46px; }
-      .pe-music-player { top: calc(66px + env(safe-area-inset-top)); right: 12px; }
+      .pe-music-btn { top: calc(12px + env(safe-area-inset-top)); right: 12px; width: 40px; height: 40px; }
+      .pe-music-player { top: calc(60px + env(safe-area-inset-top)); right: 12px; }
       .pe-success-card { padding: 28px 20px; }
     }
   `],
 })
-export class PublicEventComponent implements OnInit {
+export class PublicEventComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private http = inject(HttpClient);
   private fb = inject(FormBuilder);
@@ -757,7 +775,28 @@ export class PublicEventComponent implements OnInit {
   hasButtonEl = computed(() => !!this.ev()?.invitationDesign?.elements?.some(e => e.type === 'button'));
   customFields = computed(() => this.ev()?.formFields ?? []);
 
-  hasMusic = computed(() => !!this.ev()?.invitationDesign?.music?.embedCode?.trim());
+  private audioRef = viewChild<ElementRef<HTMLAudioElement>>('musicAudio');
+  private spotifyHost = viewChild<ElementRef<HTMLElement>>('spotifyHost');
+  private spotify: SpotifyController | null = null;
+  /** Spotify recomienda esperar `ready` antes de ordenar play(). */
+  private spotifyReady = false;
+  /** El visitante pulsó play antes de que el reproductor de Spotify estuviera listo. */
+  private spotifyPending = false;
+  private spotifyStarted = false;
+  spotifyOpen = signal(false);
+  /** La API de Spotify no cargó: se usa el iframe como antes. */
+  spotifyFailed = signal(false);
+
+  musicAudioUrl = computed(() => this.ev()?.invitationDesign?.music?.audioUrl?.trim() ?? '');
+  private musicSpotifyUri = computed(() => spotifyUri(this.ev()?.invitationDesign?.music?.embedCode ?? ''));
+  /** Qué reproduce el botón (HU22): el audio subido manda sobre el embed. */
+  musicMode = computed<'audio' | 'spotify' | 'embed' | 'none'>(() => {
+    if (this.musicAudioUrl()) return 'audio';
+    const embed = this.ev()?.invitationDesign?.music?.embedCode?.trim();
+    if (!embed) return 'none';
+    return this.musicSpotifyUri() && !this.spotifyFailed() ? 'spotify' : 'embed';
+  });
+  hasMusic = computed(() => this.musicMode() !== 'none');
   safeMusicHtml = computed<SafeHtml>(() =>
     this.sanitizer.bypassSecurityTrustHtml(
       this.withAutoplay(this.ev()?.invitationDesign?.music?.embedCode ?? ''),
@@ -813,6 +852,8 @@ export class PublicEventComponent implements OnInit {
           this.ev.set(res.event);
           this.registrationsCount.set(res.registrationsCount);
           this.loading.set(false);
+          // Tras pintar la landing existe el contenedor del reproductor.
+          if (this.musicMode() === 'spotify') setTimeout(() => this.initSpotify());
         },
         error: (err) => {
           // 404 = el evento no existe o no está publicado. Otro código (0/5xx) = servidor caído / sin conexión.
@@ -871,9 +912,72 @@ export class PublicEventComponent implements OnInit {
   getCustomValue(id: string): string { return this.customFieldValues[id] ?? ''; }
   setCustomValue(id: string, value: string) { this.customFieldValues[id] = value; }
 
-  toggleMusic() {
-    // Montar/desmontar el iframe: al montarlo reproduce (autoplay), al desmontarlo detiene el audio.
+  async toggleMusic() {
+    const mode = this.musicMode();
+    if (mode === 'audio') {
+      const audio = this.audioRef()?.nativeElement;
+      if (!audio) return;
+      if (!audio.paused) {
+        audio.pause();
+        this.musicPlaying.set(false);
+        return;
+      }
+      try {
+        await audio.play();
+        this.musicPlaying.set(true);
+      } catch {
+        // El navegador rechazó la reproducción (o el archivo no carga).
+        this.musicPlaying.set(false);
+      }
+      return;
+    }
+    if (mode === 'spotify') {
+      this.spotifyOpen.set(true);
+      if (this.spotify && this.spotifyReady) {
+        this.spotify.togglePlay();
+        return;
+      }
+      // Aún cargando: el segundo clic cancela la orden de reproducir.
+      this.spotifyPending = !this.spotifyPending;
+      this.musicPlaying.set(this.spotifyPending);
+      this.initSpotify();
+      return;
+    }
+    // Otros embeds: montar el iframe reproduce (autoplay), desmontarlo lo detiene.
     this.musicPlaying.update(v => !v);
+  }
+
+  /** Prepara el reproductor de Spotify (plegado) para que el clic solo tenga que dar play. */
+  private initSpotify() {
+    const uri = this.musicSpotifyUri();
+    const host = this.spotifyHost()?.nativeElement;
+    if (this.spotifyStarted || !uri || !host) return;
+    this.spotifyStarted = true;
+    loadSpotifyIframeApi()
+      .then((api) =>
+        api.createController(host, { uri, width: '100%', height: 80 }, (controller) => {
+          this.spotify = controller;
+          controller.addListener('playback_update', (e) => this.musicPlaying.set(!e.data.isPaused));
+          controller.addListener('ready', () => {
+            this.spotifyReady = true;
+            if (this.spotifyPending) {
+              this.spotifyPending = false;
+              controller.play();
+            }
+          });
+        }),
+      )
+      .catch(() => {
+        // Sin la API se vuelve al iframe de siempre: si ya pulsó play, se monta.
+        this.spotifyFailed.set(true);
+        this.musicPlaying.set(this.spotifyPending);
+        this.spotifyPending = false;
+      });
+  }
+
+  ngOnDestroy() {
+    this.spotify?.destroy();
+    this.audioRef()?.nativeElement.pause();
   }
 
   /** Inyecta autoplay en el src del embed para que el play del usuario inicie la reproducción. */
