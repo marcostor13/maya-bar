@@ -1,5 +1,6 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { EventDomainCardComponent, type LandingDomainRow } from './event-domain-card';
 import { ToastService } from '../../shared/toast';
@@ -32,7 +33,7 @@ describe('EventDomainCardComponent (HU25)', () => {
     await TestBed.configureTestingModule({
       imports: [EventDomainCardComponent],
       providers: [
-        provideHttpClient(), provideHttpClientTesting(),
+        provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
         { provide: ToastService, useValue: toast },
         { provide: ConfirmService, useValue: confirm },
       ],
@@ -123,6 +124,13 @@ describe('EventDomainCardComponent (HU25)', () => {
     flushList([row()], false);
     expect(button('Verificar')).toBeUndefined();
     expect(button('Quitar')).toBeUndefined();
+  });
+
+  it('HU26 C10: indica que el logo y el favicon se configuran en Configuración', () => {
+    flushList([]);
+    const link = el().querySelector('.brand-hint a') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/settings');
+    expect(link.textContent).toContain('Marca de la empresa');
   });
 
   it('C6: sin permiso y sin dominio no muestra el formulario', () => {

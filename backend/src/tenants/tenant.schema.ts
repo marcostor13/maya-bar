@@ -32,6 +32,7 @@ export class Tenant extends Document {
   @Prop({
     type: {
       logo: String,
+      favicon: String,
       primaryColor: String,
       secondaryColor: String,
     },
@@ -39,6 +40,8 @@ export class Tenant extends Document {
   })
   branding: {
     logo?: string;
+    /** Icono de la pestaña en la landing de sus eventos (HU26). */
+    favicon?: string;
     primaryColor?: string;
     secondaryColor?: string;
   };

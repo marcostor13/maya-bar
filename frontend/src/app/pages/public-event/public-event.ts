@@ -19,6 +19,7 @@ import { LucideAngularModule, Calendar, Clock, Tag, Users, CheckCircle, X, Chevr
 import { environment } from '../../../environments/environment';
 import { loadSpotifyIframeApi, spotifyUri, type SpotifyController } from '../../shared/landing-music';
 import { currentHost, isCustomDomain } from '../../shared/custom-domain';
+import { applyTabBrand } from '../../shared/page-brand';
 const API = environment.apiUrl;
 
 type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'email' | 'phone' | 'date';
@@ -114,6 +115,13 @@ interface PublicEvent {
   invitationDesign?: InvitationDesign;
 }
 
+/** Marca de la empresa organizadora (HU26). */
+interface PublicBrand {
+  name: string;
+  logo?: string;
+  favicon?: string;
+}
+
 interface RegistrationResult {
   _id: string;
   name: string;
@@ -159,6 +167,12 @@ function hexToRgba(hex: string, opacity: number): string {
         </div>
 
       } @else if (ev()) {
+
+        @if (brand()?.logo) {
+          <div class="pe-brand">
+            <img [src]="brand()!.logo" [alt]="brand()!.name" />
+          </div>
+        }
 
         <!-- ══════════════════════════════════════════ -->
         <!-- Full-screen design canvas                  -->
@@ -662,6 +676,24 @@ function hexToRgba(hex: string, opacity: number): string {
     .animate-fade-in { animation: fadeIn 0.3s ease; }
 
     /* ── Embedded music ── */
+    /* Logo de la empresa (HU26): arriba a la izquierda, el botón de música va a la derecha. */
+    .pe-brand {
+      position: fixed;
+      top: calc(16px + env(safe-area-inset-top));
+      left: 16px;
+      z-index: 30;
+      height: 44px;
+      max-width: calc(100% - 96px);
+      padding: 6px 14px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      background: rgba(255,255,255,0.92);
+      border-radius: 9999px;
+      box-shadow: 0 4px 16px rgba(15,23,42,0.18);
+    }
+    .pe-brand img { height: 100%; max-width: 160px; object-fit: contain; display: block; }
+
     .pe-music-btn {
       position: fixed;
       top: calc(16px + env(safe-area-inset-top));
@@ -731,6 +763,7 @@ function hexToRgba(hex: string, opacity: number): string {
       .ticket-qr { width: 140px; height: 140px; }
       .ticket-code { font-size: 22px; }
       .pe-music-btn { top: calc(12px + env(safe-area-inset-top)); right: 12px; width: 40px; height: 40px; }
+      .pe-brand { top: calc(12px + env(safe-area-inset-top)); left: 12px; height: 40px; }
       .pe-music-player { top: calc(60px + env(safe-area-inset-top)); right: 12px; }
       .pe-success-card { padding: 28px 20px; }
     }
@@ -759,6 +792,9 @@ export class PublicEventComponent implements OnInit, OnDestroy {
   notFound = signal(false);
   loadError = signal(false);
   ev = signal<PublicEvent | null>(null);
+  brand = signal<PublicBrand | null>(null);
+  /** Deja la pestaña (favicon y título) como estaba al salir. */
+  private restoreTab: (() => void) | null = null;
   registrationsCount = signal(0);
   registered = signal(false);
   registration = signal<RegistrationResult | null>(null);
@@ -874,10 +910,17 @@ export class PublicEventComponent implements OnInit, OnDestroy {
     this.notFound.set(false);
     this.loadError.set(false);
     this.http
-      .get<{ event: PublicEvent; registrationsCount: number }>(`${API}/public/events/${slug}`)
+      .get<{ event: PublicEvent; registrationsCount: number; brand?: PublicBrand | null }>(`${API}/public/events/${slug}`)
       .subscribe({
         next: (res) => {
           this.ev.set(res.event);
+          this.brand.set(res.brand ?? null);
+          this.restoreTab?.();
+          this.restoreTab = applyTabBrand(document, {
+            title: res.event.title,
+            favicon: res.brand?.favicon,
+            logo: res.brand?.logo,
+          });
           this.registrationsCount.set(res.registrationsCount);
           this.loading.set(false);
           // Tras pintar la landing existe el contenedor del reproductor.
@@ -1004,6 +1047,7 @@ export class PublicEventComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.restoreTab?.();
     this.spotify?.destroy();
     this.audioRef()?.nativeElement.pause();
   }

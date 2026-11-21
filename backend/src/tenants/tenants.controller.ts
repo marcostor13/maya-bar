@@ -18,6 +18,7 @@ import { UsersService } from '../users/users.service';
 import {
   CreateTenantDto,
   DeleteTenantDto,
+  UpdateBrandingDto,
   UpdateTenantDto,
 } from './dto/create-tenant.dto';
 
@@ -89,6 +90,13 @@ export class TenantsController {
       ...(ruc !== undefined ? { ruc } : {}),
       ...(phone !== undefined ? { phone } : {}),
     });
+  }
+
+  /** Logo y favicon de la empresa para la landing de sus eventos (HU26). */
+  @Patch('me/branding')
+  updateMyBranding(@Request() req: AuthReq, @Body() body: UpdateBrandingDto) {
+    if (req.user.role !== 'TENANT_ADMIN') throw new ForbiddenException();
+    return this.tenantsService.updateBranding(req.user.tenantId, body);
   }
 
   // SUPERADMIN: editar cualquier tenant

@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { Event } from './event.schema';
 import { EventRegistration } from './event-registration.schema';
 import { EventTemplate } from './event-template.schema';
+import { Tenant } from '../tenants/tenant.schema';
 import {
   CreateEventDto,
   UpdateEventDto,
@@ -43,6 +44,13 @@ function eventContext(event: Event): string {
   return `Título: ${event.title}\nFecha: ${date}\nHorario: ${time}\nPrecio: ${price}\nDescripción: ${event.description ?? '(sin descripción)'}`;
 }
 
+/** Marca de la empresa que ve el público en la landing del evento (HU26). */
+export interface PublicBrand {
+  name: string;
+  logo?: string;
+  favicon?: string;
+}
+
 // CRUD de eventos, slug, medios, diseño de invitación y compartir.
 @Injectable()
 export class EventsService {
@@ -53,6 +61,7 @@ export class EventsService {
     @InjectModel(EventTemplate.name)
     private templateModel: Model<EventTemplate>,
     private ai: AiService,
+    @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -119,18 +128,37 @@ export class EventsService {
     return event;
   }
 
-  async findPublicEvent(
-    slug: string,
-  ): Promise<{ event: Event; registrationsCount: number }> {
+  async findPublicEvent(slug: string): Promise<{
+    event: Event;
+    registrationsCount: number;
+    brand: PublicBrand | null;
+  }> {
     const event = await this.eventModel
       .findOne({ slug, status: 'published' })
       .exec();
     if (!event) throw new NotFoundException('Evento no encontrado');
-    const registrationsCount = await this.regModel.countDocuments({
-      eventId: event._id,
-      status: 'confirmed',
-    });
-    return { event, registrationsCount };
+    const [registrationsCount, tenant] = await Promise.all([
+      this.regModel.countDocuments({
+        eventId: event._id,
+        status: 'confirmed',
+      }),
+      // Solo lo que se muestra al público: nada de correo, RUC ni plan (HU26).
+      this.tenantModel
+        .findById(event.tenantId)
+        .select('name branding.logo branding.favicon')
+        .lean<Pick<Tenant, 'name' | 'branding'>>()
+        .exec(),
+    ]);
+    const brand: PublicBrand | null = tenant
+      ? {
+          name: tenant.name,
+          ...(tenant.branding?.logo ? { logo: tenant.branding.logo } : {}),
+          ...(tenant.branding?.favicon
+            ? { favicon: tenant.branding.favicon }
+            : {}),
+        }
+      : null;
+    return { event, registrationsCount, brand };
   }
 
   async updateEvent(

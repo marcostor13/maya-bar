@@ -211,6 +211,34 @@ export class TenantsService {
     return saved;
   }
 
+  /** Logo y favicon de la empresa (HU26). `null` o '' los quita. */
+  async updateBranding(
+    id: string,
+    data: { logo?: string | null; favicon?: string | null },
+  ): Promise<{ logo?: string; favicon?: string }> {
+    const set: Record<string, string> = {};
+    const unset: Record<string, 1> = {};
+    for (const key of ['logo', 'favicon'] as const) {
+      const value = data[key];
+      if (value === undefined) continue;
+      const url = (value ?? '').trim();
+      if (url) set[`branding.${key}`] = url;
+      else unset[`branding.${key}`] = 1;
+    }
+    const saved = await this.tenantModel
+      .findByIdAndUpdate(
+        id,
+        {
+          ...(Object.keys(set).length ? { $set: set } : {}),
+          ...(Object.keys(unset).length ? { $unset: unset } : {}),
+        },
+        { new: true },
+      )
+      .exec();
+    if (!saved) throw new NotFoundException('Tenant not found');
+    return { logo: saved.branding?.logo, favicon: saved.branding?.favicon };
+  }
+
   /**
    * Elimina el tenant y todos los documentos que le pertenecen: cualquier
    * modelo registrado con un campo `tenantId` (usuarios, pedidos, locales...).

@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
@@ -76,6 +77,24 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+/**
+ * Logo y favicon de la empresa (HU26). `null` o '' los quita. Solo https: la
+ * URL acaba en un `src`/`href` de la landing pública.
+ */
+export class UpdateBrandingDto {
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null && v !== '')
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @MaxLength(2048)
+  logo?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null && v !== '')
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @MaxLength(2048)
+  favicon?: string | null;
 }
 
 /** Confirmación de borrado: el nombre exacto de la empresa (HU16). */

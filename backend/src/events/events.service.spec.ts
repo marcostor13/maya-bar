@@ -6,6 +6,7 @@ import { EventsService } from './events.service';
 import { Event } from './event.schema';
 import { EventRegistration } from './event-registration.schema';
 import { EventTemplate } from './event-template.schema';
+import { Tenant } from '../tenants/tenant.schema';
 import { AiService } from '../ai/ai.service';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ describe('EventsService', () => {
   let eventModel: any;
   let regModel: any;
   let templateModel: any;
+  let tenantModel: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -88,6 +90,17 @@ describe('EventsService', () => {
     eventModel = createMockModel(makeEventDoc());
     regModel = createMockModel(null);
     templateModel = createMockModel(null);
+    tenantModel = {
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue({
+          name: 'Fiestas SAC',
+          email: 'no@publico.pe',
+          branding: { logo: 'https://cdn.x/logo.png' },
+        }),
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -102,6 +115,7 @@ describe('EventsService', () => {
           useValue: templateModel,
         },
         { provide: AiService, useValue: mockAi },
+        { provide: getModelToken(Tenant.name), useValue: tenantModel },
       ],
     }).compile();
 
@@ -207,6 +221,18 @@ describe('EventsService', () => {
         slug: 'slug-abc123',
         status: 'published',
       });
+    });
+
+    it('incluye solo nombre, logo y favicon de la empresa (HU26)', async () => {
+      const result = await service.findPublicEvent('slug-abc123');
+      expect(result.brand).toEqual({
+        name: 'Fiestas SAC',
+        logo: 'https://cdn.x/logo.png',
+      });
+      const query = tenantModel.findById.mock.results[0].value;
+      expect(query.select).toHaveBeenCalledWith(
+        'name branding.logo branding.favicon',
+      );
     });
 
     it('throws NotFoundException when slug does not match a published event', async () => {

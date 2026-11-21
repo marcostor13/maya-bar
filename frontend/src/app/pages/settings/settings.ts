@@ -14,6 +14,7 @@ import { EmailSettingsComponent } from './email-settings';
 import { SmsSettingsComponent } from './sms-settings';
 import { ResendSettingsComponent } from './resend-settings';
 import { CalendarSettingsComponent } from './calendar-settings';
+import { CompanyBrandingSettingsComponent } from './company-branding-settings';
 
 type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' | 'hunterApiKey';
 
@@ -24,6 +25,7 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
     FormsModule, LucideAngularModule, WhatsappSettingsComponent,
     InstagramSettingsComponent, MessengerSettingsComponent,
     NotificationsSettingsComponent, EmailSettingsComponent, SmsSettingsComponent, ResendSettingsComponent, CalendarSettingsComponent,
+    CompanyBrandingSettingsComponent,
   ],
   template: `
     <div class="page animate-fade-in">
@@ -33,6 +35,9 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
           <p class="page-subtitle">Integraciones y ajustes de la plataforma</p>
         </div>
       </div>
+
+      <!-- Logo y favicon de la landing de eventos (HU26) -->
+      <app-company-branding-settings />
 
       <!-- Notificaciones push (app Android y navegador) -->
       <app-notifications-settings />

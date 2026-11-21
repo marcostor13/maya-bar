@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-20 | [HU26 — Logo y favicon de la empresa en la landing de sus eventos](2026-11-20-hu26-marca-empresa-landing/cierre.md) | Terminada (pendiente prueba del usuario en producción) | 10 CUMPLE · 1 [usuario] (C11) · hallazgos menores corregidos |
 | 2026-11-19 | [HU25 — Dominio propio para la landing de un evento](2026-11-19-hu25-dominio-propio-landing/cierre.md) | Terminada (pendiente prueba con dominio real) | 7 CUMPLE · 1 NO VERIFICADO (C8, usuario) · hallazgos corregidos |
 | 2026-11-19 | [HU22 — Música de la landing con un solo clic](2026-11-19-hu22-musica-landing/cierre.md) | Terminada (pendiente prueba en móvil) | 4 CUMPLE · 1 PARCIAL (C1) · hallazgos corregidos |
 | 2026-11-19 | [HU21 — Recuperar el acceso del superadministrador](2026-11-19-hu21-acceso-superadmin/cierre.md) | Terminada (pendiente uso en producción) | 4 CUMPLE · 2 PARCIAL (C5, C6, corregidos) |

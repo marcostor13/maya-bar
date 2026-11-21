@@ -15,6 +15,7 @@ import {
   ExternalImpulsadorSchema,
 } from './external-impulsador.schema';
 import { User, UserSchema } from '../users/user.schema';
+import { Tenant, TenantSchema } from '../tenants/tenant.schema';
 import { AiModule } from '../ai/ai.module';
 import { MailModule } from '../mail/mail.module';
 
@@ -26,6 +27,8 @@ import { MailModule } from '../mail/mail.module';
       { name: EventTemplate.name, schema: EventTemplateSchema },
       { name: ExternalImpulsador.name, schema: ExternalImpulsadorSchema },
       { name: User.name, schema: UserSchema },
+      // Marca de la empresa en la landing pública (HU26).
+      { name: Tenant.name, schema: TenantSchema },
     ]),
     AiModule,
     MailModule,

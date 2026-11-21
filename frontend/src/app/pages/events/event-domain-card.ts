@@ -1,5 +1,6 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { LucideAngularModule, Globe, RefreshCw, Trash2, ExternalLink, Copy } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
@@ -37,7 +38,7 @@ const STATUS: Record<LandingDomainRow['status'], { label: string; badge: string 
 @Component({
   selector: 'app-event-domain-card',
   standalone: true,
-  imports: [LucideAngularModule],
+  imports: [LucideAngularModule, RouterLink],
   template: `
     <section class="card dom-card" aria-labelledby="dom-title">
       <div class="dom-head">
@@ -119,6 +120,8 @@ const STATUS: Record<LandingDomainRow['status'], { label: string; badge: string 
             </tbody>
           </table>
           <p class="muted">Si usas Cloudflare, deja el registro <strong>sin proxy (nube gris)</strong>. Cuando el DNS propague pulsa «Verificar»: el certificado tarda unos minutos. El evento debe estar publicado.</p>
+          <p class="muted brand-hint">El logo y el favicon con que se ve la landing son los de tu empresa:
+            se configuran en <a routerLink="/settings">Configuración → Marca de la empresa</a>.</p>
           @if (info() && !info()!.selfService) {
             <p class="muted">En este servidor el alta no es automática: avisa a soporte cuando el DNS esté listo.</p>
           }
@@ -138,6 +141,7 @@ const STATUS: Record<LandingDomainRow['status'], { label: string; badge: string 
     .dom-msg { margin: 0; font-size: 12.5px; color: var(--color-text-muted); line-height: 1.5; }
     .dom-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .dom-form { display: flex; gap: 8px; flex-wrap: wrap; }
+    .brand-hint a { color: var(--color-brand); }
     .dom-form .input { flex: 1 1 220px; min-width: 0; }
     .dom-help { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
     .dom-help p { margin: 0; }

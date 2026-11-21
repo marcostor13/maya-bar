@@ -161,6 +161,65 @@ describe('PublicEventComponent: música (HU22)', () => {
   });
 });
 
+describe('PublicEventComponent: marca de la empresa (HU26)', () => {
+  let http: HttpTestingController;
+  let fixture: ComponentFixture<PublicEventComponent>;
+  const el = () => fixture.nativeElement as HTMLElement;
+  const icon = () => document.head.querySelector('link[rel~="icon"]')!.getAttribute('href');
+
+  beforeEach(async () => {
+    document.head.querySelectorAll('link[rel~="icon"]').forEach(l => l.remove());
+    document.head.insertAdjacentHTML('beforeend', '<link rel="icon" href="/favicon.ico">');
+    document.title = 'Maya CRM';
+    await TestBed.configureTestingModule({
+      imports: [PublicEventComponent],
+      providers: [
+        provideHttpClient(), provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ slug: 'fiesta' }), queryParamMap: convertToParamMap({}) } } },
+      ],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(PublicEventComponent);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    http.verify();
+    document.head.querySelectorAll('link[rel~="icon"]').forEach(l => l.remove());
+  });
+
+  const flush = (brand: unknown) => {
+    http.expectOne((r) => r.url.endsWith('/public/events/fiesta')).flush({
+      event: { _id: 'e1', title: 'Fiesta 2030', date: '2030-01-01', capacity: 0, price: 0, status: 'published' },
+      registrationsCount: 0,
+      brand,
+    });
+    fixture.detectChanges();
+  };
+
+  it('C6, C7: muestra el logo con el nombre y pone favicon y título del evento', () => {
+    flush({ name: 'Fiestas SAC', logo: 'https://cdn.x/logo.png', favicon: 'https://cdn.x/icon.png' });
+    const img = el().querySelector('.pe-brand img') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe('https://cdn.x/logo.png');
+    expect(img.getAttribute('alt')).toBe('Fiestas SAC');
+    expect(icon()).toBe('https://cdn.x/icon.png');
+    expect(document.title).toBe('Fiesta 2030');
+  });
+
+  it('C6: sin logo no hay píldora de marca y se conserva el favicon de Maya', () => {
+    flush({ name: 'Fiestas SAC' });
+    expect(el().querySelector('.pe-brand')).toBeNull();
+    expect(icon()).toBe('/favicon.ico');
+  });
+
+  it('C8: al salir de la landing se restauran favicon y título', () => {
+    flush({ name: 'Fiestas SAC', favicon: 'https://cdn.x/icon.png' });
+    fixture.destroy();
+    expect(icon()).toBe('/favicon.ico');
+    expect(document.title).toBe('Maya CRM');
+  });
+});
+
 describe('PublicEventComponent: dominio propio (HU25)', () => {
   let http: HttpTestingController;
   let fixture: ComponentFixture<PublicEventComponent>;
