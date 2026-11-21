@@ -29,6 +29,7 @@ import { InboxActionsComponent, type ActionKind } from './inbox-actions';
 import { InboxFiltersComponent } from './inbox-filters';
 import { BlockDialogComponent, type BlockDialogResult } from './block-dialog';
 import { InboxTrashComponent } from './inbox-trash';
+import { mergeMessages } from './merge-messages';
 import { InboxBlockedComponent } from './inbox-blocked';
 import { ContactCareComponent } from '../customers/contact-care';
 import type { OwnerRef } from '../../core/api/contact-care-api.service';
@@ -2490,7 +2491,9 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.listenRealtime();
     // Red de seguridad por si el websocket se cae.
     this.pollTimer = setInterval(() => {
-      if (!this.realtime.connected()) this.loadConversations(false);
+      if (this.realtime.connected()) return;
+      this.loadConversations(false);
+      this.syncMessages();
     }, 15_000);
   }
 
@@ -2548,11 +2551,12 @@ export class InboxComponent implements OnInit, OnDestroy {
     else if (this.hasEmail()) params.set('channel', CHAT_CHANNELS.join(','));
     const query = params.toString();
     const url = `${API}/conversations${query ? `?${query}` : ''}`;
-    this.http.get<Conv[]>(url).subscribe({
+    this.http.get<Conv[]>(url, showLoader ? {} : { context: silentRequest() }).subscribe({
       next: list => { this.conversations.set(list); this.loadingList.set(false); },
       error: () => {
         this.loadingList.set(false);
-        this.toast.error('No se pudieron cargar las conversaciones');
+        // Las relecturas automáticas (sin red, por ejemplo) no avisan cada vez.
+        if (showLoader) this.toast.error('No se pudieron cargar las conversaciones');
       },
     });
   }
@@ -2935,6 +2939,29 @@ export class InboxComponent implements OnInit, OnDestroy {
         this.loadingMessages.set(false);
         this.toast.error('No se pudieron cargar los mensajes');
       },
+    });
+  }
+
+  /**
+   * Trae los últimos mensajes del chat abierto y los mezcla con los que ya se
+   * ven, sin parpadeo ni perder lo cargado (HU23). Para cuando el socket pudo
+   * perderse eventos.
+   */
+  private syncMessages() {
+    const id = this.selectedId();
+    if (!id) return;
+    this.http.get<Msg[]>(`${API}/conversations/${id}/messages?limit=50`, { context: silentRequest() }).subscribe({
+      next: latest => {
+        if (this.selectedId() !== id) return;
+        const known = new Set(this.messages().map(m => m._id));
+        const fresh = latest.filter(m => !known.has(m._id));
+        this.messages.update(list => mergeMessages(list, latest, m => m._id.startsWith(TEMP_PREFIX)));
+        if (latest.length >= 50) this.allLoaded = false;
+        if (fresh.length) this.scrollToBottom();
+        // Igual que por el socket: lo que el cliente escribió ya está en pantalla.
+        if (fresh.some(m => m.direction === 'in')) this.markRead(id);
+      },
+      error: () => undefined,
     });
   }
 
@@ -3818,6 +3845,12 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.realtime.conversationRemoved$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p =>
       this.removeConvs(p.ids),
     );
+
+    // Lo emitido con el socket caído se perdió: se recupera de la API.
+    this.realtime.resync$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.loadConversations(false);
+      this.syncMessages();
+    });
 
     this.realtime.typing$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p => {
       if (p.conversationId === this.selectedId()) this.typing.set(p.typing);

@@ -9,6 +9,8 @@ import { NativePushService } from '../core/push.service';
 import { environment } from '../../environments/environment';
 
 const API = environment.apiUrl;
+/** Espera para juntar los avisos de reconexión que llegan casi a la vez. */
+export const RESYNC_DEBOUNCE_MS = 400;
 
 /** Mensaje tal como lo emite el gateway (`message:new` / `message:updated`). */
 export interface RealtimeMessage {
@@ -59,6 +61,11 @@ export class ConversationsRealtimeService {
   readonly scheduledChanged$ = new Subject<{ conversationId: string }>();
   /** Llamadas de WhatsApp (solo llegan a quien tiene el módulo Llamadas). */
   readonly call$ = new Subject<CallEvent>();
+  /**
+   * Hay que releer lista y chat abierto: lo emitido mientras el socket estaba
+   * caído (red, app en segundo plano, deploy) no se vuelve a mandar (HU23).
+   */
+  readonly resync$ = new Subject<void>();
 
   /** Total de mensajes sin leer del tenant, para la insignia del menú. */
   unread = signal(0);
@@ -68,6 +75,9 @@ export class ConversationsRealtimeService {
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   /** Reintentos seguidos de reconectar tras renovar la sesión. */
   private reauthAttempts = 0;
+  /** Conexiones del socket: desde la segunda es una reconexión. */
+  private connections = 0;
+  private resyncTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Conecta (una sola vez) y arranca el contador. Idempotente. */
   connect(): void {
@@ -87,6 +97,7 @@ export class ConversationsRealtimeService {
     this.refreshTimer = setInterval(() => this.refreshUnread(), 60_000);
     // Al volver a la app el socket pudo perderse eventos mientras dormía.
     document.addEventListener('visibilitychange', this.onVisible);
+    window.addEventListener('online', this.onOnline);
   }
 
   /** Engancha los eventos del gateway. Aparte para poder probarlo con un socket falso. */
@@ -95,6 +106,7 @@ export class ConversationsRealtimeService {
     s.on('connect', () => {
       this.connected.set(true);
       this.reauthAttempts = 0;
+      if (++this.connections > 1) this.requestResync();
     });
     s.on('disconnect', (reason: string) => {
       this.connected.set(false);
@@ -139,17 +151,37 @@ export class ConversationsRealtimeService {
   }
 
   private onVisible = () => {
-    if (document.visibilityState === 'visible') this.refreshUnread();
+    if (document.visibilityState === 'visible') this.requestResync();
   };
+
+  private onOnline = () => this.requestResync();
+
+  /** Relee el contador y avisa a la bandeja para que recupere lo perdido. */
+  private requestResync(): void {
+    // Al volver a la app llegan juntos `visibilitychange`, `online` y la
+    // reconexión: una sola relectura basta.
+    if (this.resyncTimer) clearTimeout(this.resyncTimer);
+    this.resyncTimer = setTimeout(() => {
+      this.resyncTimer = null;
+      this.refreshUnread();
+      this.resync$.next();
+    }, RESYNC_DEBOUNCE_MS);
+  }
 
   /** Cierra la conexión al cerrar sesión: el siguiente usuario abre la suya. */
   disconnect(): void {
     this.socket?.disconnect();
     this.socket = null;
     this.connected.set(false);
+    this.connections = 0;
+    if (this.resyncTimer) clearTimeout(this.resyncTimer);
+    this.resyncTimer = null;
     if (this.refreshTimer) clearInterval(this.refreshTimer);
     this.refreshTimer = null;
-    if (this.isBrowser) document.removeEventListener('visibilitychange', this.onVisible);
+    if (this.isBrowser) {
+      document.removeEventListener('visibilitychange', this.onVisible);
+      window.removeEventListener('online', this.onOnline);
+    }
     this.unread.set(0);
     if (this.isBrowser) updateAppBadge(0);
   }
