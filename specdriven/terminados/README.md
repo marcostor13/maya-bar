@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-20 | [HU24 — Reintentar mensajes que no se enviaron](2026-11-20-hu24-reintentar-mensajes-sin-enviar/cierre.md) | Terminada (pendiente prueba en el móvil) | 8 CUMPLE · 1 [usuario] (C9) · hallazgos corregidos |
 | 2026-11-20 | [HU23 — Conversaciones en tiempo real](2026-11-20-hu23-conversaciones-tiempo-real/cierre.md) | Terminada (pendiente prueba del usuario en producción) | 4 CUMPLE · C3/C5 por revisión · 1 [usuario] (C7) · hallazgos corregidos |
 | 2026-11-20 | [HU26 — Logo y favicon de la empresa en la landing de sus eventos](2026-11-20-hu26-marca-empresa-landing/cierre.md) | Terminada (pendiente prueba del usuario en producción) | 10 CUMPLE · 1 [usuario] (C11) · hallazgos menores corregidos |
 | 2026-11-19 | [HU25 — Dominio propio para la landing de un evento](2026-11-19-hu25-dominio-propio-landing/cierre.md) | Terminada (pendiente prueba con dominio real) | 7 CUMPLE · 1 NO VERIFICADO (C8, usuario) · hallazgos corregidos |

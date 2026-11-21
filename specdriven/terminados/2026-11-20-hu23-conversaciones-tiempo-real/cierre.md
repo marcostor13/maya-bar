@@ -16,7 +16,7 @@ Pedido: `hu.md` · Spec: `spec.md` · Plan: `plan.md` · Tareas: `tasks.md`
 | C3 | `resync$` relee lista y chat abierto | CUMPLE (revisión de código) | `pages/inbox/inbox.ts` `listenRealtime` → `loadConversations(false)` + `syncMessages()` |
 | C4 | Mezcla sin duplicar, conserva antiguos y provisionales | CUMPLE | `pages/inbox/merge-messages.ts`, `merge-messages.spec.ts` |
 | C5 | Sin socket, la red de seguridad relee también el chat | CUMPLE (revisión de código) | `inbox.ts` `pollTimer` |
-| C6 | `npm run verify` | ver abajo | corrida final del backlog |
+| C6 | `npm run verify` | CUMPLE | corrida final del backlog: todo OK |
 | C7 | Prueba en producción | [usuario] | — |
 
 ## Qué se implementó

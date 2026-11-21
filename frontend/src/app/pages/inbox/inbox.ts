@@ -11,7 +11,7 @@ import {
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
   CalendarPlus, ListChecks, ShieldBan, ShieldCheck, Users, UserCheck, UserMinus, Hand, Megaphone,
-  SquareCheck,
+  SquareCheck, WifiOff,
 } from 'lucide-angular';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
@@ -30,6 +30,7 @@ import { InboxFiltersComponent } from './inbox-filters';
 import { BlockDialogComponent, type BlockDialogResult } from './block-dialog';
 import { InboxTrashComponent } from './inbox-trash';
 import { mergeMessages } from './merge-messages';
+import { OutboxService, newClientId, type OutboxBody, type OutboxItem } from '../../shared/outbox';
 import { InboxBlockedComponent } from './inbox-blocked';
 import { ContactCareComponent } from '../customers/contact-care';
 import type { OwnerRef } from '../../core/api/contact-care-api.service';
@@ -53,7 +54,8 @@ const SUGGESTED_TAGS = ['Interesado', 'Cotización', 'Reserva', 'VIP', 'Frecuent
 type MsgType =
   | 'text' | 'image' | 'video' | 'audio' | 'voice'
   | 'document' | 'sticker' | 'location' | 'contact' | 'unsupported';
-type MsgStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+/** `queued`: solo en el dispositivo, sin red; sale solo al volver (HU24). */
+type MsgStatus = 'queued' | 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 interface Msg {
   _id: string;
@@ -85,6 +87,8 @@ interface Msg {
   mediaUnavailable?: boolean;
   /** Tipo tal como lo nombró el proveedor; explica lo no soportado. */
   rawType?: string;
+  /** Id que le puso el dispositivo al escribirlo (HU24). */
+  clientId?: string;
 }
 
 /** Por qué no se puede mostrar un mensaje, según el tipo que dio WhatsApp. */
@@ -109,6 +113,13 @@ const MEDIA_LABEL: Partial<Record<MsgType, string>> = {
 /** Cómo se resume un adjunto cuando se cita un mensaje sin texto. */
 /** Prefijo de las burbujas provisionales: aún no tienen id del servidor. */
 const TEMP_PREFIX = 'tmp-';
+
+/** Estado de la burbuja según el estado en la cola del dispositivo. */
+const OUTBOX_STATUS: Record<OutboxItem['state'], MsgStatus> = {
+  queued: 'queued',
+  sending: 'pending',
+  failed: 'failed',
+};
 
 /** Tope de altura del campo de escritura, en píxeles. */
 const COMPOSER_MAX_PX = 140;
@@ -862,6 +873,7 @@ const EMOJIS = [
                       {{ shortTime(m.at) }}
                       @if (m.direction === 'out') {
                         @switch (m.status) {
+                          @case ('queued')  { <lucide-icon [img]="WifiOff" [size]="12" [strokeWidth]="2.4" aria-label="Sin conexión"></lucide-icon> }
                           @case ('pending') { <lucide-icon [img]="Clock" [size]="12" [strokeWidth]="2.4"></lucide-icon> }
                           @case ('sent')    { <lucide-icon [img]="Check" [size]="13" [strokeWidth]="2.6"></lucide-icon> }
                           @case ('delivered') { <lucide-icon [img]="CheckCheck" [size]="13" [strokeWidth]="2.6"></lucide-icon> }
@@ -870,8 +882,22 @@ const EMOJIS = [
                         }
                       }
                     </span>
-                    @if (m.status === 'failed' && m.error) {
-                      <span class="err-text">No se pudo enviar</span>
+                    @if (m.status === 'queued') {
+                      <span class="queued-text">Sin conexión · se enviará al volver la red</span>
+                    }
+                    @if (m.status === 'failed' && (m.error || canRetry(m))) {
+                      <span class="err-text">No se pudo enviar
+                        @if (canRetry(m)) {
+                          <button type="button" class="retry-btn" (click)="retryMessage(m)" [disabled]="retrying().has(m._id)">
+                            <lucide-icon [img]="RefreshCw" [size]="12" [strokeWidth]="2.4"></lucide-icon> Reintentar
+                          </button>
+                          @if (isLocal(m)) {
+                            <button type="button" class="retry-btn" (click)="discardMessage(m)">
+                              <lucide-icon [img]="Trash2" [size]="12" [strokeWidth]="2.4"></lucide-icon> Descartar
+                            </button>
+                          }
+                        }
+                      </span>
                     }
                   </div>
                 </div>
@@ -1908,7 +1934,12 @@ const EMOJIS = [
     }
     .meta .read { color: #2563EB; }
     .meta .err { color: var(--color-error); }
-    .err-text { font-size: 11px; color: var(--color-error); font-weight: 600; }
+    .err-text { font-size: 11px; color: var(--color-error); font-weight: 600; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .queued-text { font-size: 11px; color: var(--color-text-muted); font-weight: 600; }
+    .retry-btn { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 2px 0;
+      color: var(--color-error); font: inherit; text-decoration: underline; cursor: pointer; }
+    .retry-btn:disabled { opacity: .5; cursor: default; }
+    .retry-btn:focus-visible { outline: 2px solid var(--color-error); outline-offset: 2px; border-radius: 4px; }
 
     .media-img {
       max-width: 100%; width: 300px; border-radius: 14px;
@@ -2198,6 +2229,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly calls = inject(CallsService);
   private confirmSvc = inject(ConfirmService);
   private realtime = inject(ConversationsRealtimeService);
+  private outbox = inject(OutboxService);
   private chrome = inject(AppChromeService);
   private push = inject(PushService);
   private nativePush = inject(NativePushService);
@@ -2230,6 +2262,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly ReadIcon = ReadIcon;
   readonly Clock = Clock;
   readonly AlertCircle = AlertCircle;
+  readonly WifiOff = WifiOff;
   readonly X = X;
   readonly Trash2 = Trash2;
   readonly ArrowLeft = ArrowLeft;
@@ -2372,7 +2405,6 @@ export class InboxComponent implements OnInit, OnDestroy {
   /** Invalida subidas en curso al cancelar: su respuesta llega tarde y se ignora. */
   private uploadSeq = 0;
   /** Contador de burbujas provisionales del envío optimista. */
-  private tempSeq = 0;
 
   recording = signal(false);
   recordingSeconds = signal(0);
@@ -2930,7 +2962,8 @@ export class InboxComponent implements OnInit, OnDestroy {
       ...(showLoader ? {} : { context: silentRequest() }),
     }).subscribe({
       next: list => {
-        this.messages.set(list);
+        if (this.selectedId() !== id) return;
+        this.messages.set([...list, ...this.pendingBubbles(id, list)]);
         this.loadingMessages.set(false);
         this.allLoaded = list.length < 50;
         this.scrollToBottom();
@@ -2955,7 +2988,10 @@ export class InboxComponent implements OnInit, OnDestroy {
         if (this.selectedId() !== id) return;
         const known = new Set(this.messages().map(m => m._id));
         const fresh = latest.filter(m => !known.has(m._id));
-        this.messages.update(list => mergeMessages(list, latest, m => m._id.startsWith(TEMP_PREFIX)));
+        // Los provisionales que el servidor ya tiene (por su clientId) sobran.
+        const confirmed = new Set(latest.map(m => m.clientId).filter(Boolean).map(c => `${TEMP_PREFIX}${c}`));
+        this.messages.update(list =>
+          mergeMessages(list.filter(m => !confirmed.has(m._id)), latest, m => m._id.startsWith(TEMP_PREFIX)));
         if (latest.length >= 50) this.allLoaded = false;
         if (fresh.length) this.scrollToBottom();
         // Igual que por el socket: lo que el cliente escribió ya está en pantalla.
@@ -3430,7 +3466,10 @@ export class InboxComponent implements OnInit, OnDestroy {
 
     const citado = this.isEmail() ? null : this.replyTo();
     const subject = this.isEmail() ? this.subject().trim() : '';
+    // El id del dispositivo: si hay que reenviarlo (sin red), el servidor no lo duplica.
+    const clientId = newClientId();
     const body = {
+      clientId,
       ...(att
         ? { text, type: att.type, mediaUrl: att.url, mediaKey: att.key, mimeType: att.mimeType, filename: att.filename, size: att.size }
         : { text, type: 'text' as MsgType }),
@@ -3438,9 +3477,10 @@ export class InboxComponent implements OnInit, OnDestroy {
       ...(subject ? { subject } : {}),
     };
 
-    const tempId = `${TEMP_PREFIX}${Date.now()}-${++this.tempSeq}`;
+    const tempId = `${TEMP_PREFIX}${clientId}`;
     this.upsertMessage({
       _id: tempId,
+      clientId,
       conversationId: conv._id,
       direction: 'out',
       author: 'human',
@@ -3466,14 +3506,89 @@ export class InboxComponent implements OnInit, OnDestroy {
     if (conv.autoReply || !conv.takenOverBy)
       this.upsertConv({ ...conv, autoReply: false, takenOverBy: this.me(), takenOverByName: this.auth.currentUser()?.name ?? null });
 
-    this.http.post<Msg>(`${API}/conversations/${conv._id}/messages`, body, { context: silentRequest() }).subscribe({
-      next: msg => this.replaceTemp(tempId, msg),
+    // Pasa por la cola del dispositivo (HU24): sin red no se pierde y sale
+    // solo al volver la conexión. El resultado llega por `outbox.sent$/changed$`.
+    void this.outbox.send(conv._id, body as OutboxBody);
+  }
+
+  /** Solo se reintentan a mano los escritos en la bandeja (los de la API, no). */
+  canRetry(m: Msg): boolean {
+    return m.direction === 'out' && m.author === 'human' && !m.apiAccessName;
+  }
+
+  retrying = signal<Set<string>>(new Set());
+
+  /** Sigue solo en el dispositivo: el servidor nunca lo guardó. */
+  isLocal(m: Msg): boolean {
+    return m._id.startsWith(TEMP_PREFIX);
+  }
+
+  /** Quita de la cola uno que el servidor rechaza (p. ej. contacto bloqueado). */
+  async discardMessage(m: Msg) {
+    const ok = await this.confirmSvc.confirm({
+      title: 'Descartar mensaje',
+      message: 'El mensaje no se envió y se borrará de este dispositivo.',
+      confirmText: 'Descartar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.outbox.discard(m._id.slice(TEMP_PREFIX.length));
+    this.messages.update(list => list.filter(x => x._id !== m._id));
+  }
+
+  /**
+   * Reintentar: el que no llegó al servidor sale de nuevo de la cola (mismo
+   * clientId); el que el servidor guardó pero falló al entregarse se reenvía
+   * en el backend.
+   */
+  retryMessage(m: Msg) {
+    if (m._id.startsWith(TEMP_PREFIX)) {
+      void this.outbox.retry(m._id.slice(TEMP_PREFIX.length));
+      return;
+    }
+    const conv = this.selected();
+    if (!conv || this.retrying().has(m._id)) return;
+    this.retrying.update(s => new Set(s).add(m._id));
+    const done = () => this.retrying.update(s => { const n = new Set(s); n.delete(m._id); return n; });
+    this.http.post<Msg>(`${API}/conversations/${conv._id}/messages/${m._id}/retry`, {}, { context: silentRequest() }).subscribe({
+      next: msg => { done(); this.upsertMessage(msg); },
       error: err => {
-        this.messages.update(list => list.map(m =>
-          m._id === tempId ? { ...m, status: 'failed' as MsgStatus, error: 'No se pudo enviar' } : m));
-        this.toast.error(err.error?.message || 'No se pudo enviar el mensaje');
+        done();
+        this.toast.error(err.error?.message || 'No se pudo reintentar el mensaje');
+        if (err.status === 409) this.syncMessages();
       },
     });
+  }
+
+  /** Burbuja provisional de un mensaje que sigue en la cola del dispositivo. */
+  private outboxBubble(item: OutboxItem): Msg {
+    const b = item.body;
+    return {
+      _id: `${TEMP_PREFIX}${item.clientId}`,
+      clientId: item.clientId,
+      conversationId: item.conversationId,
+      direction: 'out',
+      author: 'human',
+      type: b.type as MsgType,
+      text: b.text,
+      mediaUrl: b.mediaUrl,
+      mimeType: b.mimeType,
+      filename: b.filename,
+      size: b.size,
+      replyToId: b.replyToId,
+      subject: b.subject,
+      status: OUTBOX_STATUS[item.state],
+      error: item.error,
+      at: item.createdAt,
+    };
+  }
+
+  /** Lo que sigue en la cola de este chat y el servidor aún no tiene. */
+  private pendingBubbles(conversationId: string, server: Msg[]): Msg[] {
+    const known = new Set(server.map(m => m.clientId).filter(Boolean));
+    return this.outbox.forConversation(conversationId)
+      .filter(i => !known.has(i.clientId))
+      .map(i => this.outboxBubble(i));
   }
 
   openAction(kind: ActionKind) { this.quickActions()?.open(kind); }
@@ -3502,6 +3617,10 @@ export class InboxComponent implements OnInit, OnDestroy {
    */
   private matchTemp(msg: Msg): string | null {
     if (msg.direction !== 'out' || msg.author !== 'human') return null;
+    if (msg.clientId) {
+      const byClient = `${TEMP_PREFIX}${msg.clientId}`;
+      if (this.messages().some(m => m._id === byClient)) return byClient;
+    }
     const temp = this.messages().find(m =>
       m._id.startsWith(TEMP_PREFIX) && m.status === 'pending' && m.type === msg.type
       && (m.text ?? '') === (msg.text ?? '') && (m.mediaUrl ?? '') === (msg.mediaUrl ?? ''));
@@ -3845,6 +3964,20 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.realtime.conversationRemoved$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(p =>
       this.removeConvs(p.ids),
     );
+
+    // Cola del dispositivo (HU24): confirmado por el servidor, en cola o fallido.
+    this.outbox.sent$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ item, message }) => {
+      if (item.conversationId === this.selectedId()) this.replaceTemp(`${TEMP_PREFIX}${item.clientId}`, message as unknown as Msg);
+    });
+    this.outbox.changed$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(item => {
+      if (item.state === 'failed') this.toast.error(item.error || 'No se pudo enviar el mensaje');
+      if (item.conversationId !== this.selectedId()) return;
+      const tempId = `${TEMP_PREFIX}${item.clientId}`;
+      const prev = this.messages().find(m => m._id === tempId);
+      if (item.state === 'queued' && prev?.status === 'pending')
+        this.toast.info('Sin conexión: el mensaje se enviará al volver la red');
+      this.messages.update(list => list.map(m => (m._id === tempId ? this.outboxBubble(item) : m)));
+    });
 
     // Lo emitido con el socket caído se perdió: se recupera de la API.
     this.realtime.resync$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {

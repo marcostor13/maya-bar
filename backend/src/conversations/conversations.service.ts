@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Interval } from '@nestjs/schedule';
@@ -1274,6 +1275,9 @@ export class ConversationsService {
     opts: { background?: boolean } = {},
   ) {
     let conv = await this.getConversation(id, tenantId);
+    // Reenvío del mismo mensaje (el dispositivo no supo si llegó): el original.
+    const again = await this.findByClientId(conv, dto.clientId);
+    if (again) return again;
     if (conv.blocked)
       throw new BadRequestException(
         'Este contacto está bloqueado: desbloquéalo para escribirle.',
@@ -1292,26 +1296,41 @@ export class ConversationsService {
       conv = await this.assignment.ensureWriter(conv, actor);
     else this.assignment.assertCanControl(conv, actor);
 
-    const msg = await this.msgModel.create({
-      tenantId: conv.tenantId,
-      conversationId: conv._id,
-      direction: 'out',
-      author: 'human',
-      type,
-      text: dto.text ?? '',
-      mediaUrl: dto.mediaUrl,
-      mediaKey: dto.mediaKey,
-      mimeType: dto.mimeType,
-      filename: dto.filename,
-      size: dto.size,
-      durationSeconds: dto.durationSeconds,
-      replyToId: dto.replyToId ? new Types.ObjectId(dto.replyToId) : undefined,
-      subject:
-        conv.channel === 'email' ? dto.subject?.trim() || undefined : undefined,
-      status: 'pending',
-      sentBy: new Types.ObjectId(userId),
-      at: new Date(),
-    });
+    let msg: Message;
+    try {
+      msg = await this.msgModel.create({
+        tenantId: conv.tenantId,
+        conversationId: conv._id,
+        direction: 'out',
+        author: 'human',
+        clientId: dto.clientId,
+        type,
+        text: dto.text ?? '',
+        mediaUrl: dto.mediaUrl,
+        mediaKey: dto.mediaKey,
+        mimeType: dto.mimeType,
+        filename: dto.filename,
+        size: dto.size,
+        durationSeconds: dto.durationSeconds,
+        replyToId: dto.replyToId
+          ? new Types.ObjectId(dto.replyToId)
+          : undefined,
+        subject:
+          conv.channel === 'email'
+            ? dto.subject?.trim() || undefined
+            : undefined,
+        status: 'pending',
+        sentBy: new Types.ObjectId(userId),
+        at: new Date(),
+      });
+    } catch (err) {
+      // Dos reenvíos a la vez: el otro ganó la carrera.
+      const dup =
+        (err as { code?: number }).code === 11000 &&
+        (await this.findByClientId(conv, dto.clientId));
+      if (dup) return dup;
+      throw err;
+    }
 
     await this.touchConversation(conv, msg);
     this.gateway.emitMessage(tenantId, msg);
@@ -1328,6 +1347,72 @@ export class ConversationsService {
       return msg;
     }
     return this.finishDelivery(tenantId, conv, msg);
+  }
+
+  /** Mensaje de la bandeja ya guardado con ese id de dispositivo (HU24). */
+  private async findByClientId(
+    conv: Conversation,
+    clientId?: string,
+  ): Promise<Message | null> {
+    if (!clientId) return null;
+    const msg = await this.msgModel
+      .findOne({ tenantId: conv.tenantId, clientId })
+      .exec();
+    if (msg && String(msg.conversationId) !== String(conv._id))
+      throw new ConflictException('Ese id de mensaje ya se usó en otro chat');
+    return msg;
+  }
+
+  /**
+   * Reintento manual de un mensaje fallido de la bandeja (HU24). Solo los
+   * escritos a mano: los de la API los reintenta su integración y los del
+   * agente no se reenvían en nombre del operador. El cambio a `pending` es
+   * atómico, así que dos clics no lo envían dos veces.
+   */
+  async retryMessage(
+    id: string,
+    messageId: string,
+    tenantId: string,
+    userId: string,
+  ): Promise<Message> {
+    let conv = await this.getConversation(id, tenantId);
+    if (!Types.ObjectId.isValid(messageId))
+      throw new NotFoundException('Mensaje no encontrado');
+    if (conv.blocked)
+      throw new BadRequestException(
+        'Este contacto está bloqueado: desbloquéalo para escribirle.',
+      );
+    conv = await this.assignment.ensureWriter(conv, { userId, role: '' });
+    const msg = await this.msgModel
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(messageId),
+          conversationId: conv._id,
+          tenantId: conv.tenantId,
+          direction: 'out',
+          author: 'human',
+          apiAccessId: { $exists: false },
+          status: 'failed',
+        },
+        // El automático (HU7) ya no lo toca: si vuelve a fallar, queda a mano.
+        {
+          $set: { status: 'pending', retryStopped: true },
+          $unset: { error: 1, retryAt: 1 },
+        },
+        { returnDocument: 'after' },
+      )
+      .exec();
+    if (!msg)
+      throw new ConflictException(
+        'Este mensaje ya no se puede reintentar: se envió o no es de la bandeja.',
+      );
+    this.gateway.emitMessageUpdated(tenantId, msg);
+    this.finishDelivery(tenantId, conv, msg).catch((err) =>
+      this.logger.error(
+        `Error guardando el reintento ${String(msg._id)}: ${String(err)}`,
+      ),
+    );
+    return msg;
   }
 
   /** Entrega el mensaje ya guardado y publica su estado final. */

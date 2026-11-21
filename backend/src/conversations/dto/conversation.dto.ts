@@ -10,6 +10,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -82,6 +83,15 @@ export class SendMessageDto {
   @IsString()
   @MaxLength(250)
   subject?: string;
+
+  /**
+   * Id que pone el dispositivo al escribir el mensaje (HU24): si lo reenvía
+   * tras quedarse sin red, el servidor devuelve el mismo en vez de duplicarlo.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{8,64}$/)
+  clientId?: string;
 }
 
 /** Correo nuevo desde la bandeja, fuera de un hilo existente. */

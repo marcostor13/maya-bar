@@ -294,6 +294,22 @@ export class ConversationsController {
     );
   }
 
+  /** Reintenta a mano un mensaje que no se envió (HU24). */
+  @Post(':id/messages/:messageId/retry')
+  retry(
+    @Param('id') id: string,
+    @Param('messageId') messageId: string,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.retryMessage(
+      id,
+      messageId,
+      req.user.tenantId,
+      req.user.userId,
+    );
+  }
+
   /** Mensajes programados pendientes (o fallidos) del chat. */
   @Get(':id/scheduled')
   scheduled(@Param('id') id: string, @Request() req: AuthReq) {

@@ -147,6 +147,9 @@ export class Message extends Document {
   /** `Idempotency-Key` del envío: un reintento no lo duplica. */
   @Prop() apiIdempotencyKey?: string;
 
+  /** Id del dispositivo que lo escribió: reenviarlo sin red no lo duplica (HU24). */
+  @Prop() clientId?: string;
+
   /** Su chat está en la papelera: no cuenta en los paneles. */
   @Prop()
   inTrash?: boolean;
@@ -175,6 +178,14 @@ MessageSchema.index(
   {
     unique: true,
     partialFilterExpression: { apiIdempotencyKey: { $type: 'string' } },
+  },
+);
+// Idempotencia de la bandeja (HU24): un id de dispositivo por empresa.
+MessageSchema.index(
+  { tenantId: 1, clientId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { clientId: { $type: 'string' } },
   },
 );
 // Candidatos del reintento automático: solo indexa los fallidos, que son pocos.

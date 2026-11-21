@@ -7,6 +7,7 @@ import { AuthService } from '../../auth/auth.service';
 import { PermissionsService } from '../../auth/permissions.service';
 import { AppChromeService } from '../../shared/app-chrome';
 import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
+import { OutboxService } from '../../shared/outbox';
 import { PushService } from '../../shared/push.service';
 import { PushCenterComponent } from '../../shared/push-center';
 import { BackButtonService } from '../../core/back-button.service';
@@ -688,6 +689,7 @@ export class ShellComponent {
   private auth = inject(AuthService);
   private permissions = inject(PermissionsService);
   private realtime = inject(ConversationsRealtimeService);
+  private outbox = inject(OutboxService);
   private chrome = inject(AppChromeService);
   private push = inject(PushService);
   private router = inject(Router);
@@ -722,6 +724,9 @@ export class ShellComponent {
     // Un solo websocket para toda la sesión: alimenta la insignia del menú y
     // la propia bandeja de entrada.
     this.realtime.connect();
+    // Mensajes escritos sin red en una sesión anterior (HU24): salen al abrir
+    // la app, esté en la página que esté.
+    void this.outbox.flush();
     // Registra el service worker y renueva la suscripción push si ya la había.
     void this.push.init();
     // Dentro de la app nativa el canal es FCM, no el service worker.
