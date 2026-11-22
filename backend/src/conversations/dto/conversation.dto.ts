@@ -94,6 +94,31 @@ export class SendMessageDto {
   clientId?: string;
 }
 
+/** Plantilla de WhatsApp enviada desde el chat (HU27). */
+export class SendTemplateDto {
+  @IsMongoId()
+  templateId: string;
+
+  /** Valores de `{{1}}`, `{{2}}`… del cuerpo, en orden. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(1024, { each: true })
+  variables?: string[];
+
+  /** Valor de la variable de la cabecera de texto, si la tiene. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  headerText?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{8,64}$/)
+  clientId?: string;
+}
+
 /** Correo nuevo desde la bandeja, fuera de un hilo existente. */
 export class ComposeEmailDto {
   @IsMongoId()

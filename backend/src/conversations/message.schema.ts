@@ -150,6 +150,19 @@ export class Message extends Document {
   /** Id del dispositivo que lo escribió: reenviarlo sin red no lo duplica (HU24). */
   @Prop() clientId?: string;
 
+  /**
+   * Plantilla de WhatsApp con la que salió (HU27). `text` guarda el cuerpo ya
+   * rellenado para pintarlo; con esto un reintento sale otra vez como
+   * plantilla, que es lo único que Meta acepta fuera de la ventana de 24 h.
+   */
+  @Prop({ type: Object })
+  template?: {
+    name: string;
+    language: string;
+    variables: string[];
+    header?: { format: string; text?: string; mediaUrl?: string };
+  };
+
   /** Su chat está en la papelera: no cuenta en los paneles. */
   @Prop()
   inTrash?: boolean;

@@ -13,14 +13,17 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { BlockedContactsService } from '../conversations/blocked-contacts.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { WaTemplate } from '../whatsapp-templates/wa-template.schema';
-import type { TemplateHeader } from '../whatsapp/whatsapp.service';
+import {
+  isHttps,
+  resolveTemplateSend,
+  type ResolvedTemplate,
+} from '../whatsapp-templates/template-send';
+import { WINDOW_MS } from '../conversations/wa-window';
 import { phoneDigits } from '../shared/phone';
 import { ApiAccess } from './api-access.schema';
 import { ApiAccessService } from './api-access.service';
 import { SendApiMessageDto } from './dto/api-access.dto';
 
-/** Meta solo deja escribir libremente 24 h después del último mensaje del cliente. */
-const WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_IDEMPOTENCY_KEY = 128;
 
 /** Lo que ve quien consume la API de un mensaje. */
@@ -40,20 +43,10 @@ export function maskContact(contact: string): string {
   return `${contact.slice(0, 2)}${'*'.repeat(contact.length - 6)}${contact.slice(-4)}`;
 }
 
-/** Número de variables `{{n}}` distintas que pide un texto de plantilla. */
-export function templateVariableCount(text: string | undefined): number {
-  const nums = [...(text ?? '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) =>
-    Number(m[1]),
-  );
-  return nums.length ? Math.max(...nums) : 0;
-}
-
-export function renderTemplate(text: string, vars: string[]): string {
-  return text.replace(
-    /\{\{\s*(\d+)\s*\}\}/g,
-    (whole, n: string) => vars[Number(n) - 1] ?? whole,
-  );
-}
+export {
+  templateVariableCount,
+  renderTemplate,
+} from '../whatsapp-templates/template-send';
 
 /**
  * Envíos de la API de integraciones (HU13). Valida todo lo que Meta o las
@@ -198,7 +191,7 @@ export class ApiMessagesService {
       return { type: 'text', text: '' };
     }
     if (mediaUrl) {
-      if (!this.isHttps(mediaUrl))
+      if (!isHttps(mediaUrl))
         throw new BadRequestException('"mediaUrl" debe ser una URL https.');
       return { type: dto.mediaType ?? 'document', text, mediaUrl };
     }
@@ -242,15 +235,7 @@ export class ApiMessagesService {
   private async resolveTemplate(
     access: ApiAccess,
     dto: SendApiMessageDto,
-  ): Promise<{
-    text: string;
-    send: {
-      name: string;
-      language: string;
-      variables: string[];
-      header?: TemplateHeader;
-    };
-  }> {
+  ): Promise<ResolvedTemplate> {
     const req = dto.template!;
     const filter: Record<string, unknown> = {
       tenantId: access.tenantId,
@@ -263,52 +248,7 @@ export class ApiMessagesService {
       throw new UnprocessableEntityException(
         `No existe la plantilla "${req.name}" en esta cuenta de WhatsApp.`,
       );
-    if (template.status !== 'APPROVED')
-      throw new UnprocessableEntityException(
-        `La plantilla "${template.name}" no está aprobada por Meta (estado: ${template.status}).`,
-      );
-
-    const variables = (req.variables ?? []).map((v) => v.trim());
-    const needed = templateVariableCount(template.body);
-    if (variables.length !== needed || variables.some((v) => !v))
-      throw new UnprocessableEntityException(
-        `La plantilla "${template.name}" necesita ${needed} variable(s) no vacías en "variables"; recibió ${variables.length}.`,
-      );
-
-    let header: TemplateHeader | undefined;
-    const format = template.headerType?.toUpperCase();
-    if (format === 'TEXT' && templateVariableCount(template.headerText) > 0) {
-      if (!req.headerText?.trim())
-        throw new UnprocessableEntityException(
-          'La cabecera de la plantilla tiene una variable: envía "template.headerText".',
-        );
-      header = { format, text: req.headerText.trim() };
-    } else if (format && format !== 'TEXT') {
-      const mediaUrl = req.headerMediaUrl?.trim() || template.headerMediaUrl;
-      if (!mediaUrl || !this.isHttps(mediaUrl))
-        throw new UnprocessableEntityException(
-          'La plantilla lleva un archivo en la cabecera: envía "template.headerMediaUrl" (https).',
-        );
-      header = { format, mediaUrl };
-    }
-
-    return {
-      text: renderTemplate(template.body, variables),
-      send: {
-        name: template.name,
-        language: template.language,
-        variables,
-        header,
-      },
-    };
-  }
-
-  private isHttps(url: string): boolean {
-    try {
-      return new URL(url).protocol === 'https:';
-    } catch {
-      return false;
-    }
+    return resolveTemplateSend(template, req);
   }
 
   private async viewOf(msg: Message, access: ApiAccess) {

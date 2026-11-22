@@ -30,6 +30,8 @@ import { InboxFiltersComponent } from './inbox-filters';
 import { BlockDialogComponent, type BlockDialogResult } from './block-dialog';
 import { InboxTrashComponent } from './inbox-trash';
 import { mergeMessages } from './merge-messages';
+import { WaTemplatePickerComponent } from './wa-template-picker';
+import { windowState, formatLeft, type ChatWindow } from './wa-window';
 import { OutboxService, newClientId, type OutboxBody, type OutboxItem } from '../../shared/outbox';
 import { InboxBlockedComponent } from './inbox-blocked';
 import { ContactCareComponent } from '../customers/contact-care';
@@ -64,6 +66,8 @@ interface Msg {
   author: 'customer' | 'agent' | 'human' | 'system';
   /** Enviado por la API de integraciones (HU13): nombre del acceso. */
   apiAccessName?: string;
+  /** Salió como plantilla de WhatsApp (HU27). */
+  template?: { name: string };
   type: MsgType;
   text: string;
   mediaUrl?: string;
@@ -220,7 +224,7 @@ const EMOJIS = [
   selector: 'app-inbox',
   standalone: true,
   imports: [FormsModule, RichText, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent,
-    BlockDialogComponent, InboxTrashComponent, InboxBlockedComponent],
+    BlockDialogComponent, InboxTrashComponent, InboxBlockedComponent, WaTemplatePickerComponent],
   host: { '(document:paste)': 'onPaste($event)' },
   template: `
     <div class="inbox" [class.thread-open]="selectedId()">
@@ -808,6 +812,9 @@ const EMOJIS = [
                     @if (m.apiAccessName) {
                       <span class="by-agent by-api"><lucide-icon [img]="Plug" [size]="11" [strokeWidth]="2.4"></lucide-icon> API · {{ m.apiAccessName }}</span>
                     }
+                    @if (m.template) {
+                      <span class="by-agent by-api"><lucide-icon [img]="FileText" [size]="11" [strokeWidth]="2.4"></lucide-icon> Plantilla · {{ m.template.name }}</span>
+                    }
 
                     @if (m.mediaUnavailable && !m.mediaUrl) {
                       <em class="unsupported">{{ mediaUnavailableLabel(m) }}</em>
@@ -921,6 +928,12 @@ const EMOJIS = [
               <button class="btn btn-sm btn-secondary" [disabled]="assigning()" (click)="take(true)">Tomarlo yo</button>
             }
           </footer>
+          } @else if (!chatWindow().open) {
+          <footer class="composer composer-blocked composer-window">
+            <lucide-icon [img]="Clock" [size]="16" [strokeWidth]="2.4"></lucide-icon>
+            <span>Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp solo permite enviarle una plantilla aprobada. Cuando responda, podrás escribirle normal.</span>
+            <button class="btn btn-sm btn-primary" (click)="templateOpen.set(true)">Enviar plantilla</button>
+          </footer>
           } @else {
           <footer class="composer">
             <app-inbox-actions #qa [conv]="selected()!" [draft]="draft()" [subject]="subject()"
@@ -981,6 +994,13 @@ const EMOJIS = [
                 placeholder="Asunto" aria-label="Asunto del correo" maxlength="250" />
             }
 
+            @if (chatWindow().applies) {
+              <div class="window-hint" [class.window-soon]="chatWindow().msLeft < 2 * 3600000">
+                <lucide-icon [img]="Clock" [size]="12" [strokeWidth]="2.4"></lucide-icon>
+                Puedes escribir libremente {{ windowLeft() }} más
+                <button type="button" class="window-tpl" (click)="templateOpen.set(true)">Enviar plantilla</button>
+              </div>
+            }
             <div class="composer-row">
               <div class="attach-wrap">
                 <button class="btn-icon btn-ghost" (click)="attachOpen.set(!attachOpen())" title="Adjuntar" aria-label="Adjuntar archivo">
@@ -1048,6 +1068,12 @@ const EMOJIS = [
         }
       </section>
     </div>
+
+    <!-- ══ Plantilla de WhatsApp (HU27) ══ -->
+    @if (templateOpen() && selected(); as c) {
+      <app-wa-template-picker [conversationId]="c._id" [contactName]="c.contactName"
+        (closed)="templateOpen.set(false)" (sent)="onTemplateSent($event)" />
+    }
 
     <!-- ══ Correo nuevo ══ -->
     @if (composeOpen()) {
@@ -1534,6 +1560,18 @@ const EMOJIS = [
     .owner-banner span, .manual-banner span, .handoff-banner span { flex: 1; min-width: 0; }
     .banner-btn { flex-shrink: 0; }
     .composer-readonly lucide-icon { color: #1D4ED8; }
+    .composer-window { flex-wrap: wrap; }
+    .composer-window lucide-icon { color: #B45309; }
+    .window-hint {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      font-size: 11.5px; color: var(--color-text-muted); padding: 0 4px 6px;
+    }
+    .window-hint.window-soon { color: #B45309; font-weight: 600; }
+    .window-tpl {
+      border: 0; background: transparent; padding: 0; margin-left: auto;
+      font: inherit; font-weight: 600; color: var(--color-brand); text-decoration: underline; cursor: pointer;
+    }
+    .window-tpl:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 4px; }
     .team-list { display: flex; flex-direction: column; gap: 6px; }
     .team-row {
       display: flex; align-items: center; gap: 10px; width: 100%;
@@ -2435,6 +2473,40 @@ export class InboxComponent implements OnInit, OnDestroy {
   private soltadoAntesDeArrancar = false;
   private allLoaded = false;
 
+  // ── Ventana de 24 h de WhatsApp Cloud API (HU27) ──
+  /** Lo que dijo el servidor al abrir el chat. */
+  private serverWindow = signal<ChatWindow | null>(null);
+  /** Reloj para la cuenta atrás; basta con el minuto. */
+  private now = signal(Date.now());
+  private windowTick = (() => {
+    const t = setInterval(() => this.now.set(Date.now()), 30_000);
+    inject(DestroyRef).onDestroy(() => clearInterval(t));
+  })();
+  templateOpen = signal(false);
+
+  /** Abierta, cerrada o sin ventana; se reabre sola cuando el cliente escribe. */
+  chatWindow = computed(() => {
+    const lastIn = [...this.messages()].reverse().find(m => m.direction === 'in');
+    return windowState(this.serverWindow(), lastIn?.at, this.now());
+  });
+
+  windowLeft = computed(() => formatLeft(this.chatWindow().msLeft));
+
+  private loadWindow(id: string) {
+    this.serverWindow.set(null);
+    this.http.get<ChatWindow>(`${API}/conversations/${id}/window`, { context: silentRequest() }).subscribe({
+      next: w => { if (this.selectedId() === id) this.serverWindow.set(w); },
+      // Sin el dato se deja escribir: el backend rechaza con un mensaje claro.
+      error: () => {},
+    });
+  }
+
+  onTemplateSent(raw: unknown) {
+    this.templateOpen.set(false);
+    this.upsertMessage(raw as Msg);
+    this.scrollToBottom();
+  }
+
   callContact() {
     const c = this.selected();
     if (!c) return;
@@ -2947,7 +3019,9 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.clearAttachment();
     this.revokePreview();
     this.allLoaded = false;
+    this.templateOpen.set(false);
     this.loadMessages();
+    this.loadWindow(c._id);
     // Siempre: el contador local puede ir por detrás del servidor.
     this.markRead(c._id);
   }

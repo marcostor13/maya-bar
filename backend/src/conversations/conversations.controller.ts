@@ -34,7 +34,9 @@ import {
   CompleteTaskDto,
   TakeConversationDto,
   AssignConversationDto,
+  SendTemplateDto,
 } from './dto/conversation.dto';
+import { ConversationTemplatesService } from './conversation-templates.service';
 import { ConversationAssignmentService } from './conversation-assignment.service';
 import { InboxToolsService } from './inbox-tools.service';
 import { ConversationTrashService } from './conversation-trash.service';
@@ -49,6 +51,7 @@ export class ConversationsController {
     private assignment: ConversationAssignmentService,
     private trash: ConversationTrashService,
     private blocks: BlockedContactsService,
+    private templates: ConversationTemplatesService,
   ) {}
 
   /** Quién actúa, con su nombre para la papelera y los bloqueos. */
@@ -292,6 +295,31 @@ export class ConversationsController {
       dto,
       { background: true },
     );
+  }
+
+  /** Ventana de 24 h de WhatsApp Cloud API del chat (HU27). */
+  @Get(':id/window')
+  window(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.getWindow(id, req.user.tenantId);
+  }
+
+  /** Plantillas aprobadas que se pueden enviar por la cuenta del chat (HU27). */
+  @Get(':id/templates')
+  chatTemplates(@Param('id') id: string, @Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.templates.list(id, req.user.tenantId);
+  }
+
+  /** Envía una plantilla aprobada: reabre la ventana de 24 h (HU27). */
+  @Post(':id/messages/template')
+  sendTemplate(
+    @Param('id') id: string,
+    @Body() dto: SendTemplateDto,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.templates.send(id, req.user.tenantId, req.user.userId, dto);
   }
 
   /** Reintenta a mano un mensaje que no se envió (HU24). */

@@ -10,6 +10,8 @@ import { Interval } from '@nestjs/schedule';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
 import { Message, MessageType, MessageStatus } from './message.schema';
+import { windowFrom, type WindowStatus } from './wa-window';
+import type { ResolvedTemplate } from '../whatsapp-templates/template-send';
 import {
   SendMessageDto,
   SaveContactDto,
@@ -280,6 +282,10 @@ export function inboundPushBody(preview: string, unread: number): string {
       : clean;
   return unread > 1 ? `${unread} mensajes nuevos · ${excerpt}` : excerpt;
 }
+
+/** Lo que ve el operador al escribir texto libre fuera de la ventana (HU27). */
+export const WINDOW_CLOSED =
+  'La ventana de 24 h de WhatsApp está cerrada: el cliente no te escribe desde hace más de un día. Envía una plantilla aprobada para reabrir la conversación.';
 
 @Injectable()
 export class ConversationsService {
@@ -1282,6 +1288,9 @@ export class ConversationsService {
       throw new BadRequestException(
         'Este contacto está bloqueado: desbloquéalo para escribirle.',
       );
+    // Fuera de la ventana Meta lo rechazaría (#131047): mejor decirlo ya.
+    if (!(await this.windowStatus(conv)).open)
+      throw new ConflictException(WINDOW_CLOSED);
     const type: MessageType = dto.type ?? (dto.mediaUrl ? 'document' : 'text');
     if (type === 'text' && !dto.text?.trim())
       throw new BadRequestException('El mensaje está vacío');
@@ -1349,6 +1358,81 @@ export class ConversationsService {
     return this.finishDelivery(tenantId, conv, msg);
   }
 
+  /**
+   * Ventana de atención (HU27): en WhatsApp Cloud API solo se escribe texto
+   * libre hasta 24 h después del último mensaje del cliente.
+   */
+  async windowStatus(conv: Conversation): Promise<WindowStatus> {
+    if (conv.channel !== 'whatsapp') return windowFrom(false, null);
+    const account = await this.waAccounts.findById(String(conv.accountId));
+    if (account?.provider !== 'cloudapi') return windowFrom(false, null);
+    const last = await this.msgModel
+      .findOne({ conversationId: conv._id, direction: 'in' })
+      .sort({ at: -1 })
+      .select('at')
+      .lean<{ at: Date }>()
+      .exec();
+    return windowFrom(true, last?.at);
+  }
+
+  async getWindow(id: string, tenantId: string): Promise<WindowStatus> {
+    return this.windowStatus(await this.getConversation(id, tenantId));
+  }
+
+  /**
+   * Envía una plantilla aprobada desde la bandeja (HU27), ya validada por quien
+   * llama. Mismas reglas que `sendManual` (bloqueo, quién atiende, id del
+   * dispositivo) salvo la ventana: la plantilla es justo lo que la reabre.
+   */
+  async sendTemplateMessage(
+    id: string,
+    tenantId: string,
+    userId: string,
+    template: ResolvedTemplate,
+    clientId?: string,
+  ): Promise<Message> {
+    let conv = await this.getConversation(id, tenantId);
+    const again = await this.findByClientId(conv, clientId);
+    if (again) return again;
+    if (conv.blocked)
+      throw new BadRequestException(
+        'Este contacto está bloqueado: desbloquéalo para escribirle.',
+      );
+    conv = await this.assignment.ensureWriter(conv, { userId, role: '' });
+
+    let msg: Message;
+    try {
+      msg = await this.msgModel.create({
+        tenantId: conv.tenantId,
+        conversationId: conv._id,
+        direction: 'out',
+        author: 'human',
+        clientId,
+        type: 'text',
+        text: template.text,
+        template: template.send,
+        status: 'pending',
+        sentBy: new Types.ObjectId(userId),
+        at: new Date(),
+      });
+    } catch (err) {
+      const dup =
+        (err as { code?: number }).code === 11000 &&
+        (await this.findByClientId(conv, clientId));
+      if (dup) return dup;
+      throw err;
+    }
+
+    await this.touchConversation(conv, msg);
+    this.gateway.emitMessage(tenantId, msg);
+    this.finishDelivery(tenantId, conv, msg).catch((err) =>
+      this.logger.error(
+        `Error guardando el estado de la plantilla ${String(msg._id)}: ${String(err)}`,
+      ),
+    );
+    return msg;
+  }
+
   /** Mensaje de la bandeja ya guardado con ese id de dispositivo (HU24). */
   private async findByClientId(
     conv: Conversation,
@@ -1383,6 +1467,8 @@ export class ConversationsService {
         'Este contacto está bloqueado: desbloquéalo para escribirle.',
       );
     conv = await this.assignment.ensureWriter(conv, { userId, role: '' });
+    // Con la ventana cerrada solo se puede reintentar una plantilla (HU27).
+    const windowOpen = (await this.windowStatus(conv)).open;
     const msg = await this.msgModel
       .findOneAndUpdate(
         {
@@ -1393,6 +1479,7 @@ export class ConversationsService {
           author: 'human',
           apiAccessId: { $exists: false },
           status: 'failed',
+          ...(windowOpen ? {} : { 'template.name': { $exists: true } }),
         },
         // El automático (HU7) ya no lo toca: si vuelve a fallar, queda a mano.
         {
@@ -1404,7 +1491,9 @@ export class ConversationsService {
       .exec();
     if (!msg)
       throw new ConflictException(
-        'Este mensaje ya no se puede reintentar: se envió o no es de la bandeja.',
+        windowOpen
+          ? 'Este mensaje ya no se puede reintentar: se envió o no es de la bandeja.'
+          : WINDOW_CLOSED,
       );
     this.gateway.emitMessageUpdated(tenantId, msg);
     this.finishDelivery(tenantId, conv, msg).catch((err) =>
@@ -1475,6 +1564,7 @@ export class ConversationsService {
         mediaUrl: input.mediaUrl,
         filename: input.filename,
         status: 'pending',
+        template: input.template,
         apiAccessId: input.api.accessId,
         apiAccessName: input.api.accessName,
         apiIdempotencyKey: input.api.idempotencyKey,
@@ -1516,8 +1606,8 @@ export class ConversationsService {
     } catch (err) {
       msg.status = 'failed';
       msg.error = String(err);
-      // El reintento automático (HU7) reenvía el texto guardado: una plantilla
-      // saldría como texto libre, que Meta no acepta fuera de la ventana.
+      // Las plantillas de la API no se reintentan solas: quien integra decide
+      // si reenviarla (cada envío se cobra).
       if (input.template) msg.retryStopped = true;
       this.logger.error(
         `Error enviando mensaje por API ${String(msg._id)} (acceso ${String(input.api.accessId)}): ${String(err)}`,
@@ -1577,6 +1667,15 @@ export class ConversationsService {
       if (!account.active)
         throw new Error('La cuenta de WhatsApp está inactiva');
       const config: WaConfig = this.waAccounts.toConfig(account);
+      if (msg.template)
+        return this.wa.sendCloudApiTemplate(
+          conv.contact,
+          msg.template.name,
+          msg.template.language,
+          msg.template.variables,
+          config,
+          msg.template.header,
+        );
       return this.wa.sendMessage(
         conv.contact,
         body,
@@ -2679,7 +2778,13 @@ export class ConversationsService {
 
   /** Mensaje automático al cliente (p. ej. tras una llamada perdida). */
   async sendAutomatic(conv: Conversation, text: string): Promise<void> {
-    await this.sendFromAgent(conv, { type: 'text', text });
+    // La llamada del cliente abre la ventana de atención en Meta, aunque no
+    // deje un mensaje entrante en el chat.
+    await this.sendFromAgent(
+      conv,
+      { type: 'text', text },
+      { skipWindow: true },
+    );
   }
 
   /** Nota interna en un chat ya existente (p. ej. permiso de llamada). */
@@ -2713,7 +2818,15 @@ export class ConversationsService {
       mimeType?: string;
       filename?: string;
     },
+    opts: { skipWindow?: boolean } = {},
   ) {
+    // Fuera de la ventana de 24 h Meta lo rechazaría: el agente no lo intenta.
+    if (!opts.skipWindow && !(await this.windowStatus(conv)).open) {
+      this.logger.warn(
+        `Conversación ${String(conv._id)}: la ventana de 24 h está cerrada; el agente no envía.`,
+      );
+      return;
+    }
     const msg = await this.msgModel.create({
       tenantId: conv.tenantId,
       conversationId: conv._id,

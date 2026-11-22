@@ -47,6 +47,11 @@ import { CallsController } from '../calls/calls.controller';
 import { BlockedContact, BlockedContactSchema } from './blocked-contact.schema';
 import { BlockedContactsService } from './blocked-contacts.service';
 import { ConversationTrashService } from './conversation-trash.service';
+import { ConversationTemplatesService } from './conversation-templates.service';
+import {
+  WaTemplate,
+  WaTemplateSchema,
+} from '../whatsapp-templates/wa-template.schema';
 import { Lead, LeadSchema } from '../leads/lead.schema';
 import {
   ContactActivity,
@@ -72,6 +77,7 @@ import {
       { name: AgentBooking.name, schema: AgentBookingSchema },
       { name: Call.name, schema: CallSchema },
       { name: CallPermission.name, schema: CallPermissionSchema },
+      { name: WaTemplate.name, schema: WaTemplateSchema },
     ]),
     WhatsAppModule,
     WhatsAppAccountsModule,
@@ -109,6 +115,7 @@ import {
     MessageRetryService,
     BlockedContactsService,
     ConversationTrashService,
+    ConversationTemplatesService,
     // Llamadas (HU6): viven aquí porque el webhook de WhatsApp las despacha.
     CallsService,
     CallsMetaService,
