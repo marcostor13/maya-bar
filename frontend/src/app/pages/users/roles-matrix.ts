@@ -54,7 +54,7 @@ const ADMIN_LOCKED = ['users', 'settings'];
       } @else if (roles().length === 0) {
         <p class="empty">No se pudieron cargar los roles.</p>
       } @else {
-        <div class="table-wrap">
+        <div class="table-wrap table-cards">
           <table>
             <thead>
               <tr>
@@ -87,7 +87,7 @@ const ADMIN_LOCKED = ['users', 'settings'];
                       <span class="module-key">{{ m.key }}</span>
                     </td>
                     @for (r of roles(); track r.key) {
-                      <td class="td-check">
+                      <td class="td-check" [attr.data-label]="r.label">
                         @if (isLocked(r.key, m.key)) {
                           <span class="locked" [title]="lockReason()">
                             <lucide-icon [img]="Lock" [size]="13"></lucide-icon>

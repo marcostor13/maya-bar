@@ -126,10 +126,10 @@ const TIMELINE_STEPS: OrderStatus[] = ['pending', 'preparing', 'ready', 'served'
     </div>
   `,
   styles: [`
-    .track-page { min-height: 100vh; background: var(--color-bg-light); padding: 0 0 40px; }
+    .track-page { min-height: 100vh; min-height: 100dvh; background: var(--color-bg-light); padding: 0 0 40px; }
 
     .track-loading, .track-error { display: flex; flex-direction: column; align-items: center;
-      justify-content: center; min-height: 100vh; gap: 16px; color: var(--color-text-muted); }
+      justify-content: center; min-height: 100vh; min-height: 100dvh; gap: 16px; color: var(--color-text-muted); }
     .spinner { width: 36px; height: 36px; border: 3px solid var(--color-border); border-top-color: var(--color-brand);
       border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }

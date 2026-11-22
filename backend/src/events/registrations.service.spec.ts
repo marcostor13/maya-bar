@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { RegistrationsService } from './registrations.service';
 import { Event } from './event.schema';
@@ -282,6 +286,21 @@ describe('RegistrationsService', () => {
       expect(result.alreadyCheckedIn).toBe(true);
       expect(reg.save).not.toHaveBeenCalled();
     });
+
+    it('HU30: rejects a cancelled registration with 409 and does not check it in', async () => {
+      const reg = makeRegDoc({ status: 'cancelled' });
+      regModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reg),
+      });
+      await expect(
+        service.checkInByCode(
+          eventOid.toString(),
+          tenantOid.toString(),
+          'ABCD1234',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(reg.save).not.toHaveBeenCalled();
+    });
   });
 
   // ─── checkIn ───────────────────────────────────────────────────────────────
@@ -319,6 +338,50 @@ describe('RegistrationsService', () => {
       expect(reg.checkedIn).toBe(true);
       expect(reg.checkedInAt).toBeInstanceOf(Date);
       expect(reg.save).toHaveBeenCalled();
+    });
+
+    it('HU30: rejects a cancelled registration', async () => {
+      const reg = makeRegDoc({ status: 'cancelled' });
+      regModel.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reg),
+      });
+      await expect(
+        service.checkIn(eventOid.toString(), 'regId', tenantOid.toString()),
+      ).rejects.toThrow(ConflictException);
+      expect(reg.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── undoCheckIn (HU30) ────────────────────────────────────────────────────
+
+  describe('undoCheckIn', () => {
+    it('clears the check-in', async () => {
+      const reg = makeRegDoc({ checkedIn: true, checkedInAt: new Date() });
+      regModel.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reg),
+      });
+      await service.undoCheckIn(
+        eventOid.toString(),
+        'regId',
+        tenantOid.toString(),
+      );
+      expect(reg.checkedIn).toBe(false);
+      expect(reg.checkedInAt).toBeUndefined();
+      expect(reg.save).toHaveBeenCalled();
+    });
+
+    it('rejects a registration from another event', async () => {
+      const reg = makeRegDoc({
+        eventId: { toString: () => new Types.ObjectId().toString() },
+        checkedIn: true,
+      });
+      regModel.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reg),
+      });
+      await expect(
+        service.undoCheckIn(eventOid.toString(), 'regId', tenantOid.toString()),
+      ).rejects.toThrow(BadRequestException);
+      expect(reg.save).not.toHaveBeenCalled();
     });
   });
 

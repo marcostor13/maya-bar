@@ -94,7 +94,7 @@ import { PlatformService } from '../core/platform.service';
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow-lg);
       padding: 28px 32px;
-      max-height: calc(100vh - 48px);
+      max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px);
       overflow-y: auto;
       animation: sheetIn var(--transition-spring);
     }

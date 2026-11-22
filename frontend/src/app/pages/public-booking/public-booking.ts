@@ -210,10 +210,10 @@ const OCCASION_OPTIONS = [
     </div>
   `,
   styles: [`
-    :host { display: block; min-height: 100vh; background: var(--color-bg-app); }
+    :host { display: block; min-height: 100vh; min-height: 100dvh; background: var(--color-bg-app); }
 
     .booking-shell {
-      min-height: 100vh; display: flex; align-items: flex-start; justify-content: center;
+      min-height: 100vh; min-height: 100dvh; display: flex; align-items: flex-start; justify-content: center;
       padding: 40px 16px;
     }
 
@@ -287,7 +287,7 @@ const OCCASION_OPTIONS = [
 
     @media (max-width: 768px) {
       .booking-shell { padding: 0; align-items: stretch; }
-      .booking-card { max-width: 100%; border-radius: 0; min-height: 100vh; box-shadow: none; }
+      .booking-card { max-width: 100%; border-radius: 0; min-height: 100vh; min-height: 100dvh; box-shadow: none; }
       .booking-header { padding: 28px 20px 24px; }
       .step-body { padding: 20px; }
       .info-block { padding: 32px 20px; }

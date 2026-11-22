@@ -117,7 +117,7 @@ const CATEGORY: Record<string, string> = {
       display: flex; align-items: center; justify-content: center;
     }
     .tp-modal {
-      width: calc(100% - 48px); max-width: 480px; max-height: calc(100vh - 48px); overflow-y: auto;
+      width: calc(100% - 48px); max-width: 480px; max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow-y: auto;
       box-sizing: border-box; padding: 28px 32px; display: flex; flex-direction: column; gap: 16px;
       animation: fadeInUp var(--transition-spring);
     }

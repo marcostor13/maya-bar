@@ -42,6 +42,10 @@ export class Event extends Document {
   @Prop()
   description?: string;
 
+  /** Lugar propio del evento; vacío = la dirección del local (HU33). */
+  @Prop()
+  location?: string;
+
   @Prop({ required: true })
   date: Date;
 

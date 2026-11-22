@@ -517,6 +517,9 @@ const TAB_PRIORITY: Record<string, string[]> = {
            reserva su alto para no quedar por debajo de ninguna de las dos. */
         padding-top: calc(var(--app-header-h) + env(safe-area-inset-top, 0px));
         padding-bottom: calc(var(--app-tabbar-h) + env(safe-area-inset-bottom, 0px));
+        /* En horizontal, la muesca va a un lado. */
+        padding-left: var(--safe-left, 0px);
+        padding-right: var(--safe-right, 0px);
         /* Sin esto, al llegar al final del scroll el gesto arrastra la página
            entera y en Chrome dispara el "tirar para recargar". */
         overscroll-behavior-y: contain;

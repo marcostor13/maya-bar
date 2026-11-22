@@ -119,6 +119,8 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/events/event-detail').then(m => m.EventDetailComponent),
         canActivate: [moduleGuard('events')],
+        // Con cambios sin guardar pregunta antes de salir (HU29).
+        canDeactivate: [(c: { canLeave(): Promise<boolean> }) => c.canLeave()],
       },
       {
         path: 'customers',

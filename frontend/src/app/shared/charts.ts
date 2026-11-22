@@ -189,7 +189,7 @@ const PAD = { l: 48, r: 12, t: 12, b: 28 };
       @if (w() > 0) {
         <svg [attr.width]="w()" [attr.height]="height()" role="img" [attr.aria-label]="ariaLabel()"
              tabindex="0" (keydown)="onKey($event)" (blur)="hover.set(-1)"
-             (pointermove)="onMove($event)" (pointerleave)="hover.set(-1)">
+             (pointermove)="onMove($event)" (pointerdown)="onMove($event)" (pointerleave)="onLeave($event)">
           @for (t of geo().ticks; track t.v) {
             <line class="grid" [attr.x1]="pad.l" [attr.x2]="w() - pad.r" [attr.y1]="t.y" [attr.y2]="t.y" />
             <text class="tick" [attr.x]="pad.l - 8" [attr.y]="t.y + 4" text-anchor="end">{{ t.label }}</text>
@@ -325,6 +325,21 @@ export class TimeChartComponent implements OnDestroy {
 
   fmt(v: number) { return formatValue(v, this.format()); }
   fullLabel(k: string) { return k ? bucketLabel(k, true) : ''; }
+
+  /** En táctil el tooltip se queda fijo al levantar el dedo; se cierra tocando fuera. */
+  onLeave(e: PointerEvent) {
+    if (e.pointerType === 'mouse') this.hover.set(-1);
+  }
+
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private onDocDown = (e: PointerEvent) => {
+    if (this.hover() >= 0 && !this.host.nativeElement.contains(e.target as Node)) this.hover.set(-1);
+  };
+  private docListen = (() => {
+    if (typeof document === 'undefined') return;
+    document.addEventListener('pointerdown', this.onDocDown);
+    this.cleanup.push(() => document.removeEventListener('pointerdown', this.onDocDown));
+  })();
 
   onMove(e: PointerEvent) {
     const xs = this.geo().xs;
@@ -470,14 +485,14 @@ const HEAT = ['--chart-empty', '--seq-150', '--seq-250', '--seq-350', '--seq-450
   selector: 'app-heatmap',
   standalone: true,
   template: `
-    <div class="grid" (pointerleave)="tip.set(null)">
+    <div class="grid" (pointerleave)="$event.pointerType === 'mouse' && tip.set(null)">
       <span></span>
       @for (h of hours; track h) { <span class="hour">{{ h % 3 === 0 ? h : '' }}</span> }
       @for (row of cells(); track $index; let d = $index) {
         <span class="day">{{ days[d] }}</span>
         @for (c of row; track $index; let h = $index) {
           <span class="cell" [style.background]="c.color" [style.--c]="h + d"
-                (pointerenter)="show($event, d, h, c.v)"></span>
+                (pointerenter)="show($event, d, h, c.v)" (pointerdown)="show($event, d, h, c.v)"></span>
         }
       }
     </div>

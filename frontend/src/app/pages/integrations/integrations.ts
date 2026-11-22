@@ -438,7 +438,7 @@ const lines = (text: string) =>
     .overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
     /* El secreto rotado se abre encima del modal de avisos. */
     .overlay-top { z-index: 110; }
-    .key-modal { width: calc(100% - 48px); max-width: 640px; padding: 28px 32px; max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; }
+    .key-modal { width: calc(100% - 48px); max-width: 640px; padding: 28px 32px; max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow: auto; box-sizing: border-box; }
     .km-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .km-head h2 { margin: 0; font-family: var(--font-heading); font-size: 19px; }
     .km-sub { margin: 4px 0 16px; font-size: 13px; color: var(--color-text-muted); }

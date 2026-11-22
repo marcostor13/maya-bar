@@ -5,6 +5,7 @@ import { EventDetailStore } from '../event-detail.store';
 import { EventsApiService } from '../../../core/api/events-api.service';
 import { ToastService } from '../../../shared/toast';
 import { AppEvent, Registration } from '../../../shared/models/event.model';
+import { waLink, telLink } from './registrations-logic';
 
 const mockToast = { success: vi.fn(), error: vi.fn() };
 const mockApi = {
@@ -143,6 +144,41 @@ describe('EventRegistrationsTabComponent', () => {
       expect(anchor?.download).toContain('asistentes_evento_');
       const csv = await capturedBlob!.text();
       expect(csv.split('\r\n')[1]).toContain('"Directo"');
+    });
+  });
+
+  describe('móvil (HU31)', () => {
+    it('C3: WhatsApp con el número normalizado; sin teléfono no hay enlaces', () => {
+      expect(waLink('999 123 456')).toBe('https://wa.me/51999123456');
+      expect(waLink('+51 999-123-456')).toBe('https://wa.me/51999123456');
+      expect(waLink('0034 612 345 678')).toBe('https://wa.me/34612345678');
+      expect(waLink('')).toBe('');
+      expect(telLink(undefined)).toBe('');
+      expect(telLink('+51 999 123 456')).toBe('tel:+51999123456');
+    });
+
+    it('C2: "Ordenar por" recarga con el campo y el orden elegidos', () => {
+      component.onSortKey('name:asc');
+      expect(mockApi.getRegistrations).toHaveBeenLastCalledWith('ev-1', {
+        sortBy: 'name', sortOrder: 'asc', status: undefined, search: undefined,
+      });
+      expect(component.sortKey()).toBe('name:asc');
+    });
+
+    it('C1: en móvil pinta tarjetas compactas que se despliegan al tocar', () => {
+      const fixture = TestBed.createComponent(EventRegistrationsTabComponent);
+      fixture.componentInstance.isMobile.set(true);
+      store.registrations.set([reg({ phone: '999123456' })]);
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('table')).toBeNull();
+      const head = el.querySelector('.reg-head') as HTMLButtonElement;
+      expect(head.getAttribute('aria-expanded')).toBe('false');
+      expect(el.querySelector('.reg-detail')).toBeNull();
+      head.click();
+      fixture.detectChanges();
+      expect(el.querySelector('.reg-detail')?.textContent).toContain('ana@mail.com');
+      expect((el.querySelector('a[href^="https://wa.me/"]') as HTMLAnchorElement).href).toBe('https://wa.me/51999123456');
     });
   });
 });

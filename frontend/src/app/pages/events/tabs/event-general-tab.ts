@@ -1,13 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
-import { LucideAngularModule, Save } from 'lucide-angular';
 import { EventDetailStore } from '../event-detail.store';
 
 @Component({
   selector: 'app-event-general-tab',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule, RouterLink],
+  imports: [ReactiveFormsModule],
   template: `
     <div class="p-6">
 
@@ -19,6 +17,20 @@ import { EventDetailStore } from '../event-detail.store';
           @if (form.get('title')?.invalid && form.get('title')?.touched) {
             <span class="field-hint-error">El título es requerido</span>
           }
+        </div>
+
+        <div class="field mb-5">
+          <label class="field-label" for="ev-description">Descripción</label>
+          <textarea id="ev-description" class="textarea" formControlName="description" rows="4"
+            placeholder="Qué es, qué incluye, cómo llegar..."></textarea>
+          <span class="field-hint">Se muestra en la página pública del evento.</span>
+        </div>
+
+        <div class="field mb-5">
+          <label class="field-label" for="ev-location">Lugar (opcional)</label>
+          <input id="ev-location" class="input" formControlName="location" maxlength="200"
+            placeholder="Vacío = la dirección del local" autocomplete="street-address" />
+          <span class="field-hint">Los invitados lo ven con un botón "Cómo llegar".</span>
         </div>
 
         <div class="field-row mb-5">
@@ -61,13 +73,8 @@ import { EventDetailStore } from '../event-detail.store';
           </div>
         </div>
 
-        <div class="form-actions border-t pt-5 mt-2 flex justify-end">
-          <button type="button" class="btn btn-secondary mr-3" routerLink="/events">Cancelar</button>
-          <button type="submit" class="btn btn-primary" [disabled]="saving() || form.invalid">
-            <lucide-icon [img]="Save" [size]="16" [strokeWidth]="2.5"></lucide-icon>
-            {{ saving() ? 'Guardando...' : (isNew() ? 'Crear Evento' : 'Actualizar Evento') }}
-          </button>
-        </div>
+        <!-- Guardar: barra fija del detalle (HU29). Enter en un campo también guarda. -->
+        <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
       </form>
     </div>
   `,
@@ -75,11 +82,8 @@ import { EventDetailStore } from '../event-detail.store';
     :host { display: block; }
 
     .p-6 { padding: 24px; }
-    .mb-5 { margin-bottom: 20px; } .mb-6 { margin-bottom: 24px; } .mt-2 { margin-top: 8px; }
-    .pt-5 { padding-top: 20px; } .mr-3 { margin-right: 12px; }
-    .flex { display: flex; }
-    .justify-end { justify-content: flex-end; }
-    .border-t { border-top: 1px solid var(--color-border); }
+    .mb-5 { margin-bottom: 20px; } .mb-6 { margin-bottom: 24px; }
+    .field-hint { font-size: 12px; color: var(--color-text-muted); }
 
     /* ── Fields ── */
     .field { display: flex; flex-direction: column; gap: 8px; }
@@ -93,20 +97,13 @@ import { EventDetailStore } from '../event-detail.store';
       .p-6 { padding: 16px; }
 
       .field-row { flex-direction: column; gap: 16px; }
-
-      .form-actions { flex-direction: column-reverse; gap: 10px; }
-      .form-actions .btn { width: 100%; justify-content: center; margin: 0; }
     }
   `],
 })
 export class EventGeneralTabComponent {
   private store = inject(EventDetailStore);
 
-  readonly Save = Save;
-
   form = this.store.form;
-  saving = this.store.saving;
-  isNew = this.store.isNew;
 
   saveEvent() { this.store.saveEvent(); }
 }

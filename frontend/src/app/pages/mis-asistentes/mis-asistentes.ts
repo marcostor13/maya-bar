@@ -249,7 +249,7 @@ interface Registration {
 
     /* Modal */
     .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .modal-card { width: calc(100% - 48px); max-width: 500px; background: var(--color-white); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; max-height: 90vh; animation: fadeUp var(--transition-spring) both; }
+    .modal-card { width: calc(100% - 48px); max-width: 500px; background: var(--color-white); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; max-height: 90vh; max-height: 90dvh; animation: fadeUp var(--transition-spring) both; }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
     .modal-header h2 { font-family: var(--font-heading); font-size: 18px; font-weight: 700; margin: 0; }

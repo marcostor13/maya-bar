@@ -9,6 +9,7 @@ import { LeadStagesConfigComponent } from './lead-stages-config';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { initialLeadsView, saveLeadsView } from './leads-view';
 
 const ME = 'u-me';
 const PEDRO = { _id: 'u-pedro', name: 'Pedro Ruiz', email: 'p@x.pe' };
@@ -47,7 +48,7 @@ describe('LeadsComponent — reparto', () => {
     fixture.detectChanges();
   }
 
-  beforeEach(() => { vi.clearAllMocks(); role = 'MARKETING'; });
+  beforeEach(() => { vi.clearAllMocks(); role = 'MARKETING'; localStorage.removeItem('maya.leads.view'); });
   afterEach(() => http.verify());
 
   it('las de la bolsa muestran "Tomar" y tomarla llama a claim', async () => {
@@ -115,6 +116,39 @@ describe('LeadsComponent — reparto', () => {
     expect(create.request.body.ownerId).toBe('');
     create.flush(lead('n'));
     http.match(() => true).forEach((r) => r.flush([]));
+  });
+
+  describe('móvil (HU36)', () => {
+    it('C1: en el móvil abre en lista y recuerda la vista elegida', () => {
+      localStorage.removeItem('maya.leads.view');
+      expect(initialLeadsView(true)).toBe('list');
+      expect(initialLeadsView(false)).toBe('board');
+      saveLeadsView('board');
+      expect(initialLeadsView(true)).toBe('board');
+      localStorage.removeItem('maya.leads.view');
+    });
+
+    it('C2: "Mover" abre la hoja de etapas y mueve sin arrastrar', async () => {
+      await setup([lead('a', { _id: ME, name: 'Yo Mismo', email: 'me@x.pe' })]);
+      (el().querySelector('.move-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      const sheet = el().querySelector('.move-sheet') as HTMLElement;
+      expect(sheet.getAttribute('role')).toBe('dialog');
+      const current = sheet.querySelector('.move-option.current') as HTMLButtonElement;
+      expect(current.disabled).toBe(true);
+      fixture.componentInstance.stages.set([
+        { key: 'new', label: 'Nuevo', order: 1, color: '#000', probability: 10 },
+        { key: 'won2', label: 'Propuesta', order: 2, color: '#111', probability: 50 },
+      ] as never);
+      fixture.detectChanges();
+      (el().querySelectorAll('.move-option')[1] as HTMLButtonElement).click();
+      await fixture.whenStable();
+      const req = http.expectOne((r) => r.url.endsWith('/leads/a/move'));
+      expect(req.request.body.stage).toBe('won2');
+      req.flush({ ...lead('a'), stage: 'won2' });
+      http.match(() => true);
+      expect(el().querySelector('.move-sheet')).toBeNull();
+    });
   });
 });
 

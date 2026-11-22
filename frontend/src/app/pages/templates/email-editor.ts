@@ -340,8 +340,8 @@ const PALETTE: EmailBlockType[] = ['header', 'text', 'image', 'button', 'columns
     }
   `,
   styles: [`
-    .editor { position:fixed; inset:0; z-index:90; background:var(--color-bg-app); display:flex; flex-direction:column; }
-    .bar { display:flex; align-items:center; gap:12px; padding:12px 20px; background:var(--color-white);
+    .editor { position:fixed; inset:0; z-index:90; background:var(--color-bg-app); display:flex; flex-direction:column; padding-bottom:var(--safe-bottom, 0px); box-sizing:border-box; }
+    .bar { display:flex; align-items:center; gap:12px; padding:calc(12px + var(--safe-top, 0px)) calc(20px + var(--safe-right, 0px)) 12px calc(20px + var(--safe-left, 0px)); background:var(--color-white);
       border-bottom:1px solid var(--color-border); flex-wrap:wrap; }
     .name-input { max-width:280px; font-weight:600; }
     .bar-spacer { flex:1; }

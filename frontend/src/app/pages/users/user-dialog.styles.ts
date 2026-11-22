@@ -5,7 +5,7 @@ export const USER_DIALOG_STYLES = `
     justify-content: center; z-index: 120; }
   .ud-modal { background: var(--color-white); border-radius: var(--radius-lg);
     width: calc(100% - 48px); max-width: 480px; padding: 28px 32px;
-    box-shadow: var(--shadow-lg); max-height: calc(100vh - 48px); overflow-y: auto; }
+    box-shadow: var(--shadow-lg); max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow-y: auto; }
   .ud-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
   .ud-head h2 { display: flex; align-items: center; gap: 8px; margin: 0;
     font-family: var(--font-heading); font-size: 18px; font-weight: 700; color: var(--color-text-main); }

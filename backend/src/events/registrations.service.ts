@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -202,6 +203,9 @@ export class RegistrationsService {
       })
       .exec();
     if (!reg) throw new NotFoundException('Código de invitación no encontrado');
+    // Una entrada cancelada no da acceso: la puerta la ve en rojo (HU30).
+    if (reg.status === 'cancelled')
+      throw new ConflictException(`El registro de ${reg.name} está cancelado`);
 
     const alreadyCheckedIn = reg.checkedIn;
     if (!alreadyCheckedIn) {
@@ -257,9 +261,31 @@ export class RegistrationsService {
     if (!reg) throw new NotFoundException('Registro no encontrado');
     if (reg.eventId.toString() !== eventId)
       throw new BadRequestException('El registro no pertenece a este evento');
+    if (reg.status === 'cancelled')
+      throw new ConflictException(`El registro de ${reg.name} está cancelado`);
 
     reg.checkedIn = true;
     reg.checkedInAt = new Date();
+    return reg.save();
+  }
+
+  /** Deshace un check-in hecho por error en la puerta (HU30). */
+  async undoCheckIn(
+    eventId: string,
+    regId: string,
+    tenantId: string,
+  ): Promise<EventRegistration> {
+    const event = await this.eventModel.findById(eventId).exec();
+    if (!event) throw new NotFoundException('Evento no encontrado');
+    if (event.tenantId.toString() !== tenantId) throw new ForbiddenException();
+
+    const reg = await this.regModel.findById(regId).exec();
+    if (!reg) throw new NotFoundException('Registro no encontrado');
+    if (reg.eventId.toString() !== eventId)
+      throw new BadRequestException('El registro no pertenece a este evento');
+
+    reg.checkedIn = false;
+    reg.checkedInAt = undefined;
     return reg.save();
   }
 }

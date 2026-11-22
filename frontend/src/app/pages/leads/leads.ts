@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, HostListener } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -6,8 +6,9 @@ import {
   LucideAngularModule, Plus, X, Trash2, Search, Target, TrendingUp, Trophy, CalendarClock,
   AlertTriangle, User, Phone, Mail, MessageSquare, StickyNote, PhoneCall, Users, CheckCircle2,
   Circle, Clock, LayoutGrid, List as ListIcon, Filter, ArrowRight, Coins, Pencil,
-  Hand, Forward, Undo2, Lock, Inbox, Settings2,
+  Hand, Forward, Undo2, Lock, Inbox, Settings2, MoveRight,
 } from 'lucide-angular';
+import { initialLeadsView, saveLeadsView } from './leads-view';
 import { AuthService } from '../../auth/auth.service';
 import { LeadAssignComponent, type AssignMode } from './lead-assign';
 import { LeadStagesConfigComponent, type LeadStage } from './lead-stages-config';
@@ -157,10 +158,10 @@ function blankForm(stage: string): LeadForm {
         </div>
         <div class="header-actions">
           <div class="view-toggle">
-            <button class="view-btn" [class.active]="view() === 'board'" (click)="view.set('board')" title="Tablero">
+            <button class="view-btn" [class.active]="view() === 'board'" (click)="setView('board')" title="Tablero" aria-label="Ver tablero">
               <lucide-icon [img]="LayoutGrid" [size]="15" [strokeWidth]="2.5"></lucide-icon>
             </button>
-            <button class="view-btn" [class.active]="view() === 'list'" (click)="view.set('list')" title="Lista">
+            <button class="view-btn" [class.active]="view() === 'list'" (click)="setView('list')" title="Lista" aria-label="Ver lista">
               <lucide-icon [img]="ListIcon" [size]="15" [strokeWidth]="2.5"></lucide-icon>
             </button>
           </div>
@@ -314,6 +315,12 @@ function blankForm(stage: string): LeadForm {
                       } @else {
                         <button class="take-btn" (click)="claim(lead, $event)" title="Tomar esta oportunidad">
                           <lucide-icon [img]="Hand" [size]="12" [strokeWidth]="2.5"></lucide-icon> Tomar
+                        </button>
+                      }
+                      @if (canWork(lead)) {
+                        <button class="move-btn" (click)="openMoveSheet(lead, $event)" aria-label="Mover a otra etapa" title="Mover a…">
+                          <lucide-icon [img]="MoveRight" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+                          <span>Mover</span>
                         </button>
                       }
                     </div>
@@ -688,6 +695,26 @@ function blankForm(stage: string): LeadForm {
           </div>
       </app-form-page>
     }
+
+    @if (moveSheet(); as ml) {
+      <div class="overlay sheet-overlay" (click)="moveSheet.set(null)">
+        <div class="move-sheet" role="dialog" aria-modal="true" aria-labelledby="move-sheet-title" (click)="$event.stopPropagation()">
+          <span class="sheet-grip" aria-hidden="true"></span>
+          <h3 id="move-sheet-title">Mover "{{ ml.title }}"</h3>
+          <div class="move-list">
+            @for (s of stages(); track s.key) {
+              <button type="button" class="move-option" [class.current]="ml.stage === s.key" [disabled]="ml.stage === s.key"
+                [style.--chip]="s.color" (click)="pickStage(ml, s.key)">
+                <span class="col-dot" [style.background]="s.color"></span>
+                {{ s.label }}
+                @if (ml.stage === s.key) { <small>Etapa actual</small> }
+              </button>
+            }
+          </div>
+          <button type="button" class="btn btn-ghost w-full" (click)="moveSheet.set(null)">Cancelar</button>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
@@ -840,7 +867,37 @@ function blankForm(stage: string): LeadForm {
     .picked { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 6px 8px 6px 12px; background: var(--color-brand-light); color: var(--color-brand); border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; }
     .chip-x { display: inline-flex; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; }
 
+    /* "Mover a…" (HU36) */
+    .move-btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--color-border); border-radius: var(--radius-pill);
+      padding: 4px 10px; background: var(--color-white); color: var(--color-text-muted); font: 600 11px var(--font-base); cursor: pointer; }
+    .lead-foot .owner + .move-btn, .lead-foot .take-btn + .move-btn { margin-left: 6px; }
+    .lead-foot > .move-btn:first-child { margin-left: auto; }
+    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .sheet-overlay { align-items: flex-end; }
+    .move-sheet { width: 100%; max-width: 520px; background: var(--color-white); border-radius: 24px 24px 0 0; box-shadow: var(--shadow-lg);
+      padding: 12px 20px calc(20px + var(--safe-bottom, 0px)); box-sizing: border-box; display: flex; flex-direction: column; gap: 12px;
+      max-height: 80vh; max-height: 80dvh; overflow-y: auto; animation: sheetUp var(--transition-spring) both; }
+    @keyframes sheetUp { from { transform: translateY(40px); opacity: .6; } to { transform: none; opacity: 1; } }
+    .sheet-grip { align-self: center; width: 40px; height: 4px; border-radius: 4px; background: var(--color-border); }
+    .move-sheet h3 { margin: 0; font-family: var(--font-heading); font-size: 17px; }
+    .move-list { display: flex; flex-direction: column; gap: 8px; }
+    .move-option { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 16px; border: 1.5px solid var(--color-border);
+      border-radius: var(--radius-pill); background: var(--color-white); font: 600 15px var(--font-base); color: var(--color-text-main); cursor: pointer; text-align: left; }
+    .move-option small { margin-left: auto; color: var(--color-text-muted); font-weight: 500; font-size: 12px; }
+    .move-option.current { border-color: var(--chip); }
+    .move-option:disabled { cursor: default; }
+
+    @media (pointer: coarse), (max-width: 768px) {
+      .view-btn { width: 40px; height: 40px; }
+      .take-btn, .move-btn { min-height: 40px; padding: 0 14px; font-size: 13px; }
+      .stage-chip { min-height: 40px; font-size: 13px; }
+    }
+
     @media (max-width: 768px) {
+      .search-input { font-size: 16px; }
+      /* Tablero: una columna por pantalla, que encaja al deslizar. */
+      .board { scroll-snap-type: x mandatory; scroll-padding-left: 4px; }
+      .column { flex-basis: calc(100% - 40px); scroll-snap-align: start; }
       /* Cada oportunidad es una tarjeta (.table-cards): la flecha de "abrir"
          no aporta nada ahí, la fila entera ya es pulsable. */
       .table-cards td.right { display: none; }
@@ -898,7 +955,30 @@ export class LeadsComponent implements OnInit {
   owners = signal<Owner[]>([]);
   loading = signal(true);
 
-  view = signal<'board' | 'list'>('board');
+  /** En el móvil abre en lista; la elección se recuerda (HU36). */
+  view = signal<'board' | 'list'>(initialLeadsView());
+  moveSheet = signal<Lead | null>(null);
+  readonly MoveRight = MoveRight;
+
+  setView(v: 'board' | 'list') {
+    this.view.set(v);
+    saveLeadsView(v);
+  }
+
+  openMoveSheet(lead: Lead, event?: Event) {
+    event?.stopPropagation();
+    this.moveSheet.set(lead);
+  }
+
+  pickStage(lead: Lead, stage: string) {
+    this.moveSheet.set(null);
+    void this.moveTo(lead, stage);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscMoveSheet() {
+    if (this.moveSheet()) this.moveSheet.set(null);
+  }
   search = signal('');
   ownerFilter = signal('');
   overdue = signal(false);

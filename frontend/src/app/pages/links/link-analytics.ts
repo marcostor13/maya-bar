@@ -144,7 +144,7 @@ const DEVICE_LABELS: Record<string, string> = {
           @if (!linkId && s.topLinks.length) {
             <div class="card table-card">
               <h3 class="card-title">Links con más clics</h3>
-              <div class="table-wrap">
+              <div class="table-wrap table-cards">
                 <table>
                   <thead><tr><th>Link</th><th class="num">Clics</th><th class="num">Únicos</th><th></th></tr></thead>
                   <tbody>
@@ -175,7 +175,7 @@ const DEVICE_LABELS: Record<string, string> = {
                 Mostrar bots
               </label>
             </div>
-            <div class="table-wrap">
+            <div class="table-wrap table-cards">
               <table>
                 <thead>
                   <tr>

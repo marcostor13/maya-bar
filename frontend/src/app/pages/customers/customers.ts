@@ -351,6 +351,26 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
         </div>
       </div>
 
+      <!-- ── Filtros por columna en el móvil (HU37): la fila de la tabla no existe ahí ── -->
+      @if (filtersOpen()) {
+        <div class="mobile-filters card">
+          <div class="field">
+            <label class="field-label" for="mf-contact">Contacto</label>
+            <input id="mf-contact" class="input" placeholder="Filtrar…"
+              [value]="columnFilters()['contact'] || ''"
+              (input)="setColumnFilter('contact', $any($event.target).value)" />
+          </div>
+          @for (col of visibleColumns(); track col.key) {
+            <div class="field">
+              <label class="field-label" [attr.for]="'mf-' + col.key">{{ col.label }}</label>
+              <input class="input" [id]="'mf-' + col.key" placeholder="Filtrar…"
+                [value]="columnFilters()[col.key] || ''"
+                (input)="setColumnFilter(col.key, $any($event.target).value)" />
+            </div>
+          }
+        </div>
+      }
+
       <!-- ── Bulk action bar ── -->
       @if (someSelected()) {
         <div class="bulk-bar animate-fade-in">
@@ -981,6 +1001,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
     .bulk-info { display: flex; align-items: center; gap: 8px; }
     .bulk-count { font-size: 13px; font-weight: 700; color: var(--color-brand); }
     .bulk-actions { display: flex; gap: 8px; }
+    .mobile-filters { display: none; }
 
     /* ── Table ── */
     .table-wrap { background:#fff; border:1px solid var(--color-border); border-radius:16px; overflow-x:auto; }
@@ -1198,9 +1219,20 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
       .form-filter { width:100%; }
       .form-filter-select { flex:1; min-width:0; }
 
-      .bulk-bar { flex-direction:column; align-items:stretch; gap:10px; }
-      .bulk-actions { width:100%; }
-      .bulk-actions .btn { flex:1; }
+      /* Acciones masivas fijas abajo, sobre la barra de navegación (HU37). */
+      .bulk-bar {
+        position: fixed; z-index: 60; margin: 0;
+        left: calc(8px + var(--safe-left, 0px)); right: calc(8px + var(--safe-right, 0px));
+        bottom: calc(8px + var(--bottom-nav-height, 0px) + var(--safe-bottom, 0px));
+        flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px;
+        background: var(--color-white); box-shadow: var(--shadow-lg);
+      }
+      .bulk-actions { width:100%; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+      .bulk-actions::-webkit-scrollbar { display:none; }
+      .bulk-actions .btn { flex:0 0 auto; min-height:40px; white-space:nowrap; }
+      .page:has(.bulk-bar) { padding-bottom: 160px; }
+
+      .mobile-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; margin-bottom: 12px; }
 
       .view-grid { grid-template-columns:1fr; }
       .contact-form { padding:20px; }
@@ -1226,6 +1258,8 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
 
     @media (max-width: 480px) {
       .stats-row { grid-template-columns:1fr 1fr; }
+      .detail-row { grid-template-columns:1fr; gap:4px; }
+      .mobile-filters { grid-template-columns:1fr; }
       .header-actions { width:100%; }
       .header-actions .btn { flex:1; }
     }

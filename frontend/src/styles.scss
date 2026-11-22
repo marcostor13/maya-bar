@@ -373,10 +373,24 @@ body {
   }
 }
 
-/* Prevent iOS auto-zoom on focus: inputs need >=16px font on small screens */
+/* Prevent iOS auto-zoom on focus: inputs need >=16px font on small screens.
+   `!important` a propósito (HU39): los estilos encapsulados de cada página ponían
+   12-13.5 px y ganaban en especificidad; con menos de 16 px Safari hace zoom. */
 @media (max-width: 768px) {
-  .input, .select, .textarea, .input-search {
-    font-size: 16px;
+  .input, .select, .textarea, .input-search,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Puntos de corte (HU39): 968 (shell móvil), 768 (tablet/teléfono), 480 (teléfono).
+   Entre 769 y 968 px ya hay barra inferior: las páginas usan el padding de móvil. */
+@media (min-width: 769px) and (max-width: 968px) {
+  .main-content .page {
+    padding-top: 24px !important;
+    padding-left: 24px !important;
+    padding-right: 24px !important;
   }
 }
 
@@ -426,6 +440,26 @@ body {
 .card.table-card:hover {
   transform: none;
   box-shadow: var(--shadow-sm);
+}
+
+/* --------------------------------------------------------------------------
+   Tarjeta de modal (HU34). Pon `.modal-card` en la tarjeta dentro de `.overlay`:
+   nunca pasa del alto visible (dvh, que en el móvil descuenta la barra del
+   navegador y, con el teclado abierto, el propio teclado), respeta las áreas
+   seguras y hace scroll por dentro. Un `.modal-actions` hijo queda pegado abajo.
+   Cada componente sigue poniendo su ancho, padding y radio.
+   -------------------------------------------------------------------------- */
+.modal-card {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+}
+.modal-card > .modal-actions {
+  position: sticky;
+  bottom: 0;
+  background: inherit;
 }
 
 /* --------------------------------------------------------------------------

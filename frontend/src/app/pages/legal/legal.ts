@@ -59,7 +59,7 @@ import { LEGAL_CONTACT, LEGAL_DOCS, LegalDocKey } from './legal.data';
   `,
   styles: [
     `
-      :host { display: block; min-height: 100vh; background: var(--color-bg-app); }
+      :host { display: block; min-height: 100vh; min-height: 100dvh; background: var(--color-bg-app); }
       .lg-wrap { width: 100%; max-width: 820px; margin: 0 auto; padding: 0 24px; box-sizing: border-box; }
       .lg-header { background: var(--color-white); border-bottom: 1px solid var(--color-border); padding: 16px 0; }
       .lg-main { padding-top: 40px; padding-bottom: 64px; }

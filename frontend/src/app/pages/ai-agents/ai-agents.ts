@@ -841,7 +841,7 @@ function blankAgent(): Agent {
 
     /* Overlay + panel (playground) */
     .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: stretch; justify-content: flex-end; z-index: 100; }
-    .drawer { width: 600px; max-width: 100%; background: #fff; box-shadow: -10px 0 40px rgba(0,0,0,.15); display: flex; flex-direction: column; height: 100vh; animation: slideInRight .25s var(--transition-spring); }
+    .drawer { width: 600px; max-width: 100%; background: #fff; box-shadow: -10px 0 40px rgba(0,0,0,.15); display: flex; flex-direction: column; height: 100vh; height: 100dvh; padding-top: var(--safe-top, 0px); padding-bottom: var(--safe-bottom, 0px); box-sizing: border-box; animation: slideInRight .25s var(--transition-spring); }
     @keyframes slideInRight { from { transform: translateX(40px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
     .drawer-header { padding: 28px 32px 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
     .drawer-title-group h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -.5px; display: flex; align-items: center; gap: 8px; }

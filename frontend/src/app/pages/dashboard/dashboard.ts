@@ -412,7 +412,7 @@ export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
       .page { padding: 20px 16px; }
       .filters { width: 100%; }
       .seg { flex: 1 1 100%; overflow-x: auto; }
-      .seg button { flex: 1; padding: 8px 10px; }
+      .seg button { flex: 1; padding: 8px 10px; min-height: 40px; }
       .channel { flex: 1; min-width: 0; }
       .tiles, .minis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
       .tiles.tiles-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }

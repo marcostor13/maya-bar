@@ -67,7 +67,7 @@ export type AssignMode = 'transfer' | 'release';
   `,
   styles: [`
     .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 110; }
-    .modal-card { width: calc(100% - 48px); max-width: 480px; max-height: calc(100vh - 64px); overflow-y: auto; box-sizing: border-box;
+    .modal-card { width: calc(100% - 48px); max-width: 480px; max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); overflow-y: auto; box-sizing: border-box;
       padding: 28px 32px; background: var(--color-white); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
       display: flex; flex-direction: column; gap: 10px; animation: pop var(--transition-spring); }
     @keyframes pop { from { transform: scale(0.96); opacity: 0; } }

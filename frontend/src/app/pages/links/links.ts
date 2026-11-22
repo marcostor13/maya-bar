@@ -95,7 +95,7 @@ type Tab = 'links' | 'batches' | 'domains';
               }
             </div>
           } @else {
-            <div class="table-wrap card">
+            <div class="table-wrap card table-cards">
               <table>
                 <thead>
                   <tr><th>Link</th><th>Destino</th><th class="num">Clics</th><th class="num">Únicos</th><th>Último clic</th><th>Estado</th><th></th></tr>

@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnDestroy, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import {
   LucideAngularModule,
@@ -7,13 +7,18 @@ import {
   ArrowUpDown,
   Check,
   ChevronDown,
+  Copy,
   Download,
+  MessageCircle,
+  Phone,
   Search,
   Ticket,
+  Users,
 } from 'lucide-angular';
 import { ToastService } from '../../../shared/toast';
 import { downloadCsv } from '../../../shared/csv';
 import { EventDetailStore } from '../event-detail.store';
+import { SORT_OPTIONS, telLink, waLink } from './registrations-logic';
 
 @Component({
   selector: 'app-event-registrations-tab',
@@ -26,7 +31,8 @@ import { EventDetailStore } from '../event-detail.store';
       <div class="regs-toolbar">
         <div class="regs-search-wrap">
           <lucide-icon [img]="Search" [size]="16"></lucide-icon>
-          <input type="text" class="regs-search-input" placeholder="Buscar por nombre, email o ticket..."
+          <input type="search" class="input regs-search-input" placeholder="Buscar por nombre, email o ticket..."
+            aria-label="Buscar asistentes" enterkeyhint="search"
             [value]="regSearch()" (input)="onRegSearchChange($any($event.target).value)" />
         </div>
         <select class="input regs-filter-select"
@@ -36,6 +42,14 @@ import { EventDetailStore } from '../event-detail.store';
           <option value="confirmed">Confirmados</option>
           <option value="cancelled">Cancelados</option>
         </select>
+        @if (isMobile()) {
+          <select class="select regs-filter-select" aria-label="Ordenar por"
+            [value]="sortKey()" (change)="onSortKey($any($event.target).value)">
+            @for (o of SORT_OPTIONS; track o.key) {
+              <option [value]="o.key" [selected]="o.key === sortKey()">Ordenar: {{ o.label }}</option>
+            }
+          </select>
+        }
         <button class="btn btn-secondary btn-sm" (click)="downloadExcel()" [disabled]="registrations().length === 0">
           <lucide-icon [img]="Download" [size]="15"></lucide-icon>
           Excel
@@ -52,6 +66,60 @@ import { EventDetailStore } from '../event-detail.store';
           <lucide-icon [img]="Ticket" [size]="48" [strokeWidth]="1.5"></lucide-icon>
           <p>Sin registros para este filtro.</p>
         </div>
+      } @else if (isMobile()) {
+        <!-- Móvil: tarjeta compacta que se despliega al tocar (HU31) -->
+        <ul class="reg-list">
+          @for (r of registrations(); track r._id) {
+            <li class="reg-item" [class.open]="expandedRegIds().has(r._id)">
+              <button type="button" class="reg-head" (click)="toggleExpandReg(r._id)"
+                [attr.aria-expanded]="expandedRegIds().has(r._id)">
+                <span class="reg-line1">
+                  <strong class="reg-name">{{ r.name }}</strong>
+                  <lucide-icon class="reg-chevron" [img]="ChevronDown" [size]="18"></lucide-icon>
+                </span>
+                <span class="reg-chips">
+                  <span class="chip"><lucide-icon [img]="Users" [size]="12"></lucide-icon> {{ r.partySize }}</span>
+                  <span class="badge" [class.badge-success]="r.status === 'confirmed'" [class.badge-danger]="r.status === 'cancelled'">
+                    {{ r.status === 'confirmed' ? 'Confirmado' : 'Cancelado' }}
+                  </span>
+                  @if (r.checkedIn) {
+                    <span class="checkin-pill yes"><lucide-icon [img]="Check" [size]="12" [strokeWidth]="3"></lucide-icon> Ingresó</span>
+                  }
+                </span>
+                <span class="reg-line2">{{ r.impulsadorName || 'Directo' }} · {{ r.createdAt | date:'dd/MM/yy' }}</span>
+              </button>
+              @if (expandedRegIds().has(r._id)) {
+                <div class="reg-detail">
+                  <dl>
+                    <dt>Email</dt><dd>{{ r.email }}</dd>
+                    <dt>Teléfono</dt><dd>{{ r.phone || '—' }}</dd>
+                    <dt>Ticket</dt><dd><code class="ticket-code">{{ r.ticketCode }}</code></dd>
+                    @for (field of formFields(); track field.id) {
+                      @if (r.customFields?.[field.id]) {
+                        <dt>{{ field.label }}</dt><dd>{{ r.customFields![field.id] }}</dd>
+                      }
+                    }
+                  </dl>
+                  <div class="reg-actions">
+                    @if (telLink(r.phone)) {
+                      <a class="btn btn-secondary btn-sm" [href]="telLink(r.phone)">
+                        <lucide-icon [img]="Phone" [size]="15"></lucide-icon> Llamar
+                      </a>
+                    }
+                    @if (waLink(r.phone)) {
+                      <a class="btn btn-secondary btn-sm" [href]="waLink(r.phone)" target="_blank" rel="noopener">
+                        <lucide-icon [img]="MessageCircle" [size]="15"></lucide-icon> WhatsApp
+                      </a>
+                    }
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="copyEmail(r.email)">
+                      <lucide-icon [img]="Copy" [size]="15"></lucide-icon> Copiar email
+                    </button>
+                  </div>
+                </div>
+              }
+            </li>
+          }
+        </ul>
       } @else {
         <div class="regs-table-wrap">
           <table class="regs-table">
@@ -155,8 +223,7 @@ import { EventDetailStore } from '../event-detail.store';
     .regs-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
     .regs-search-wrap { flex:1; min-width:180px; position:relative; display:flex; align-items:center; }
     .regs-search-wrap lucide-icon { position:absolute; left:12px; color:var(--color-text-muted); pointer-events:none; }
-    .regs-search-input { width:100%; padding:9px 14px 9px 36px; border:1px solid var(--color-border); border-radius:10px; font-size:14px; outline:none; background:var(--color-bg-app); transition:all 0.2s; }
-    .regs-search-input:focus { border-color:var(--color-brand); background:#fff; box-shadow:0 0 0 3px var(--color-brand-light); }
+    .regs-search-input { width:100%; padding-left:38px; }
     .regs-filter-select { width:auto; min-width:160px; padding:9px 14px; font-size:14px; }
     .regs-meta { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
     .regs-empty { padding:64px 40px; text-align:center; color:var(--color-text-muted); display:flex; flex-direction:column; align-items:center; gap:16px; background:var(--color-bg-app); border-radius:16px; border:1px dashed var(--color-border); }
@@ -182,12 +249,12 @@ import { EventDetailStore } from '../event-detail.store';
     .expand-btn:hover { background:var(--color-brand-light); color:var(--color-brand); }
     .expand-btn.expanded { color:var(--color-brand); transform:rotate(180deg); }
     .checkin-pill { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; padding:3px 8px; border-radius:20px; }
-    .checkin-pill.yes { background:#dcfce7; color:#16a34a; }
+    .checkin-pill.yes { background:var(--color-bg-light); color:var(--color-success); }
     .checkin-pill.no { background:var(--color-bg-app); color:var(--color-text-muted); }
     .ticket-code { font-family:monospace; font-size:12px; font-weight:700; background:var(--color-bg-app); padding:3px 7px; border-radius:6px; color:var(--color-brand); letter-spacing:0.05em; }
-    .custom-fields-row td { padding:8px 14px 12px; background:#f8faff; }
+    .custom-fields-row td { padding:8px 14px 12px; background:var(--color-bg-light); }
     .custom-fields-answers { display:flex; flex-wrap:wrap; gap:8px; }
-    .custom-answer-item { font-size:12px; color:var(--color-text-muted); background:#fff; border:1px solid var(--color-border); padding:3px 10px; border-radius:8px; }
+    .custom-answer-item { font-size:12px; color:var(--color-text-muted); background:var(--color-white); border:1px solid var(--color-border); padding:3px 10px; border-radius:8px; }
     .custom-answer-item strong { color:var(--color-text-main); }
 
     @media (max-width: 768px) {
@@ -197,31 +264,47 @@ import { EventDetailStore } from '../event-detail.store';
       .regs-search-wrap, .regs-filter-select { width: 100%; min-width: 0; }
       .regs-toolbar .btn { width: 100%; justify-content: center; }
 
-      .regs-table-wrap { border: none; overflow: visible; }
-      .regs-table thead { display: none; }
-      .regs-table, .regs-table tbody, .regs-table tr { display: block; width: 100%; }
-      .regs-table tr.reg-row { background: #fff; border: 1px solid var(--color-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
-      .regs-table tr.custom-fields-row { border: none; margin-top: -12px; margin-bottom: 12px; padding: 0 4px; }
-      .regs-table td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 2px; border-bottom: 1px dashed var(--color-border); text-align: right; }
-      .regs-table td:last-child { border-bottom: none; }
-      .regs-table td::before { content: attr(data-label); font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; text-align: left; }
-      .regs-table td.td-name { display: block; text-align: left; font-size: 16px; font-weight: 700; border-bottom: 1px solid var(--color-border); padding: 0 2px 10px; margin-bottom: 6px; }
-      .regs-table td.td-name::before { content: none; }
-      .regs-table td.td-expand { display: flex; justify-content: flex-end; border-bottom: none; padding: 0 0 6px; width: 100%; }
-      .regs-table td.td-expand::before { content: none; }
-      .regs-table tr.custom-fields-row td { display: block; text-align: left; border-bottom: none; padding: 0 4px; }
-      .regs-table tr.custom-fields-row td::before { content: none; }
-      .regs-table .custom-fields-answers { justify-content: flex-start; }
+
+      /* ── Lista compacta (HU31) ── */
+      .reg-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+      .reg-item { background:var(--color-white); border:1px solid var(--color-border); border-radius:16px; overflow:hidden; }
+      .reg-item.open { border-color:var(--color-brand); }
+      .reg-head { width:100%; min-height:56px; display:flex; flex-direction:column; gap:6px; padding:12px 14px; border:none; background:none; text-align:left; cursor:pointer; font:inherit; color:inherit; }
+      .reg-line1 { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .reg-name { font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .reg-chevron { color:var(--color-text-muted); transition:transform .2s; flex-shrink:0; }
+      .reg-item.open .reg-chevron { transform:rotate(180deg); }
+      .reg-chips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+      .chip { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; padding:3px 8px; border-radius:var(--radius-pill); background:var(--color-bg-app); border:1px solid var(--color-border); }
+      .reg-line2 { font-size:13px; color:var(--color-text-muted); }
+      .reg-detail { padding:0 14px 14px; border-top:1px dashed var(--color-border); }
+      .reg-detail dl { display:grid; grid-template-columns:auto 1fr; gap:6px 12px; margin:12px 0; font-size:14px; }
+      .reg-detail dt { color:var(--color-text-muted); font-weight:600; }
+      .reg-detail dd { margin:0; word-break:break-word; }
+      .reg-actions { display:flex; flex-wrap:wrap; gap:8px; }
+      .reg-actions .btn { flex:1 1 auto; justify-content:center; min-height:44px; }
     }
   `],
 })
-export class EventRegistrationsTabComponent {
+export class EventRegistrationsTabComponent implements OnDestroy {
   private store = inject(EventDetailStore);
   private toast = inject(ToastService);
 
   readonly ArrowDown = ArrowDown; readonly ArrowUp = ArrowUp; readonly ArrowUpDown = ArrowUpDown;
   readonly Check = Check; readonly ChevronDown = ChevronDown; readonly Download = Download;
   readonly Search = Search; readonly Ticket = Ticket;
+  readonly Copy = Copy; readonly MessageCircle = MessageCircle; readonly Phone = Phone; readonly Users = Users;
+  readonly SORT_OPTIONS = SORT_OPTIONS;
+  readonly telLink = telLink;
+  readonly waLink = waLink;
+
+  /** En el móvil, lista compacta en vez de tabla (HU31). */
+  isMobile = signal(false);
+  private mql: MediaQueryList | null =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 768px)')
+      : null;
+  private onMql = (e: MediaQueryListEvent) => this.isMobile.set(e.matches);
 
   registrations = this.store.registrations;
   regsLoading = this.store.regsLoading;
@@ -232,6 +315,32 @@ export class EventRegistrationsTabComponent {
   regSortOrder = this.store.regSortOrder;
 
   expandedRegIds = signal<Set<string>>(new Set());
+
+  constructor() {
+    this.isMobile.set(!!this.mql?.matches);
+    this.mql?.addEventListener?.('change', this.onMql);
+  }
+
+  ngOnDestroy() {
+    this.mql?.removeEventListener?.('change', this.onMql);
+  }
+
+  sortKey(): string { return `${this.regSortBy()}:${this.regSortOrder()}`; }
+
+  onSortKey(key: string) {
+    const o = SORT_OPTIONS.find(x => x.key === key);
+    if (!o) return;
+    this.regSortBy.set(o.sortBy);
+    this.regSortOrder.set(o.sortOrder);
+    this.store.loadRegistrations();
+  }
+
+  copyEmail(email: string) {
+    navigator.clipboard.writeText(email).then(
+      () => this.toast.success('Email copiado'),
+      () => this.toast.error('No se pudo copiar el email'),
+    );
+  }
   private regSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 
   onRegSearchChange(value: string) {

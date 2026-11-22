@@ -8,7 +8,6 @@ import {
   GripVertical,
   Pencil,
   Plus,
-  Save,
   Trash2,
 } from 'lucide-angular';
 import { ToastService } from '../../../shared/toast';
@@ -211,13 +210,6 @@ const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
           }
         </div>
       </div>
-
-      @if (!isNew()) {
-        <div class="media-save-hint mt-4">
-          <lucide-icon [img]="Save" [size]="14"></lucide-icon>
-          Los cambios en el formulario se guardan al actualizar el evento desde la pestaña General.
-        </div>
-      }
     </div>
   `,
   styles: [`
@@ -249,7 +241,7 @@ const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
     .section-sub-title { font-size: 14px; font-weight: 700; color: var(--color-text-main); margin: 0; }
     .empty-fields-state { padding: 48px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--color-text-muted); background: var(--color-bg-app); border: 2px dashed var(--color-border); border-radius: 14px; }
     .field-items-list { display: flex; flex-direction: column; gap: 8px; }
-    .field-item-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #fff; border: 1px solid var(--color-border); border-radius: 12px; transition: box-shadow 0.2s; }
+    .field-item-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--color-white); border: 1px solid var(--color-border); border-radius: 12px; transition: box-shadow 0.2s; }
     .field-item-row:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
     .drag-handle { color: var(--color-text-muted); cursor: grab; opacity: 0.4; flex-shrink: 0; }
     .field-item-label { flex: 1; font-size: 14px; font-weight: 600; color: var(--color-text-main); }
@@ -277,8 +269,9 @@ const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
     .btn-icon-xs:hover:not(:disabled) { background: var(--color-bg-app); color: var(--color-text-main); }
     .btn-icon-xs.danger:hover:not(:disabled) { background: #fee2e2; color: var(--color-error); }
     .btn-icon-xs:disabled { opacity: 0.3; cursor: not-allowed; }
+    /* Con el dedo, acciones de 40 px (HU29). */
+    @media (hover: none), (max-width: 768px) { .btn-icon-xs { width: 40px; height: 40px; } }
 
-    .media-save-hint { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-muted); padding: 12px 16px; background: var(--color-bg-app); border-radius: 10px; border: 1px solid var(--color-border); margin-top: 20px; }
 
     @media (max-width: 768px) {
       .p-6 { padding: 16px; }
@@ -305,10 +298,9 @@ export class EventFormTabComponent {
 
   readonly Check = Check; readonly ChevronDown = ChevronDown; readonly ChevronUp = ChevronUp;
   readonly ClipboardList = ClipboardList; readonly GripVertical = GripVertical;
-  readonly Pencil = Pencil; readonly Plus = Plus; readonly Save = Save; readonly Trash2 = Trash2;
+  readonly Pencil = Pencil; readonly Plus = Plus; readonly Trash2 = Trash2;
 
   formFields = this.store.formFields;
-  isNew = this.store.isNew;
 
   editingFieldId = signal<string | null>(null);
   editDraft: { label: string; type: FormFieldType; required: boolean; optionsStr: string } =

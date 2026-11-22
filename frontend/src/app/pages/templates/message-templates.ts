@@ -202,7 +202,7 @@ const CHANNELS: { key: MessageChannel; label: string }[] = [
       font-weight:500; border-radius:var(--radius-pill); border:1px solid var(--color-border); background:var(--color-white);
       color:var(--color-text-muted); cursor:pointer; transition:all var(--transition-fast); }
     .chip.active { background:var(--color-brand); border-color:var(--color-brand); color:var(--color-white); }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:20px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap:20px; }
     .skeleton { height:180px; background:var(--color-bg-light); }
     .tpl { display:flex; flex-direction:column; gap:8px; padding:24px; }
     .tpl-head { display:flex; justify-content:space-between; align-items:center; }

@@ -82,6 +82,12 @@ Angular encapsula los estilos de componente añadiendo un atributo a cada
 selector, así que una `.mi-celda` de una página gana en especificidad a
 cualquier selector razonable de la hoja global.
 
+### Modales: `.modal-card` y alturas en `dvh`
+
+- La tarjeta de un modal lleva `.modal-card` (global, `styles.scss`): `max-height` en `dvh` menos las áreas seguras, scroll interno y `overscroll-behavior: contain`. Un `.modal-actions` hijo directo queda pegado abajo (sticky), así "Guardar" se ve aunque el formulario sea largo o el teclado esté abierto.
+- Cada componente sigue definiendo ancho (`calc(100% - 48px)`), `max-width`, padding y radio.
+- **Nunca `vh` solo**: escribe el valor en `vh` y, justo detrás, el mismo en `dvh` (`max-height: 90vh; max-height: 90dvh;`). En el móvil `100vh` incluye la barra del navegador y corta el pie del modal.
+
 ### Hojas inferiores (bottom sheets)
 
 Patrón de la campana de notificaciones y del menú "Más": `.overlay` a pantalla
@@ -120,6 +126,10 @@ Cómo comprobarlo sin abrir el navegador a mano: recorrer el DOM comparando
 `getBoundingClientRect().right` contra `document.documentElement.clientWidth`
 a 320, 360 y 390px, **con datos hostiles** (nombres largos, URLs, archivos con
 nombre kilométrico). Con datos de ejemplo cortos el fallo no aparece.
+
+### Puntos de corte
+
+Solo tres: **968 px** (el shell pasa a móvil: cabecera y barra inferior), **768 px** (teléfono/tablet: tablas a tarjetas, una columna) y **480 px** (teléfono pequeño). Entre 769 y 968 px `styles.scss` ya reduce el padding de `.page` a 24 px; no añadas cortes sueltos nuevos (1100, 900, 720…).
 
 ### Tamaño de letra en el teléfono
 

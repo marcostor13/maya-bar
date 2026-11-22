@@ -75,6 +75,13 @@ export class EventsApiService {
     );
   }
 
+  /** Quita un check-in hecho por error (HU30). */
+  undoCheckIn(eventId: string, registrationId: string): Observable<Registration> {
+    return this.http.delete<Registration>(
+      `${this.base}/events/${eventId}/registrations/${registrationId}/check-in`,
+    );
+  }
+
   checkInByCode(eventId: string, code: string): Observable<CheckInByCodeResult> {
     return this.http.patch<CheckInByCodeResult>(
       `${this.base}/events/${eventId}/registrations/check-in/by-code`, { code },

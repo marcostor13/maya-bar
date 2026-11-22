@@ -7,6 +7,7 @@ import { Event } from './event.schema';
 import { EventRegistration } from './event-registration.schema';
 import { EventTemplate } from './event-template.schema';
 import { Tenant } from '../tenants/tenant.schema';
+import { Local } from '../locals/local.schema';
 import { AiService } from '../ai/ai.service';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ describe('EventsService', () => {
   let regModel: any;
   let templateModel: any;
   let tenantModel: any;
+  let localModel: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -102,6 +104,16 @@ describe('EventsService', () => {
       }),
     };
 
+    localModel = {
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ name: 'Bar Centro', address: 'Av. Larco 123' }),
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EventsService,
@@ -116,6 +128,7 @@ describe('EventsService', () => {
         },
         { provide: AiService, useValue: mockAi },
         { provide: getModelToken(Tenant.name), useValue: tenantModel },
+        { provide: getModelToken(Local.name), useValue: localModel },
       ],
     }).compile();
 
@@ -233,6 +246,29 @@ describe('EventsService', () => {
       expect(query.select).toHaveBeenCalledWith(
         'name branding.logo branding.favicon',
       );
+    });
+
+    it('HU33: el lugar es la dirección del local, solo nombre y dirección', async () => {
+      const result = await service.findPublicEvent('slug-abc123');
+      expect(result.venue).toEqual({
+        name: 'Bar Centro',
+        address: 'Av. Larco 123',
+      });
+      const query = localModel.findById.mock.results[0].value;
+      expect(query.select).toHaveBeenCalledWith('name address');
+    });
+
+    it('HU33: el lugar propio del evento manda sobre la dirección del local', async () => {
+      eventModel.findOne.mockReturnValue({
+        exec: jest
+          .fn()
+          .mockResolvedValue(makeEventDoc({ location: 'Playa Asia, km 97' })),
+      });
+      const result = await service.findPublicEvent('slug-abc123');
+      expect(result.venue).toEqual({
+        name: 'Bar Centro',
+        address: 'Playa Asia, km 97',
+      });
     });
 
     it('throws NotFoundException when slug does not match a published event', async () => {

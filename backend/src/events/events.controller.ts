@@ -168,6 +168,17 @@ export class EventsController {
     return this.registrationsService.checkIn(id, regId, req.user.tenantId);
   }
 
+  @Delete('events/:id/registrations/:regId/check-in')
+  @UseGuards(JwtAuthGuard)
+  undoCheckIn(
+    @Param('id') id: string,
+    @Param('regId') regId: string,
+    @Request() req: AuthReq,
+  ) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.registrationsService.undoCheckIn(id, regId, req.user.tenantId);
+  }
+
   @Patch('events/:id/registrations/check-in/by-code')
   @UseGuards(JwtAuthGuard)
   checkInByCode(

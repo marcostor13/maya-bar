@@ -11,13 +11,14 @@ import {
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
   CalendarPlus, ListChecks, ShieldBan, ShieldCheck, Users, UserCheck, UserMinus, Hand, Megaphone,
-  SquareCheck, WifiOff,
+  SquareCheck, WifiOff, Copy,
 } from 'lucide-angular';
 import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
 import { CallsService } from '../../shared/calls/calls.service';
 import { ConfirmService } from '../../shared/confirm';
 import { RichText } from '../../shared/rich-text';
+import { LongPressDirective } from '../../shared/long-press';
 import { AppChromeService } from '../../shared/app-chrome';
 import { ConversationsRealtimeService } from '../../shared/conversations-realtime';
 import { PushService } from '../../shared/push.service';
@@ -223,7 +224,7 @@ const EMOJIS = [
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [FormsModule, RichText, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent,
+  imports: [LongPressDirective, FormsModule, RichText, LucideAngularModule, EmailComposeComponent, InboxActionsComponent, InboxFiltersComponent, ContactCareComponent,
     BlockDialogComponent, InboxTrashComponent, InboxBlockedComponent, WaTemplatePickerComponent],
   host: { '(document:paste)': 'onPaste($event)' },
   template: `
@@ -788,7 +789,8 @@ const EMOJIS = [
                   </div>
                 } @else {
                 <div class="row" [class.out]="m.direction === 'out'" [id]="'msg-' + m._id">
-                  <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'" [class.email]="isEmail()">
+                  <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'" [class.email]="isEmail()"
+                    (appLongPress)="openMsgMenu(m)">
                     @if (!isEmail()) {
                       <button class="reply-btn" (click)="replyTo.set(m)" title="Responder" aria-label="Responder a este mensaje">
                         <lucide-icon [img]="Reply" [size]="14" [strokeWidth]="2.4"></lucide-icon>
@@ -1362,6 +1364,25 @@ const EMOJIS = [
         </div>
       </div>
     }
+    @if (msgMenu(); as mm) {
+      <div class="msg-menu-overlay" (click)="msgMenu.set(null)">
+        <div class="msg-menu" role="dialog" aria-modal="true" aria-label="Acciones del mensaje" (click)="$event.stopPropagation()">
+          <span class="msg-menu-grip" aria-hidden="true"></span>
+          @if (mm.text) { <p class="msg-menu-preview">{{ mm.text }}</p> }
+          @if (!isEmail()) {
+            <button type="button" class="btn btn-secondary" (click)="replyTo.set(mm); msgMenu.set(null)">
+              <lucide-icon [img]="Reply" [size]="18"></lucide-icon> Responder
+            </button>
+          }
+          @if (mm.text) {
+            <button type="button" class="btn btn-secondary" (click)="copyMsg(mm)">
+              <lucide-icon [img]="Copy" [size]="18"></lucide-icon> Copiar texto
+            </button>
+          }
+          <button type="button" class="btn btn-ghost" (click)="msgMenu.set(null)">Cancelar</button>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     :host { display: block; height: 100%; }
@@ -1439,6 +1460,11 @@ const EMOJIS = [
       border-radius: var(--radius-pill); font-size: 12.5px; font-weight: 600;
       color: var(--color-text-muted); transition: all .18s; white-space: nowrap; }
     .channel-tab:hover { color: var(--color-text-main); }
+    @media (max-width: 768px), (pointer: coarse) {
+      .channel-tabs { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+      .channel-tabs::-webkit-scrollbar { display: none; }
+      .channel-tab { flex: 0 0 auto; min-height: 40px; max-width: 160px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+    }
     .channel-tab.active { background: #fff; color: var(--color-brand);
       box-shadow: var(--shadow-sm); }
     .tab-badge { background: var(--color-brand); color: #fff; border-radius: var(--radius-pill);
@@ -1888,8 +1914,18 @@ const EMOJIS = [
     .reply-btn:hover { color: var(--color-brand); }
     /* En táctil no hay hover: el botón se queda visible y algo más tenue. */
     @media (hover: none) {
-      .reply-btn { opacity: 0.55; }
+      .reply-btn { opacity: 0.55; width: 32px; height: 32px; }
+      /* La pulsación larga abre Responder/Copiar: sin selección de texto del sistema. */
+      .bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     }
+
+    /* Menú de un mensaje (pulsación larga, HU38) */
+    .msg-menu-overlay { position: fixed; inset: 0; z-index: 120; background: rgba(15,23,42,0.45); display: flex; align-items: flex-end; justify-content: center; }
+    .msg-menu { width: 100%; max-width: 480px; background: var(--color-white); border-radius: 24px 24px 0 0; box-shadow: var(--shadow-lg);
+      padding: 12px 16px calc(16px + var(--safe-bottom, 0px)); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+    .msg-menu-grip { align-self: center; width: 40px; height: 4px; border-radius: 4px; background: var(--color-border); margin-bottom: 4px; }
+    .msg-menu-preview { margin: 0 4px 4px; font-size: 13px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .msg-menu .btn { min-height: 48px; justify-content: flex-start; gap: 10px; font-size: 15px; }
 
     .quote {
       display: flex; flex-direction: column; gap: 1px; width: 100%;
@@ -2145,7 +2181,7 @@ const EMOJIS = [
 
     .contact-modal {
       width: calc(100% - 48px); max-width: 480px;
-      max-height: calc(100vh - 80px);
+      max-height: calc(100vh - 80px); max-height: calc(100dvh - 80px);
       display: flex; flex-direction: column; padding: 0;
     }
     .cm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 24px 28px 8px; }
@@ -2182,7 +2218,7 @@ const EMOJIS = [
       position: relative; display: flex; align-items: center; justify-content: center;
       background: var(--color-bg-light); border-radius: var(--radius-md); overflow: hidden;
     }
-    .pv-img img { max-width: 100%; max-height: 55vh; object-fit: contain; display: block; }
+    .pv-img img { max-width: 100%; max-height: 55vh; max-height: 55dvh; object-fit: contain; display: block; }
     .pv-uploading {
       position: absolute; bottom: 10px; right: 10px;
       padding: 4px 10px; border-radius: var(--radius-pill);
@@ -2193,7 +2229,7 @@ const EMOJIS = [
     .pv-foot .input { flex: 1; }
 
     .lightbox-img {
-      max-width: calc(100vw - 64px); max-height: calc(100vh - 64px);
+      max-width: calc(100vw - 64px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px);
       border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
     }
 
@@ -2282,6 +2318,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly Megaphone = Megaphone;
   readonly Send = Send;
   readonly Reply = Reply;
+  readonly Copy = Copy;
   readonly Sparkles = Sparkles;
   readonly Mail = Mail;
   readonly SquarePen = SquarePen;
@@ -2423,6 +2460,21 @@ export class InboxComponent implements OnInit, OnDestroy {
   draft = signal('');
   /** Mensaje que se está citando; null si no se responde a nada. */
   replyTo = signal<Msg | null>(null);
+  /** Mensaje con el menú de pulsación larga abierto (HU38). */
+  msgMenu = signal<Msg | null>(null);
+
+  openMsgMenu(m: Msg) {
+    if (!m.text && this.isEmail()) return;
+    this.msgMenu.set(m);
+  }
+
+  copyMsg(m: Msg) {
+    this.msgMenu.set(null);
+    navigator.clipboard.writeText(m.text || '').then(
+      () => this.toast.success('Texto copiado'),
+      () => this.toast.error('No se pudo copiar el texto'),
+    );
+  }
   attachment = signal<{ url: string; key?: string; type: MsgType; mimeType: string; filename: string; size: number } | null>(null);
   /** Hoja de acciones del chat en móvil. */
   threadMenu = signal(false);

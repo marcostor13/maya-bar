@@ -577,7 +577,7 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
     .picker-empty { font-size:12px; color:var(--color-text-muted); text-align:center; padding:12px; }
     .tpl-preview-overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px);
       display:flex; align-items:center; justify-content:center; z-index:120; }
-    .tpl-preview { width:calc(100% - 48px); max-width:720px; height:calc(100vh - 96px); background:var(--color-white);
+    .tpl-preview { width:calc(100% - 48px); max-width:720px; height:calc(100vh - 96px); height: calc(100dvh - 96px); background:var(--color-white);
       border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden; }
     .tpl-preview-head { display:flex; align-items:center; justify-content:space-between; padding:14px 20px;
       border-bottom:1px solid var(--color-border); }
@@ -723,7 +723,7 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
     /* Email preview modal */
     .email-preview-modal {
       background: var(--color-white); width: calc(100% - 48px); max-width: 700px;
-      max-height: 90vh; border-radius: 24px; overflow: hidden;
+      max-height: 90vh; max-height: 90dvh; border-radius: 24px; overflow: hidden;
       display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
     }
     .email-preview-header {
@@ -738,7 +738,7 @@ const VAR_SOURCES: { token: string; label: string; sample: string }[] = [
       .targeting-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
       .targeting-tab { flex: 0 0 auto; white-space: nowrap; }
       .email-toolbar { flex-wrap: wrap; }
-      .email-preview-modal { width: calc(100% - 24px); max-height: 85vh; }
+      .email-preview-modal { width: calc(100% - 24px); max-height: 85vh; max-height: 85dvh; }
       .email-preview-header { padding: 16px 18px; }
     }
 

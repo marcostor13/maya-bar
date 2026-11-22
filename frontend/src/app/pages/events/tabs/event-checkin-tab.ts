@@ -1,10 +1,33 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, HostListener, OnDestroy, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { LucideAngularModule, Check, ScanLine, Search, X } from 'lucide-angular';
+import {
+  LucideAngularModule,
+  Check,
+  Flashlight,
+  ScanLine,
+  Search,
+  Undo2,
+  Users,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-angular';
 import { ToastService } from '../../../shared/toast';
 import { EventsApiService } from '../../../core/api/events-api.service';
 import { Registration } from '../../../shared/models/event.model';
 import { EventDetailStore } from '../event-detail.store';
+import {
+  ScanOutcome,
+  groupLabel,
+  matchesCheckin,
+  outcomeFromError,
+  outcomeFromResult,
+  vibrationFor,
+} from './checkin-logic';
+
+const SOUND_KEY = 'maya.checkin.sound';
+const UNDO_MS = 6000;
+const RESULT_MS = 2000;
 
 @Component({
   selector: 'app-event-checkin-tab',
@@ -13,35 +36,38 @@ import { EventDetailStore } from '../event-detail.store';
   template: `
     <div class="p-6 animate-fade-in">
       <div class="checkin-toolbar">
-        <div class="search-box">
-          <lucide-icon [img]="Search" [size]="18"></lucide-icon>
-          <input type="text" placeholder="Buscar por nombre, email o ticket..."
-            [value]="regSearch()" (input)="regSearch.set($any($event.target).value)" />
-        </div>
-        <button class="btn btn-primary checkin-scan-btn" (click)="openScanner()">
-          <lucide-icon [img]="ScanLine" [size]="16" [strokeWidth]="2.5"></lucide-icon>
-          Escanear QR
+        <button type="button" class="btn btn-primary btn-lg checkin-scan-btn" (click)="openScanner()">
+          <lucide-icon [img]="ScanLine" [size]="18" [strokeWidth]="2.5"></lucide-icon>
+          Escanear entradas
         </button>
-        <div class="stats-mini">
-          <strong>{{ checkedInCount() }}</strong> / {{ totalAttendees() }} presentes
+        <div class="stats-mini" aria-live="polite">
+          <strong>{{ checkedInCount() }}</strong> / {{ totalAttendees() }} personas presentes
         </div>
       </div>
-      @if (filteredRegistrations().length === 0) {
+
+      <div class="search-box">
+        <lucide-icon [img]="Search" [size]="18"></lucide-icon>
+        <input type="search" class="input" placeholder="Buscar por nombre, email, teléfono o ticket"
+          aria-label="Buscar invitado" enterkeyhint="search"
+          [value]="search()" (input)="search.set($any($event.target).value)" />
+      </div>
+
+      @if (list().length === 0) {
         <div class="regs-empty">
           <lucide-icon [img]="Search" [size]="48" [strokeWidth]="1.5"></lucide-icon>
-          <p>No se encontraron asistentes con ese criterio.</p>
+          <p>{{ search() ? 'No se encontraron invitados con ese criterio.' : 'Aún no hay registros confirmados.' }}</p>
         </div>
       } @else {
         <div class="checkin-list">
-          @for (r of filteredRegistrations(); track r._id) {
+          @for (r of list(); track r._id) {
             <div class="checkin-card" [class.is-checked]="r.checkedIn">
               <div class="checkin-info">
                 <strong>{{ r.name }}</strong>
                 <div class="checkin-meta">
-                  <span>{{ r.email }}</span>
-                  <span class="dot">·</span>
+                  @if (r.partySize > 1) {
+                    <span class="chip-group"><lucide-icon [img]="Users" [size]="12"></lucide-icon> {{ groupLabel(r.partySize) }}</span>
+                  }
                   <code class="ticket-code-sm">{{ r.ticketCode }}</code>
-                  <span class="dot">·</span>
                   <span>{{ r.impulsadorName || 'Directo' }}</span>
                 </div>
               </div>
@@ -49,11 +75,11 @@ import { EventDetailStore } from '../event-detail.store';
                 @if (r.checkedIn) {
                   <div class="checked-label">
                     <lucide-icon [img]="Check" [size]="16" [strokeWidth]="3"></lucide-icon>
-                    Listo
+                    Ingresó
                   </div>
                 } @else {
-                  <button class="btn btn-sm btn-primary" (click)="doCheckIn(r)" [disabled]="checkingInId() === r._id">
-                    {{ checkingInId() === r._id ? '...' : 'Check-in' }}
+                  <button type="button" class="btn btn-primary" (click)="doCheckIn(r)" [disabled]="checkingInId() === r._id">
+                    {{ checkingInId() === r._id ? 'Registrando...' : 'Dar ingreso' }}
                   </button>
                 }
               </div>
@@ -63,111 +89,156 @@ import { EventDetailStore } from '../event-detail.store';
       }
     </div>
 
-    <!-- ── QR Scanner modal ── -->
+    <!-- ── Deshacer el último ingreso ── -->
+    @if (undo(); as u) {
+      <div class="undo-bar" role="status">
+        <span>Ingreso de <strong>{{ u.name }}</strong> registrado</span>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="undoLast()" [disabled]="undoing()">
+          <lucide-icon [img]="Undo2" [size]="14"></lucide-icon>
+          Deshacer
+        </button>
+      </div>
+    }
+
+    <!-- ── Escáner a pantalla completa ── -->
     @if (scannerOpen()) {
-      <div class="overlay" role="dialog" aria-modal="true">
-        <div class="scanner-modal">
-          <div class="scanner-header">
-            <h3>Escanear código QR</h3>
-            <button class="btn btn-ghost btn-icon" (click)="closeScanner()" aria-label="Cerrar">
-              <lucide-icon [img]="X" [size]="20" [strokeWidth]="2.5"></lucide-icon>
+      <div class="scanner-screen" role="dialog" aria-modal="true" aria-label="Escanear entradas">
+        <div class="scanner-top">
+          <div class="scanner-count"><strong>{{ checkedInCount() }}</strong> / {{ totalAttendees() }} presentes</div>
+          <div class="scanner-tools">
+            @if (torchAvailable()) {
+              <button type="button" class="scanner-btn" [class.on]="torchOn()" (click)="toggleTorch()"
+                [attr.aria-pressed]="torchOn()" aria-label="Linterna">
+                <lucide-icon [img]="Flashlight" [size]="20"></lucide-icon>
+              </button>
+            }
+            <button type="button" class="scanner-btn" (click)="toggleSound()" [attr.aria-pressed]="soundOn()"
+              [attr.aria-label]="soundOn() ? 'Silenciar pitido' : 'Activar pitido'">
+              <lucide-icon [img]="soundOn() ? Volume2 : VolumeX" [size]="20"></lucide-icon>
+            </button>
+            <button type="button" class="scanner-btn" (click)="closeScanner()" aria-label="Cerrar escáner">
+              <lucide-icon [img]="X" [size]="22" [strokeWidth]="2.5"></lucide-icon>
             </button>
           </div>
-          <div id="qr-reader" class="qr-reader"></div>
-          @if (lastScanResult()) {
-            <div class="scan-result" [class.already]="lastScanResult()!.alreadyCheckedIn">
-              <lucide-icon [img]="Check" [size]="20" [strokeWidth]="3"></lucide-icon>
-              <div>
-                <strong>{{ lastScanResult()!.name }}</strong>
-                <span>{{ lastScanResult()!.impulsadorName ? 'Invitado por ' + lastScanResult()!.impulsadorName : 'Invitación directa' }}</span>
-              </div>
-            </div>
-          }
-          <p class="scanner-hint">Apunta la cámara al código QR de la invitación.</p>
         </div>
+
+        <div id="qr-reader" class="qr-reader"></div>
+
+        @if (result(); as res) {
+          <div class="scan-result" [class]="'scan-result ' + res.kind" role="alert">
+            <lucide-icon [img]="res.kind === 'error' ? X : Check" [size]="36" [strokeWidth]="3"></lucide-icon>
+            <div>
+              <strong>{{ res.title }}</strong>
+              <span>{{ res.detail }}</span>
+            </div>
+          </div>
+        } @else {
+          <p class="scanner-hint">Apunta la cámara al QR de la entrada. Puedes leer una tras otra.</p>
+        }
       </div>
     }
   `,
   styles: [`
     :host { display: block; }
-
     .p-6 { padding: 24px; }
 
     .regs-empty { padding:64px 40px; text-align:center; color:var(--color-text-muted); display:flex; flex-direction:column; align-items:center; gap:16px; background:var(--color-bg-app); border-radius:16px; border:1px dashed var(--color-border); }
 
-    /* ── Check-in ── */
-    .checkin-toolbar { display:flex; align-items:center; gap:16px; margin-bottom:24px; }
-    .search-box { flex:1; position:relative; display:flex; align-items:center; }
+    .checkin-toolbar { display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
+    .stats-mini { font-size:14px; color:var(--color-text-muted); }
+    .stats-mini strong { color:var(--color-brand); font-size:20px; }
+    .search-box { position:relative; display:flex; align-items:center; margin-bottom:20px; }
     .search-box lucide-icon { position:absolute; left:16px; color:var(--color-text-muted); pointer-events:none; }
-    .search-box input { width:100%; padding:12px 16px 12px 48px; border-radius:12px; border:1px solid var(--color-border); background:var(--color-bg-app); font-size:15px; outline:none; transition:all 0.2s; }
-    .search-box input:focus { border-color:var(--color-brand); background:#fff; box-shadow:0 0 0 4px var(--color-brand-light); }
-    .stats-mini { font-size:14px; color:var(--color-text-muted); white-space:nowrap; }
-    .stats-mini strong { color:var(--color-brand); font-size:18px; }
+    .search-box .input { width:100%; padding-left:46px; }
+
     .checkin-list { display:flex; flex-direction:column; gap:12px; }
-    .checkin-card { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; background:#fff; border:1px solid var(--color-border); border-radius:16px; transition:all 0.2s; }
-    .checkin-card:hover { border-color:var(--color-brand); transform:translateX(4px); }
-    .checkin-card.is-checked { background:var(--color-brand-light); border-color:rgba(225,29,72,0.2); }
-    .checkin-info { display:flex; flex-direction:column; gap:4px; }
+    .checkin-card { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; background:var(--color-white); border:1px solid var(--color-border); border-radius:16px; }
+    .checkin-card.is-checked { background:var(--color-bg-light); }
+    .checkin-info { display:flex; flex-direction:column; gap:6px; min-width:0; }
     .checkin-info strong { font-size:16px; color:var(--color-text-main); }
-    .checkin-meta { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--color-text-muted); }
-    .dot { opacity:0.5; }
-    .ticket-code-sm { font-family:monospace; font-weight:700; color:var(--color-brand); background:rgba(255,255,255,0.5); padding:2px 6px; border-radius:4px; }
-    .checked-label { display:flex; align-items:center; gap:6px; color:var(--color-brand); font-weight:700; font-size:14px; text-transform:uppercase; }
+    .checkin-meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:13px; color:var(--color-text-muted); }
+    .chip-group { display:inline-flex; align-items:center; gap:4px; font-weight:700; color:var(--color-text-main); background:var(--color-bg-app); border:1px solid var(--color-border); padding:2px 8px; border-radius:var(--radius-pill); }
+    .ticket-code-sm { font-family:monospace; font-weight:700; color:var(--color-brand); }
+    .checked-label { display:flex; align-items:center; gap:6px; color:var(--color-success); font-weight:700; font-size:14px; }
 
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .undo-bar {
+      position: fixed; z-index: 110; left: 16px; right: 16px;
+      bottom: calc(16px + var(--bottom-nav-height) + var(--safe-bottom));
+      max-width: 480px; margin: 0 auto;
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding: 12px 16px; background: var(--color-text-main); color: var(--color-white);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); font-size: 14px;
+    }
 
-    /* ── QR Scanner modal ── */
-    .scanner-modal { width:calc(100% - 48px); max-width:420px; padding:28px 32px; background:#fff; border-radius:24px; box-shadow:var(--shadow-lg); }
-    .scanner-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
-    .scanner-header h3 { margin:0; font-size:18px; font-weight:700; font-family:var(--font-heading); }
-    .qr-reader { width:100%; border-radius:16px; overflow:hidden; background:#000; min-height:250px; }
-    .scanner-hint { text-align:center; color:var(--color-text-muted); font-size:13px; margin:16px 0 0; }
-    .scan-result { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:14px; background:#dcfce7; color:#16a34a; margin-top:16px; }
-    .scan-result.already { background:#fef3c7; color:#92400e; }
-    .scan-result div { display:flex; flex-direction:column; gap:2px; font-size:13px; }
-    .scan-result strong { font-size:15px; }
+    /* ── Escáner ── */
+    .scanner-screen {
+      position: fixed; inset: 0; z-index: 130;
+      height: 100vh; height: 100dvh;
+      display: flex; flex-direction: column;
+      background: var(--color-text-main); color: var(--color-white);
+      padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(12px + var(--safe-left));
+      box-sizing: border-box;
+    }
+    .scanner-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .scanner-count { font-size:15px; }
+    .scanner-count strong { font-size:22px; }
+    .scanner-tools { display:flex; gap:8px; }
+    .scanner-btn { width:48px; height:48px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.14); color:var(--color-white); cursor:pointer; }
+    .scanner-btn.on { background:var(--color-warning); color:var(--color-text-main); }
+    .qr-reader { flex:1; min-height:0; width:100%; border-radius:20px; overflow:hidden; background:#000; }
+    .scanner-hint { text-align:center; opacity:.8; font-size:14px; margin:16px 0 0; }
+    .scan-result { display:flex; align-items:center; gap:16px; margin-top:16px; padding:18px 20px; border-radius:20px; color:var(--color-white); }
+    .scan-result.ok { background:var(--color-success); }
+    .scan-result.already { background:var(--color-warning); color:var(--color-text-main); }
+    .scan-result.error { background:var(--color-error); }
+    .scan-result div { display:flex; flex-direction:column; gap:4px; }
+    .scan-result strong { font-size:20px; line-height:1.2; }
+    .scan-result span { font-size:15px; }
+
+    @media (hover: hover) { .checkin-card:hover { border-color: var(--color-brand); } }
 
     @media (max-width: 768px) {
       .p-6 { padding: 16px; }
-
-      .checkin-card { flex-wrap: wrap; gap: 12px; }
+      .checkin-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+      .checkin-scan-btn { justify-content: center; }
+      .stats-mini { text-align: center; }
+      .checkin-card { flex-wrap: wrap; padding: 14px; }
       .checkin-action { width: 100%; }
       .checkin-action .btn { width: 100%; justify-content: center; }
-      .checkin-meta { flex-wrap: wrap; }
-
-      .checkin-toolbar { flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
-      .search-box { flex: 1 1 100%; }
-      .checkin-scan-btn { flex: 1; justify-content: center; }
-      .stats-mini { flex-shrink: 0; text-align: right; }
-
-      .overlay { padding: 0; }
-      .scanner-modal { padding: 22px 20px; }
-    }
-
-    @media (max-width: 480px) {
-      .checkin-card { padding: 14px; }
     }
   `],
 })
-export class EventCheckinTabComponent {
+export class EventCheckinTabComponent implements OnDestroy {
   private store = inject(EventDetailStore);
   private api = inject(EventsApiService);
   private toast = inject(ToastService);
 
   readonly Check = Check; readonly ScanLine = ScanLine; readonly Search = Search; readonly X = X;
+  readonly Users = Users; readonly Undo2 = Undo2; readonly Flashlight = Flashlight;
+  readonly Volume2 = Volume2; readonly VolumeX = VolumeX;
+  readonly groupLabel = groupLabel;
 
-  regSearch = this.store.regSearch;
-  filteredRegistrations = this.store.filteredRegistrations;
   checkedInCount = this.store.checkedInCount;
   totalAttendees = this.store.totalAttendees;
 
-  checkingInId = signal<string | null>(null);
+  /** Búsqueda propia: no depende de los filtros de Asistentes (HU30). */
+  search = signal('');
+  list = computed(() => this.store.confirmedRegistrations().filter(r => matchesCheckin(r, this.search())));
 
-  // Check-in QR scan
+  checkingInId = signal<string | null>(null);
+  undo = signal<Registration | null>(null);
+  undoing = signal(false);
+  private undoTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Escáner
   scannerOpen = signal(false);
-  scanning = signal(false);
-  lastScanResult = signal<{ name: string; impulsadorName: string | null; alreadyCheckedIn: boolean } | null>(null);
+  result = signal<ScanOutcome | null>(null);
+  torchAvailable = signal(false);
+  torchOn = signal(false);
+  soundOn = signal(this.readSound());
   private html5Qrcode: import('html5-qrcode').Html5Qrcode | null = null;
+  private resultTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanLocked = false;
 
   doCheckIn(reg: Registration) {
     const id = this.store.eventId();
@@ -175,66 +246,159 @@ export class EventCheckinTabComponent {
     this.checkingInId.set(reg._id);
     this.api.checkIn(id, reg._id).subscribe({
       next: (updated) => {
-        this.store.registrations.update(prev => prev.map(r => r._id === updated._id ? updated : r));
-        this.toast.success(`Check-in de ${reg.name} completado`);
+        this.store.applyRegistration(updated);
+        this.toast.success(`Ingreso de ${reg.name} registrado`);
+        this.offerUndo(updated);
         this.checkingInId.set(null);
       },
-      error: () => {
-        this.toast.error('No se pudo realizar el check-in');
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'No se pudo registrar el ingreso');
         this.checkingInId.set(null);
-      }
+      },
     });
   }
 
-  // ── Check-in por QR ──────────────────────────────────────────────────────
+  private offerUndo(reg: Registration) {
+    this.undo.set(reg);
+    if (this.undoTimer) clearTimeout(this.undoTimer);
+    this.undoTimer = setTimeout(() => this.undo.set(null), UNDO_MS);
+  }
+
+  undoLast() {
+    const reg = this.undo();
+    const id = this.store.eventId();
+    if (!reg || !id) return;
+    this.undoing.set(true);
+    this.api.undoCheckIn(id, reg._id).subscribe({
+      next: (updated) => {
+        this.store.applyRegistration(updated);
+        this.toast.success(`Se quitó el ingreso de ${reg.name}`);
+        this.undo.set(null);
+        this.undoing.set(false);
+      },
+      error: (err) => {
+        this.toast.error(err?.error?.message || 'No se pudo deshacer');
+        this.undoing.set(false);
+      },
+    });
+  }
+
+  // ── Escáner ──────────────────────────────────────────────────────────────
 
   async openScanner() {
-    this.lastScanResult.set(null);
+    this.result.set(null);
     this.scannerOpen.set(true);
-    this.scanning.set(true);
     const { Html5Qrcode } = await import('html5-qrcode');
     setTimeout(async () => {
       try {
         this.html5Qrcode = new Html5Qrcode('qr-reader');
         await this.html5Qrcode.start(
           { facingMode: 'environment' },
-          { fps: 10, qrbox: 250 },
-          (decodedText) => this.onQrDecoded(decodedText),
-          () => { /* ignore per-frame decode errors */ },
+          {
+            fps: 10,
+            // Caja de lectura proporcional a la pantalla, no fija en 250 px.
+            qrbox: (w: number, h: number) => {
+              const side = Math.max(160, Math.floor(Math.min(w, h) * 0.7));
+              return { width: side, height: side };
+            },
+          },
+          (decodedText) => void this.onQrDecoded(decodedText),
+          () => { /* errores de decodificación por cuadro: normales */ },
         );
+        this.detectTorch();
       } catch {
         this.toast.error('No se pudo acceder a la cámara');
-        this.scanning.set(false);
       }
     });
   }
 
+  private detectTorch() {
+    try {
+      const caps = this.html5Qrcode?.getRunningTrackCapabilities() as { torch?: boolean } | undefined;
+      this.torchAvailable.set(!!caps?.torch);
+    } catch {
+      this.torchAvailable.set(false);
+    }
+  }
+
+  async toggleTorch() {
+    const next = !this.torchOn();
+    try {
+      await this.html5Qrcode?.applyVideoConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
+      this.torchOn.set(next);
+    } catch {
+      this.toast.error('No se pudo usar la linterna');
+    }
+  }
+
+  toggleSound() {
+    const next = !this.soundOn();
+    this.soundOn.set(next);
+    try { localStorage.setItem(SOUND_KEY, next ? '1' : '0'); } catch { /* sin almacenamiento */ }
+  }
+
+  private readSound(): boolean {
+    try { return localStorage.getItem(SOUND_KEY) === '1'; } catch { return false; }
+  }
+
   async closeScanner() {
     if (this.html5Qrcode) {
-      try { await this.html5Qrcode.stop(); this.html5Qrcode.clear(); } catch { /* already stopped */ }
+      try { await this.html5Qrcode.stop(); this.html5Qrcode.clear(); } catch { /* ya parado */ }
       this.html5Qrcode = null;
     }
-    this.scanning.set(false);
+    this.torchOn.set(false);
     this.scannerOpen.set(false);
   }
 
-  private scanLocked = false;
-  private async onQrDecoded(code: string) {
+  /** Público para las pruebas: procesa una lectura y deja el escáner abierto. */
+  async onQrDecoded(code: string) {
     if (this.scanLocked) return;
-    this.scanLocked = true;
     const id = this.store.eventId();
-    if (!id) { this.scanLocked = false; return; }
-
+    if (!id) return;
+    this.scanLocked = true;
+    let outcome: ScanOutcome;
     try {
       const res = await firstValueFrom(this.api.checkInByCode(id, code));
-      this.store.registrations.update(prev => prev.map(r => r._id === res._id ? res : r));
-      this.lastScanResult.set({ name: res.name, impulsadorName: res.impulsadorName, alreadyCheckedIn: res.alreadyCheckedIn });
-      this.toast.success(res.alreadyCheckedIn ? `${res.name} ya tenía check-in` : `Check-in de ${res.name} completado`);
+      this.store.applyRegistration(res);
+      outcome = outcomeFromResult(res);
+      if (outcome.kind === 'ok') this.offerUndo(res);
     } catch (err: unknown) {
-      const e = err as { error?: { message?: string } };
-      this.toast.error(e.error?.message || 'Código no válido');
-    } finally {
-      setTimeout(() => { this.scanLocked = false; }, 2000);
+      outcome = outcomeFromError(err);
     }
+    this.showResult(outcome);
+    setTimeout(() => { this.scanLocked = false; }, RESULT_MS);
+  }
+
+  private showResult(outcome: ScanOutcome) {
+    this.result.set(outcome);
+    try { navigator.vibrate?.(vibrationFor(outcome.kind)); } catch { /* sin vibración */ }
+    if (this.soundOn()) this.beep(outcome.kind === 'error' ? 220 : 880);
+    if (this.resultTimer) clearTimeout(this.resultTimer);
+    this.resultTimer = setTimeout(() => this.result.set(null), RESULT_MS);
+  }
+
+  private beep(freq: number) {
+    try {
+      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = freq;
+      gain.gain.value = 0.15;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+      osc.onended = () => void ctx.close();
+    } catch { /* sin audio */ }
+  }
+
+  @HostListener('document:keydown.escape')
+  onEsc() { if (this.scannerOpen()) void this.closeScanner(); }
+
+  ngOnDestroy() {
+    if (this.undoTimer) clearTimeout(this.undoTimer);
+    if (this.resultTimer) clearTimeout(this.resultTimer);
+    void this.closeScanner();
   }
 }

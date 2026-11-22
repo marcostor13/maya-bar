@@ -36,33 +36,47 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
         </div>
       </div>
 
+      <!-- Índice de secciones (HU39): en el móvil se llega a cualquiera en un toque -->
+      <nav class="cfg-index" aria-label="Secciones de configuración">
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-brand')">Marca</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-push')">Notificaciones</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-wa')">WhatsApp</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-ig')">Instagram</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-fb')">Messenger</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-email')">Correo</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-resend')">Resend</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-sms')">SMS</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-cal')">Calendario</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-ai')">IA</button>
+      </nav>
+
       <!-- Logo y favicon de la landing de eventos (HU26) -->
-      <app-company-branding-settings />
+      <section id="cfg-brand" class="cfg-section"><app-company-branding-settings /></section>
 
       <!-- Notificaciones push (app Android y navegador) -->
-      <app-notifications-settings />
+      <section id="cfg-push" class="cfg-section"><app-notifications-settings /></section>
 
       <!-- WhatsApp Accounts Card -->
-      <app-whatsapp-settings />
+      <section id="cfg-wa" class="cfg-section"><app-whatsapp-settings /></section>
 
       <!-- Instagram Accounts Card -->
-      <app-instagram-settings />
+      <section id="cfg-ig" class="cfg-section"><app-instagram-settings /></section>
 
       <!-- Messenger Accounts Card -->
-      <app-messenger-settings />
+      <section id="cfg-fb" class="cfg-section"><app-messenger-settings /></section>
 
       <!-- Correo electrónico -->
-      <app-email-settings />
+      <section id="cfg-email" class="cfg-section"><app-email-settings /></section>
 
-      <app-resend-settings />
+      <section id="cfg-resend" class="cfg-section"><app-resend-settings /></section>
 
-      <app-sms-settings />
+      <section id="cfg-sms" class="cfg-section"><app-sms-settings /></section>
 
       <!-- Calendario y videollamadas (Meet / Teams) -->
-      <app-calendar-settings />
+      <section id="cfg-cal" class="cfg-section"><app-calendar-settings /></section>
 
       <!-- IA / Agentes Card -->
-      <div class="section-card">
+      <div class="section-card cfg-section" id="cfg-ai">
         <div class="section-header">
           <div class="section-icon" style="background: #EEF2FF;">
             <lucide-icon [img]="Sparkles" [size]="22" style="color: #4F46E5;"></lucide-icon>
@@ -162,7 +176,12 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
     </div>
   `,
   styles: [`
-    .page { width: 100%; box-sizing: border-box; padding: 32px 40px; max-width: 900px; }
+    .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
+    .cfg-index { display: flex; flex-wrap: wrap; gap: 8px; margin: -12px 0 24px; }
+    .cfg-chip { min-height: 36px; padding: 0 14px; border: 1px solid var(--color-border); border-radius: var(--radius-pill);
+      background: var(--color-white); color: var(--color-text-main); font: 600 13px var(--font-base); cursor: pointer; white-space: nowrap; }
+    .cfg-chip:hover { border-color: var(--color-brand); color: var(--color-brand); }
+    .cfg-section { display: block; scroll-margin-top: 80px; }
     .page-header { margin-bottom: 32px; }
     .page-title { font-family: var(--font-heading); font-size: 26px; font-weight: 700; color: var(--color-text-main); margin: 0 0 4px; }
     .page-subtitle { font-size: 14px; color: var(--color-text-muted); margin: 0; }
@@ -191,7 +210,7 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
 
     /* Modal */
     .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .modal-card { background: var(--color-white); border-radius: var(--radius-lg); width: calc(100% - 48px); max-width: 520px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; max-height: 90vh; }
+    .modal-card { background: var(--color-white); border-radius: var(--radius-lg); width: calc(100% - 48px); max-width: 520px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; max-height: 90vh; max-height: 90dvh; }
     .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
     .modal-title { font-family: var(--font-heading); font-size: 17px; font-weight: 700; margin: 0; }
     .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; }
@@ -202,6 +221,17 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
 
     @media (max-width: 968px) {
       .page { padding: 28px 24px; }
+    }
+
+    @media (max-width: 968px) {
+      .cfg-index {
+        position: sticky; z-index: 15; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+        top: calc(var(--app-header-h) + var(--safe-top)); margin: -8px -16px 16px; padding: 8px 16px;
+        background: var(--color-bg-app);
+      }
+      .cfg-index::-webkit-scrollbar { display: none; }
+      .cfg-chip { min-height: 40px; flex: 0 0 auto; }
+      .cfg-section { scroll-margin-top: calc(var(--app-header-h) + var(--safe-top) + 64px); }
     }
 
     @media (max-width: 768px) {
@@ -225,6 +255,11 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
   `],
 })
 export class SettingsComponent implements OnInit {
+  /** Salta a una sección desde el índice (HU39). */
+  goTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   private api = inject(AccountsApiService);
   private toast = inject(ToastService);
 

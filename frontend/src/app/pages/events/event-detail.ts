@@ -1,6 +1,7 @@
-import { Component, ElementRef, OnInit, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ToastService } from '../../shared/toast';
+import { ConfirmService } from '../../shared/confirm';
 import { injectRoles } from '../../shared/roles';
 import { EventsApiService } from '../../core/api/events-api.service';
 import {
@@ -16,9 +17,11 @@ import {
   ClipboardList,
   LayoutTemplate,
   Link2,
+  Save,
 } from 'lucide-angular';
 import { InvitationDesignerComponent, type DesignSpec } from './invitation-designer';
 import { EventDetailStore } from './event-detail.store';
+import { ActiveTab, GROUP_FIRST, SAVE_TABS, TAB_GROUP, TabGroup, initialTab, isTab } from './event-tabs';
 import { EventGeneralTabComponent } from './tabs/event-general-tab';
 import { EventMediaTabComponent } from './tabs/event-media-tab';
 import { EventFormTabComponent } from './tabs/event-form-tab';
@@ -27,8 +30,6 @@ import { EventRegistrationsTabComponent } from './tabs/event-registrations-tab';
 import { EventImpulsadoresTabComponent } from './tabs/event-impulsadores-tab';
 import { EventCheckinTabComponent } from './tabs/event-checkin-tab';
 import { EventStatsTabComponent } from './tabs/event-stats-tab';
-
-type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 'checkin' | 'stats' | 'invitation' | 'impulsadores';
 
 @Component({
   selector: 'app-event-detail',
@@ -82,49 +83,59 @@ type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 
           <div class="main-column">
             <div class="card p-0 overflow-hidden">
 
+              <!-- ── Grupos (solo móvil): configurar el evento u operarlo (HU29) ── -->
+              @if (!isNew()) {
+                <div class="tab-groups" role="tablist" aria-label="Secciones del evento">
+                  <button type="button" role="tab" class="tab-group" [class.active]="group() === 'config'"
+                    [attr.aria-selected]="group() === 'config'" (click)="selectGroup('config')">Configurar</button>
+                  <button type="button" role="tab" class="tab-group" [class.active]="group() === 'ops'"
+                    [attr.aria-selected]="group() === 'ops'" (click)="selectGroup('ops')">Operar</button>
+                </div>
+              }
+
               <!-- ── Tabs ── -->
               <div class="tabs-wrap">
                 <div class="tabs" #tabsBar>
-                  <button class="tab" [class.active]="activeTab() === 'general'" (click)="selectTab('general', $event)">
+                  <button class="tab" [class.tab-other-group]="isOtherGroup('general')" [class.active]="activeTab() === 'general'" (click)="selectTab('general', $event)">
                     <lucide-icon [img]="FileText" [size]="14"></lucide-icon>
                     General
                   </button>
-                  <button class="tab" [class.active]="activeTab() === 'media'" (click)="selectTab('media', $event)">
+                  <button class="tab" [class.tab-other-group]="isOtherGroup('media')" [class.active]="activeTab() === 'media'" (click)="selectTab('media', $event)">
                     <lucide-icon [img]="Layers" [size]="14"></lucide-icon>
                     Medios
                     @if (mediaFiles().length > 0) {
                       <span class="tab-badge">{{ mediaFiles().length }}</span>
                     }
                   </button>
-                  <button class="tab" [class.active]="activeTab() === 'form'" (click)="selectTab('form', $event)">
+                  <button class="tab" [class.tab-other-group]="isOtherGroup('form')" [class.active]="activeTab() === 'form'" (click)="selectTab('form', $event)">
                     <lucide-icon [img]="ClipboardList" [size]="14"></lucide-icon>
                     Formulario
                     @if (formFields().length > 0) {
                       <span class="tab-badge">{{ formFields().length }}</span>
                     }
                   </button>
-                  <button class="tab tab-ai" [class.active]="activeTab() === 'invitation'" (click)="selectTab('invitation', $event)">
+                  <button class="tab tab-ai" [class.tab-other-group]="isOtherGroup('invitation')" [class.active]="activeTab() === 'invitation'" (click)="selectTab('invitation', $event)">
                     <lucide-icon [img]="LayoutTemplate" [size]="14"></lucide-icon>
                     Invitación
                   </button>
                   @if (!isNew()) {
-                    <button class="tab tab-ai" [class.active]="activeTab() === 'marketing'" (click)="selectTab('marketing', $event)">
+                    <button class="tab tab-ai" [class.tab-other-group]="isOtherGroup('marketing')" [class.active]="activeTab() === 'marketing'" (click)="selectTab('marketing', $event)">
                       <lucide-icon [img]="Zap" [size]="14"></lucide-icon>
                       Marketing IA
                     </button>
-                    <button class="tab" [class.active]="activeTab() === 'registrations'" (click)="selectTab('registrations', $event)">
+                    <button class="tab" [class.tab-other-group]="isOtherGroup('registrations')" [class.active]="activeTab() === 'registrations'" (click)="selectTab('registrations', $event)">
                       <lucide-icon [img]="Users" [size]="14"></lucide-icon>
                       Asistentes
                     </button>
-                    <button class="tab" [class.active]="activeTab() === 'impulsadores'" (click)="selectTab('impulsadores', $event)">
+                    <button class="tab" [class.tab-other-group]="isOtherGroup('impulsadores')" [class.active]="activeTab() === 'impulsadores'" (click)="selectTab('impulsadores', $event)">
                       <lucide-icon [img]="Link2" [size]="14"></lucide-icon>
                       Impulsadores
                     </button>
-                    <button class="tab" [class.active]="activeTab() === 'checkin'" (click)="selectTab('checkin', $event)">
+                    <button class="tab" [class.tab-other-group]="isOtherGroup('checkin')" [class.active]="activeTab() === 'checkin'" (click)="selectTab('checkin', $event)">
                       <lucide-icon [img]="UserCheck" [size]="14"></lucide-icon>
                       Check-in
                     </button>
-                    <button class="tab" [class.active]="activeTab() === 'stats'" (click)="selectTab('stats', $event)">
+                    <button class="tab" [class.tab-other-group]="isOtherGroup('stats')" [class.active]="activeTab() === 'stats'" (click)="selectTab('stats', $event)">
                       <lucide-icon [img]="PieChart" [size]="14"></lucide-icon>
                       Estadísticas
                     </button>
@@ -175,6 +186,19 @@ type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 
               }
 
             </div>
+
+            <!-- ── Barra de guardado: visible en las pestañas que editan el evento (HU29) ── -->
+            @if (showSaveBar()) {
+              <div class="save-bar" role="region" aria-label="Guardar evento">
+                <span class="save-state" [class.dirty]="dirty()" aria-live="polite">
+                  {{ dirty() ? 'Cambios sin guardar' : (isNew() ? 'Evento sin crear' : 'Todo guardado') }}
+                </span>
+                <button type="button" class="btn btn-primary" (click)="save()" [disabled]="saving() || formInvalid()">
+                  <lucide-icon [img]="Save" [size]="16" [strokeWidth]="2.5"></lucide-icon>
+                  {{ saving() ? 'Guardando...' : (isNew() ? 'Crear evento' : 'Guardar') }}
+                </button>
+              </div>
+            }
           </div>
         </div>
       }
@@ -197,13 +221,30 @@ type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 
     /* ── Tabs ── */
     .tabs-wrap { position: relative; }
     .tabs-wrap::before, .tabs-wrap::after { content: ''; position: absolute; top: 0; bottom: 1px; width: 28px; pointer-events: none; z-index: 3; opacity: 0; transition: opacity 0.2s; }
-    .tabs-wrap::before { left: 0; background: linear-gradient(to right, #fafafa, transparent); }
-    .tabs-wrap::after { right: 0; background: linear-gradient(to left, #fafafa, transparent); }
-    .tabs { display: flex; border-bottom: 1px solid var(--color-border); background: #fafafa; padding: 0 16px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+    .tabs-wrap::before { left: 0; background: linear-gradient(to right, var(--color-bg-app), transparent); }
+    .tabs-wrap::after { right: 0; background: linear-gradient(to left, var(--color-bg-app), transparent); }
+    .tabs { display: flex; border-bottom: 1px solid var(--color-border); background: var(--color-bg-app); padding: 0 16px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
     .tabs::-webkit-scrollbar { display: none; }
     .tab { padding: 16px 20px; font-size: 14px; font-weight: 600; color: var(--color-text-muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; margin-bottom: -1px; white-space: nowrap; flex-shrink: 0; }
     .tab:hover { color: var(--color-text-main); }
-    .tab.active { color: var(--color-brand); border-bottom-color: var(--color-brand); background: #fff; }
+    .tab.active { color: var(--color-brand); border-bottom-color: var(--color-brand); background: var(--color-white); }
+
+    /* ── Grupos de pestañas (solo móvil) ── */
+    .tab-groups { display: none; }
+    .tab-group { flex: 1; min-height: 40px; border: none; border-radius: var(--radius-pill); background: transparent; color: var(--color-text-muted); font: 600 14px var(--font-base); cursor: pointer; }
+    .tab-group.active { background: var(--color-white); color: var(--color-brand); box-shadow: var(--shadow-sm); }
+
+    /* ── Barra de guardado ── */
+    .save-bar {
+      position: sticky; z-index: 20;
+      bottom: calc(var(--bottom-nav-height) + var(--safe-bottom));
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-top: 16px; padding: 12px 16px;
+      background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+    }
+    .save-state { font-size: 14px; font-weight: 600; color: var(--color-text-muted); }
+    .save-state.dirty { color: var(--color-warning); }
     .tab-ai { color: var(--color-brand); opacity: 0.8; }
     .tab-ai.active { opacity: 1; }
     .tab-badge { background: var(--color-brand); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 99px; min-width: 18px; text-align: center; }
@@ -229,6 +270,12 @@ type ActiveTab = 'general' | 'media' | 'form' | 'marketing' | 'registrations' | 
       .tabs-wrap::before, .tabs-wrap::after { opacity: 1; }
       .tabs { padding: 0 8px; }
       .tab { padding: 13px 12px; font-size: 13px; gap: 5px; }
+
+      .tab-groups { display: flex; gap: 4px; margin: 12px 12px 4px; padding: 4px; background: var(--color-bg-app); border: 1px solid var(--color-border); border-radius: var(--radius-pill); }
+      .tab.tab-other-group { display: none; }
+
+      .save-bar { margin-top: 12px; padding: 10px 12px; }
+      .save-bar .btn { flex: 1; justify-content: center; max-width: 220px; }
     }
 
     @media (max-width: 480px) {
@@ -245,13 +292,18 @@ export class EventDetailComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private host = inject(ElementRef<HTMLElement>);
+  private confirm = inject(ConfirmService);
 
   readonly Zap = Zap; readonly Users = Users; readonly ExternalLink = ExternalLink;
   readonly ArrowLeft = ArrowLeft; readonly PieChart = PieChart; readonly UserCheck = UserCheck;
   readonly FileText = FileText; readonly Layers = Layers; readonly ClipboardList = ClipboardList;
-  readonly LayoutTemplate = LayoutTemplate; readonly Link2 = Link2;
+  readonly LayoutTemplate = LayoutTemplate; readonly Link2 = Link2; readonly Save = Save;
 
   activeTab = signal<ActiveTab>('general');
+  /** Grupo visible en el móvil; sigue a la pestaña activa. */
+  group = computed<TabGroup>(() => TAB_GROUP[this.activeTab()]);
+  /** `?tab=` explícito: manda sobre la pestaña inicial automática. */
+  private tabFromUrl = false;
 
   isNew = this.store.isNew;
   eventId = this.store.eventId;
@@ -260,6 +312,11 @@ export class EventDetailComponent implements OnInit {
   mediaFiles = this.store.mediaFiles;
   formFields = this.store.formFields;
   design = this.store.design;
+  dirty = this.store.dirty;
+  saving = this.store.saving;
+  formInvalid = signal(false);
+
+  showSaveBar = computed(() => SAVE_TABS.has(this.activeTab()) || (this.activeTab() === 'invitation' && this.isNew()));
 
   private roles = injectRoles();
   canManage = this.roles.canManage;
@@ -271,6 +328,7 @@ export class EventDetailComponent implements OnInit {
         this.store.isNew.set(true);
         this.store.localId.set(this.route.snapshot.queryParamMap.get('localId'));
         this.store.loading.set(false);
+        this.store.markSaved();
         this.scrollActiveTabIntoView();
         if (!this.store.localId()) {
           this.toast.error('Local no especificado para el evento');
@@ -281,9 +339,38 @@ export class EventDetailComponent implements OnInit {
         this.loadEvent(id);
       }
     });
-    const tab = this.route.snapshot.queryParamMap.get('tab') as ActiveTab | null;
-    if (tab) this.activeTab.set(tab);
-    if (tab === 'impulsadores') this.store.loadImpulsadores();
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    if (isTab(tab)) {
+      this.tabFromUrl = true;
+      this.activeTab.set(tab);
+      if (tab === 'impulsadores') this.store.loadImpulsadores();
+    }
+    this.formInvalid.set(this.store.form.invalid);
+    this.store.form.statusChanges.subscribe(() => this.formInvalid.set(this.store.form.invalid));
+  }
+
+  isOtherGroup(tab: ActiveTab): boolean { return TAB_GROUP[tab] !== this.group(); }
+
+  selectGroup(g: TabGroup) {
+    if (this.group() !== g) this.selectTab(GROUP_FIRST[g]);
+  }
+
+  save() { this.store.saveEvent(); }
+
+  /** Lo usa el guard de la ruta: con cambios sin guardar, pregunta antes de salir. */
+  async canLeave(): Promise<boolean> {
+    if (!this.store.dirty()) return true;
+    return this.confirm.confirm({
+      title: 'Cambios sin guardar',
+      message: 'Si sales ahora se perderán los cambios del evento.',
+      confirmText: 'Salir sin guardar',
+      danger: true,
+    });
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  onBeforeUnload(e: BeforeUnloadEvent) {
+    if (this.store.dirty()) e.preventDefault();
   }
 
   selectTab(tab: ActiveTab, evt?: Event) {
@@ -311,12 +398,14 @@ export class EventDetailComponent implements OnInit {
         this.store.formFields.set(ev.formFields ?? []);
         this.store.design.set(ev.invitationDesign ?? null);
         this.store.form.patchValue({
-          title: ev.title, description: ev.description ?? '',
+          title: ev.title, description: ev.description ?? '', location: ev.location ?? '',
           date: ev.date ? ev.date.slice(0, 10) : '',
           startTime: ev.startTime ?? '', endTime: ev.endTime ?? '',
           price: ev.price, capacity: ev.capacity, status: ev.status,
         });
         this.store.loading.set(false);
+        this.store.markSaved();
+        if (!this.tabFromUrl) this.activeTab.set(initialTab(ev, new Date()));
         this.scrollActiveTabIntoView();
         this.store.loadRegistrations(id);
       },

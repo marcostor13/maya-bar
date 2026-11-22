@@ -10,6 +10,7 @@ import { Event } from './event.schema';
 import { EventRegistration } from './event-registration.schema';
 import { EventTemplate } from './event-template.schema';
 import { Tenant } from '../tenants/tenant.schema';
+import { Local } from '../locals/local.schema';
 import {
   CreateEventDto,
   UpdateEventDto,
@@ -51,6 +52,12 @@ export interface PublicBrand {
   favicon?: string;
 }
 
+/** Dónde es el evento, para el invitado (HU33): nunca datos internos del local. */
+export interface PublicVenue {
+  name: string;
+  address?: string;
+}
+
 // CRUD de eventos, slug, medios, diseño de invitación y compartir.
 @Injectable()
 export class EventsService {
@@ -62,6 +69,7 @@ export class EventsService {
     private templateModel: Model<EventTemplate>,
     private ai: AiService,
     @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
+    @InjectModel(Local.name) private localModel: Model<Local>,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -132,12 +140,13 @@ export class EventsService {
     event: Event;
     registrationsCount: number;
     brand: PublicBrand | null;
+    venue: PublicVenue | null;
   }> {
     const event = await this.eventModel
       .findOne({ slug, status: 'published' })
       .exec();
     if (!event) throw new NotFoundException('Evento no encontrado');
-    const [registrationsCount, tenant] = await Promise.all([
+    const [registrationsCount, tenant, local] = await Promise.all([
       this.regModel.countDocuments({
         eventId: event._id,
         status: 'confirmed',
@@ -147,6 +156,11 @@ export class EventsService {
         .findById(event.tenantId)
         .select('name branding.logo branding.favicon')
         .lean<Pick<Tenant, 'name' | 'branding'>>()
+        .exec(),
+      this.localModel
+        .findById(event.localId)
+        .select('name address')
+        .lean<Pick<Local, 'name' | 'address'>>()
         .exec(),
     ]);
     const brand: PublicBrand | null = tenant
@@ -158,7 +172,13 @@ export class EventsService {
             : {}),
         }
       : null;
-    return { event, registrationsCount, brand };
+    const address = event.location?.trim() || local?.address?.trim();
+    const venue: PublicVenue | null = local
+      ? { name: local.name, ...(address ? { address } : {}) }
+      : address
+        ? { name: address }
+        : null;
+    return { event, registrationsCount, brand, venue };
   }
 
   async updateEvent(

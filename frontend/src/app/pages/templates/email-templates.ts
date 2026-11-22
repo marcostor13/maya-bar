@@ -211,7 +211,7 @@ const TONES = [
     .overlay { position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); display:flex;
       align-items:center; justify-content:center; z-index:100; }
     .modal { width:calc(100% - 48px); max-width:480px; padding:28px 32px; display:flex; flex-direction:column; gap:14px;
-      max-height:calc(100vh - 48px); overflow-y:auto; box-sizing:border-box; }
+      max-height:calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow-y:auto; box-sizing:border-box; }
     .modal-head { display:flex; justify-content:space-between; align-items:center; }
     .modal-head h3 { margin:0; font-family:var(--font-heading); display:flex; align-items:center; gap:8px; }
     .modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }

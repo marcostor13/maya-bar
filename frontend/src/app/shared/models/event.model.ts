@@ -33,6 +33,7 @@ export interface AppEvent {
   localId: string;
   title: string;
   description?: string;
+  location?: string;
   date: string;
   startTime?: string;
   endTime?: string;
@@ -88,6 +89,7 @@ export interface ImpulsadorStat {
 export interface EventPayload {
   title?: string | null;
   description?: string | null;
+  location?: string | null;
   date?: string | null;
   startTime?: string | null;
   endTime?: string | null;

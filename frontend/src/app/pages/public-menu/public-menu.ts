@@ -167,11 +167,11 @@ const DIET_ICONS: Record<string, string> = {
     </div>
   `,
   styles: [`
-    .pub-page { min-height: 100vh; background: var(--color-bg-light); padding-bottom: 100px; font-family: var(--font-base); }
+    .pub-page { min-height: 100vh; min-height: 100dvh; background: var(--color-bg-light); padding-bottom: 100px; font-family: var(--font-base); }
 
     /* Loading/error */
     .pub-loading, .pub-error { display: flex; flex-direction: column; align-items: center; justify-content: center;
-      min-height: 100vh; gap: 16px; color: var(--color-text-muted); }
+      min-height: 100vh; min-height: 100dvh; gap: 16px; color: var(--color-text-muted); }
     .spinner { width: 36px; height: 36px; border: 3px solid var(--color-border); border-top-color: var(--color-brand);
       border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -241,7 +241,7 @@ const DIET_ICONS: Record<string, string> = {
     /* Cart drawer */
     .drawer-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.45);
       backdrop-filter: blur(3px); z-index: 200; }
-    .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 100%; max-width: 420px;
+    .drawer { position: fixed; top: 0; right: 0; height: 100vh; height: 100dvh; width: 100%; max-width: 420px;
       background: white; z-index: 201; box-shadow: -8px 0 40px rgba(0,0,0,0.12);
       display: flex; flex-direction: column; }
     .animate-slide-in { animation: slideIn 220ms cubic-bezier(.16,1,.3,1); }

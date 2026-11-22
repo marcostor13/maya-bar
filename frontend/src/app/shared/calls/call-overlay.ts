@@ -123,7 +123,7 @@ class Ringer {
     }
   `,
   styles: [`
-    .call-card { position: fixed; top: 20px; right: 24px; z-index: 125; width: min(380px, calc(100% - 32px));
+    .call-card { position: fixed; top: calc(20px + var(--safe-top, 0px)); right: calc(24px + var(--safe-right, 0px)); z-index: 125; width: min(380px, calc(100% - 32px));
       background: var(--color-white); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
       padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; border: 1.5px solid var(--color-border);
       animation: slide-in .25s var(--transition-spring, ease-out); }
@@ -151,7 +151,7 @@ class Ringer {
     @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
     @keyframes slide-in { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
     @media (max-width: 640px) {
-      .call-card { top: 12px; left: 16px; right: 16px; width: auto; }
+      .call-card { top: calc(12px + var(--safe-top, 0px)); left: calc(16px + var(--safe-left, 0px)); right: calc(16px + var(--safe-right, 0px)); width: auto; }
       .controls .btn-sm { flex: 1; justify-content: center; min-height: 44px; }
       .mic-modal { padding: 22px 20px; }
     }

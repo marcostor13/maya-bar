@@ -64,7 +64,7 @@ function guess(columns: string[], patterns: RegExp): string {
         <p>Crea el primero a partir de una lista de contactos o de un Excel.</p>
       </div>
     } @else {
-      <div class="table-wrap card">
+      <div class="table-wrap card table-cards">
         <table>
           <thead>
             <tr><th>Lote</th><th>Canal</th><th>Origen</th><th class="num">Links</th><th>Creado</th><th></th></tr>

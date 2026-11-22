@@ -214,7 +214,7 @@ const SOURCE_LABEL: Record<string, string> = {
     .empty-row { text-align: center; color: var(--color-text-muted); padding: 32px; }
 
     .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-    .modal-card { background: var(--color-white); border-radius: var(--radius-lg); width: calc(100% - 48px); max-width: 480px; padding: 28px 32px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 14px; box-sizing: border-box; max-height: 90vh; overflow-y: auto; }
+    .modal-card { background: var(--color-white); border-radius: var(--radius-lg); width: calc(100% - 48px); max-width: 480px; padding: 28px 32px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 14px; box-sizing: border-box; max-height: 90vh; max-height: 90dvh; overflow-y: auto; }
     .modal-head { display: flex; justify-content: space-between; align-items: center; }
     .modal-head h2 { margin: 0; font: 700 18px var(--font-heading); }
     .modal-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }

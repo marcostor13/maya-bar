@@ -9,6 +9,8 @@ import {
   ViewChild,
   ElementRef,
   OnInit,
+  OnDestroy,
+  AfterViewInit,
   HostListener,
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
@@ -16,6 +18,7 @@ import { firstValueFrom } from 'rxjs';
 import { LucideAngularModule, Sparkles, Plus, Trash2, AlignCenter, AlignLeft, AlignRight, Image as ImageIcon, Type, Save, X, BookmarkPlus, Film, Wand2, ChevronDown, CopyPlus, Eye, MousePointerClick, Palette, CheckCircle, Music, Mail, Menu, Layers } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
+import { canvasScaleFor, isDoubleTap } from './designer-touch';
 import { LandingMusicPickerComponent, type LandingMusic } from './landing-music-picker';
 
 import { environment } from '../../../environments/environment';
@@ -222,7 +225,7 @@ function rgbaOpacity(rgba: string): number {
   standalone: true,
   imports: [LucideAngularModule, LandingMusicPickerComponent],
   template: `
-    <div class="designer" (mousemove)="onMouseMove($event)">
+    <div class="designer" [class.previewing]="previewing()" (pointermove)="onMouseMove($event)">
 
       <!-- ── Left Panel ── -->
       <div class="d-left" [class.d-left-wide]="configTab()" [class.mobile-open]="mobileLeftOpen()">
@@ -634,20 +637,30 @@ function rgbaOpacity(rgba: string): number {
               <lucide-icon [img]="Layers" [size]="15"></lucide-icon> Capas
             </button>
             <div class="d-toolbar-sep"></div>
-            <span class="d-hint">Clic para seleccionar · Doble clic para editar · Arrastra para mover</span>
+            <span class="d-hint">Toca para seleccionar · Doble toque para editar · Arrastra para mover</span>
           } @else if (leftTab() === 'form') {
             <span class="d-hint">Vista previa del formulario y la confirmación de la landing</span>
           } @else {
             <span class="d-hint">Vista previa del correo de confirmación</span>
           }
           <div class="d-toolbar-spacer"></div>
+          @if (!configTab()) {
+            <button class="d-btn-sm" (click)="openPreview()" title="Ver como el invitado">
+              <lucide-icon [img]="Eye" [size]="15"></lucide-icon> Vista previa
+            </button>
+          }
           <button class="d-btn-save" (click)="saveDesign()" [disabled]="saving()">
             <lucide-icon [img]="Save" [size]="15"></lucide-icon>
             {{ saving() ? 'Guardando...' : (eventId ? 'Guardar diseño' : 'Aplicar diseño') }}
           </button>
         </div>
 
-        <div class="d-stage">
+        <div class="d-stage" #stageRef>
+          @if (previewing()) {
+            <button type="button" class="d-preview-close" (click)="closePreview()" aria-label="Cerrar vista previa">
+              <lucide-icon [img]="X" [size]="20"></lucide-icon>
+            </button>
+          }
           @if (aiGenerating()) {
             <div class="ai-gen-overlay">
               <div class="ai-gen-spinner"></div>
@@ -729,7 +742,7 @@ function rgbaOpacity(rgba: string): number {
             </div>
           }
 
-          <div class="canvas" #canvasRef (click)="onCanvasClick($event)">
+          <div class="canvas" #canvasRef (click)="onCanvasClick($event)" [style.zoom]="canvasScale()">
 
             <!-- Background -->
             @if (bg().type === 'image' && bg().url) {
@@ -765,7 +778,7 @@ function rgbaOpacity(rgba: string): number {
                 [style.top.%]="el.top"
                 [style.width.%]="el.width"
                 [style.z-index]="selectedId() === el.id ? 20 : 3"
-                (mousedown)="onElMouseDown($event, el)"
+                (pointerdown)="onElMouseDown($event, el)"
                 (dblclick)="onElDblClick($event, el)">
 
                 @if (el.type === 'text') {
@@ -804,10 +817,10 @@ function rgbaOpacity(rgba: string): number {
 
                 <!-- Resize handles (only on selected, non-editing) -->
                 @if (selectedId() === el.id && editingId() !== el.id) {
-                  <div class="rh rh-w" (mousedown)="onResizeStart($event, 'w', el)"></div>
-                  <div class="rh rh-e" (mousedown)="onResizeStart($event, 'e', el)"></div>
+                  <div class="rh rh-w" (pointerdown)="onResizeStart($event, 'w', el)"></div>
+                  <div class="rh rh-e" (pointerdown)="onResizeStart($event, 'e', el)"></div>
                   @if (el.type === 'image') {
-                    <div class="rh rh-s" (mousedown)="onResizeStart($event, 's', el)"></div>
+                    <div class="rh rh-s" (pointerdown)="onResizeStart($event, 's', el)"></div>
                   }
                 }
               </div>
@@ -833,7 +846,7 @@ function rgbaOpacity(rgba: string): number {
 
       <!-- ── Right Panel: Properties ── -->
       @if (!configTab() && selectedEl()) {
-        <div class="d-right" [class.mobile-open]="true">
+        <div class="d-right d-props-sheet" [class.mobile-open]="true">
           <div class="d-right-header">
             <span>{{ selectedEl()!.type === 'text' ? 'Texto' : selectedEl()!.type === 'button' ? 'Botón CTA' : 'Imagen' }}</span>
             <button class="d-close-btn" (click)="selectedId.set(null)">
@@ -1304,7 +1317,7 @@ function rgbaOpacity(rgba: string): number {
         </div>
       }
 
-      @if (mobileLeftOpen() || rightDrawerOpen() || (!configTab() && selectedEl())) {
+      @if (mobileLeftOpen() || rightDrawerOpen()) {
         <div class="d-drawer-backdrop" (click)="closeMobilePanels()"></div>
       }
 
@@ -1936,6 +1949,14 @@ function rgbaOpacity(rgba: string): number {
       border-radius: 2px;
       z-index: 25;
     }
+    .canvas-el, .rh { touch-action: none; }
+    .rh::after { content: ''; position: absolute; inset: -8px; }
+    @media (pointer: coarse) {
+      .rh { width: 18px; height: 18px; border-radius: 50%; }
+      .rh-w { left: -10px !important; }
+      .rh-e { right: -10px !important; }
+      .rh-s { bottom: -10px !important; }
+    }
     .rh-w { left: -5px; top: 50%; transform: translateY(-50%); cursor: w-resize; }
     .rh-e { right: -5px; top: 50%; transform: translateY(-50%); cursor: e-resize; }
     .rh-s { bottom: -5px; left: 50%; transform: translateX(-50%); cursor: s-resize; }
@@ -2138,7 +2159,7 @@ function rgbaOpacity(rgba: string): number {
       flex-direction: column;
       gap: 12px;
       box-shadow: 0 32px 64px rgba(0,0,0,0.3);
-      max-height: 88vh;
+      max-height: 88vh; max-height: 88dvh;
       overflow-y: auto;
     }
     .music-modal-header {
@@ -2197,6 +2218,22 @@ function rgbaOpacity(rgba: string): number {
     .ep-note { font-size: 12px; color: #4b5563; text-align: center; margin: 18px 0 0; }
     .ep-foot { background: #111827; color: #9ca3af; font-size: 11px; text-align: center; padding: 16px; }
 
+    /* ── Vista previa a pantalla completa (HU32) ── */
+    .d-preview-close { display: none; }
+    .designer.previewing .d-stage {
+      position: fixed; inset: 0; z-index: 300; padding: 0;
+      background: #000; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .designer.previewing .canvas { border-radius: 0; box-shadow: none; }
+    .designer.previewing .canvas-el { pointer-events: none; }
+    .designer.previewing .d-preview-close {
+      display: flex; position: fixed; z-index: 310;
+      top: calc(12px + var(--safe-top, 0px)); right: 12px;
+      width: 44px; height: 44px; border-radius: 50%; border: none;
+      align-items: center; justify-content: center; cursor: pointer;
+      background: rgba(0,0,0,0.55); color: #fff;
+    }
+
     /* ── Mobile drawers ── */
     .d-mobile-toggle { display: none; }
     .d-mobile-panel-header { display: none; }
@@ -2210,7 +2247,24 @@ function rgbaOpacity(rgba: string): number {
     }
 
     @media (max-width: 768px) {
-      .designer { position: relative; height: 640px; border-radius: 0 0 12px 12px; }
+      .designer {
+        position: relative; border-radius: 0 0 12px 12px;
+        height: calc(100vh - 210px - var(--bottom-nav-height, 0px));
+        height: calc(100dvh - 210px - var(--bottom-nav-height, 0px));
+        min-height: 460px;
+      }
+      .d-center { min-height: 0; }
+      .d-stage { overscroll-behavior: contain; }
+
+      /* Propiedades del elemento: hoja inferior a media altura, el lienzo sigue a la vista */
+      .d-right.d-props-sheet {
+        top: auto; left: 0; right: 0; bottom: 0;
+        width: 100%; max-width: none; height: 46%;
+        transform: translateY(0);
+        border-radius: 20px 20px 0 0;
+        box-shadow: 0 -8px 24px rgba(0,0,0,0.25);
+        overflow-y: auto;
+      }
 
       .d-mobile-toggle { display: flex; }
       .d-mobile-panel-header {
@@ -2273,15 +2327,13 @@ function rgbaOpacity(rgba: string): number {
     }
 
     @media (max-width: 480px) {
-      .designer { height: 560px; }
-      .d-left, .d-right { width: 90%; }
+      .d-left, .d-right:not(.d-props-sheet) { width: 90%; }
       .d-stage { padding: 10px; }
-      .canvas { transform: scale(0.88); transform-origin: top center; }
       .music-modal { padding: 20px 20px 18px; }
     }
   `],
 })
-export class InvitationDesignerComponent implements OnInit {
+export class InvitationDesignerComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() mediaFiles: MediaFile[] = [];
   @Input() eventId: string | null = null;
   @Input() set initialDesign(v: DesignSpec | null) {
@@ -2289,6 +2341,13 @@ export class InvitationDesignerComponent implements OnInit {
   }
 
   @ViewChild('canvasRef') canvasRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('stageRef') stageRef?: ElementRef<HTMLDivElement>;
+
+  /** Escala del lienzo de 324 × 576: la misma regla que en la landing (HU32). */
+  canvasScale = signal(1);
+  previewing = signal(false);
+  private resizeObs: ResizeObserver | null = null;
+  private lastTap: { id: string; t: number } | null = null;
 
   private http = inject(HttpClient);
   private toast = inject(ToastService);
@@ -2383,6 +2442,44 @@ export class InvitationDesignerComponent implements OnInit {
     this.loadTemplates();
   }
 
+  ngAfterViewInit() {
+    const stage = this.stageRef?.nativeElement;
+    if (!stage || typeof ResizeObserver === 'undefined') return;
+    this.resizeObs = new ResizeObserver(() => this.updateScale());
+    this.resizeObs.observe(stage);
+    this.updateScale();
+  }
+
+  ngOnDestroy() {
+    this.resizeObs?.disconnect();
+  }
+
+  private updateScale() {
+    const stage = this.stageRef?.nativeElement;
+    if (!stage) return;
+    const cs = getComputedStyle(stage);
+    const w = stage.clientWidth - parseFloat(cs.paddingLeft || '0') - parseFloat(cs.paddingRight || '0');
+    const h = stage.clientHeight;
+    this.canvasScale.set(canvasScaleFor(w, h, this.previewing()));
+  }
+
+  openPreview() {
+    this.selectedId.set(null);
+    this.editingId.set(null);
+    this.previewing.set(true);
+    setTimeout(() => this.updateScale());
+  }
+
+  closePreview() {
+    this.previewing.set(false);
+    setTimeout(() => this.updateScale());
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscPreview() {
+    if (this.previewing()) this.closePreview();
+  }
+
   private loadFonts() {
     const families = FONTS.map(f => f.value.replace(/ /g, '+')).join('&family=');
     const href = `https://fonts.googleapis.com/css2?family=${families}:wght@400;600;700;800&display=swap`;
@@ -2395,7 +2492,8 @@ export class InvitationDesignerComponent implements OnInit {
     }
   }
 
-  @HostListener('document:mouseup')
+  @HostListener('document:pointerup')
+  @HostListener('document:pointercancel')
   onDocumentMouseUp() {
     if (this.dragState?.moved) this.emitChange();
     this.dragState = null;
@@ -2420,11 +2518,22 @@ export class InvitationDesignerComponent implements OnInit {
     }
   }
 
-  onElMouseDown(e: MouseEvent, el: DesignElement) {
+  onElMouseDown(e: PointerEvent, el: DesignElement) {
+    if (this.editingId() === el.id) { this.selectedId.set(el.id); return; }
     e.preventDefault();
     e.stopPropagation();
     this.selectedId.set(el.id);
-    if (this.editingId() === el.id) return;
+    // En táctil no siempre llega dblclick: doble toque = editar.
+    if (e.pointerType && e.pointerType !== 'mouse') {
+      const now = Date.now();
+      if (isDoubleTap(this.lastTap, el.id, now) && (el.type === 'text' || el.type === 'button')) {
+        this.lastTap = null;
+        this.editingId.set(el.id);
+        return;
+      }
+      this.lastTap = { id: el.id, t: now };
+    }
+    (e.target as Element | null)?.setPointerCapture?.(e.pointerId);
     const canvas = this.canvasRef.nativeElement;
     const rect = canvas.getBoundingClientRect();
     this.isDragging.set(true);
@@ -2445,7 +2554,7 @@ export class InvitationDesignerComponent implements OnInit {
     this.editingId.set(el.id);
   }
 
-  onMouseMove(e: MouseEvent) {
+  onMouseMove(e: PointerEvent | MouseEvent) {
     if (this.resizeState) {
       const rs = this.resizeState;
       const dx = e.clientX - rs.startMouseX;
@@ -2460,7 +2569,7 @@ export class InvitationDesignerComponent implements OnInit {
         const newLeft = Math.max(0, Math.min(rs.startLeft + rs.startWidth - 5, rs.startLeft + dxPct));
         updates = { left: newLeft, width: rs.startWidth - (newLeft - rs.startLeft) };
       } else if (rs.handle === 's') {
-        updates = { imageHeight: Math.max(10, rs.startHeight + dy) };
+        updates = { imageHeight: Math.max(10, rs.startHeight + dy / (this.canvasScale() || 1)) };
       }
       this.design.update(d => ({
         ...d,
@@ -2526,9 +2635,10 @@ export class InvitationDesignerComponent implements OnInit {
     return { top: rawTop, guideY: null };
   }
 
-  onResizeStart(e: MouseEvent, handle: 'w' | 'e' | 's', el: DesignElement) {
+  onResizeStart(e: PointerEvent, handle: 'w' | 'e' | 's', el: DesignElement) {
     e.preventDefault();
     e.stopPropagation();
+    (e.target as Element | null)?.setPointerCapture?.(e.pointerId);
     const canvas = this.canvasRef.nativeElement;
     this.resizeState = {
       handle,

@@ -209,7 +209,7 @@ const dateOnly = (iso?: string) => (iso ? iso.slice(0, 10) : '');
               @if (o.users.length === 0) {
                 <p class="muted">La empresa no tiene usuarios.</p>
               } @else {
-                <div class="table-wrap">
+                <div class="table-wrap table-cards">
                   <table>
                     <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead>
                     <tbody>

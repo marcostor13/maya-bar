@@ -7,6 +7,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -68,6 +69,11 @@ export class CreateEventDto {
   @IsString()
   description?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  location?: string;
+
   @IsString()
   @IsNotEmpty()
   date!: string;
@@ -121,6 +127,11 @@ export class UpdateEventDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  location?: string;
 
   @IsOptional()
   @IsString()

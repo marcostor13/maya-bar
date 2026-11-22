@@ -68,7 +68,7 @@ export interface ComposeAccount {
       display: flex; align-items: center; justify-content: center; z-index: 100; }
     .modal-card { background: var(--color-white); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
       width: calc(100% - 48px); max-width: 520px; padding: 28px 32px; box-sizing: border-box;
-      display: flex; flex-direction: column; gap: 14px; max-height: 92vh; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 14px; max-height: 92vh; max-height: 92dvh; overflow-y: auto;
       animation: pop var(--transition-spring); }
     @keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
     .head { display: flex; align-items: center; justify-content: space-between; }
