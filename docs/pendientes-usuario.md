@@ -29,8 +29,8 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 
 | Variable | Para qué | Valor |
 |---|---|---|
-| `OPENAI_API_KEY` | Agente de voz (HU73). Ya existía si usas OpenAI. | tu clave |
-| `VOICE_REALTIME_MODEL` | Opcional | `gpt-realtime` |
+| `OPENAI_API_KEY` | Agente de voz (HU73), con OpenAI Realtime. **Ya está puesta** (comprobado 2026-11-24). | — |
+| `VOICE_REALTIME_MODEL` | Opcional; si falta se usa `gpt-realtime`. No hace falta ponerla. | — |
 | `META_LEAD_ADS_ENABLED` | Ver 1.7 | `false` hasta que Meta apruebe |
 
 ## 3. Pruebas reales que solo tú puedes hacer
