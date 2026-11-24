@@ -49,7 +49,7 @@ describe('Mi plan y consumo (HU44)', () => {
     const payments = app.get<Model<Payment>>(getModelToken(Payment.name));
     await payments.create([
       {
-        tenantId: new Types.ObjectId(owner.user.tenantId),
+        tenantId: new Types.ObjectId(owner.user.tenantId!),
         concept: 'Plan Inicia mensual',
         amount: 116.82,
         status: 'approved',

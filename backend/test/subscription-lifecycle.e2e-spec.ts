@@ -108,7 +108,7 @@ describe('Ciclo de vida de la suscripción (HU48)', () => {
       addMonths(end1, 1).getTime(),
     );
     const p = (await payments
-      .findOne({ providerPaymentId: renewal.id })
+      .findOne({ providerPaymentId: String(renewal.id) })
       .lean())!;
     expect(p).toMatchObject({ kind: 'renewal', periodApplied: true });
     expect(String(p.tenantId)).toBe(owner.user.tenantId);

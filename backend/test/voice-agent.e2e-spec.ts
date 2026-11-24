@@ -129,7 +129,7 @@ describe('Agente de IA por voz (e2e)', () => {
         name: 'Recepción',
         systemPrompt: 'Eres la recepcionista de la clínica.',
         provider: 'openai',
-        model: 'gpt-4o-mini',
+        aiModel: 'gpt-4o-mini',
         published: true,
         calendar: {
           enabled: true,
@@ -160,17 +160,17 @@ describe('Agente de IA por voz (e2e)', () => {
       connectionEmail: 'agenda@clinica.pe',
       busy: [],
     });
-    createEvent = jest
-      .spyOn(cal, 'createEvent')
-      .mockImplementation((_t, dto: { start: string; end: string }) =>
-        Promise.resolve({
-          provider: 'google',
-          eventId: `ev${++seq}`,
-          start: dto.start,
-          end: dto.end,
-          connectionEmail: 'agenda@clinica.pe',
-        }),
-      );
+    createEvent = jest.spyOn(cal, 'createEvent').mockImplementation((_t, dto) =>
+      Promise.resolve({
+        provider: 'google' as const,
+        eventId: `ev${++seq}`,
+        start: dto.start,
+        end: new Date(
+          new Date(dto.start).getTime() + dto.durationMinutes * 60_000,
+        ).toISOString(),
+        connectionEmail: 'agenda@clinica.pe',
+      }),
+    );
 
     // Proveedor de voz simulado: no hay OpenAI en las pruebas.
     const provider = app.get<VoiceRealtimeProvider>(VOICE_REALTIME_PROVIDER);

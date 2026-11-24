@@ -112,7 +112,9 @@ describe('Comprobante SUNAT (HU49)', () => {
     expect(req.description).toMatch(
       /^Suscripción Maya CRM — Plan Crece \(mensual\) \d\d\/\d\d–\d\d\/\d\d$/,
     );
-    const saved = (await payments.findOne({ providerPaymentId: p.id }).lean())!;
+    const saved = (await payments
+      .findOne({ providerPaymentId: String(p.id) })
+      .lean())!;
     expect(saved.receipt).toMatchObject({
       status: 'issued',
       type: '01',
@@ -151,7 +153,7 @@ describe('Comprobante SUNAT (HU49)', () => {
     await wait();
     await app.get(InvoicingService).drain();
     const original = (await payments
-      .findOne({ providerPaymentId: p.id })
+      .findOne({ providerPaymentId: String(p.id) })
       .lean())!.receipt!;
     issue.mockClear();
     await svc.syncFromMp({ ...p, status: 'refunded' });
@@ -168,8 +170,8 @@ describe('Comprobante SUNAT (HU49)', () => {
       },
     });
     expect(
-      (await payments.findOne({ providerPaymentId: p.id }).lean())!.receipt!
-        .creditNote,
+      (await payments.findOne({ providerPaymentId: String(p.id) }).lean())!
+        .receipt!.creditNote,
     ).toMatchObject({ status: 'issued' });
   });
 
@@ -190,8 +192,9 @@ describe('Comprobante SUNAT (HU49)', () => {
       .findOne({ email })
       .lean())!;
     expect(tenant.subscription!.status).toBe('active');
-    const after1 = (await payments.findOne({ providerPaymentId: p.id }).lean())!
-      .receipt!;
+    const after1 = (await payments
+      .findOne({ providerPaymentId: String(p.id) })
+      .lean())!.receipt!;
     expect(after1).toMatchObject({
       status: 'pending',
       attempts: 1,
@@ -200,12 +203,13 @@ describe('Comprobante SUNAT (HU49)', () => {
     });
 
     await payments.updateOne(
-      { providerPaymentId: p.id },
+      { providerPaymentId: String(p.id) },
       { $set: { 'receipt.nextAttemptAt': new Date(0) } },
     );
     await app.get(InvoicingService).drain();
-    const after2 = (await payments.findOne({ providerPaymentId: p.id }).lean())!
-      .receipt!;
+    const after2 = (await payments
+      .findOne({ providerPaymentId: String(p.id) })
+      .lean())!.receipt!;
     expect(after2.status).toBe('issued');
     expect(after2.number).toBe(after1.number);
     const [last] = issue.mock.calls.at(-1) as [InvoiceRequest];
@@ -226,13 +230,13 @@ describe('Comprobante SUNAT (HU49)', () => {
     await app.get(PaymentsService).syncFromMp(p);
     await wait();
     await payments.updateOne(
-      { providerPaymentId: p.id },
+      { providerPaymentId: String(p.id) },
       { $set: { 'receipt.attempts': 7, 'receipt.nextAttemptAt': new Date(0) } },
     );
     await app.get(InvoicingService).drain();
     expect(
-      (await payments.findOne({ providerPaymentId: p.id }).lean())!.receipt!
-        .status,
+      (await payments.findOne({ providerPaymentId: String(p.id) }).lean())!
+        .receipt!.status,
     ).toBe('failed');
     issue.mockReset();
     issue.mockResolvedValue({
@@ -246,15 +250,15 @@ describe('Comprobante SUNAT (HU49)', () => {
     ).body as { providerPaymentId: string }[];
     expect(q.some((x) => x.providerPaymentId === p.id)).toBe(true);
     const id = String(
-      (await payments.findOne({ providerPaymentId: p.id }).lean())!._id,
+      (await payments.findOne({ providerPaymentId: String(p.id) }).lean())!._id,
     );
     await http()
       .post(`/billing/admin/receipts/${id}/retry`)
       .set(bearer(admin))
       .expect(201);
     expect(
-      (await payments.findOne({ providerPaymentId: p.id }).lean())!.receipt!
-        .status,
+      (await payments.findOne({ providerPaymentId: String(p.id) }).lean())!
+        .receipt!.status,
     ).toBe('issued');
   });
 
@@ -269,7 +273,8 @@ describe('Comprobante SUNAT (HU49)', () => {
     await wait();
     await app.get(InvoicingService).drain();
     expect(
-      (await payments.findOne({ providerPaymentId: p.id }).lean())!.receipt,
+      (await payments.findOne({ providerPaymentId: String(p.id) }).lean())!
+        .receipt,
     ).toMatchObject({ status: 'skipped' });
   });
 
@@ -289,13 +294,14 @@ describe('Comprobante SUNAT (HU49)', () => {
     cfg.mockReturnValue(true);
     issue.mockClear();
     await payments.updateOne(
-      { providerPaymentId: p.id },
+      { providerPaymentId: String(p.id) },
       { $unset: { 'receipt.nextAttemptAt': '' } },
     );
     await app.get(InvoicingService).drain();
     expect(issue).not.toHaveBeenCalled();
     expect(
-      (await payments.findOne({ providerPaymentId: p.id }).lean())!.receipt,
+      (await payments.findOne({ providerPaymentId: String(p.id) }).lean())!
+        .receipt,
     ).toMatchObject({ status: 'skipped' });
   });
 
@@ -331,8 +337,8 @@ describe('Comprobante SUNAT (HU49)', () => {
     await svc.syncFromMp(p2);
     await wait();
     expect(
-      (await payments.findOne({ providerPaymentId: p2.id }).lean())!.receipt!
-        .error,
+      (await payments.findOne({ providerPaymentId: String(p2.id) }).lean())!
+        .receipt!.error,
     ).toContain('700');
   });
 

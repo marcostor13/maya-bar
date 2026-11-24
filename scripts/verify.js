@@ -16,6 +16,8 @@ const STEPS = [
   { group: 'static', name: 'Catálogo de precios al día (HU56)', cwd: 'frontend', cmd: 'npm run catalog:check' },
   { group: 'static', name: 'Lint backend', cwd: 'backend', cmd: 'npx eslint "src/**/*.ts" --max-warnings=100' },
   { group: 'static', name: 'Build backend', cwd: 'backend', cmd: 'npm run build' },
+  // Como en CI: el build no revisa los tipos de test/; tsc sí.
+  { group: 'static', name: 'Tipos backend (con pruebas)', cwd: 'backend', cmd: 'npx tsc --noEmit -p tsconfig.json' },
   { group: 'unit', name: 'Unitarias backend', cwd: 'backend', cmd: 'npm test -- --silent' },
   { group: 'e2e', name: 'e2e de API', cwd: 'backend', cmd: 'npm run test:e2e -- --silent' },
   { group: 'unit', name: 'Unitarias frontend', cwd: 'frontend', cmd: 'npx ng test --watch=false' },
