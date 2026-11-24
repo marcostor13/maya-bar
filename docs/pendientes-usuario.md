@@ -5,7 +5,9 @@ credenciales y pruebas con cuentas, números y dinero reales.
 
 ## 1. Meta: app "Maya IA" (`985986576689480`)
 
-**Estado de la revisión** (solicitud del 2026-11-24):
+**Estado de la revisión:** la segunda solicitud (5 permisos rechazados, con videos
+nuevos y cuenta del revisor) se envió el 2026-11-24 y está **en revisión** (Meta
+tarda hasta 20 días). Resultado de la primera solicitud:
 
 - Aprobados con acceso avanzado: `whatsapp_business_management` y
   `whatsapp_business_messaging`.
@@ -18,9 +20,9 @@ credenciales y pruebas con cuentas, números y dinero reales.
 | 1.1 | **Registrarte como proveedor de tecnología.** Los dos pasos ya están en verde. Falta pulsar "Iniciar registro" (Independent Tech Provider), que **acepta las Condiciones para proveedores de tecnología**: eso lo aceptas tú. | WhatsApp > Inicio rápido > "Continuar registro" |
 | 1.2 | **Añadir un método de pago** a la cuenta de WhatsApp. Sin él solo se responden conversaciones que inicia el cliente; no se pueden enviar plantillas. | WhatsApp > Inicio rápido > "Agregar método de pago" |
 | 1.3 | **Pasar la app a modo Activo.** Hoy está en Desarrollo: los clientes de otras empresas no pueden usar el registro integrado de WhatsApp ni llegan sus mensajes de Messenger o Instagram. Con WhatsApp aprobado ya puedes activarla; los permisos rechazados seguirán con acceso estándar hasta que se aprueben. | Interruptor "App Mode" arriba del panel |
-| 1.4 | **Comprobar en Coolify (backend)** que `FACEBOOK_LOGIN_CONFIG_ID` sea `1075415515523668`, la configuración "registro insertado de WhatsApp" que ya existe en la app. | Coolify > backend > Environment |
-| 1.5 | **Videos de Messenger e Instagram: hechos** (2026-11-24). Subidos con su descripción a los 5 permisos rechazados en el borrador `1564935832127882`: Messenger con la Página de prueba "Maya IA"; Instagram con @marcostorresalarcon (empresa IGNIA) y el cliente mayatechperu (tester de Instagram de la app). "Uso permitido" está completo. **Falta de tu lado:** la cuenta del revisor (1.6) en "Instrucciones para revisores", revisar y pulsar Enviar. Material en [`docs/meta-app-review/`](meta-app-review/README.md). | Revisión de la app > Solicitudes |
-| 1.6 | **Crear una cuenta de prueba en Maya para el revisor** y ponerla en las instrucciones (`<<REVIEWER_EMAIL>>` / `<<REVIEWER_PASSWORD>>`). | mayacrm.site |
+| 1.4 | Coolify: `FACEBOOK_LOGIN_CONFIG_ID` = `1075415515523668` — **comprobado**. | — |
+| 1.5 | Videos de Messenger e Instagram subidos y solicitud enviada (2026-11-24). **Esperar el resultado** y responder si Meta pide algo. | Revisión de la app > Solicitudes |
+| 1.6 | Cuenta de prueba del revisor — **hecha**. No la borres mientras dure la revisión. | mayacrm.site |
 | 1.7 | **Lead Ads (HU60):** cuando quieras pedir `leads_retrieval` y `pages_read_engagement`, primero pon `META_LEAD_ADS_ENABLED=true` en el backend. Hasta entonces Maya no los pide al conectar Páginas, para que el video de la revisión muestre solo los 3 permisos solicitados. | Coolify > backend |
 
 ## 2. Variables nuevas en Coolify (backend)
