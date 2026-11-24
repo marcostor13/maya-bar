@@ -1,3 +1,4 @@
+import { AiCreditsException } from '../billing/ai-credits.service';
 import { Types } from 'mongoose';
 import { ConversationsService } from './conversations.service';
 import type { ParsedEmail } from '../email-accounts/email-message';
@@ -443,6 +444,33 @@ describe('ConversationsService — correo', () => {
       { contact: 'x@y.pe', type: 'text' },
     );
     expect(h.attribution.lookup).not.toHaveBeenCalled();
+  });
+
+  it('HU43 C3: sin créditos de IA el chat pasa a una persona con la nota', async () => {
+    const h = setup();
+    h.agents.generateAnswer.mockRejectedValue(new AiCreditsException());
+    const notify = jest.fn().mockResolvedValue({ notified: [] });
+    (h.service as unknown as { handoff: unknown }).handoff = { notify };
+    await h.service.handleEmailInbound(h.account as never, email());
+    await flush();
+    expect(notify).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'Sin créditos de IA',
+      expect.any(String),
+    );
+    expect(h.convs[0].autoReply).toBe(false);
+    expect(h.convs[0].escalationReason).toBe('Sin créditos de IA');
+  });
+
+  it('HU41 C4: con la cuenta en solo lectura el agente IA no responde', async () => {
+    const h = setup();
+    const canOperate = jest.fn().mockResolvedValue(false);
+    (h.service as unknown as { billing: unknown }).billing = { canOperate };
+    await h.service.handleEmailInbound(h.account as never, email());
+    await flush();
+    expect(canOperate).toHaveBeenCalledWith(String(h.account.tenantId));
+    expect(h.agents.generateAnswer).not.toHaveBeenCalled();
   });
 
   it('le pasa al agente el contexto para agendar y deja una nota por cada cita', async () => {

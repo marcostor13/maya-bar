@@ -28,6 +28,10 @@ export class RefreshToken extends Document {
   /** Para que el usuario pueda reconocer sus sesiones si algún día se listan. */
   @Prop()
   userAgent?: string;
+
+  /** Sub-cuenta en la que está trabajando el usuario de una agencia (HU72). */
+  @Prop({ type: Types.ObjectId, ref: 'Tenant' })
+  actingTenantId?: Types.ObjectId;
 }
 
 export const RefreshTokenSchema = SchemaFactory.createForClass(RefreshToken);

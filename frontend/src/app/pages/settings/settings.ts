@@ -1,8 +1,9 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  LucideAngularModule, Save, Eye, EyeOff, Sparkles, Radar,
-} from 'lucide-angular';
+  LucideAngularModule, Save, Eye, EyeOff, Sparkles, Radar, CreditCard, ScrollText } from 'lucide-angular';
+import { RouterLink } from '@angular/router';
+import { AuthService } from '../../auth/auth.service';
 import { ToastService } from '../../shared/toast';
 import { AccountsApiService } from '../../core/api/accounts-api.service';
 import { TenantSettings } from '../../shared/models/accounts.model';
@@ -14,7 +15,13 @@ import { EmailSettingsComponent } from './email-settings';
 import { SmsSettingsComponent } from './sms-settings';
 import { ResendSettingsComponent } from './resend-settings';
 import { CalendarSettingsComponent } from './calendar-settings';
+import { EventPaymentsSettingsComponent } from './event-payments-settings';
+import { ProductsSettingsComponent } from './products-settings';
+import { WebchatSettingsComponent } from './webchat-settings';
 import { CompanyBrandingSettingsComponent } from './company-branding-settings';
+import { RoutingSettingsComponent } from './routing-settings';
+import { LeadAdsSettingsComponent } from './lead-ads-settings';
+import { SecuritySettingsComponent } from './security-settings';
 
 type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' | 'hunterApiKey';
 
@@ -22,10 +29,10 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
   selector: 'app-settings',
   standalone: true,
   imports: [
-    FormsModule, LucideAngularModule, WhatsappSettingsComponent,
+    FormsModule, RouterLink, LucideAngularModule, WhatsappSettingsComponent,
     InstagramSettingsComponent, MessengerSettingsComponent,
-    NotificationsSettingsComponent, EmailSettingsComponent, SmsSettingsComponent, ResendSettingsComponent, CalendarSettingsComponent,
-    CompanyBrandingSettingsComponent,
+    NotificationsSettingsComponent, EmailSettingsComponent, SmsSettingsComponent, ResendSettingsComponent, CalendarSettingsComponent, EventPaymentsSettingsComponent, ProductsSettingsComponent, WebchatSettingsComponent,
+    CompanyBrandingSettingsComponent, RoutingSettingsComponent, LeadAdsSettingsComponent, SecuritySettingsComponent,
   ],
   template: `
     <div class="page animate-fade-in">
@@ -37,24 +44,47 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
       </div>
 
       <!-- Índice de secciones (HU39): en el móvil se llega a cualquiera en un toque -->
+      @if (isAdmin()) {
+        <a class="plan-link card" routerLink="/settings/plan">
+          <lucide-icon [img]="CreditCard" [size]="18" />
+          <span><strong>Mi plan y consumo</strong> · suscripción, uso del mes, pagos y comprobantes</span>
+        </a>
+        <a class="plan-link card" routerLink="/settings/activity">
+          <lucide-icon [img]="ScrollText" [size]="18" />
+          <span><strong>Registro de actividad</strong> · quién hizo qué y cuándo: accesos, exportaciones, usuarios y canales</span>
+        </a>
+      }
+
       <nav class="cfg-index" aria-label="Secciones de configuración">
         <button type="button" class="cfg-chip" (click)="goTo('cfg-brand')">Marca</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-security')">Seguridad</button>
         <button type="button" class="cfg-chip" (click)="goTo('cfg-push')">Notificaciones</button>
+        @if (canRoute()) { <button type="button" class="cfg-chip" (click)="goTo('cfg-routing')">Reparto</button> }
         <button type="button" class="cfg-chip" (click)="goTo('cfg-wa')">WhatsApp</button>
         <button type="button" class="cfg-chip" (click)="goTo('cfg-ig')">Instagram</button>
         <button type="button" class="cfg-chip" (click)="goTo('cfg-fb')">Messenger</button>
+        @if (canRoute()) { <button type="button" class="cfg-chip" (click)="goTo('cfg-webchat')">Chat web</button> }
+        @if (canRoute()) { <button type="button" class="cfg-chip" (click)="goTo('cfg-leadads')">Lead Ads</button> }
         <button type="button" class="cfg-chip" (click)="goTo('cfg-email')">Correo</button>
         <button type="button" class="cfg-chip" (click)="goTo('cfg-resend')">Resend</button>
         <button type="button" class="cfg-chip" (click)="goTo('cfg-sms')">SMS</button>
         <button type="button" class="cfg-chip" (click)="goTo('cfg-cal')">Calendario</button>
+        <button type="button" class="cfg-chip" (click)="goTo('cfg-event-payments')">Cobros con Mercado Pago</button>
+        @if (canRoute()) { <button type="button" class="cfg-chip" (click)="goTo('cfg-products')">Productos</button> }
         <button type="button" class="cfg-chip" (click)="goTo('cfg-ai')">IA</button>
       </nav>
 
       <!-- Logo y favicon de la landing de eventos (HU26) -->
       <section id="cfg-brand" class="cfg-section"><app-company-branding-settings /></section>
 
+      <!-- Doble factor de acceso (HU62) -->
+      <section id="cfg-security" class="cfg-section"><app-security-settings /></section>
+
       <!-- Notificaciones push (app Android y navegador) -->
       <section id="cfg-push" class="cfg-section"><app-notifications-settings /></section>
+
+      <!-- Reparto automático de oportunidades y contactos (HU59) -->
+      @if (canRoute()) { <section id="cfg-routing" class="cfg-section"><app-routing-settings /></section> }
 
       <!-- WhatsApp Accounts Card -->
       <section id="cfg-wa" class="cfg-section"><app-whatsapp-settings /></section>
@@ -65,6 +95,9 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
       <!-- Messenger Accounts Card -->
       <section id="cfg-fb" class="cfg-section"><app-messenger-settings /></section>
 
+      <!-- Formularios de anuncios de Meta (HU60) -->
+      @if (canRoute()) { <section id="cfg-leadads" class="cfg-section"><app-lead-ads-settings /></section> }
+
       <!-- Correo electrónico -->
       <section id="cfg-email" class="cfg-section"><app-email-settings /></section>
 
@@ -74,6 +107,12 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
 
       <!-- Calendario y videollamadas (Meet / Teams) -->
       <section id="cfg-cal" class="cfg-section"><app-calendar-settings /></section>
+
+      <section id="cfg-event-payments" class="cfg-section"><app-event-payments-settings /></section>
+
+      @if (canRoute()) { <section id="cfg-webchat" class="cfg-section"><app-webchat-settings /></section> }
+
+      @if (canRoute()) { <section id="cfg-products" class="cfg-section"><app-products-settings /></section> }
 
       <!-- IA / Agentes Card -->
       <div class="section-card cfg-section" id="cfg-ai">
@@ -177,6 +216,10 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
   `,
   styles: [`
     .page { width: 100%; box-sizing: border-box; padding: 32px 40px; }
+    .plan-link { display: flex; align-items: center; gap: 10px; padding: 16px 20px; margin: -12px 0 24px; text-decoration: none;
+      color: var(--color-text-main); font-size: 14px; }
+    .plan-link lucide-icon { color: var(--color-brand); flex-shrink: 0; }
+    .plan-link:hover { border-color: var(--color-brand); }
     .cfg-index { display: flex; flex-wrap: wrap; gap: 8px; margin: -12px 0 24px; }
     .cfg-chip { min-height: 36px; padding: 0 14px; border: 1px solid var(--color-border); border-radius: var(--radius-pill);
       background: var(--color-white); color: var(--color-text-main); font: 600 13px var(--font-base); cursor: pointer; white-space: nowrap; }
@@ -255,6 +298,12 @@ type ProspectingKey = 'googlePlacesApiKey' | 'pageSpeedApiKey' | 'serperApiKey' 
   `],
 })
 export class SettingsComponent implements OnInit {
+  private auth = inject(AuthService);
+  readonly CreditCard = CreditCard;
+  readonly ScrollText = ScrollText;
+  /** Mi plan solo para el administrador de la empresa (HU44). */
+  isAdmin = () => this.auth.currentUser()?.role === 'TENANT_ADMIN';
+  canRoute = () => ['TENANT_ADMIN', 'MANAGER'].includes(this.auth.currentUser()?.role ?? '');
   /** Salta a una sección desde el índice (HU39). */
   goTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });

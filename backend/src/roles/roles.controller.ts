@@ -26,6 +26,7 @@ import { RolesService } from './roles.service';
 import { User } from '../users/user.schema';
 import { ACTIONS, ACTION_LABELS, MODULES } from './modules.catalog';
 
+import { Audit } from '../audit/audit.decorator';
 export class UpdateRoleModulesDto {
   @IsArray()
   @IsString({ each: true })
@@ -89,12 +90,23 @@ export class RolesController {
     }));
   }
 
+  @Audit({
+    action: 'roles.created',
+    resource: 'role',
+    bodyFields: ['key', 'label', 'modules'],
+  })
   @Post('roles')
   create(@Body() dto: CreateRoleDto, @Request() req: AuthReq) {
     this.assertAdmin(req);
     return this.roles.create(req.user.tenantId, dto.label);
   }
 
+  @Audit({
+    action: 'roles.updated',
+    resource: 'role',
+    idParam: 'key',
+    bodyFields: ['label', 'modules'],
+  })
   @Patch('roles/:key')
   update(
     @Param('key') key: string,
@@ -105,6 +117,7 @@ export class RolesController {
     return this.roles.update(req.user.tenantId, key, dto.modules, dto.actions);
   }
 
+  @Audit({ action: 'roles.deleted', resource: 'role', idParam: 'key' })
   @Delete('roles/:key')
   async remove(@Param('key') key: string, @Request() req: AuthReq) {
     this.assertAdmin(req);

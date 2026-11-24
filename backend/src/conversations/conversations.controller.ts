@@ -11,6 +11,9 @@ import {
   Request,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { ModuleGuard, RouteAction } from '../roles/module.guard';
@@ -42,6 +45,7 @@ import { InboxToolsService } from './inbox-tools.service';
 import { ConversationTrashService } from './conversation-trash.service';
 import { BlockedContactsService } from './blocked-contacts.service';
 
+import { Audit } from '../audit/audit.decorator';
 @Controller('conversations')
 @UseGuards(JwtAuthGuard, ModuleGuard('inbox'))
 export class ConversationsController {
@@ -60,6 +64,31 @@ export class ConversationsController {
       userId: req.user.userId,
       name: await this.assignment.nameOf(req.user.userId),
     };
+  }
+
+  /** Exportar todas las conversaciones (solo el administrador; HU51). */
+  @Audit({ action: 'conversations.export', resource: 'conversation' })
+  @Get('export.csv')
+  async exportCsv(
+    @Request() req: AuthReq,
+    @Res({ passthrough: true }) res: { setHeader(k: string, v: string): void },
+  ) {
+    if (req.user.role !== 'TENANT_ADMIN' || !req.user.tenantId)
+      throw new ForbiddenException(
+        'Solo el administrador puede exportar las conversaciones',
+      );
+    const csv = await this.service.exportCsv(req.user.tenantId);
+    (req as AuthReq & { auditDetails?: Record<string, unknown> }).auditDetails =
+      {
+        rows: csv ? csv.split(String.fromCharCode(10)).length - 1 : 0,
+      };
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="conversaciones.csv"',
+    );
+    return new StreamableFile(Buffer.from('﻿' + csv, 'utf-8'), {
+      type: 'text/csv; charset=utf-8',
+    });
   }
 
   // ── Permisos para la interfaz ──
@@ -85,12 +114,14 @@ export class ConversationsController {
     return this.trash.restore(req.user.tenantId, id, await this.actor(req));
   }
 
+  @Audit({ action: 'conversations.purged', resource: 'conversation' })
   @Delete('trash/:id')
   async purge(@Param('id') id: string, @Request() req: AuthReq) {
     await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
     return this.trash.purge(req.user.tenantId, id, await this.actor(req));
   }
 
+  @Audit({ action: 'conversations.trash_emptied', resource: 'conversation' })
   @Delete('trash')
   async emptyTrash(@Request() req: AuthReq) {
     await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
@@ -101,6 +132,14 @@ export class ConversationsController {
    * Elimina (a la papelera) una o varias conversaciones. Con `block`, antes
    * bloquea a cada contacto ("Eliminar y bloquear").
    */
+  @Audit({
+    action: 'conversations.deleted',
+    resource: 'conversation',
+    details: (r) => ({
+      count: Array.isArray(r.body?.ids) ? r.body.ids.length : undefined,
+      block: r.body?.block,
+    }),
+  })
   @Post('bulk-delete')
   async bulkDelete(@Body() dto: BulkDeleteDto, @Request() req: AuthReq) {
     await this.trash.assertCanDelete(req.user.tenantId, req.user.role);
@@ -595,6 +634,7 @@ export class ConversationsController {
   }
 
   /** Manda la conversación a la papelera (se puede restaurar 30 días). */
+  @Audit({ action: 'conversations.deleted', resource: 'conversation' })
   @Delete(':id')
   async remove(@Param('id') id: string, @Request() req: AuthReq) {
     await this.trash.assertCanDelete(req.user.tenantId, req.user.role);

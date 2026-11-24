@@ -23,6 +23,8 @@ const SECRET_FIELDS = new Set([
   'resetPasswordExpires',
   'resetPasswordAttempts',
   'emailVerificationCodeHash',
+  'accessTokenHash',
+  'accessTokenExpires',
   'tempPassword',
 ]);
 

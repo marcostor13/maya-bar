@@ -18,7 +18,7 @@ import {
  */
 const PUBLIC_ROUTES: RegExp[] = [
   /^GET \/$/,
-  /^POST \/auth\/(login|refresh|logout|register|forgot-password|reset-password|verify-email|resend-verification)$/,
+  /^POST \/auth\/(login|refresh|logout|register|forgot-password|reset-password|verify-email|resend-verification|access|access\/resend|2fa\/(verify|resend|enroll\/start|enroll\/confirm))$/,
   /^(GET|POST|PATCH) \/public\//,
   // Webhooks de Meta: se autentican con verify token o firma, no con JWT.
   /^(GET|POST) \/(wa|ig|messenger)\/webhook/,
@@ -28,6 +28,10 @@ const PUBLIC_ROUTES: RegExp[] = [
   // Links cortos y baja de campañas: los abre el destinatario.
   /^(GET|HEAD) \/l\/:code$/,
   /^(GET|POST) \/u\/:token$/,
+  // Vuelta de Mercado Pago al conectar la cuenta de cobro de entradas (HU67): `state` firmado.
+  /^GET \/event-tickets\/mp\/callback$/,
+  // Especificación OpenAPI de la API de integraciones (HU65): es documentación.
+  /^GET \/api\/v1\/openapi\.json$/,
 ];
 
 const isPublic = (r: RouteInfo) =>

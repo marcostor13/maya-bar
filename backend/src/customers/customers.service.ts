@@ -16,6 +16,7 @@ import { EventRegistration } from '../events/event-registration.schema';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { isOwnerScoped } from '../auth/permissions';
 import { formatPhone } from '../shared/phone';
+import { emitAutomation } from '../automations/automation-bus';
 
 @Injectable()
 export class CustomersService implements OnModuleInit {
@@ -102,12 +103,16 @@ export class CustomersService implements OnModuleInit {
     search?: string,
     tag?: string,
     formId?: string,
+    /** Puntaje (HU70): temperatura y orden por puntaje. */
+    opts: { heat?: string; sort?: string } = {},
   ): Promise<Customer[]> {
     const filter: Record<string, unknown> = {
       tenantId: new Types.ObjectId(tenantId),
     };
     if (isOwnerScoped(role)) filter['createdBy'] = new Types.ObjectId(userId);
     if (tag) filter['tags'] = tag;
+    if (opts.heat && ['hot', 'warm', 'cold'].includes(opts.heat))
+      filter['scoreLabel'] = opts.heat;
     // Un contacto puede estar en varios formularios: se busca dentro del array,
     // no en el `formId` de alta, que solo guarda el primero.
     if (formId && Types.ObjectId.isValid(formId))
@@ -118,7 +123,7 @@ export class CustomersService implements OnModuleInit {
     }
     return this.customerModel
       .find(filter)
-      .sort({ name: 1 })
+      .sort(opts.sort === 'score' ? { score: -1, name: 1 } : { name: 1 })
       .populate('ownerId', 'name email')
       .exec();
   }
@@ -141,7 +146,20 @@ export class CustomersService implements OnModuleInit {
           ? { createdBy: new Types.ObjectId(userId) }
           : {}),
       });
-      return await customer.save();
+      const saved = await customer.save();
+      emitAutomation({
+        type: 'contact_created',
+        tenantId,
+        customerId: String(saved._id),
+      });
+      if (saved.tags?.length)
+        emitAutomation({
+          type: 'tag_added',
+          tenantId,
+          customerIds: [String(saved._id)],
+          tags: saved.tags,
+        });
+      return saved;
     } catch (err: unknown) {
       const mongoErr = err as { code?: number };
       if (mongoErr.code === 11000)
@@ -165,6 +183,7 @@ export class CustomersService implements OnModuleInit {
       throw new ForbiddenException();
     if (isOwnerScoped(role) && customer.createdBy?.toString() !== userId)
       throw new ForbiddenException();
+    const tagsBefore = new Set(customer.tags ?? []);
     Object.assign(customer, {
       ...dto,
       ...(dto.email ? { email: dto.email.toLowerCase().trim() } : {}),
@@ -172,7 +191,16 @@ export class CustomersService implements OnModuleInit {
       ...(dto.phone !== undefined ? { phone: formatPhone(dto.phone) } : {}),
     });
     try {
-      return await customer.save();
+      const saved = await customer.save();
+      const added = (saved.tags ?? []).filter((t) => !tagsBefore.has(t));
+      if (added.length)
+        emitAutomation({
+          type: 'tag_added',
+          tenantId,
+          customerIds: [String(saved._id)],
+          tags: added,
+        });
+      return saved;
     } catch (err: unknown) {
       if ((err as { code?: number }).code === 11000)
         throw new ConflictException(

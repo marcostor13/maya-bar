@@ -119,7 +119,7 @@ describe('IntegrationsComponent', () => {
 
     const req = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/api-access'));
     expect(req.request.body).toEqual({
-      name: 'Web', channel: 'whatsapp', accountId: 'wa1',
+      name: 'Web', channel: 'whatsapp', accountId: 'wa1', purpose: 'website',
       allowedDomains: ['https://mitienda.pe', '*.empresa.com'], allowedIps: ['203.0.113.10'],
       perMinuteLimit: 60, perDayLimit: 2000,
     });
@@ -150,6 +150,24 @@ describe('IntegrationsComponent', () => {
     submit();
     http.expectNone(r => r.method === 'POST');
     expect(toast.error).toHaveBeenCalledWith('Autoriza al menos un dominio.');
+  });
+
+  it('HU65: una clave de automatización (Zapier / Make) no pide dominio', async () => {
+    await setup([]);
+    button('Nuevo acceso').click();
+    fixture.detectChanges();
+    await settle();
+    type('name', 'Zapier');
+    type('purpose', 'automation');
+    expect(page().textContent).toContain('/api/v1');
+    submit();
+    const req = http.expectOne(r => r.method === 'POST' && r.url.endsWith('/api-access'));
+    expect(req.request.body).toMatchObject({ name: 'Zapier', purpose: 'automation', allowedDomains: [] });
+    req.flush({ access: { ...ACCESS, name: 'Zapier', purpose: 'automation', allowedDomains: [] }, key: 'mk_ZAP' });
+    expectList().flush([{ ...ACCESS, name: 'Zapier', purpose: 'automation', allowedDomains: [] }]);
+    fixture.detectChanges();
+    expect(toast.success).toHaveBeenCalledWith('Acceso creado');
+    expect(el().textContent).toContain('Zapier / Make');
   });
 
   it('muestra el error del servidor al crear', async () => {

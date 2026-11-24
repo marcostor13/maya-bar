@@ -20,6 +20,7 @@ import {
 import { ResendService } from './resend.service';
 import { SaveResendConfigDto, TestResendDto } from './dto/resend.dto';
 
+import { Audit } from '../audit/audit.decorator';
 /** Cuenta de Resend de la empresa: vive en Configuración y es de administradores. */
 @Controller('resend')
 @UseGuards(JwtAuthGuard, ModuleGuard('settings'))
@@ -32,6 +33,11 @@ export class ResendController {
     return this.resend.getConfig(req.user.tenantId);
   }
 
+  @Audit({
+    action: 'channels.configured',
+    resource: 'resend',
+    bodyFields: ['fromEmail'],
+  })
   @Put('config')
   saveConfig(@Body() dto: SaveResendConfigDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
@@ -45,6 +51,23 @@ export class ResendController {
     return this.resend.test(req.user.tenantId, dto.to);
   }
 
+  @Put('webhook-secret')
+  setWebhookSecret(@Body() body: { secret?: string }, @Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.resend.setWebhookSecret(
+      req.user.tenantId,
+      String(body?.secret ?? ''),
+    );
+  }
+
+  @Post('tracking')
+  @HttpCode(200)
+  enableTracking(@Request() req: AuthReq) {
+    assertRole(req.user.role, MANAGE_ROLES);
+    return this.resend.enableTracking(req.user.tenantId);
+  }
+
+  @Audit({ action: 'channels.disconnected', resource: 'resend' })
   @Delete('config')
   remove(@Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

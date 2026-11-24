@@ -11,8 +11,7 @@ import {
   Impulsador,
   ImpulsadorStat,
   MediaFile,
-  Registration,
-} from '../../shared/models/event.model';
+  Registration, TicketType } from '../../shared/models/event.model';
 import type { DesignSpec } from './invitation-designer';
 
 /**
@@ -42,6 +41,9 @@ export class EventDetailStore {
 
   // Form fields (custom questions)
   formFields = signal<FormField[]>([]);
+  /** Venta en línea con Mercado Pago (HU67). */
+  onlinePayment = signal(false);
+  ticketTypes = signal<TicketType[]>([]);
 
   // Invitation design (kept in memory for new events, saved with event)
   design = signal<DesignSpec | null>(null);
@@ -121,6 +123,8 @@ export class EventDetailStore {
       previewUrl: this.previewUrl(),
       mediaFiles: this.mediaFiles(),
       formFields: this.formFields(),
+      onlinePayment: this.onlinePayment(),
+      ticketTypes: this.ticketTypes(),
     });
   }
 
@@ -168,7 +172,11 @@ export class EventDetailStore {
   saveEvent() {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     this.saving.set(true);
-    const val = this.form.value;
+    const val = { ...this.form.value, onlinePayment: this.onlinePayment(), ticketTypes: this.cleanTicketTypes() };
+    if (val.onlinePayment && !val.ticketTypes.length) {
+      this.toast.error('Agrega al menos un tipo de entrada para vender en línea');
+      return;
+    }
     const body = this.isNew()
       ? { ...val, localId: this.localId(), imageUrl: this.previewUrl() || undefined, mediaFiles: this.mediaFiles(), formFields: this.formFields(), ...(this.design() ? { invitationDesign: this.design() } : {}) }
       : { ...val, imageUrl: this.previewUrl() || undefined, mediaFiles: this.mediaFiles(), formFields: this.formFields() };
@@ -194,6 +202,18 @@ export class EventDetailStore {
         this.saving.set(false);
       },
     });
+  }
+
+  private cleanTicketTypes(): TicketType[] {
+    return this.ticketTypes()
+      .filter(t => t.name.trim())
+      .map(t => ({
+        ...(t.key ? { key: t.key } : {}),
+        name: t.name.trim(),
+        price: Math.max(0, Number(t.price) || 0),
+        capacity: Math.max(0, Math.floor(Number(t.capacity) || 0)),
+        salesEndAt: t.salesEndAt ? new Date(t.salesEndAt).toISOString() : null,
+      }));
   }
 
   publicUrl(slug: string): string { return `${window.location.origin}/e/${slug}`; }

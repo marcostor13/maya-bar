@@ -11,17 +11,24 @@ import {
   Request,
   Res,
   StreamableFile,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 
+import { Audit } from '../audit/audit.decorator';
 @Controller('customers')
 @UseGuards(JwtAuthGuard, ModuleGuard('customers'))
 export class CustomersController {
-  constructor(private customersService: CustomersService) {}
+  constructor(
+    private customersService: CustomersService,
+    // Global (HU42); opcional para las pruebas que montan solo el controlador.
+    @Optional() private limits?: PlanLimitsService,
+  ) {}
 
   @Get()
   findAll(
@@ -29,6 +36,8 @@ export class CustomersController {
     @Query('tag') tag: string,
     @Query('formId') formId: string,
     @Request() req: AuthReq,
+    @Query('heat') heat?: string,
+    @Query('sort') sort?: string,
   ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.customersService.findAll(
@@ -38,6 +47,7 @@ export class CustomersController {
       search,
       tag,
       formId,
+      { heat, sort },
     );
   }
 
@@ -57,8 +67,9 @@ export class CustomersController {
   }
 
   @Post()
-  create(@Body() dto: CreateCustomerDto, @Request() req: AuthReq) {
+  async create(@Body() dto: CreateCustomerDto, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
+    await this.limits?.assertCanAdd(req.user.tenantId, 'contacts');
     return this.customersService.create(
       req.user.tenantId,
       req.user.userId,
@@ -73,6 +84,7 @@ export class CustomersController {
     return this.customersService.sync(req.user.tenantId);
   }
 
+  @Audit({ action: 'customers.export', resource: 'customer' })
   @Get('export.csv')
   async exportCsv(
     @Request() req: AuthReq,
@@ -84,6 +96,11 @@ export class CustomersController {
       req.user.userId,
       req.user.role,
     );
+    // Auditoría (HU63): cuántos contactos salieron.
+    (req as AuthReq & { auditDetails?: Record<string, unknown> }).auditDetails =
+      {
+        rows: csv ? csv.split(String.fromCharCode(10)).length - 1 : 0,
+      };
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     res.setHeader('Content-Disposition', 'attachment; filename="clientes.csv"');
     return new StreamableFile(Buffer.from('﻿' + csv, 'utf-8'), {
@@ -107,6 +124,7 @@ export class CustomersController {
     );
   }
 
+  @Audit({ action: 'customers.deleted', resource: 'customer' })
   @Delete(':id')
   delete(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);

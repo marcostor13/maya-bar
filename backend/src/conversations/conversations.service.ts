@@ -4,12 +4,25 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { BillingAccessService } from '../billing/billing-access.service';
+import {
+  AiCreditsException,
+  AiCreditsService,
+} from '../billing/ai-credits.service';
 import { Interval } from '@nestjs/schedule';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
-import { Message, MessageType, MessageStatus } from './message.schema';
+import {
+  Message,
+  MessageAuthor,
+  MessageType,
+  MessageStatus,
+} from './message.schema';
+import { WebWidget } from '../webchat/web-widget.schema';
+import { WebChatHub, type WebChatEvent } from './web-chat-hub';
 import { windowFrom, type WindowStatus } from './wa-window';
 import type { ResolvedTemplate } from '../whatsapp-templates/template-send';
 import {
@@ -74,6 +87,7 @@ import {
 } from '../campaign-attribution/campaign-attribution';
 import { Lead } from '../leads/lead.schema';
 import { waCost, waMarket } from '../dashboard/message-pricing';
+import { emitAutomation } from '../automations/automation-bus';
 
 /** Respuestas del agente por hora en un mismo hilo de correo antes de pausarlo. */
 const MAX_AGENT_EMAILS_PER_HOUR = 5;
@@ -149,10 +163,29 @@ export interface ExternalSend {
     variables: string[];
     header?: TemplateHeader;
   };
-  api: {
+  /** Solo en envíos de la API de integraciones; las automatizaciones no lo llevan. */
+  api?: {
     accessId: Types.ObjectId;
     accessName: string;
     idempotencyKey?: string;
+  };
+  /** Quién figura como autor; por defecto `human` (API). */
+  author?: MessageAuthor;
+  /** Contacto del CRM al que se enlaza el chat si aún no lo está. */
+  customerId?: Types.ObjectId;
+}
+
+/** Forma que recibe el widget del chat web (HU69). */
+function webEvent(m: Message): WebChatEvent {
+  return {
+    id: String(m._id),
+    direction: m.direction,
+    author: m.author,
+    type: m.type,
+    text: m.text ?? '',
+    ...(m.mediaUrl ? { mediaUrl: m.mediaUrl } : {}),
+    ...(m.filename ? { filename: m.filename } : {}),
+    at: new Date(m.at ?? Date.now()).toISOString(),
   };
 }
 
@@ -195,6 +228,7 @@ const CHANNEL_LABEL: Record<ConversationChannel, string> = {
   instagram: 'Instagram',
   messenger: 'Messenger',
   email: 'Correo',
+  web: 'Chat web',
 };
 
 /**
@@ -327,6 +361,14 @@ export class ConversationsService {
     private assignment: ConversationAssignmentService,
     private attribution: CampaignAttributionService,
     private blocks: BlockedContactsService,
+    // Opcional: las pruebas unitarias no montan el módulo de cobro.
+    @Optional() private billing?: BillingAccessService,
+    @Optional() private credits?: AiCreditsService,
+    // Chat web (HU69). Opcionales para las pruebas que arman el servicio a mano.
+    @Optional()
+    @InjectModel(WebWidget.name)
+    private webWidgets?: Model<WebWidget>,
+    @Optional() private webHub?: WebChatHub,
   ) {}
 
   /**
@@ -430,11 +472,17 @@ export class ConversationsService {
    * puede entrar una conversación. Sirve para el selector de cuenta de la bandeja.
    */
   async listAccounts(tenantId: string): Promise<InboxAccount[]> {
-    const [wa, ig, ms, em, counts] = await Promise.all([
+    const [wa, ig, ms, em, web, counts] = await Promise.all([
       this.waAccounts.findAll(tenantId),
       this.igAccounts.findAll(tenantId),
       this.msAccounts.findAll(tenantId),
       this.emailAccounts.findAll(tenantId),
+      this.webWidgets
+        ? this.webWidgets
+            .find({ tenantId: new Types.ObjectId(tenantId) })
+            .lean<WebWidget[]>()
+            .exec()
+        : Promise.resolve([] as WebWidget[]),
       this.countsByAccount(tenantId),
     ]);
 
@@ -477,7 +525,124 @@ export class ConversationsService {
         isDefault: !!a.isDefault,
         ...withCounts(String(a._id)),
       })),
+      ...web.map((w) => ({
+        _id: String(w._id),
+        channel: 'web' as const,
+        label: 'Chat web',
+        detail: w.allowedDomains[0] ?? 'Sitio web',
+        active: w.active,
+        isDefault: false,
+        ...withCounts(String(w._id)),
+      })),
     ];
+  }
+
+  // ── Chat web (HU69) ──────────────────────────────────────────────────
+
+  /** Agente publicado que eligió la empresa para su chat web. */
+  private async webAgent(widgetId: string): Promise<AiAgent | null> {
+    const w = await this.webWidgets
+      ?.findById(widgetId)
+      .select('agentId tenantId')
+      .lean()
+      .exec();
+    if (!w?.agentId) return null;
+    return this.agents.findPublishedById(String(w.agentId), String(w.tenantId));
+  }
+
+  /** Mensaje del visitante desde el widget. */
+  async handleWebInbound(
+    widget: { _id: unknown; tenantId: unknown },
+    visitorId: string,
+    text: string,
+  ): Promise<Message | null> {
+    const accountId = String(widget._id);
+    await this.ingest({
+      channel: 'web',
+      tenantId: String(widget.tenantId),
+      accountId,
+      inbound: { contact: visitorId, chatId: visitorId, type: 'text', text },
+      downloadMedia: () => Promise.resolve(null),
+      resolveAgent: () => this.webAgent(accountId),
+    });
+    const conv = await this.webConversation(accountId, visitorId);
+    return conv
+      ? this.msgModel
+          .findOne({ conversationId: conv._id, direction: 'in' })
+          .sort({ at: -1 })
+          .exec()
+      : null;
+  }
+
+  private webConversation(widgetId: string, visitorId: string) {
+    return this.convModel
+      .findOne({
+        channel: 'web',
+        accountId: new Types.ObjectId(widgetId),
+        contact: visitorId,
+      })
+      .exec();
+  }
+
+  /** Historial del visitante (al abrir el widget o al reconectar). */
+  async webHistory(
+    widgetId: string,
+    visitorId: string,
+    since?: Date,
+  ): Promise<WebChatEvent[]> {
+    const conv = await this.webConversation(widgetId, visitorId);
+    if (!conv) return [];
+    const rows = await this.msgModel
+      .find({
+        conversationId: conv._id,
+        status: { $ne: 'failed' },
+        // Las notas internas (quién tomó el chat…) no las ve el visitante.
+        author: { $ne: 'system' },
+        ...(since ? { at: { $gt: since } } : {}),
+      })
+      .sort({ at: -1 })
+      .limit(100)
+      .exec();
+    return rows.reverse().map(webEvent);
+  }
+
+  /**
+   * El visitante dejó sus datos en el widget: se enlaza (o fusiona) con el
+   * contacto del CRM que tenga ese teléfono o email.
+   */
+  async identifyWebVisitor(
+    widget: { _id: unknown; tenantId: unknown },
+    visitorId: string,
+    data: { name?: string; phone?: string; email?: string },
+  ): Promise<void> {
+    const widgetId = String(widget._id);
+    const tenantId = String(widget.tenantId);
+    const conv =
+      (await this.webConversation(widgetId, visitorId)) ??
+      (await this.upsertConversation(
+        'web',
+        tenantId,
+        widgetId,
+        { contact: visitorId, chatId: visitorId, type: 'text', at: new Date() },
+        false,
+      ));
+    if (data.name?.trim()) conv.contactName = data.name.trim().slice(0, 120);
+    if (data.phone?.trim() || data.email?.trim()) {
+      const customer = await this.leads.upsertCustomer(
+        tenantId,
+        '',
+        'TENANT_ADMIN',
+        {
+          name: conv.contactName || 'Visitante web',
+          phone: data.phone,
+          email: data.email,
+          source: 'web',
+        },
+      );
+      conv.customerId = customer._id;
+    }
+    await conv.save();
+    this.gateway.emitConversation(tenantId, conv);
   }
 
   /**
@@ -1193,8 +1358,17 @@ export class ConversationsService {
       0,
       MAX_TAGS,
     );
+    const before = new Set(customer.tags ?? []);
     customer.tags = clean;
     await customer.save();
+    const added = clean.filter((t) => !before.has(t));
+    if (added.length)
+      emitAutomation({
+        type: 'tag_added',
+        tenantId,
+        customerIds: [String(customer._id)],
+        tags: added,
+      });
 
     if (!conv.customerId) {
       conv.customerId = customer._id;
@@ -1558,22 +1732,26 @@ export class ConversationsService {
         tenantId: conv.tenantId,
         conversationId: conv._id,
         direction: 'out',
-        author: 'human',
+        author: input.author ?? 'human',
         type: input.type,
         text: input.text,
         mediaUrl: input.mediaUrl,
         filename: input.filename,
         status: 'pending',
         template: input.template,
-        apiAccessId: input.api.accessId,
-        apiAccessName: input.api.accessName,
-        apiIdempotencyKey: input.api.idempotencyKey,
+        ...(input.api
+          ? {
+              apiAccessId: input.api.accessId,
+              apiAccessName: input.api.accessName,
+              apiIdempotencyKey: input.api.idempotencyKey,
+            }
+          : {}),
         at: new Date(),
       });
     } catch (err) {
       if (
         (err as { code?: number }).code === 11000 &&
-        input.api.idempotencyKey
+        input.api?.idempotencyKey
       ) {
         const existing = await this.msgModel
           .findOne({
@@ -1589,6 +1767,15 @@ export class ConversationsService {
 
     await this.touchConversation(conv, msg);
     this.gateway.emitMessage(input.tenantId, msg);
+    if (input.customerId && !conv.customerId) {
+      conv.customerId = input.customerId;
+      await this.convModel
+        .updateOne(
+          { _id: conv._id },
+          { $set: { customerId: input.customerId } },
+        )
+        .exec();
+    }
 
     try {
       const externalId = input.template
@@ -1610,7 +1797,7 @@ export class ConversationsService {
       // si reenviarla (cada envío se cobra).
       if (input.template) msg.retryStopped = true;
       this.logger.error(
-        `Error enviando mensaje por API ${String(msg._id)} (acceso ${String(input.api.accessId)}): ${String(err)}`,
+        `Error enviando mensaje externo ${String(msg._id)} (${input.api ? `acceso ${String(input.api.accessId)}` : (input.author ?? 'human')}): ${String(err)}`,
       );
     }
     await msg.save();
@@ -1660,6 +1847,12 @@ export class ConversationsService {
       : undefined;
 
     if (conv.channel === 'email') return this.deliverEmail(conv, msg);
+
+    // Chat web (HU69): no hay proveedor; el visitante lo recibe por SSE.
+    if (conv.channel === 'web') {
+      this.webHub?.publish(String(conv.accountId), conv.contact, webEvent(msg));
+      return undefined;
+    }
 
     if (conv.channel === 'whatsapp') {
       const account = await this.waAccounts.findById(String(conv.accountId));
@@ -1794,6 +1987,51 @@ export class ConversationsService {
     if (type === 'video') return 'video';
     if (type === 'audio' || type === 'voice') return 'audio';
     return 'document';
+  }
+
+  /**
+   * Exporta las conversaciones con sus mensajes a CSV (HU51: también en solo
+   * lectura). Tope de 50 000 mensajes, los más recientes.
+   */
+  async exportCsv(tenantId: string): Promise<string> {
+    const tid = new Types.ObjectId(tenantId);
+    const msgs = await this.msgModel
+      .find({ tenantId: tid, inTrash: { $ne: true } })
+      .sort({ at: -1 })
+      .limit(50_000)
+      .select('conversationId direction author type text at')
+      .lean()
+      .exec();
+    const convIds = [...new Set(msgs.map((m) => String(m.conversationId)))];
+    const convs = await this.convModel
+      .find({ _id: { $in: convIds }, tenantId: tid })
+      .select('channel contact contactName')
+      .lean()
+      .exec();
+    const byId = new Map(convs.map((c) => [String(c._id), c]));
+    const cell = (v: string | number | undefined | null) => {
+      let t = String(v ?? '');
+      // Evita fórmulas al abrir el CSV en Excel.
+      if (/^[=+\-@]/.test(t)) t = `'${t}`;
+      return `"${t.replace(/"/g, '""')}"`;
+    };
+    const rows = msgs.reverse().map((m) => {
+      const c = byId.get(String(m.conversationId));
+      return [
+        c?.channel,
+        c?.contact,
+        c?.contactName,
+        m.at ? new Date(m.at).toISOString() : '',
+        m.direction,
+        m.type,
+        m.text,
+      ]
+        .map(cell)
+        .join(',');
+    });
+    return ['canal,contacto,nombre,fecha,direccion,tipo,texto', ...rows].join(
+      '\n',
+    );
   }
 
   // ------------------------------------------------------------------
@@ -2411,6 +2649,8 @@ export class ConversationsService {
         return this.agents.findPublishedByMessengerAccount(account);
       case 'email':
         return this.agents.findPublishedByEmailAccount(account);
+      case 'web':
+        return this.webAgent(account);
       default:
         return null;
     }
@@ -2486,6 +2726,11 @@ export class ConversationsService {
     typing?: (on: boolean) => Promise<void>,
   ) {
     const tenantId = String(conv.tenantId);
+    // Prueba o plan vencidos: el agente se pausa (HU41).
+    if (this.billing && !(await this.billing.canOperate(tenantId))) {
+      this.logger.log(`Agente IA en pausa por cobro (empresa ${tenantId})`);
+      return;
+    }
     const agent = await resolveAgent();
     if (!agent) {
       this.logger.warn(
@@ -2582,6 +2827,18 @@ export class ConversationsService {
         await this.escalateToHuman(conv, agent, handoff.reason, userMessage);
       }
     } catch (err) {
+      // Sin créditos de IA: el chat pasa a una persona en vez de quedarse callado (HU43).
+      if (err instanceof AiCreditsException) {
+        await this.escalateToHuman(
+          conv,
+          agent,
+          'Sin créditos de IA',
+          userMessage,
+        ).catch((e: unknown) =>
+          this.logger.warn(`No se pudo derivar sin créditos: ${String(e)}`),
+        );
+        return;
+      }
       this.logger.error(
         `Error generando la respuesta del agente: ${String(err)}`,
       );
@@ -3095,6 +3352,12 @@ export class ConversationsService {
         keys,
       );
       if (!result?.text) return;
+      // Se lee con las keys de la empresa: queda anotado a 0 créditos (HU43).
+      if (result.source !== 'local')
+        void this.credits?.record(String(conv.tenantId), 'media', {
+          byok: true,
+          provider: result.source,
+        });
       msg.transcript = result.text;
       await msg.save();
       this.gateway.emitMessageUpdated(String(conv.tenantId), msg);

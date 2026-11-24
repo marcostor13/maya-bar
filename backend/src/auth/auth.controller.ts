@@ -23,7 +23,12 @@ import {
   ResetPasswordDto,
   RefreshTokenDto,
   VerifyEmailDto,
+  RedeemAccessDto,
+  SwitchTenantDto,
 } from './dto/auth.dto';
+import { AccountProvisioningService } from './account-provisioning.service';
+import { TwoFactorService } from './two-factor.service';
+import { AuditService } from '../audit/audit.service';
 
 const MINUTE = 60_000;
 
@@ -38,13 +43,34 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private turnstile: TurnstileService,
+    private provisioning: AccountProvisioningService,
+    private twoFactor: TwoFactorService,
+    private audit: AuditService,
   ) {}
 
   @Post('login')
   @Throttle({ default: { limit: 10, ttl: MINUTE } })
-  async login(@Body() body: LoginDto, @Headers('user-agent') ua?: string) {
-    const user = await this.authService.validateUser(body.email, body.password);
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+  async login(
+    @Body() body: LoginDto,
+    @Ip() ip: string,
+    @Headers('user-agent') ua?: string,
+  ) {
+    let user: Record<string, any> | null;
+    try {
+      user = await this.authService.validateUser(body.email, body.password);
+    } catch (err) {
+      // Cuenta desactivada, empresa suspendida o correo sin confirmar.
+      await this.audit.loginFailed(body.email, 'blocked', ip, ua);
+      throw err;
+    }
+    if (!user) {
+      await this.audit.loginFailed(body.email, 'bad_credentials', ip, ua);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    // Segundo factor (HU62): sin él no hay tokens, solo el reto.
+    const challenge = await this.twoFactor.gate(user, body.deviceToken);
+    if (challenge) return challenge;
+    await this.audit.loginOk(user, ip, ua);
     return this.authService.login(user, ua);
   }
 
@@ -91,6 +117,17 @@ export class AuthController {
     return this.authService.resendVerification(body.email);
   }
 
+  /** Usuario de agencia: entra a una sub-cuenta o vuelve a la agencia (HU72). */
+  @Post('switch-tenant')
+  @UseGuards(JwtAuthGuard)
+  switchTenant(
+    @Body() body: SwitchTenantDto,
+    @Request() req: AuthReq,
+    @Headers('user-agent') ua?: string,
+  ) {
+    return this.authService.switchTenant(req.user.userId, body.tenantId, ua);
+  }
+
   @Patch('change-password')
   @UseGuards(JwtAuthGuard)
   changePassword(@Body() body: ChangePasswordDto, @Request() req: AuthReq) {
@@ -115,5 +152,33 @@ export class AuthController {
       body.code,
       body.newPassword,
     );
+  }
+
+  /** Enlace de acceso tras pagar (HU47): crea la contraseña y abre sesión. */
+  @Post('access')
+  @Throttle({ default: { limit: 10, ttl: 15 * MINUTE } })
+  async redeemAccess(
+    @Body() body: RedeemAccessDto,
+    @Headers('user-agent') ua?: string,
+  ) {
+    const user = await this.provisioning.redeem(
+      body.email,
+      body.token,
+      body.password,
+    );
+    return this.authService.login(
+      user.toObject() as Record<string, unknown>,
+      ua,
+    );
+  }
+
+  @Post('access/resend')
+  @Throttle({ default: { limit: 3, ttl: 15 * MINUTE } })
+  async resendAccess(@Body() body: ForgotPasswordDto) {
+    await this.provisioning.resend(body.email);
+    return {
+      message:
+        'Si tu cuenta está pendiente de activar, te enviamos un enlace nuevo.',
+    };
   }
 }

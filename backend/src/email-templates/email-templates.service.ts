@@ -220,7 +220,10 @@ Reglas:
 - Sin HTML, sin emojis en el asunto, sin datos de contacto inventados (teléfonos, direcciones, precios que no estén en el encargo).
 - El "footer" es una línea breve de despedida de {empresa}; el link de baja se añade solo.`;
 
-    const raw = await this.ai.chat(prompt, { maxTokens: 1800 });
+    const raw = await this.ai.chat(prompt, {
+      maxTokens: 1800,
+      meter: { tenantId, action: 'text' },
+    });
     const parsed = this.ai.parseJson<{
       subject?: unknown;
       preheader?: unknown;

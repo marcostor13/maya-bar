@@ -49,7 +49,15 @@ export class ApiAccess extends Document {
   @Prop({ required: true })
   keyPrefix: string;
 
-  /** Hosts autorizados (`dominio.com` o `*.dominio.com`). Al menos uno. */
+  /**
+   * `website`: llamada desde la web de la empresa (exige dominio autorizado).
+   * `automation`: Zapier, Make o un servidor propio (HU65): sin cabecera
+   * Origin, y además da acceso a la API del CRM (`/api/v1`).
+   */
+  @Prop({ type: String, enum: ['website', 'automation'], default: 'website' })
+  purpose: 'website' | 'automation';
+
+  /** Hosts autorizados (`dominio.com` o `*.dominio.com`). Al menos uno en `website`. */
   @Prop({ type: [String], default: [] })
   allowedDomains: string[];
 

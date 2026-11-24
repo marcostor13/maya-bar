@@ -13,6 +13,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 
 const STEPS = [
+  { group: 'static', name: 'Catálogo de precios al día (HU56)', cwd: 'frontend', cmd: 'npm run catalog:check' },
   { group: 'static', name: 'Lint backend', cwd: 'backend', cmd: 'npx eslint "src/**/*.ts" --max-warnings=100' },
   { group: 'static', name: 'Build backend', cwd: 'backend', cmd: 'npm run build' },
   { group: 'unit', name: 'Unitarias backend', cwd: 'backend', cmd: 'npm test -- --silent' },

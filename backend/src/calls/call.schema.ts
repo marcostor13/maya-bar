@@ -92,6 +92,26 @@ export class Call extends Document {
   /** El mensaje automático de llamada perdida ya se envió. */
   @Prop({ default: false })
   missedReplySent: boolean;
+
+  /** La atendió el agente de IA por voz (HU73). */
+  @Prop({ type: Types.ObjectId, ref: 'AiAgent' })
+  voiceAgentId?: Types.ObjectId;
+
+  /** Sesión del proveedor de voz en tiempo real. */
+  @Prop()
+  voiceSessionId?: string;
+
+  /** Transcripción de la llamada con el agente de voz. */
+  @Prop({ type: [Object], default: undefined })
+  transcript?: { who: 'cliente' | 'agente'; text: string; at: Date }[];
+
+  /** Resumen que deja el agente de voz en el contacto. */
+  @Prop()
+  voiceSummary?: string;
+
+  /** Los minutos del agente de voz ya se cobraron. */
+  @Prop({ default: false })
+  voiceBilled: boolean;
 }
 
 export const CallSchema = SchemaFactory.createForClass(Call);

@@ -107,6 +107,35 @@ describe('CallSettingsComponent', () => {
     expect(c().isDirty()).toBe(true);
   });
 
+  it('agente de voz: lista agentes publicados, exige agente y guarda sus preferencias', async () => {
+    const voice = {
+      prefs: { enabled: false, mode: 'fallback', hoursFrom: 9, hoursTo: 18, days: [1, 2, 3, 4, 5], announce: true },
+      available: true,
+      creditsPerMinute: 5,
+    };
+    await mount({ meta: META, local: LOCAL, voice });
+    http.expectOne((r) => r.url.endsWith('/ai-agents')).flush([
+      { _id: 'ag1', name: 'Recepción', published: true },
+      { _id: 'ag2', name: 'Borrador', published: false },
+    ]);
+    await settle();
+    expect(c().agents().map((a) => a.name)).toEqual(['Recepción']);
+    expect(fixture.nativeElement.textContent).toContain('5 créditos por minuto');
+    c().voice.enabled = true;
+    await c().save();
+    expect(toast.error).toHaveBeenCalledWith('Elige el agente de IA que contestará las llamadas');
+    c().voice.agentId = 'ag1';
+    c().voice.mode = 'outside_hours';
+    c().toggleDay(6);
+    void c().save();
+    const put = http.expectOne((r) => r.method === 'PUT');
+    expect((put.request.body as { local: { voiceAgent: object } }).local.voiceAgent).toEqual({
+      enabled: true, agentId: 'ag1', mode: 'outside_hours', hoursFrom: 9, hoursTo: 18, days: [1, 2, 3, 4, 5, 6], announce: true,
+    });
+    put.flush({ meta: META, local: LOCAL, voice });
+    await settle();
+  });
+
   it('convierte horas', () => {
     expect(toHHMM('0930')).toBe('09:30');
     expect(fromHHMM('18:05')).toBe('1805');

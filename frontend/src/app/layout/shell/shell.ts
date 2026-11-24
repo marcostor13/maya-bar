@@ -1,3 +1,4 @@
+import { TrialBannerComponent } from '../../shared/trial-banner';
 import { Component, inject, signal, computed, effect, DestroyRef, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DOCUMENT } from '@angular/common';
@@ -15,12 +16,12 @@ import { NativePushService } from '../../core/push.service';
 import { DevicePermissionsService } from '../../core/device-permissions.service';
 import { CallOverlayComponent } from '../../shared/calls/call-overlay';
 import {
-  LucideAngularModule, Building2, LayoutDashboard, Store, Users, LogOut, ChevronLeft, ChevronRight,
+  LucideAngularModule, Wallet, ClipboardCheck, Building2, LayoutDashboard, BarChart3, Store, Users, LogOut, ChevronLeft, ChevronRight,
   Zap, ContactRound, Megaphone, Settings, List, MapPin, Gauge, Bot, X, MessagesSquare,
   LayoutTemplate,
   MailPlus,
   Link2,
-  MessageSquareText, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Radar, Phone, Plug, type LucideIconData,
+  MessageSquareText, FileText, Target, LayoutGrid, BanIcon, HeartHandshake, Workflow, Radar, Phone, Plug, type LucideIconData,
 } from 'lucide-angular';
 
 /** Una entrada del menú. La misma alimenta el lateral, la barra inferior y la hoja "Más". */
@@ -50,16 +51,19 @@ const TAB_PRIORITY: Record<string, string[]> = {
   DEFAULT: ['dashboard', 'inbox', 'customers', 'events', 'leads', 'campaigns', 'locals'],
 };
 
+import { BrandService } from '../../core/brand.service';
+import { ToastService } from '../../shared/toast';
+
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, LucideAngularModule, PushCenterComponent, CallOverlayComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, LucideAngularModule, PushCenterComponent, CallOverlayComponent, TrialBannerComponent],
   template: `
     <div class="shell" [class.immersive]="immersive()">
       <!-- ══ Cabecera móvil ══ -->
       <header class="mobile-topbar" [class.scrolled]="scrolled()">
         <div class="topbar-title">
-          <img src="/logo.png?v=2" alt="Maya CRM" class="topbar-logo" />
+          @if (brand.logo()) { <img [src]="brand.logo()" [alt]="brand.brand().appName" class="topbar-logo" /> }
           <h1>{{ currentTitle() }}</h1>
         </div>
         <div class="topbar-actions">
@@ -75,7 +79,11 @@ const TAB_PRIORITY: Record<string, string[]> = {
         <div class="sidebar-header" [class.collapsed-header]="collapsed()">
           @if (!collapsed()) {
             <div class="logo">
-              <img src="/logo.png?v=2" alt="Maya CRM" class="logo-img" />
+              @if (brand.logo()) {
+                <img [src]="brand.logo()" [alt]="brand.brand().appName" class="logo-img" />
+              } @else {
+                <span class="logo-name">{{ brand.brand().appName }}</span>
+              }
             </div>
           }
           <button class="collapse-btn" (click)="collapsed.set(!collapsed())" [title]="collapsed() ? 'Expandir' : 'Colapsar'">
@@ -121,6 +129,13 @@ const TAB_PRIORITY: Record<string, string[]> = {
       </aside>
 
       <main class="main-content" (scroll)="onScroll($event)">
+        @if (showTrialBanner()) { <app-trial-banner /> }
+        @if (auth.currentUser()?.homeTenantId) {
+          <div class="acting-bar" role="status">
+            <span>Estás dentro de la cuenta de un cliente.</span>
+            <button type="button" class="btn btn-secondary btn-sm" (click)="backToAgency()">Volver a la agencia</button>
+          </div>
+        }
         <router-outlet />
       </main>
 
@@ -307,6 +322,9 @@ const TAB_PRIORITY: Record<string, string[]> = {
 
     .logo { display: flex; align-items: center; overflow: hidden; }
     .logo-img { height: 32px; width: auto; object-fit: contain; }
+    .logo-name { font-family: var(--font-heading); font-weight: 700; font-size: 18px; color: var(--color-text-main); white-space: nowrap; }
+    .acting-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 24px;
+      background: color-mix(in srgb, var(--color-brand) 10%, var(--color-white)); border-bottom: 1px solid var(--color-border); font-size: 14px; }
 
     .collapse-btn {
       background: var(--color-bg-app);
@@ -689,7 +707,14 @@ const TAB_PRIORITY: Record<string, string[]> = {
   `],
 })
 export class ShellComponent {
-  private auth = inject(AuthService);
+  auth = inject(AuthService);
+  readonly brand = inject(BrandService);
+  private toastSvc = inject(ToastService);
+  /** Aviso de prueba/cobro (HU41): no aplica al superadmin. */
+  showTrialBanner = computed(() => {
+    const u = this.auth.currentUser();
+    return !!u && u.role !== 'SUPERADMIN';
+  });
   private permissions = inject(PermissionsService);
   private realtime = inject(ConversationsRealtimeService);
   private outbox = inject(OutboxService);
@@ -721,9 +746,17 @@ export class ShellComponent {
   /** El contenido ya está desplazado: la cabecera cambia el logo por el título. */
   scrolled = signal(false);
 
+  /** Usuario de agencia dentro de un cliente: vuelve a su agencia (HU72). */
+  backToAgency() {
+    const home = this.auth.currentUser()?.homeTenantId;
+    if (home) this.auth.switchTenant(home).subscribe({ error: () => this.toastSvc.error('No se pudo volver a la agencia') });
+  }
+
   constructor() {
     // El menú no puede pintarse antes de saber qué módulos tiene el usuario.
     void this.permissions.load();
+    // Marca de la agencia, si la empresa es una sub-cuenta (HU72).
+    this.brand.loadForSession();
     // Un solo websocket para toda la sesión: alimenta la insignia del menú y
     // la propia bandeja de entrada.
     this.realtime.connect();
@@ -798,6 +831,8 @@ export class ShellComponent {
         items: [
           { key: 'tenants', label: 'Empresas', icon: Building2, route: '/admin/tenants' },
           { key: 'admin-users', label: 'Usuarios', icon: Users, route: '/admin/users' },
+          { key: 'admin-billing', label: 'Suscripciones', icon: Wallet, route: '/admin/billing' },
+          { key: 'admin-onboarding', label: 'Implementaciones', icon: ClipboardCheck, route: '/admin/onboarding' },
         ],
       }];
     }
@@ -825,6 +860,7 @@ export class ShellComponent {
 
     const operations = keep([
       { key: 'dashboard', label: 'Dashboard', short: 'Inicio', icon: LayoutDashboard, route: '/dashboard' },
+      { key: 'reports', module: 'dashboard', label: 'Reportes', icon: BarChart3, route: '/reportes' },
       { key: 'locals', label: 'Mis Locales', short: 'Locales', icon: Store, route: '/locals' },
       { key: 'events', label: 'Eventos', icon: Zap, route: '/events' },
       { key: 'visits', label: 'Visitas', icon: MapPin, route: '/visitas' },
@@ -836,6 +872,7 @@ export class ShellComponent {
       { key: 'lists', label: 'Listas', icon: List, route: '/lists' },
       { key: 'forms', label: 'Formularios', short: 'Forms', icon: FileText, route: '/forms' },
       { key: 'campaigns', label: 'Campañas', icon: Megaphone, route: '/campaigns' },
+      { key: 'automations', module: 'campaigns', label: 'Automatizaciones', short: 'Automatizar', icon: Workflow, route: '/automatizaciones' },
       { key: 'recovery', module: 'campaigns', label: 'Recuperar clientes', short: 'Recuperar', icon: HeartHandshake, route: '/recuperacion' },
       { key: 'links', module: 'campaigns', label: 'Links cortos', short: 'Links', icon: Link2, route: '/links' },
       { key: 'email-templates', module: 'campaigns', label: 'Plantillas email', short: 'Emails', icon: MailPlus, route: '/plantillas-email' },
@@ -852,6 +889,9 @@ export class ShellComponent {
       { key: 'integrations', label: 'Integraciones', short: 'API', icon: Plug, route: '/integraciones' },
     ]);
 
+    // Panel de la agencia (HU72): lo ve su administrador, también dentro de un cliente.
+    if (this.brand.agency())
+      management.unshift({ key: 'agency', label: 'Agencia', icon: Building2, route: '/agencia' });
     if (operations.length) groups.push({ label: 'OPERACIONES', items: operations });
     if (clients.length) groups.push({ label: 'CLIENTES', items: clients });
     if (management.length) groups.push({ label: 'GESTIÓN', items: management });

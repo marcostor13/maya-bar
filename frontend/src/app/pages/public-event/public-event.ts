@@ -116,6 +116,28 @@ interface PublicEvent {
   location?: string;
   formFields?: EventFormField[];
   invitationDesign?: InvitationDesign;
+  onlinePayment?: boolean;
+  currency?: string;
+  ticketTypes?: PublicTicketType[];
+}
+
+/** Tipo de entrada a la venta (HU67). */
+interface PublicTicketType {
+  key: string;
+  name: string;
+  price: number;
+  capacity: number;
+  salesEndAt?: string | null;
+  sold: number;
+}
+
+interface CheckoutResult {
+  registrationId: string;
+  ticketCode: string;
+  amount: number;
+  currency: string;
+  initPoint: string;
+  paymentStatus: 'pending' | 'paid';
 }
 
 /** Dónde es el evento (HU33). */
@@ -313,7 +335,7 @@ function hexToRgba(hex: string, opacity: number): string {
           } @else if (!showForm() && !hasButtonEl()) {
             <div class="pe-cta-bar">
               <button class="pe-cta-btn" (click)="openForm()">
-                {{ ctaLabel(ev()!.price) }}
+                {{ cta() }}
               </button>
             </div>
           }
@@ -340,9 +362,35 @@ function hexToRgba(hex: string, opacity: number): string {
 
             <div class="pe-drawer-content">
               <h2 class="pe-form-title" id="pe-form-title">
-                {{ theme().formTitle || ctaLabel(ev()!.price) }}
+                {{ theme().formTitle || cta() }}
               </h2>
-              @if (ev()!.price > 0) {
+              @if (paymentNotice()) {
+                <p class="pe-pay-note" role="status">{{ paymentNotice() }}</p>
+              }
+              @if (online()) {
+                <fieldset class="pe-tickets">
+                  <legend class="field-label">Elige tu entrada</legend>
+                  @for (t of ticketTypes(); track t.key) {
+                    <label class="pe-ticket" [class.selected]="ticketType() === t.key" [class.soldout]="left(t) === 0">
+                      <input type="radio" name="ticketType" [value]="t.key" [checked]="ticketType() === t.key"
+                        [disabled]="left(t) === 0" (change)="ticketType.set(t.key)" />
+                      <span class="pe-ticket-name">{{ t.name }}</span>
+                      <span class="pe-ticket-price">{{ t.price === 0 ? 'Gratis' : 'S/ ' + t.price }}</span>
+                      @if (left(t) === 0) { <span class="pe-ticket-left">Agotada</span> }
+                      @else if (left(t) <= 10) { <span class="pe-ticket-left">Quedan {{ left(t) }}</span> }
+                    </label>
+                  }
+                </fieldset>
+                <div class="field">
+                  <label class="field-label" for="pe-qty">Cantidad</label>
+                  <select id="pe-qty" class="input" [value]="quantity()" (change)="setQuantity($event)">
+                    @for (n of quantities; track n) { <option [value]="n">{{ n }}</option> }
+                  </select>
+                </div>
+                @if (total() > 0) {
+                  <p class="pe-pay-note">Total S/ {{ total() }}. Pagas con tarjeta o Yape en Mercado Pago y te enviamos la entrada por correo.</p>
+                }
+              } @else if (ev()!.price > 0) {
                 <p class="pe-pay-note">La entrada cuesta S/ {{ ev()!.price }} y se paga en el local.</p>
               }
 
@@ -430,7 +478,7 @@ function hexToRgba(hex: string, opacity: number): string {
 
                 <button type="submit" class="btn btn-primary btn-lg w-full" [disabled]="submitting()"
                   [style.background]="theme().buttonBg" [style.color]="theme().buttonText">
-                  {{ submitting() ? 'Procesando...' : (theme().formButton || (ev()!.price === 0 ? 'Confirmar asistencia' : 'Reservar entrada')) }}
+                  {{ submitting() ? 'Procesando...' : submitLabel() }}
                 </button>
               </form>
             </div>
@@ -474,7 +522,7 @@ function hexToRgba(hex: string, opacity: number): string {
               }
               @if (!registered() && !(spotsLeft() === 0 && ev()!.capacity > 0)) {
                 <button type="button" class="btn btn-primary btn-lg w-full" (click)="showDetails.set(false); openForm()">
-                  {{ ctaLabel(ev()!.price) }}
+                  {{ cta() }}
                 </button>
               }
             </div>
@@ -639,6 +687,14 @@ function hexToRgba(hex: string, opacity: number): string {
       font: 700 14px var(--font-base); cursor: pointer; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
     }
     .pe-details-btn.with-music { right: 70px; }
+    .pe-tickets { border: 0; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+    .pe-ticket { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; padding: 12px 14px;
+      border: 1px solid color-mix(in srgb, var(--form-text, currentColor) 20%, transparent); border-radius: var(--radius-md); cursor: pointer; }
+    .pe-ticket.selected { border-color: var(--form-accent, var(--color-brand)); box-shadow: 0 0 0 1px var(--form-accent, var(--color-brand)); }
+    .pe-ticket.soldout { opacity: .5; cursor: not-allowed; }
+    .pe-ticket-name { font-weight: 600; }
+    .pe-ticket-price { font-weight: 700; }
+    .pe-ticket-left { grid-column: 2 / -1; font-size: 12px; opacity: .75; }
     .pe-pay-note { margin:-8px 0 16px; font-size:14px; color:var(--color-text-muted); }
 
     .pe-title { font-size:26px; font-weight:800; margin:0 0 20px; font-family:var(--font-heading); line-height:1.25; color:var(--color-text-main); }
@@ -1002,8 +1058,43 @@ export class PublicEventComponent implements OnInit, OnDestroy {
     return hexToRgba(ov.color, ov.opacity);
   });
 
+  // ── Venta en línea (HU67) ──
+  online = signal(false);
+  ticketType = signal('');
+  quantity = signal(1);
+  readonly quantities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  /** Mensaje al volver de Mercado Pago (pago pendiente o fallido). */
+  paymentNotice = signal('');
+  ticketTypes = computed(() =>
+    (this.ev()?.ticketTypes ?? []).filter(t => !t.salesEndAt || new Date(t.salesEndAt).getTime() > Date.now()));
+  total = computed(() => {
+    const t = this.ticketTypes().find(x => x.key === this.ticketType());
+    return t ? Math.round(t.price * this.quantity() * 100) / 100 : 0;
+  });
+  left(t: PublicTicketType): number {
+    return t.capacity > 0 ? Math.max(0, t.capacity - t.sold) : Infinity;
+  }
+  setQuantity(e: Event) {
+    this.quantity.set(Number((e.target as HTMLSelectElement).value) || 1);
+  }
+  cta(): string {
+    if (!this.online()) return ctaLabel(this.ev()?.price ?? 0);
+    const prices = this.ticketTypes().map(t => t.price);
+    if (!prices.length) return 'Entradas agotadas';
+    const min = Math.min(...prices);
+    if (prices.every(p => p === 0)) return 'Reservar mi lugar';
+    return prices.some(p => p !== min) ? `Comprar entrada · desde S/ ${min}` : `Comprar entrada · S/ ${min}`;
+  }
+  submitLabel(): string {
+    if (this.online()) return this.total() > 0 ? `Pagar S/ ${this.total()}` : 'Confirmar entrada';
+    return this.theme().formButton || (this.ev()?.price === 0 ? 'Confirmar asistencia' : 'Reservar entrada');
+  }
+
   spotsLeft = computed(() => {
     const e = this.ev();
+    if (e && this.online()) {
+      return this.ticketTypes().some(t => this.left(t) > 0) ? Infinity : 0;
+    }
     if (!e || e.capacity === 0) return Infinity;
     return Math.max(0, e.capacity - this.registrationsCount());
   });
@@ -1073,12 +1164,15 @@ export class PublicEventComponent implements OnInit, OnDestroy {
     this.notFound.set(false);
     this.loadError.set(false);
     this.http
-      .get<{ event: PublicEvent; registrationsCount: number; brand?: PublicBrand | null; venue?: PublicVenue | null }>(`${API}/public/events/${slug}`)
+      .get<{ event: PublicEvent; registrationsCount: number; brand?: PublicBrand | null; venue?: PublicVenue | null; payments?: { online: boolean } }>(`${API}/public/events/${slug}`)
       .subscribe({
         next: (res) => {
           this.ev.set(res.event);
           this.brand.set(res.brand ?? null);
           this.venue.set(res.venue ?? null);
+          this.online.set(!!res.payments?.online);
+          this.ticketType.set(this.ticketTypes().find(t => this.left(t) > 0)?.key ?? '');
+          this.handlePaymentReturn(res.event._id);
           this.restoreSavedTicket(res.event._id);
           this.restoreTab?.();
           this.restoreTab = applyTabBrand(document, {
@@ -1252,6 +1346,7 @@ export class PublicEventComponent implements OnInit, OnDestroy {
     this.submitting.set(true);
     this.formError.set('');
     const eventId = this.ev()?._id ?? '';
+    if (this.online()) { this.buyTicket(eventId); return; }
     const body = {
       ...this.form.value,
       customFields: { ...this.customFieldValues },
@@ -1274,6 +1369,58 @@ export class PublicEventComponent implements OnInit, OnDestroy {
           this.submitting.set(false);
         },
       });
+  }
+
+  /** Compra en línea (HU67): reserva el cupo y va a Checkout Pro de la empresa. */
+  private buyTicket(eventId: string) {
+    if (!this.ticketType()) {
+      this.formError.set('Elige un tipo de entrada');
+      this.submitting.set(false);
+      return;
+    }
+    const v = this.form.value as { name: string; email: string; phone?: string };
+    this.http
+      .post<CheckoutResult>(`${API}/public/events/${eventId}/checkout`, {
+        ticketType: this.ticketType(),
+        quantity: this.quantity(),
+        name: v.name,
+        email: v.email,
+        ...(v.phone ? { phone: v.phone } : {}),
+        customFields: { ...this.customFieldValues },
+      })
+      .subscribe({
+        next: (res) => {
+          saveTicket(eventId, { ticketCode: res.ticketCode, name: v.name, email: v.email });
+          if (res.initPoint) {
+            this.redirect(res.initPoint);
+            return;
+          }
+          this.registration.set({ _id: res.registrationId, name: v.name, email: v.email, ticketCode: res.ticketCode, partySize: this.quantity() });
+          this.registered.set(true);
+          this.showForm.set(false);
+          this.submitting.set(false);
+          void this.generateTicketQr(res.ticketCode);
+        },
+        error: (err) => {
+          this.formError.set(err.error?.message || 'No se pudo iniciar el pago');
+          this.submitting.set(false);
+        },
+      });
+  }
+
+  /** Separado para poder simularlo en las pruebas. */
+  redirect(url: string) { window.location.assign(url); }
+
+  /** Vuelta de Mercado Pago: `?pago=ok|pendiente|error&t=CODIGO`. */
+  private handlePaymentReturn(eventId: string) {
+    const pago = this.route.snapshot.queryParamMap.get('pago');
+    if (!pago) return;
+    if (pago === 'error') {
+      forgetTicket(eventId);
+      this.paymentNotice.set('El pago no se completó. Puedes intentarlo de nuevo.');
+    } else if (pago === 'pendiente') {
+      this.paymentNotice.set('Tu pago está en proceso. Te enviaremos la entrada por correo en cuanto se confirme.');
+    }
   }
 
   // ── HU33: formulario, detalles y entrada ─────────────────────────────────

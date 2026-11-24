@@ -1,0 +1,35 @@
+1
+00:00:01,000 --> 00:00:12,000
+Settings > Instagram in Maya CRM.
+No Instagram professional account is connected yet.
+
+2
+00:00:13,000 --> 00:00:24,000
+'Connect with Instagram' opens Instagram Login.
+The user grants instagram_business_basic and
+instagram_business_manage_messages.
+
+3
+00:00:25,000 --> 00:00:36,000
+instagram_business_basic: Maya shows the connected
+account's username, name and profile picture.
+
+4
+00:00:37,000 --> 00:00:48,000
+A customer sends a Direct message to the account
+from Instagram (right side).
+
+5
+00:00:49,000 --> 00:01:00,000
+The message arrives in Maya's inbox (Instagram channel)
+with the customer's username.
+
+6
+00:01:01,000 --> 00:01:12,000
+instagram_business_manage_messages:
+the agent replies from Maya and clicks Send.
+
+7
+00:01:13,000 --> 00:01:24,000
+The reply is delivered in the customer's
+Instagram Direct (native client). End of demo.

@@ -156,6 +156,20 @@ export class WooStoreService {
     return data;
   }
 
+  /** Todo el catálogo publicado, de 100 en 100 (importar al catálogo de cotizaciones, HU68). */
+  async listAll(storeUrl: string, max = 1000): Promise<StoreProductFull[]> {
+    const base = normalizeStoreUrl(storeUrl);
+    const out: StoreProductFull[] = [];
+    for (let page = 1; out.length < max; page++) {
+      const items = await this.fetchWithRetry(
+        `${base}/wp-json/wc/store/v1/products?per_page=100&page=${page}&_fields=${FIELDS}`,
+      );
+      out.push(...items.map((p) => this.toProduct(p)));
+      if (items.length < 100) break;
+    }
+    return out.slice(0, max);
+  }
+
   /** Un reintento inmediato; si vuelve a fallar, el agente aplica su plan B. */
   private async fetchWithRetry(url: string): Promise<WooProduct[]> {
     let lastErr: unknown;

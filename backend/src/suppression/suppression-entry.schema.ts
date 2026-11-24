@@ -7,6 +7,8 @@ export const SUPPRESSION_SOURCES = [
   'manual',
   'import',
   'reply',
+  'bounce',
+  'complaint',
 ] as const;
 export type SuppressionSource = (typeof SUPPRESSION_SOURCES)[number];
 

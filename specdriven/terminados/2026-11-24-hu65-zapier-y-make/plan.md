@@ -1,0 +1,11 @@
+# HU65 — Plan
+- `ApiAccess.purpose` (`website` | `automation`). `originProblem` no exige Origin a las claves de automatización y sigue comprobando las IPs.
+- `api-hooks.service.ts`:
+  - Colección `api_hooks` y suscripciones.
+  - Escucha el bus de automatizaciones (HU58) y `MessageEvents`.
+  - Entrega con `ApiWebhookService.post` (sin redirecciones y con tiempo límite).
+  - Firma HMAC con el hash de la clave, 3 intentos, 410 borra y 20 fallos desactivan.
+- `api-crm.service.ts` + `api-crm.controller.ts`: `/api/v1/*` con `ApiKeyGuard` y `AutomationKeyGuard`. Las escrituras consumen la cuota.
+- `openapi.ts` con `GET /api/v1/openapi.json`, que es público.
+- Frontend: selector "Uso de la clave" en Integraciones.
+- `integrations/zapier/` (CLI), `integrations/make/maya-crm.make.json` y `docs/integraciones-zapier-make.md`.

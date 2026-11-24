@@ -7,6 +7,7 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
@@ -29,6 +30,8 @@ import { LeadsService } from '../leads/leads.service';
 import { ContactActivity } from '../customers/contact-activity.schema';
 import { User } from '../users/user.schema';
 import { maskPhone } from '../shared/meta-signature';
+import { VoiceAgentService } from './voice-agent.service';
+import { CREDIT_COSTS } from '../billing/usage-ledger.schema';
 
 /** Barrido de llamadas que se quedaron sonando (reinicios, varias instancias). */
 const SWEEP_MS = 15_000;
@@ -193,8 +196,13 @@ export class CallsService implements OnModuleInit, OnModuleDestroy {
     private nativePush: NativePushService,
     private leads: LeadsService,
     config: ConfigService,
+    @Optional() private voice?: VoiceAgentService,
   ) {
     this.iceServers = parseIceServers(config.get<string>('CALLS_ICE_SERVERS'));
+    // El agente de voz cuelga con el mismo cierre (cobro, chat, ficha).
+    this.voice?.setEnder((call, reason) =>
+      this.end(call, 'completed', { endReason: reason }),
+    );
   }
 
   onModuleInit() {
@@ -262,6 +270,12 @@ export class CallsService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Llamada ${String(call._id)} entrante de ${maskPhone(ev.contact)} sonando`,
     );
+    // Agente de voz (HU73): fuera de horario (o siempre) contesta al instante.
+    if (
+      this.voice?.answersAtOnce(account) &&
+      (await this.voice.takeOver(call._id, account))
+    )
+      return;
 
     const data = view(call, account.label);
     this.gateway.emitToCalls(tenantId, 'call:incoming', { call: data });
@@ -771,7 +785,18 @@ export class CallsService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       metaError = (err as Error).message;
     }
-    return { meta, metaError, local: this.prefsOf(account) };
+    return {
+      meta,
+      metaError,
+      local: this.prefsOf(account),
+      voice: this.voice
+        ? {
+            prefs: this.voice.prefsOf(account),
+            available: this.voice.available,
+            creditsPerMinute: CREDIT_COSTS.voice,
+          }
+        : null,
+    };
   }
 
   async updateSettings(
@@ -790,6 +815,10 @@ export class CallsService implements OnModuleInit, OnModuleDestroy {
       if (next.missedReplyEnabled && !next.missedReplyText?.trim())
         throw new BadRequestException(
           'Escribe el mensaje para las llamadas perdidas',
+        );
+      if (next.voiceAgent?.enabled && !next.voiceAgent.agentId)
+        throw new BadRequestException(
+          'Elige el agente de IA que contestará las llamadas',
         );
       account.calling = next;
       account.markModified('calling');
@@ -841,6 +870,12 @@ export class CallsService implements OnModuleInit, OnModuleDestroy {
     if (ended.claimedBy)
       this.gateway.emitToUser(String(ended.claimedBy), 'call:ended', payload);
     this.logger.log(`Llamada ${String(ended._id)} → ${status}`);
+    if (ended.voiceAgentId)
+      await this.voice
+        ?.onEnded(ended)
+        .catch((err) =>
+          this.logger.error(`Cierre del agente de voz: ${String(err)}`),
+        );
     await this.record(ended).catch((err) =>
       this.logger.error(`No se pudo registrar la llamada: ${String(err)}`),
     );
@@ -947,6 +982,18 @@ export class CallsService implements OnModuleInit, OnModuleDestroy {
       .findOne({ _id: this.oid(id), status: 'ringing', direction: 'inbound' })
       .exec();
     if (!call) return;
+    // Nadie del equipo contestó: la toma el agente de voz, si está activo (HU73).
+    if (this.voice) {
+      const account = await this.accounts
+        .findById(String(call.accountId))
+        .catch(() => null);
+      if (
+        account &&
+        this.voice.answersOnTimeout(account) &&
+        (await this.voice.takeOver(call._id, account))
+      )
+        return;
+    }
     const ended = await this.end(call, 'missed', { endReason: 'timeout' });
     if (!ended) return;
     const cfg = await this.configFor(call).catch(() => null);

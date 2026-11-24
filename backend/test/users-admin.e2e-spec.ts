@@ -3,6 +3,7 @@ import request from 'supertest';
 import { getModelToken } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { User } from '../src/users/user.schema';
+import { Tenant } from '../src/tenants/tenant.schema';
 import { hashResetCode } from '../src/users/users.service';
 import { MailService } from '../src/mail/mail.service';
 import {
@@ -50,6 +51,10 @@ describe('Administración de usuarios (e2e)', () => {
     other = await registerTenant(app, 'Ajena');
     superadmin = await login(app, ADMIN.email, ADMIN.password);
     users = app.get<Model<User>>(getModelToken(User.name));
+    // Esta suite prueba la administración de usuarios, no los límites del plan (HU42).
+    await app
+      .get<Model<Tenant>>(getModelToken(Tenant.name))
+      .updateOne({ _id: owner.user.tenantId }, { $set: { legacy: true } });
   });
 
   afterAll(async () => {

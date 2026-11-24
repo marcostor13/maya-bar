@@ -1,0 +1,226 @@
+{
+  "igvRate": 0.18,
+  "periods": {
+    "monthly": 1,
+    "quarterly": 3,
+    "annual": 12
+  },
+  "plans": [
+    {
+      "id": "inicia",
+      "name": "Inicia",
+      "custom": false,
+      "prices": {
+        "PEN": {
+          "monthly": 99,
+          "quarterly": 282,
+          "annual": 990
+        },
+        "USD": {
+          "monthly": 29,
+          "quarterly": 83,
+          "annual": 290
+        }
+      },
+      "limits": {
+        "users": 2,
+        "whatsappNumbers": 1,
+        "contacts": 2000,
+        "mailboxes": 1,
+        "aiAgents": 1,
+        "activeEvents": 1,
+        "campaignEmailsPerMonth": 1000,
+        "aiCreditsPerMonth": 500
+      },
+      "features": [
+        "prospecting"
+      ]
+    },
+    {
+      "id": "crece",
+      "name": "Crece",
+      "custom": false,
+      "prices": {
+        "PEN": {
+          "monthly": 249,
+          "quarterly": 710,
+          "annual": 2490
+        },
+        "USD": {
+          "monthly": 79,
+          "quarterly": 225,
+          "annual": 790
+        }
+      },
+      "limits": {
+        "users": 5,
+        "whatsappNumbers": 2,
+        "contacts": 15000,
+        "mailboxes": 3,
+        "aiAgents": 3,
+        "activeEvents": null,
+        "campaignEmailsPerMonth": 10000,
+        "aiCreditsPerMonth": 3000
+      },
+      "features": [
+        "prospecting",
+        "whatsapp-campaigns",
+        "events",
+        "analytics-full",
+        "lead-routing",
+        "automations"
+      ]
+    },
+    {
+      "id": "escala",
+      "name": "Escala",
+      "custom": false,
+      "prices": {
+        "PEN": {
+          "monthly": 549,
+          "quarterly": 1565,
+          "annual": 5490
+        },
+        "USD": {
+          "monthly": 169,
+          "quarterly": 482,
+          "annual": 1690
+        }
+      },
+      "limits": {
+        "users": 12,
+        "whatsappNumbers": 5,
+        "contacts": 60000,
+        "mailboxes": 10,
+        "aiAgents": null,
+        "activeEvents": null,
+        "campaignEmailsPerMonth": 40000,
+        "aiCreditsPerMonth": 10000
+      },
+      "features": [
+        "prospecting",
+        "whatsapp-campaigns",
+        "events",
+        "analytics-full",
+        "lead-routing",
+        "automations",
+        "recovery",
+        "multi-local",
+        "custom-roles",
+        "impulsadores",
+        "api",
+        "audit-log"
+      ]
+    },
+    {
+      "id": "empresa",
+      "name": "Empresa",
+      "custom": true,
+      "prices": {
+        "PEN": null,
+        "USD": null
+      },
+      "limits": {
+        "users": null,
+        "whatsappNumbers": null,
+        "contacts": null,
+        "mailboxes": null,
+        "aiAgents": null,
+        "activeEvents": null,
+        "campaignEmailsPerMonth": null,
+        "aiCreditsPerMonth": null
+      },
+      "features": [
+        "prospecting",
+        "whatsapp-campaigns",
+        "events",
+        "analytics-full",
+        "lead-routing",
+        "automations",
+        "recovery",
+        "multi-local",
+        "custom-roles",
+        "impulsadores",
+        "api",
+        "audit-log"
+      ]
+    }
+  ],
+  "addons": [
+    {
+      "id": "extra_user",
+      "name": "Usuario adicional",
+      "kind": "monthly",
+      "price": {
+        "PEN": 39,
+        "USD": 12
+      }
+    },
+    {
+      "id": "extra_whatsapp",
+      "name": "Número de WhatsApp adicional",
+      "kind": "monthly",
+      "price": {
+        "PEN": 49,
+        "USD": 15
+      }
+    },
+    {
+      "id": "extra_contacts",
+      "name": "10.000 contactos adicionales",
+      "kind": "monthly",
+      "price": {
+        "PEN": 35,
+        "USD": 10
+      }
+    },
+    {
+      "id": "credits_1000",
+      "name": "1.000 créditos de IA",
+      "kind": "topup",
+      "price": {
+        "PEN": 49,
+        "USD": 15
+      }
+    },
+    {
+      "id": "credits_5000",
+      "name": "5.000 créditos de IA",
+      "kind": "topup",
+      "price": {
+        "PEN": 199,
+        "USD": 59
+      }
+    },
+    {
+      "id": "emails_10000",
+      "name": "10.000 emails de campaña",
+      "kind": "topup",
+      "price": {
+        "PEN": 29,
+        "USD": 9
+      }
+    }
+  ],
+  "setup": {
+    "annualCredit": 0.1,
+    "packages": [
+      {
+        "id": "puesta",
+        "name": "Puesta en marcha",
+        "price": {
+          "PEN": 490,
+          "USD": 149
+        }
+      },
+      {
+        "id": "pro",
+        "name": "Implementación Pro",
+        "price": {
+          "PEN": 1490,
+          "USD": 449
+        }
+      }
+    ]
+  }
+}

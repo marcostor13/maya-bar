@@ -4,13 +4,16 @@ import { EventRegistrationsTabComponent } from './event-registrations-tab';
 import { EventDetailStore } from '../event-detail.store';
 import { EventsApiService } from '../../../core/api/events-api.service';
 import { ToastService } from '../../../shared/toast';
+import { ConfirmService } from '../../../shared/confirm';
 import { AppEvent, Registration } from '../../../shared/models/event.model';
 import { waLink, telLink } from './registrations-logic';
 
 const mockToast = { success: vi.fn(), error: vi.fn() };
 const mockApi = {
   getRegistrations: vi.fn(),
+  refundRegistration: vi.fn(),
 };
+const mockConfirm = { confirm: vi.fn() };
 
 function reg(partial: Partial<Registration>): Registration {
   return {
@@ -35,6 +38,7 @@ describe('EventRegistrationsTabComponent', () => {
         EventDetailStore,
         { provide: EventsApiService, useValue: mockApi },
         { provide: ToastService, useValue: mockToast },
+        { provide: ConfirmService, useValue: mockConfirm },
       ],
     }).compileComponents();
 
@@ -179,6 +183,32 @@ describe('EventRegistrationsTabComponent', () => {
       fixture.detectChanges();
       expect(el.querySelector('.reg-detail')?.textContent).toContain('ana@mail.com');
       expect((el.querySelector('a[href^="https://wa.me/"]') as HTMLAnchorElement).href).toBe('https://wa.me/51999123456');
+    });
+  });
+
+  describe('pago en línea (HU67)', () => {
+    it('muestra el estado del pago y reembolsa una entrada pagada tras confirmar', async () => {
+      const paid = reg({ _id: 'r9', paymentStatus: 'paid', amount: 60, ticketTypeName: 'VIP' });
+      store.registrations.set([paid, reg({ _id: 'r8', paymentStatus: 'pending' })]);
+      store.allRegistrations.set(store.registrations());
+      const fixture = TestBed.createComponent(EventRegistrationsTabComponent);
+      fixture.detectChanges();
+      const text = (fixture.nativeElement as HTMLElement).textContent!;
+      expect(text).toContain('Pagada');
+      expect(text).toContain('Pago pendiente');
+      expect(component.payLabel('refunded')).toBe('Reembolsada');
+
+      mockConfirm.confirm.mockResolvedValueOnce(false);
+      await component.refund(paid);
+      expect(mockApi.refundRegistration).not.toHaveBeenCalled();
+
+      mockConfirm.confirm.mockResolvedValueOnce(true);
+      mockApi.refundRegistration.mockReturnValue(of({ ...paid, paymentStatus: 'refunded', status: 'cancelled' }));
+      await component.refund(paid);
+      expect(mockConfirm.confirm.mock.calls[1][0].message).toContain('S/ 60');
+      expect(mockApi.refundRegistration).toHaveBeenCalledWith('ev-1', 'r9');
+      expect(store.registrations()[0]).toMatchObject({ paymentStatus: 'refunded', status: 'cancelled' });
+      expect(mockToast.success).toHaveBeenCalledWith('Entrada reembolsada');
     });
   });
 });

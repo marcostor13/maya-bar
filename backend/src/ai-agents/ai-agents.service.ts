@@ -46,6 +46,7 @@ import {
   type BookingStore,
 } from './calendar/calendar-tools';
 import type { AiToolCall } from '../ai/ai.service';
+import type { AiTool } from '../ai/providers/ai-provider.interface';
 import { PromptVersionsService } from './insights/prompt-versions.service';
 import type { PromptVersionSource } from './insights/prompt-insights.schemas';
 
@@ -819,6 +820,7 @@ export class AiAgentsService {
       maxTokens: agent.maxTokens,
       apiKeys,
       ...(tools.length ? { tools, runTool } : {}),
+      meter: { tenantId: String(agent.tenantId), action: 'agent_reply' },
     });
 
     // La marca de silencio se quita siempre: si no se permite callar, se
@@ -1004,6 +1006,105 @@ export class AiAgentsService {
       .findOne({
         published: true,
         messengerAccountIds: new Types.ObjectId(accountId),
+      })
+      .exec();
+  }
+
+  /** Agente publicado por id, dentro de la empresa (chat web, HU69). */
+  /**
+   * Lo que necesita el agente de voz (HU73): instrucciones y herramientas del
+   * mismo agente, más la búsqueda en su base de conocimiento (en voz no se
+   * puede inyectar contexto por turno, así que el modelo lo pide).
+   */
+  async voiceSession(
+    agentId: string,
+    tenantId: string,
+    ctx: { conversationId?: string; contactName?: string; announce?: boolean },
+  ): Promise<{
+    name: string;
+    instructions: string;
+    tools: AiTool[];
+    runTool: (call: AiToolCall) => Promise<unknown>;
+  } | null> {
+    const agent = await this.findPublishedById(agentId, tenantId);
+    if (!agent) return null;
+    const cal = agentCalendar(agent.calendar);
+    const calendarTools = cal.enabled
+      ? new CalendarToolSession(
+          this.calendar,
+          this.bookingStore(tenantId, String(agent._id)),
+          cal,
+          {
+            tenantId,
+            agentId: String(agent._id),
+            agentName: agent.name,
+            conversationId: ctx.conversationId,
+            contactName: ctx.contactName,
+            channel: 'voice',
+          },
+        )
+      : null;
+    const knowledge: AiTool = {
+      name: 'buscar_informacion',
+      description:
+        'Busca en la base de conocimiento de la empresa (precios, servicios, horarios, políticas). Úsala antes de responder datos concretos.',
+      parameters: {
+        type: 'object',
+        properties: {
+          consulta: {
+            type: 'string',
+            description: 'Qué buscar, en pocas palabras.',
+          },
+        },
+        required: ['consulta'],
+      },
+    };
+    const instructions = [
+      agent.systemPrompt,
+      '\n\nEstás atendiendo una LLAMADA DE VOZ de WhatsApp. Habla en frases cortas y naturales, en español, sin listas, enlaces ni emojis. Confirma en voz alta nombres, fechas y horas.',
+      ctx.announce
+        ? ' Al saludar, avisa que la llamada se transcribe para dejar registro.'
+        : '',
+      agent.ragEnabled
+        ? ' Para datos de la empresa usa buscar_informacion; si no está, dilo y no inventes.'
+        : '',
+      ' Si el cliente pide hablar con una persona o no puedes resolver, usa dejar_recado con un resumen y dile que un asesor le devolverá la llamada. Cuando la conversación termine, despídete y usa colgar.',
+      this.buildHandoffPromptSection(agent),
+      cal.enabled ? this.buildCalendarPromptSection(cal, new Date()) : '',
+    ].join('');
+    const tools = [
+      ...(agent.ragEnabled ? [knowledge] : []),
+      ...(calendarTools?.tools ?? []),
+    ];
+    const runTool = async (call: AiToolCall): Promise<unknown> => {
+      if (calendarTools?.handles(call.name)) return calendarTools.run(call);
+      if (call.name === 'buscar_informacion') {
+        const q =
+          typeof call.input.consulta === 'string' ? call.input.consulta : '';
+        const chunks = q
+          ? await this.rag
+              .retrieve(tenantId, String(agent._id), q, 4)
+              .catch(() => [])
+          : [];
+        return chunks.length
+          ? { resultados: chunks.map((c) => c.text.slice(0, 1200)) }
+          : { resultados: [], nota: 'No hay información sobre eso.' };
+      }
+      return { error: `Herramienta desconocida: ${call.name}` };
+    };
+    return { name: agent.name, instructions, tools, runTool };
+  }
+
+  async findPublishedById(
+    id: string,
+    tenantId: string,
+  ): Promise<AiAgent | null> {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return this.agentModel
+      .findOne({
+        _id: new Types.ObjectId(id),
+        tenantId: new Types.ObjectId(tenantId),
+        published: true,
       })
       .exec();
   }

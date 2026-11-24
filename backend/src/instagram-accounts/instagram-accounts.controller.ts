@@ -19,6 +19,7 @@ import {
   UpdateInstagramAccountDto,
 } from './dto/instagram-account.dto';
 
+import { Audit } from '../audit/audit.decorator';
 @Controller('instagram-accounts')
 @UseGuards(JwtAuthGuard)
 export class InstagramAccountsController {
@@ -47,6 +48,7 @@ export class InstagramAccountsController {
     return this.service.refreshOAuthToken(id, req.user.tenantId);
   }
 
+  @Audit({ action: 'channels.connected', resource: 'instagram' })
   @Post()
   create(@Body() dto: CreateInstagramAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
@@ -102,6 +104,7 @@ export class InstagramAccountsController {
     return this.service.update(id, req.user.tenantId, dto);
   }
 
+  @Audit({ action: 'channels.disconnected', resource: 'instagram' })
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

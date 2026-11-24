@@ -40,6 +40,8 @@ export interface ProspectingKeys {
   serper?: string;
   hunter?: string;
   ai: AiApiKeys;
+  /** Empresa que paga los créditos de IA (HU43). */
+  tenantId?: string;
 }
 
 @Injectable()
@@ -57,6 +59,7 @@ export class ProspectingResearchService {
   async keys(tenantId: string): Promise<ProspectingKeys> {
     const cfg = await this.settings.get(tenantId);
     return {
+      tenantId,
       places: cfg?.googlePlacesApiKey?.trim() || undefined,
       // PageSpeed también acepta la key de Google Places si tiene la API habilitada.
       pageSpeed: cfg?.pageSpeedApiKey?.trim() || undefined,
@@ -79,6 +82,7 @@ export class ProspectingResearchService {
     keys: ProspectingKeys,
     system: string,
     user: string,
+    action: 'text' | 'prospecting' = 'text',
   ): Promise<T> {
     const text = await this.ai.chatMessages(
       [
@@ -90,6 +94,9 @@ export class ProspectingResearchService {
         maxTokens: AI_MAX_TOKENS,
         temperature: 0.3,
         timeoutMs: AI_TIMEOUT_MS,
+        ...(keys.tenantId
+          ? { meter: { tenantId: keys.tenantId, action } }
+          : {}),
       },
     );
     return this.ai.parseJson<T>(text);
@@ -702,6 +709,7 @@ Devuelve este JSON:
   "risks": ["objeciones o señales de que no comprarán"]
 }
 En "people" incluye SOLO personas que aparezcan en la información con nombre real.`,
+      'prospecting',
     );
   }
 

@@ -140,9 +140,9 @@ describe('UsersComponent', () => {
       await setup([ADMIN, PEDRO, INACTIVA, OTRO_ADMIN]);
       expect(row(ADMIN.email).querySelector('.badge-me')!.textContent).toContain('Tú');
       expect(actions(ADMIN.email)).toEqual(['Editar']);
-      expect(actions(PEDRO.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Desactivar', 'Eliminar']);
-      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Activar', 'Eliminar']);
-      expect(actions(OTRO_ADMIN.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Desactivar', 'Eliminar']);
+      expect(actions(PEDRO.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Reiniciar 2FA', 'Desactivar', 'Eliminar']);
+      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Reiniciar 2FA', 'Activar', 'Eliminar']);
+      expect(actions(OTRO_ADMIN.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Reiniciar 2FA', 'Desactivar', 'Eliminar']);
     });
 
     it('HU19: cerrar sesiones pide confirmación y avisa', async () => {
@@ -384,7 +384,7 @@ describe('UsersComponent', () => {
       fixture.detectChanges();
       expect(toast.success).toHaveBeenCalledWith('Usuario desactivado');
       expect(row(PEDRO.email).textContent).toContain('Inactivo');
-      expect(actions(PEDRO.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Activar', 'Eliminar']);
+      expect(actions(PEDRO.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Reiniciar 2FA', 'Activar', 'Eliminar']);
     });
 
     it('si falla desactivar avisa con un toast de error y la fila sigue activa', async () => {
@@ -406,7 +406,7 @@ describe('UsersComponent', () => {
       req.flush({ ...INACTIVA, isActive: true });
       fixture.detectChanges();
       expect(toast.success).toHaveBeenCalledWith('Usuario activado');
-      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Desactivar', 'Eliminar']);
+      expect(actions(INACTIVA.email)).toEqual(['Editar', 'Restablecer', 'Cerrar sesiones', 'Reiniciar 2FA', 'Desactivar', 'Eliminar']);
     });
 
     it('si falla activar avisa con un toast de error', async () => {

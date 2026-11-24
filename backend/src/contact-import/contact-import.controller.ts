@@ -30,6 +30,7 @@ import {
   ImportOptionsDto,
 } from './dto/contact-import.dto';
 
+import { Audit, pickNumbers } from '../audit/audit.decorator';
 /**
  * 60 MB: una hoja de contactos no se acerca, pero el volcado JSON de una
  * colección entera de Compass sí, porque repite los nombres de campo en cada
@@ -63,6 +64,11 @@ export class ContactImportController {
    * Paso 2: importa con el mapeo confirmado. Las opciones llegan como JSON en
    * un campo del multipart, porque el resto del cuerpo es el archivo.
    */
+  @Audit({
+    action: 'customers.import',
+    resource: 'customer',
+    details: (_r, res) => pickNumbers(res),
+  })
   @Post('file')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -92,6 +98,11 @@ export class ContactImportController {
     return this.service.analyzeMongo(dto);
   }
 
+  @Audit({
+    action: 'customers.import',
+    resource: 'customer',
+    details: (_r, res) => ({ source: 'mongo', ...pickNumbers(res) }),
+  })
   @Post('mongo')
   importMongo(@Body() dto: ImportMongoDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
@@ -121,6 +132,10 @@ export class ContactImportController {
     );
   }
 
+  @Audit({
+    action: 'customers.import_source_deleted',
+    resource: 'import_source',
+  })
   @Delete('sources/:id')
   deleteSource(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

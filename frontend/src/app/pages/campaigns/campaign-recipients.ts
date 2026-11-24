@@ -1,15 +1,17 @@
 import { Component, OnDestroy, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { environment } from '../../../environments/environment';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule, CheckCircle2, Clock, AlertCircle, MinusCircle, ChevronLeft, ChevronRight,
-  BarChart3, RefreshCw,
+  BarChart3, RefreshCw, MailOpen, MousePointerClick, Info, Target,
 } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { CampaignsApiService } from '../../core/api/campaigns-api.service';
 import { FormPageComponent } from '../../shared/form-page';
 import {
-  Campaign, CampaignRecipient, CampaignStats, RecipientStatus,
+  Campaign, CampaignEmailMetrics, CampaignRecipient, CampaignStats, RecipientStatus,
 } from '../../shared/models/campaign.model';
 
 const STATUS_LABELS: Record<RecipientStatus, string> = {
@@ -66,6 +68,35 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
           </div>
         }
 
+        @if (metrics(); as m) {
+          <section class="metrics" aria-label="Aperturas y clics">
+            <div class="mtiles">
+              <div class="mtile"><span class="mval">{{ m.rates.open }}%</span><span class="tile-label">Apertura · {{ m.opened }}</span></div>
+              <div class="mtile"><span class="mval">{{ m.rates.click }}%</span><span class="tile-label">Clic · {{ m.clicked }}</span></div>
+              <div class="mtile"><span class="mval">{{ m.rates.bounce }}%</span><span class="tile-label">Rebote · {{ m.bounced }}</span></div>
+              <div class="mtile"><span class="mval">{{ m.rates.unsubscribe }}%</span><span class="tile-label">Baja · {{ m.unsubscribed }}</span></div>
+            </div>
+            <p class="note"><lucide-icon [img]="Info" [size]="14" /> Las aperturas son aproximadas: Apple Mail abre las imágenes por su cuenta. Se miden con la cuenta de Resend de la empresa y su webhook conectado (Configuración → Resend).</p>
+            @if (m.clickers.length) {
+              <h3 class="mtitle">Quién hizo clic</h3>
+              <ul class="rows">
+                @for (c of m.clickers; track c._id) {
+                  <li class="row">
+                    <lucide-icon [img]="MousePointerClick" [size]="16" class="st-sent" />
+                    <div class="row-main">
+                      <span class="row-name">{{ c.name || c.to }}</span>
+                      <span class="row-sub">{{ c.clicks }} clic(s) · {{ c.lastClickUrl || '—' }}</span>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" [disabled]="creating() === c.customerId" (click)="createLead(c)">
+                      <lucide-icon [img]="Target" [size]="14" /> Crear oportunidad
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
+
         <div class="list">
           @if (loading()) {
             <p class="muted center">
@@ -82,6 +113,15 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
                     <span class="row-name">{{ r.name || r.to || 'Sin nombre' }}</span>
                     <span class="row-sub">{{ r.to || '—' }}</span>
                     @if (r.error) { <span class="row-error">{{ r.error }}</span> }
+                    @if (r.openedAt || r.clickedAt || r.bouncedAt || r.complainedAt || r.unsubscribedAt) {
+                      <span class="track">
+                        @if (r.openedAt) { <span class="badge badge-info"><lucide-icon [img]="MailOpen" [size]="12" /> Abrió{{ (r.opens ?? 0) > 1 ? ' ×' + r.opens : '' }}</span> }
+                        @if (r.clickedAt) { <span class="badge badge-success"><lucide-icon [img]="MousePointerClick" [size]="12" /> Clic</span> }
+                        @if (r.bouncedAt) { <span class="badge badge-danger">{{ r.bounceType === 'hard' ? 'Rebote duro' : 'Rebote' }}</span> }
+                        @if (r.complainedAt) { <span class="badge badge-danger">Spam</span> }
+                        @if (r.unsubscribedAt) { <span class="badge badge-neutral">Baja</span> }
+                      </span>
+                    }
                   </div>
                   <div class="row-side">
                     <span class="badge" [class]="'badge ' + badge(r.status)">{{ label(r.status) }}</span>
@@ -136,6 +176,13 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
     .st-sent { color:var(--color-success); }
     .st-failed { color:var(--color-error); }
     .st-pending, .st-skipped { color:var(--color-text-muted); }
+    .metrics { padding:8px 0 8px; }
+    .mtiles { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
+    .mtile { display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 4px; border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-white); }
+    .mval { font-size:18px; font-weight:700; color:var(--color-brand); }
+    .note { display:flex; gap:6px; align-items:flex-start; font-size:12px; color:var(--color-text-muted); margin:8px 0 0; }
+    .mtitle { font-family:var(--font-heading); font-size:15px; margin:16px 0 4px; }
+    .track { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
     .spin { animation:spin 1s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
     @media (max-width: 600px) {
@@ -146,12 +193,17 @@ const STATUS_LABELS: Record<RecipientStatus, string> = {
 export class CampaignRecipientsComponent implements OnInit, OnDestroy {
   private api = inject(CampaignsApiService);
   private toast = inject(ToastService);
+  private http = inject(HttpClient);
 
   campaign = input.required<Campaign>();
   closed = output<void>();
 
   readonly ChevronLeft = ChevronLeft; readonly ChevronRight = ChevronRight;
   readonly BarChart3 = BarChart3; readonly RefreshCw = RefreshCw;
+  readonly MailOpen = MailOpen; readonly MousePointerClick = MousePointerClick; readonly Info = Info; readonly Target = Target;
+
+  metrics = signal<CampaignEmailMetrics | null>(null);
+  creating = signal<string | null>(null);
 
   items = signal<CampaignRecipient[]>([]);
   stats = signal<CampaignStats | null>(null);
@@ -171,6 +223,7 @@ export class CampaignRecipientsComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.load(true);
+    if (this.campaign().type === 'email') this.loadMetrics();
     // Mientras se envía, el detalle se refresca solo.
     this.timer = setInterval(() => {
       if ((this.stats()?.pending ?? 0) > 0) this.load(false);
@@ -193,6 +246,22 @@ export class CampaignRecipientsComponent implements OnInit, OnDestroy {
         this.loading.set(false);
         if (showSpinner) this.toast.error(err.error?.message || 'No se pudo cargar el detalle');
       },
+    });
+  }
+
+  loadMetrics() {
+    this.api.getEmailMetrics(this.campaign()._id).subscribe({
+      next: (m) => this.metrics.set(m),
+      error: () => undefined,
+    });
+  }
+
+  /** Oportunidad para quien mostró interés con un clic. */
+  createLead(c: CampaignEmailMetrics['clickers'][number]) {
+    this.creating.set(c.customerId);
+    this.http.post(`${environment.apiUrl}/leads`, { customerId: c.customerId, title: `${this.campaign().name}: hizo clic`, source: 'email' }).subscribe({
+      next: () => { this.creating.set(null); this.toast.success(`Oportunidad creada para ${c.name || c.to}`); },
+      error: (err: { error?: { message?: string } }) => { this.creating.set(null); this.toast.error(err.error?.message || 'No se pudo crear la oportunidad'); },
     });
   }
 

@@ -18,6 +18,14 @@ export interface AiChatRequest {
   errorLabel?: string;
   /** Aborta la llamada pasado este tiempo. Sin él, espera indefinidamente. */
   timeoutMs?: number;
+  /** Recibe los tokens de cada respuesta del proveedor (créditos, HU43). */
+  onUsage?: (u: AiTokenUsage) => void;
+}
+
+export interface AiTokenUsage {
+  model?: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 /** Herramienta que el modelo puede llamar (function calling). */

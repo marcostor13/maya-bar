@@ -5,6 +5,7 @@ import { environment } from '../../../environments/environment';
 import {
   AudiencePreview,
   Campaign,
+  CampaignEmailMetrics,
   CampaignEstimate,
   CampaignRecipientsPage,
   CampaignTargeting,
@@ -82,6 +83,11 @@ export class CampaignsApiService {
     const params: Record<string, string> = { page: String(page) };
     if (status) params['status'] = status;
     return this.http.get<CampaignRecipientsPage>(`${this.base}/campaigns/${id}/recipients`, { params });
+  }
+
+  /** Aperturas, clics, rebotes y bajas de una campaña de email (HU61). */
+  getEmailMetrics(id: string): Observable<CampaignEmailMetrics> {
+    return this.http.get<CampaignEmailMetrics>(`${this.base}/campaigns/${id}/email-metrics`);
   }
 
   cancelCampaign(id: string): Observable<Campaign> {

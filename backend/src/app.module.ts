@@ -47,6 +47,17 @@ import { ConversionsModule } from './conversions/conversions.module';
 import { ProspectingModule } from './prospecting/prospecting.module';
 import { EmailAccountsModule } from './email-accounts/email-accounts.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { BillingModule } from './billing/billing.module';
+import { BillingAdminModule } from './billing-admin/billing-admin.module';
+import { AutomationsModule } from './automations/automations.module';
+import { RoutingModule } from './routing/routing.module';
+import { AuditModule } from './audit/audit.module';
+import { ReportsModule } from './reports/reports.module';
+import { EventTicketsModule } from './event-tickets/event-tickets.module';
+import { QuotesModule } from './quotes/quotes.module';
+import { WebchatModule } from './webchat/webchat.module';
+import { ScoringModule } from './scoring/scoring.module';
+import { AgencyModule } from './agency/agency.module';
 
 @Module({
   imports: [
@@ -103,6 +114,17 @@ import { CalendarModule } from './calendar/calendar.module';
     LinksModule,
     ResendModule,
     ApiAccessModule,
+    BillingModule,
+    BillingAdminModule,
+    AutomationsModule,
+    RoutingModule,
+    AuditModule,
+    ReportsModule,
+    EventTicketsModule,
+    QuotesModule,
+    WebchatModule,
+    ScoringModule,
+    AgencyModule,
   ],
   controllers: [AppController],
   providers: [AppService],

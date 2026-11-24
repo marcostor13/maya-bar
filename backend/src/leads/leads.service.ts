@@ -33,6 +33,7 @@ import { RolesService } from '../roles/roles.service';
 import { PushService } from '../push/push.service';
 import { NativePushService } from '../notifications/push.service';
 import { formatPhone, phoneDigits } from '../shared/phone';
+import { emitAutomation } from '../automations/automation-bus';
 
 /** Columna del tablero: la etapa, sus oportunidades y sus totales. */
 export interface BoardColumn {
@@ -86,6 +87,10 @@ export interface LeadFilters {
   tag?: string;
   /** Solo las que tienen una tarea vencida. */
   overdue?: boolean;
+  /** Temperatura del puntaje (HU70): hot, warm o cold. */
+  heat?: string;
+  /** `score`: las de mayor puntaje primero. */
+  sort?: string;
 }
 
 /** Datos mínimos para dar de alta un contacto junto con la oportunidad. */
@@ -153,6 +158,8 @@ export class LeadsService {
       query.ownerId = new Types.ObjectId(userId);
     if (filters.stage) query.stage = filters.stage;
     if (filters.status) query.status = filters.status;
+    if (filters.heat && ['hot', 'warm', 'cold'].includes(filters.heat))
+      query.scoreLabel = filters.heat as 'hot' | 'warm' | 'cold';
     if (filters.tag) query.tags = filters.tag;
     if (filters.ownerId && Types.ObjectId.isValid(filters.ownerId))
       query.ownerId = new Types.ObjectId(filters.ownerId);
@@ -204,7 +211,11 @@ export class LeadsService {
       userId,
     );
     return this.populated(this.leadModel.find(query))
-      .sort({ lastActivityAt: -1 })
+      .sort(
+        filters.sort === 'score'
+          ? { score: -1, lastActivityAt: -1 }
+          : { lastActivityAt: -1 },
+      )
       .limit(500)
       .exec();
   }
@@ -532,6 +543,13 @@ export class LeadsService {
           body: `${actor}: ${lead.title}`,
         });
     }
+    emitAutomation({
+      type: 'lead_created',
+      tenantId,
+      leadId: String(lead._id),
+      customerId: String(customerId),
+      unassigned: !owner && status === 'open',
+    });
     return this.findOne(String(lead._id), tenantId, userId, role);
   }
 
@@ -672,6 +690,13 @@ export class LeadsService {
       // Sin `await`: avisar al sistema de atribución no puede retrasar —ni
       // tumbar— el movimiento del embudo. El evento queda encolado en Mongo.
       void this.conversions.reportLeadStage(lead, previousStage);
+      emitAutomation({
+        type: 'stage_changed',
+        tenantId,
+        customerId: String(lead.customerId),
+        leadId: String(lead._id),
+        stage: lead.stage,
+      });
     }
 
     // Cambiar el responsable es derivar o soltar: pasa por su propio flujo,
@@ -720,6 +745,13 @@ export class LeadsService {
         userId,
       );
       void this.conversions.reportLeadStage(lead, previousStage);
+      emitAutomation({
+        type: 'stage_changed',
+        tenantId,
+        customerId: String(lead.customerId),
+        leadId: String(lead._id),
+        stage: lead.stage,
+      });
     }
     return this.findOne(id, tenantId, userId, role);
   }
@@ -960,10 +992,10 @@ export class LeadsService {
   }
 
   /** Lead nuevo sin responsable: push al equipo con el módulo de leads. Nunca lanza. */
-  private async notifyUnassigned(
+  async notifyUnassigned(
     tenantId: string,
     lead: Lead,
-    creatorId: string,
+    creatorId?: string,
   ): Promise<void> {
     const route = `/leads?lead=${String(lead._id)}`;
     const title = 'Nueva oportunidad sin asignar';

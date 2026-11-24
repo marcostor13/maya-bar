@@ -123,6 +123,20 @@ describe('MessageRetryService', () => {
     });
   });
 
+  it('HU41: con la cuenta en solo lectura no reenvía y lo aplaza una hora', async () => {
+    const msg = failedMsg();
+    const { service, conversations, msgModel } = build({ candidates: [msg] });
+    (service as unknown as { billing: unknown }).billing = {
+      canOperate: jest.fn().mockResolvedValue(false),
+    };
+    await service.tick(NOW);
+    expect(conversations.redeliver).not.toHaveBeenCalled();
+    expect(msgModel.updateOne).toHaveBeenCalledWith(
+      { _id: msg._id },
+      { $set: { retryAt: new Date(NOW.getTime() + 3_600_000) } },
+    );
+  });
+
   it('C3: reenvía el fallido, lo deja enviado con el nuevo id y avisa a la bandeja', async () => {
     const msg = failedMsg();
     const { service, conversations, gateway } = build({ candidates: [msg] });

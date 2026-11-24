@@ -151,6 +151,7 @@ export class PromptReviewService {
           maxTokens: 4000,
           timeoutMs: AI_TIMEOUT_MS,
           apiKeys,
+          meter: { tenantId, action: 'text' },
         },
       ),
     );

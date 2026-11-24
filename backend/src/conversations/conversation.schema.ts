@@ -7,7 +7,9 @@ export type ConversationChannel =
   | 'whatsapp'
   | 'instagram'
   | 'messenger'
-  | 'email';
+  | 'email'
+  /** Chat del sitio web de la empresa (HU69). */
+  | 'web';
 
 @Schema({ timestamps: true })
 export class Conversation extends Document {
@@ -17,7 +19,7 @@ export class Conversation extends Document {
   @Prop({
     required: true,
     type: String,
-    enum: ['whatsapp', 'instagram', 'messenger', 'email'],
+    enum: ['whatsapp', 'instagram', 'messenger', 'email', 'web'],
     default: 'whatsapp',
   })
   channel: ConversationChannel;

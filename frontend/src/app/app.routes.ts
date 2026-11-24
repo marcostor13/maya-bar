@@ -10,7 +10,7 @@ import { rootEntryGuard } from './core/root-entry.guard';
 import { PermissionsService } from './auth/permissions.service';
 import { AuthService } from './auth/auth.service';
 import { ShellComponent } from './layout/shell/shell';
-import { isCustomDomain } from './shared/custom-domain';
+import { isCustomDomain, isPanelDomain } from './shared/custom-domain';
 
 /**
  * Todas las páginas se cargan bajo demanda (`loadComponent`). Importarlas
@@ -45,6 +45,15 @@ export const routes: Routes = [
   // de arranque del WebView y debe llevar a la aplicación, no a la landing.
   // Dominio propio de un cliente (HU25): su raíz es la landing de un evento,
   // que se busca por el host. En el servidor (prerender) nunca coincide.
+  // Panel con marca blanca de una agencia (HU72): su raíz es el login o la
+  // app, nunca la landing de Maya.
+  {
+    path: '',
+    pathMatch: 'full',
+    canMatch: [() => isPanelDomain()],
+    canActivate: [() => inject(Router).parseUrl(inject(AuthService).isAuthenticated() ? '/dashboard' : '/login')],
+    children: [],
+  },
   {
     path: '',
     pathMatch: 'full',
@@ -66,11 +75,26 @@ export const routes: Routes = [
     path: 'register',
     loadComponent: () => import('./pages/register/register').then(m => m.RegisterComponent),
   },
+  // Checkout de planes (HU46): público, también desde la cuenta en prueba.
+  {
+    path: 'checkout',
+    loadComponent: () => import('./pages/checkout/checkout').then(m => m.CheckoutComponent),
+  },
+  {
+    path: 'checkout/resultado',
+    loadComponent: () =>
+      import('./pages/checkout/checkout-result').then(m => m.CheckoutResultComponent),
+  },
   {
     path: 'change-password',
     loadComponent: () =>
       import('./pages/change-password/change-password').then(m => m.ChangePasswordComponent),
     canActivate: [authGuard],
+  },
+  // Enlace de acceso tras pagar (HU47): público, el token va en la URL.
+  {
+    path: 'acceso',
+    loadComponent: () => import('./pages/access/access').then(m => m.AccessComponent),
   },
   {
     path: 'onboarding',
@@ -84,6 +108,12 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/legal/legal').then(m => m.LegalComponent),
   })),
   {
+    // Link público de una cotización (HU68).
+    path: 'q/:token',
+    loadComponent: () =>
+      import('./pages/public-quote/public-quote').then(m => m.PublicQuoteComponent),
+  },
+  {
     path: 'e/:slug',
     loadComponent: () =>
       import('./pages/public-event/public-event').then(m => m.PublicEventComponent),
@@ -96,6 +126,12 @@ export const routes: Routes = [
       {
         path: 'dashboard',
         loadComponent: () => import('./pages/dashboard/dashboard').then(m => m.DashboardComponent),
+        canActivate: [moduleGuard('dashboard')],
+      },
+      {
+        // Reportes configurables (HU64): mismo permiso que el dashboard.
+        path: 'reportes',
+        loadComponent: () => import('./pages/reports/reports').then(m => m.ReportsComponent),
         canActivate: [moduleGuard('dashboard')],
       },
       {
@@ -133,6 +169,12 @@ export const routes: Routes = [
         canActivate: [moduleGuard('leads')],
       },
       {
+        // Cotización a pantalla completa desde la oportunidad (HU68).
+        path: 'cotizaciones/:id',
+        loadComponent: () => import('./pages/quotes/quote-editor').then(m => m.QuoteEditorComponent),
+        canActivate: [moduleGuard('leads')],
+      },
+      {
         path: 'prospeccion',
         loadComponent: () =>
           import('./pages/prospecting/prospecting').then(m => m.ProspectingComponent),
@@ -147,6 +189,11 @@ export const routes: Routes = [
       {
         path: 'campaigns',
         loadComponent: () => import('./pages/campaigns/campaigns').then(m => m.CampaignsComponent),
+        canActivate: [moduleGuard('campaigns')],
+      },
+      {
+        path: 'automatizaciones',
+        loadComponent: () => import('./pages/automations/automations').then(m => m.AutomationsComponent),
         canActivate: [moduleGuard('campaigns')],
       },
       {
@@ -244,6 +291,24 @@ export const routes: Routes = [
         canActivate: [moduleGuard('settings')],
       },
       {
+        // Panel de la agencia (HU72): sus sub-cuentas y su marca blanca.
+        path: 'agencia',
+        loadComponent: () => import('./pages/agency/agency').then(m => m.AgencyComponent),
+        canActivate: [roleGuard('TENANT_ADMIN')],
+      },
+      {
+        // Mi plan y consumo (HU44): solo el administrador de la empresa.
+        path: 'settings/plan',
+        loadComponent: () => import('./pages/settings/my-plan').then(m => m.MyPlanComponent),
+        canActivate: [moduleGuard('settings'), roleGuard('TENANT_ADMIN')],
+      },
+      {
+        // Registro de actividad (HU63): solo el administrador de la empresa.
+        path: 'settings/activity',
+        loadComponent: () => import('./pages/settings/activity-log').then(m => m.ActivityLogComponent),
+        canActivate: [moduleGuard('settings'), roleGuard('TENANT_ADMIN')],
+      },
+      {
         path: 'integraciones',
         loadComponent: () =>
           import('./pages/integrations/integrations').then(m => m.IntegrationsComponent),
@@ -257,6 +322,18 @@ export const routes: Routes = [
       {
         path: 'admin/tenants',
         loadComponent: () => import('./pages/admin/tenants').then(m => m.AdminTenantsComponent),
+        canActivate: [roleGuard('SUPERADMIN')],
+      },
+      {
+        // Suscripciones, ingresos, cupones y comprobantes (HU57).
+        path: 'admin/billing',
+        loadComponent: () => import('./pages/admin/billing-admin').then(m => m.AdminBillingComponent),
+        canActivate: [roleGuard('SUPERADMIN')],
+      },
+      {
+        // Implementaciones pagadas (HU55).
+        path: 'admin/onboarding',
+        loadComponent: () => import('./pages/admin/onboarding').then(m => m.AdminOnboardingComponent),
         canActivate: [roleGuard('SUPERADMIN')],
       },
       {

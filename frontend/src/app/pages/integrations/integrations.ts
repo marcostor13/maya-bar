@@ -22,6 +22,7 @@ export interface ApiAccess {
   accountId: string;
   accountLabel: string;
   keyPrefix: string;
+  purpose?: 'website' | 'automation';
   allowedDomains: string[];
   allowedIps: string[];
   perMinuteLimit: number;
@@ -63,6 +64,7 @@ const CHANNEL_LABELS: Record<Channel, string> = {
 
 interface AccessForm {
   name: string;
+  purpose: 'website' | 'automation';
   accountKey: string;
   domains: string;
   ips: string;
@@ -73,6 +75,7 @@ interface AccessForm {
 
 const emptyForm = (): AccessForm => ({
   name: '',
+  purpose: 'website',
   accountKey: '',
   domains: '',
   ips: '',
@@ -172,7 +175,12 @@ const lines = (text: string) =>
               </div>
               <div class="ac-meta">
                 <span class="meta-item"><lucide-icon [img]="KeyRound" [size]="14" [strokeWidth]="2.4"></lucide-icon> <code>{{ a.keyPrefix }}…</code></span>
-                <span class="meta-item"><lucide-icon [img]="Globe" [size]="14" [strokeWidth]="2.4"></lucide-icon> {{ a.allowedDomains.join(', ') }}</span>
+                @if (a.purpose === 'automation') {
+                  <span class="meta-item"><lucide-icon [img]="Webhook" [size]="14" [strokeWidth]="2.4"></lucide-icon> Zapier / Make</span>
+                }
+                @if (a.allowedDomains.length) {
+                  <span class="meta-item"><lucide-icon [img]="Globe" [size]="14" [strokeWidth]="2.4"></lucide-icon> {{ a.allowedDomains.join(', ') }}</span>
+                }
                 @if (a.allowedIps.length) {
                   <span class="meta-item"><lucide-icon [img]="ShieldCheck" [size]="14" [strokeWidth]="2.4"></lucide-icon> {{ a.allowedIps.join(', ') }}</span>
                 }
@@ -232,6 +240,16 @@ const lines = (text: string) =>
 
             @if (!editing()) {
               <div class="field">
+                <label class="label" for="ia-purpose">Uso de la clave</label>
+                <select id="ia-purpose" class="select" name="purpose" [(ngModel)]="form.purpose">
+                  <option value="website">Mi web o mi servidor (envío de mensajes)</option>
+                  <option value="automation">Automatización: Zapier, Make o API del CRM</option>
+                </select>
+                @if (form.purpose === 'automation') {
+                  <p class="hint">Da acceso a contactos, oportunidades, etiquetas y disparadores en <code>{{ crmBase }}</code>. No pide dominio. Documentación: <a [href]="docsUrl" target="_blank" rel="noopener">OpenAPI</a>.</p>
+                }
+              </div>
+              <div class="field">
                 <label class="label" for="ia-account">Cuenta que compartes</label>
                 @if (accounts().length === 0) {
                   <p class="hint warn">No tienes cuentas de WhatsApp, Instagram, Messenger ni proveedor SMS. Conéctalos en Configuración.</p>
@@ -250,7 +268,7 @@ const lines = (text: string) =>
             }
 
             <div class="field">
-              <label class="label" for="ia-domains">Dominios autorizados</label>
+              <label class="label" for="ia-domains">Dominios autorizados{{ form.purpose === 'automation' ? ' (opcional)' : '' }}</label>
               <textarea id="ia-domains" class="textarea" name="domains" rows="3" [(ngModel)]="form.domains" placeholder="mitienda.pe&#10;*.miempresa.com"></textarea>
               <p class="hint">Uno por línea. <code>mitienda.pe</code> admite también <code>www.</code>; <code>*.miempresa.com</code> admite sus subdominios. Tu servidor debe enviar la cabecera <code>Origin</code> con uno de ellos.</p>
             </div>
@@ -482,6 +500,8 @@ export class IntegrationsComponent implements OnInit {
   readonly Webhook = Webhook; readonly Send = Send;
 
   readonly endpoint = `${API}/public/v1/messages`;
+  readonly crmBase = `${API}/api/v1`;
+  readonly docsUrl = `${API}/api/v1/openapi.json`;
   readonly templateExample = '{ "name": "pedido_listo", "language": "es", "variables": ["Ana", "#123"] }';
 
   accesses = signal<ApiAccess[]>([]);
@@ -566,6 +586,7 @@ export class IntegrationsComponent implements OnInit {
     this.editing.set(a);
     this.form = {
       name: a.name,
+      purpose: a.purpose ?? 'website',
       accountKey: `${a.channel}:${a.accountId}`,
       domains: a.allowedDomains.join('\n'),
       ips: a.allowedIps.join('\n'),
@@ -612,7 +633,7 @@ export class IntegrationsComponent implements OnInit {
       return;
     }
     const [channel, accountId] = this.form.accountKey.split(':');
-    this.http.post<{ access: ApiAccess; key: string }>(`${API}/api-access`, { ...common, channel, accountId }).subscribe({
+    this.http.post<{ access: ApiAccess; key: string }>(`${API}/api-access`, { ...common, channel, accountId, purpose: this.form.purpose }).subscribe({
       next: res => this.syncWebhook(res.access._id, '', secret => {
         this.saving.set(false);
         this.formOpen.set(false);
@@ -684,7 +705,7 @@ export class IntegrationsComponent implements OnInit {
   private validate(): string {
     if (!this.form.name.trim()) return 'Ponle un nombre al acceso.';
     if (!this.editing() && !this.form.accountKey) return 'Elige la cuenta que quieres compartir.';
-    if (lines(this.form.domains).length === 0) return 'Autoriza al menos un dominio.';
+    if (this.form.purpose !== 'automation' && lines(this.form.domains).length === 0) return 'Autoriza al menos un dominio.';
     const perMin = Number(this.form.perMinuteLimit);
     const perDay = Number(this.form.perDayLimit);
     if (!Number.isInteger(perMin) || perMin < 1 || perMin > 600) return 'Los envíos por minuto van de 1 a 600.';

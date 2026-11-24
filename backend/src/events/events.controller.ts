@@ -238,14 +238,14 @@ export class EventsController {
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.generateFromPrompt(dto);
+    return this.eventsService.generateFromPrompt(dto, req.user.tenantId);
   }
 
   @Post('events/ai-design')
   @UseGuards(JwtAuthGuard)
   generateDesign(@Body() dto: GenerateDesignDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
-    return this.eventsService.generateDesign(dto);
+    return this.eventsService.generateDesign(dto, req.user.tenantId);
   }
 
   @Get('event-templates')

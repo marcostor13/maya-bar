@@ -30,6 +30,8 @@ function isolateEnv(overrides) {
       SEED_ADMIN_EMAIL: ADMIN.email,
       SEED_ADMIN_PASSWORD: ADMIN.password,
       WHATSAPP_PROVIDER: 'none',
+      // El superadmin sembrado entra sin segundo factor salvo en la e2e de HU62.
+      SUPERADMIN_2FA: 'optional',
       // Secreto falso para firmar los webhooks simulados de Meta.
       FACEBOOK_APP_SECRET: 'e2e-app-secret',
     },

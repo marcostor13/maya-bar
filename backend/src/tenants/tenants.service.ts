@@ -1,10 +1,22 @@
+import { brandForTenant, MAYA_BRAND } from '../agency/white-label';
+import type { MailBrand } from '../mail/mail.service';
+import {
+  PERIOD_MONTHS,
+  PLAN_RANK,
+  addMonths,
+  isPlanId,
+} from '../billing/plans.catalog';
+import type { BillingPeriod, Currency } from '../billing/plans.catalog';
+import { discountEndsAt } from '../billing/coupons/coupon-math';
 import {
   BadRequestException,
   Injectable,
   ConflictException,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { BillingAccessService } from '../billing/billing-access.service';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Schema, SchemaType, Types } from 'mongoose';
 import { Tenant } from './tenant.schema';
@@ -43,6 +55,7 @@ const AUDITED_FIELDS = [
   'plan',
   'planExpiresAt',
   'trialEndsAt',
+  'legacy',
 ] as const;
 
 export interface TenantUpdate {
@@ -54,6 +67,7 @@ export interface TenantUpdate {
   planExpiresAt?: string | null;
   trialEndsAt?: string | null;
   isActive?: boolean;
+  legacy?: boolean;
 }
 
 @Injectable()
@@ -68,6 +82,8 @@ export class TenantsService {
     @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
     @InjectConnection() private connection: Connection,
     @InjectModel(TenantAudit.name) private auditModel: Model<TenantAudit>,
+    // Caché del estado de cobro (HU41); opcional para las pruebas unitarias.
+    @Optional() private billing?: BillingAccessService,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -79,6 +95,7 @@ export class TenantsService {
     email: string;
     ruc?: string;
     phone?: string;
+    plan?: Tenant['plan'];
   }): Promise<Tenant> {
     const slug = this.slugify(data.name);
     const exists = await this.tenantModel.findOne({
@@ -90,7 +107,14 @@ export class TenantsService {
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + 14);
 
-    const tenant = new this.tenantModel({ ...data, slug, trialEndsAt });
+    // Prueba de 14 días con todo el plan Crece (HU41).
+    const tenant = new this.tenantModel({
+      plan: 'crece',
+      ...data,
+      slug,
+      trialEndsAt,
+      subscription: { status: 'trialing' },
+    });
     try {
       return await tenant.save();
     } catch (err: unknown) {
@@ -102,6 +126,184 @@ export class TenantsService {
         );
       throw err;
     }
+  }
+
+  /**
+   * Activa un plan pagado (HU47). Si quedaba periodo vigente, el nuevo se suma
+   * al final; si no, empieza hoy.
+   */
+  async activatePlan(
+    tenantId: string | Types.ObjectId,
+    p: {
+      plan: Tenant['plan'];
+      period: BillingPeriod;
+      currency: Currency;
+      amount: number;
+      mpPreapprovalId?: string;
+      /** Cupón con el que se compró (HU54): queda como precio pactado. */
+      /** Renovación del mismo plan (HU48): conserva el descuento pactado. */
+      renewal?: boolean;
+      coupon?: {
+        code: string;
+        type: 'percent' | 'fixed';
+        value: number;
+        duration: 'once' | 'months' | 'forever';
+        durationMonths?: number;
+        plans?: string[];
+        periods?: string[];
+      };
+    },
+    now = new Date(),
+  ): Promise<void> {
+    const tenant = await this.tenantModel.findById(tenantId).exec();
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const prevEnd = tenant.subscription?.currentPeriodEnd;
+    const st = tenant.subscription?.status;
+    // Desde el fin vigente: si sigue activa, o si pagó la renovación estando
+    // en impago (la gracia ya la usó). Si no, desde hoy.
+    const oldPre = tenant.subscription?.mpPreapprovalId;
+    // Suscripción automática nueva: Mercado Pago cobra desde hoy, así que el
+    // periodo también empieza hoy (HU51); la anterior se cancela.
+    const replaced =
+      p.mpPreapprovalId && oldPre && oldPre !== p.mpPreapprovalId
+        ? oldPre
+        : undefined;
+    const base =
+      !p.mpPreapprovalId &&
+      prevEnd &&
+      ((st === 'active' && prevEnd > now) ||
+        (st === 'past_due' &&
+          prevEnd.getTime() > now.getTime() - 31 * 86400_000))
+        ? prevEnd
+        : now;
+    const from = addMonths(base, PERIOD_MONTHS[p.period]);
+    const current = isPlanId(tenant.plan) ? tenant.plan : undefined;
+    // N meses cuentan desde que empieza el periodo pagado; en mensual automático
+    // el descuento de una vez termina 2 días antes del cobro, para que el monto
+    // nuevo llegue a Mercado Pago a tiempo (HU54).
+    let couponEnds = p.coupon
+      ? discountEndsAt(p.coupon, from, base)
+      : undefined;
+    if (couponEnds && p.coupon?.duration === 'once' && p.mpPreapprovalId)
+      couponEnds = new Date(couponEnds.getTime() - 2 * 86400_000);
+    // Renovación pagada por adelantado a un plan menor (bajada, HU52): el plan
+    // actual sigue hasta el fin del periodo pagado y el nuevo entra entonces.
+    const scheduled =
+      base === prevEnd &&
+      prevEnd > now &&
+      !!current &&
+      PLAN_RANK[p.plan] < PLAN_RANK[current];
+    // Renovó el mismo plan con una bajada programada después del aviso: la
+    // bajada se conserva para la siguiente renovación.
+    const keepPending =
+      !scheduled && current === p.plan && !!tenant.subscription?.pendingPlan;
+    await this.tenantModel
+      .updateOne(
+        { _id: tenant._id },
+        {
+          $set: {
+            ...(scheduled
+              ? {
+                  'subscription.pendingPlan': p.plan,
+                  'subscription.pendingPlanFrom': base,
+                }
+              : { plan: p.plan }),
+            legacy: false,
+            'subscription.status': 'active',
+            'subscription.period': p.period,
+            'subscription.currency': p.currency,
+            ...(scheduled ? {} : { 'subscription.amount': p.amount }),
+            'subscription.currentPeriodEnd': from,
+            ...(p.mpPreapprovalId
+              ? { 'subscription.mpPreapprovalId': p.mpPreapprovalId }
+              : {}),
+            ...(p.coupon
+              ? {
+                  'subscription.discount': {
+                    code: p.coupon.code,
+                    type: p.coupon.type,
+                    value: p.coupon.value,
+                    ...(p.coupon.plans?.length
+                      ? { plans: p.coupon.plans }
+                      : {}),
+                    ...(p.coupon.periods?.length
+                      ? { periods: p.coupon.periods }
+                      : {}),
+                    ...(couponEnds ? { endsAt: couponEnds } : {}),
+                  },
+                }
+              : {}),
+          },
+          $unset: {
+            'subscription.graceEndsAt': '',
+            'subscription.pastDueSince': '',
+            'subscription.longExpiredNoticeAt': '',
+            // Compra nueva sin cupón (no renovación): el descuento anterior no sigue.
+            ...(!p.coupon && !p.renewal ? { 'subscription.discount': '' } : {}),
+            ...(scheduled || keepPending
+              ? {}
+              : {
+                  'subscription.pendingPlan': '',
+                  'subscription.pendingPlanFrom': '',
+                }),
+            'subscription.cancelAtPeriodEnd': '',
+            'subscription.canceledAt': '',
+          },
+          ...(replaced
+            ? { $addToSet: { 'subscription.preapprovalsToCancel': replaced } }
+            : {}),
+        },
+      )
+      .exec();
+    this.billing?.invalidate(String(tenant._id));
+  }
+
+  /** Datos de facturación tomados del checkout (HU47). */
+  async setBillingInfo(
+    tenantId: string | Types.ObjectId,
+    info: Record<string, unknown>,
+  ): Promise<void> {
+    await this.tenantModel
+      .updateOne({ _id: tenantId }, { $set: { billingInfo: info } })
+      .exec();
+  }
+
+  /** Nombre de empresa libre: «Acme», «Acme 2», «Acme 3»… */
+  async uniqueName(name: string): Promise<string> {
+    for (let i = 1; i < 50; i++) {
+      const candidate = i === 1 ? name : `${name} ${i}`;
+      if (!(await this.tenantModel.exists({ slug: this.slugify(candidate) })))
+        return candidate;
+    }
+    return `${name} ${Date.now().toString(36)}`;
+  }
+
+  /** Marca para los correos de plataforma de sus usuarios (HU72). */
+  async mailBrandFor(tenantId?: string | null): Promise<MailBrand | undefined> {
+    if (!tenantId) return undefined;
+    const b = await brandForTenant(this.tenantModel, tenantId);
+    return b === MAYA_BRAND ? undefined : { appName: b.appName, logo: b.logo };
+  }
+
+  /** ¿`childId` es sub-cuenta de la agencia `parentId`? (HU72) */
+  async isSubAccountOf(childId: string, parentId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(childId) || !Types.ObjectId.isValid(parentId))
+      return false;
+    const [child, parent] = await Promise.all([
+      this.tenantModel
+        .exists({
+          _id: new Types.ObjectId(childId),
+          parentTenantId: new Types.ObjectId(parentId),
+        })
+        .exec(),
+      this.tenantModel
+        .exists({
+          _id: new Types.ObjectId(parentId),
+          agency: { $exists: true },
+        })
+        .exec(),
+    ]);
+    return !!child && !!parent;
   }
 
   async findById(id: string): Promise<Tenant> {
@@ -166,6 +368,19 @@ export class TenantsService {
       else if (value !== undefined) set[key] = new Date(value);
     }
     if (data.isActive !== undefined) set.isActive = data.isActive;
+    if (data.legacy !== undefined) set.legacy = data.legacy;
+    // Alargar la prueba (HU41): una fecha futura reabre una prueba vencida.
+    if (
+      set.trialEndsAt instanceof Date &&
+      set.trialEndsAt > new Date() &&
+      (!tenant.subscription ||
+        ['trialing', 'expired'].includes(tenant.subscription.status))
+    )
+      set['subscription.status'] = 'trialing';
+    // Quitar `legacy` a un cliente sin suscripción no debe bloquearlo de golpe:
+    // queda activo y el superadmin gestiona su cobro (HU40, HU41).
+    if (data.legacy === false && tenant.legacy && !tenant.subscription)
+      set.subscription = { status: 'active' };
 
     const changes: Record<string, { from?: unknown; to?: unknown }> = {};
     for (const key of AUDITED_FIELDS) {
@@ -194,6 +409,7 @@ export class TenantsService {
     }
     if (!saved) throw new NotFoundException('Tenant not found');
     this.activeCache.delete(String(saved._id));
+    this.billing?.invalidate(String(saved._id));
 
     if (actor) {
       if (Object.keys(changes).length)

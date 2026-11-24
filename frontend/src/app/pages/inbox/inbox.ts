@@ -7,7 +7,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import {
   LucideAngularModule, MessagesSquare, Send, Paperclip, Image as ImageIcon, Video, FileText,
   Mic, Square, Bot, Plug, Search, Check, CheckCheck, Clock, AlertCircle, X, Trash2, ArrowLeft,
-  Download, MapPin, Instagram, Facebook, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
+  Download, MapPin, Instagram, Facebook, Globe, RefreshCw, Smile, UserRound, Phone, PhoneForwarded,
   UserPlus, ContactRound, Target, MoreVertical, Tag, Ban as BanIcon,
   CheckCheck as ReadIcon, Reply, Sparkles, Mail, SquarePen, MessageCircle,
   CalendarPlus, ListChecks, ShieldBan, ShieldCheck, Users, UserCheck, UserMinus, Hand, Megaphone,
@@ -140,19 +140,20 @@ const MEDIA_PREVIEW: Record<string, string> = {
   document: '📄 Documento', sticker: 'Sticker', location: '📍 Ubicación', contact: '👤 Contacto',
 };
 
-type Channel = 'whatsapp' | 'instagram' | 'messenger' | 'email';
+type Channel = 'whatsapp' | 'instagram' | 'messenger' | 'email' | 'web';
 
 /** La bandeja separa los chats (mensajería instantánea) del correo. */
 type Box = 'chats' | 'email';
 
 /** Canales de chat en el orden en que se muestran en las pestañas. */
-const CHAT_CHANNELS = ['whatsapp', 'instagram', 'messenger'] as const;
+const CHAT_CHANNELS = ['whatsapp', 'instagram', 'messenger', 'web'] as const;
 
 /** Canales soportados en el orden en que se muestran en las pestañas. */
 const CHANNELS: { key: Channel; label: string }[] = [
   { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'instagram', label: 'Instagram' },
   { key: 'messenger', label: 'Messenger' },
+  { key: 'web', label: 'Chat web' },
   { key: 'email', label: 'Correo' },
 ];
 
@@ -413,6 +414,8 @@ const EMOJIS = [
                       <lucide-icon [img]="Mail" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     } @else if (c.channel === 'messenger') {
                       <lucide-icon [img]="Facebook" [size]="10" [strokeWidth]="2.6"></lucide-icon>
+                    } @else if (c.channel === 'web') {
+                      <lucide-icon [img]="Globe" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     } @else {
                       <lucide-icon [img]="Phone" [size]="10" [strokeWidth]="2.6"></lucide-icon>
                     }
@@ -1501,6 +1504,7 @@ const EMOJIS = [
     }
     .avatar[data-channel="instagram"] { background: linear-gradient(135deg, #F58529, #DD2A7B); }
     .avatar[data-channel="messenger"] { background: linear-gradient(135deg, #0866FF, #A033FF); }
+    .avatar[data-channel="web"] { background: var(--color-brand); }
     /* La foto tapa el degradado; si no carga, queda el degradado y las
        iniciales detrás, así que nunca se ve un hueco. */
     .avatar-img {
@@ -2345,6 +2349,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   readonly MapPin = MapPin;
   readonly Instagram = Instagram;
   readonly Facebook = Facebook;
+  readonly Globe = Globe;
   readonly RefreshCw = RefreshCw;
   readonly Smile = Smile;
   readonly UserRound = UserRound;
@@ -4158,6 +4163,7 @@ export class InboxComponent implements OnInit, OnDestroy {
   contactHandle(c: Conv) {
     if (c.channel === 'whatsapp') return `+${c.contact}`;
     if (c.channel === 'email') return c.contact;
+    if (c.channel === 'web') return 'Visitante web';
     return c.channel === 'messenger' ? 'Messenger' : 'Instagram DM';
   }
 

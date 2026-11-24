@@ -8,6 +8,25 @@ export interface CallingPrefs {
   /** Responder por WhatsApp a las llamadas perdidas. */
   missedReplyEnabled: boolean;
   missedReplyText?: string;
+  /** Agente de IA que contesta por voz (HU73). */
+  voiceAgent?: VoiceAgentPrefs;
+}
+
+export interface VoiceAgentPrefs {
+  enabled: boolean;
+  agentId?: string;
+  /**
+   * `fallback`: si nadie contesta en el tiempo de timbre.
+   * `outside_hours`: al instante fuera del horario (dentro, suena para el equipo).
+   * `always`: siempre contesta el agente.
+   */
+  mode: 'fallback' | 'outside_hours' | 'always';
+  /** Horario de atención humano, hora de Lima (0–24) y días (0 = domingo). */
+  hoursFrom: number;
+  hoursTo: number;
+  days: number[];
+  /** Avisar al empezar que la llamada se transcribe. */
+  announce: boolean;
 }
 
 export const DEFAULT_CALLING_PREFS: CallingPrefs = {

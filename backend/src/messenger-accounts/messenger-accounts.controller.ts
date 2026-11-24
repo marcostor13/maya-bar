@@ -19,6 +19,7 @@ import {
   UpdateMessengerAccountDto,
 } from './dto/messenger-account.dto';
 
+import { Audit } from '../audit/audit.decorator';
 @Controller('messenger-accounts')
 @UseGuards(JwtAuthGuard)
 export class MessengerAccountsController {
@@ -41,6 +42,7 @@ export class MessengerAccountsController {
     return { url: this.oauth.buildAuthorizeUrl(state) };
   }
 
+  @Audit({ action: 'channels.connected', resource: 'messenger' })
   @Post()
   create(@Body() dto: CreateMessengerAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
@@ -96,6 +98,7 @@ export class MessengerAccountsController {
     return this.service.update(id, req.user.tenantId, dto);
   }
 
+  @Audit({ action: 'channels.disconnected', resource: 'messenger' })
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

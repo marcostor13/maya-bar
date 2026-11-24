@@ -81,6 +81,7 @@ export class AgentGeneratorService {
           maxTokens: 6000,
           timeoutMs: 110_000,
           apiKeys,
+          meter: { tenantId, action: 'text' },
         },
       ),
     );

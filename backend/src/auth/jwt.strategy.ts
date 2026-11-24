@@ -28,6 +28,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     role: string;
     tenantId?: string;
     localIds?: string[];
+    homeTenantId?: string;
     iat?: number;
     iatMs?: number;
   }) {
@@ -51,6 +52,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: payload.role,
       tenantId: payload.tenantId ?? '',
       localIds: payload.localIds ?? [],
+      ...(payload.homeTenantId ? { homeTenantId: payload.homeTenantId } : {}),
     };
   }
 }

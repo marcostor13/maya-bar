@@ -1,0 +1,54 @@
+1
+00:00:01,000 --> 00:00:09,000
+Maya CRM: a CRM that lets businesses answer
+their Facebook Page messages from one inbox.
+
+2
+00:00:10,000 --> 00:00:18,000
+Settings > Messenger. No Facebook Page is connected yet.
+
+3
+00:00:19,000 --> 00:00:27,000
+Clicking 'Connect with Facebook' opens Facebook Login.
+The user reviews and grants: pages_show_list,
+pages_messaging and pages_manage_metadata.
+
+4
+00:00:28,000 --> 00:00:36,000
+pages_show_list: the user picks the Page
+they want to manage in Maya.
+
+5
+00:00:37,000 --> 00:00:45,000
+Maya lists the Pages the user manages.
+The selected Page is now connected (name and ID shown).
+
+6
+00:00:46,000 --> 00:00:54,000
+pages_manage_metadata: 'Subscribe webhook' subscribes
+this Page to the 'messages' webhook field.
+
+7
+00:00:55,000 --> 00:01:03,000
+A customer sends a message to the Page
+from Messenger (right side).
+
+8
+00:01:04,000 --> 00:01:12,000
+The webhook event arrives: the new conversation
+from the same Page appears in Maya's inbox.
+
+9
+00:01:13,000 --> 00:01:21,000
+pages_messaging: the business agent replies
+from Maya and clicks Send.
+
+10
+00:01:22,000 --> 00:01:30,000
+The reply sent from Maya is delivered
+in the customer's Messenger (native client).
+
+11
+00:01:31,000 --> 00:01:39,000
+Both messages are stored in Maya's conversation.
+End of demo.

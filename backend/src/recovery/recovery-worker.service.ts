@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
+import { AiCreditsException } from '../billing/ai-credits.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -142,6 +143,8 @@ export class RecoveryWorker implements OnApplicationShutdown {
     const attempts = (plan.analysisAttempts ?? 0) + 1;
     const final =
       error instanceof NothingToAnalyzeError ||
+      // Sin créditos de IA no se reintenta: falla con el aviso (HU43).
+      error instanceof AiCreditsException ||
       attempts >= MAX_ANALYSIS_ATTEMPTS;
     this.logger.warn(
       `Plan ${id}: intento ${attempts}/${MAX_ANALYSIS_ATTEMPTS} falló${final ? ' (definitivo)' : ''}: ${message}`,

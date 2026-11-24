@@ -11,6 +11,8 @@ export interface AuthUser {
   name?: string;
   role: string;
   tenantId?: string;
+  /** Usuario de agencia dentro de una sub-cuenta: su empresa propia (HU72). */
+  homeTenantId?: string;
   mustChangePassword?: boolean;
   referralCode?: string | null;
 }
@@ -45,10 +47,46 @@ export class AuthService {
     this.restoreSession();
   }
 
+  /**
+   * Con doble factor (HU62) el login no trae sesión sino un reto:
+   * `{ twoFactorRequired, method, challengeToken }` o `{ twoFactorSetupRequired, challengeToken }`.
+   */
   login(credentials: { email: string; password: string }): Observable<any> {
-    return this.http.post(`${this.apiUrl}/auth/login`, credentials).pipe(
+    const deviceToken = this.deviceToken() ?? undefined;
+    return this.http.post(`${this.apiUrl}/auth/login`, { ...credentials, ...(deviceToken ? { deviceToken } : {}) }).pipe(
+      tap((res: any) => { if (res?.access_token) this.saveSession(res); }),
+    );
+  }
+
+  verifyTwoFactor(challengeToken: string, code: string, rememberDevice: boolean): Observable<any> {
+    return this.http.post(`${this.apiUrl}/auth/2fa/verify`, { challengeToken, code, rememberDevice }).pipe(
+      tap((res: any) => {
+        if (res?.deviceToken) this.store('2fa_device', res.deviceToken);
+        this.saveSession(res);
+      }),
+    );
+  }
+
+  resendTwoFactor(challengeToken: string): Observable<{ sent: boolean; emailHint: string }> {
+    return this.http.post<{ sent: boolean; emailHint: string }>(`${this.apiUrl}/auth/2fa/resend`, { challengeToken });
+  }
+
+  enrollStart(challengeToken: string, method: 'totp' | 'email'): Observable<{ method: string; secret?: string; otpauthUrl?: string; emailHint?: string }> {
+    return this.http.post<{ method: string; secret?: string; otpauthUrl?: string; emailHint?: string }>(`${this.apiUrl}/auth/2fa/enroll/start`, { challengeToken, method });
+  }
+
+  enrollConfirm(challengeToken: string, code: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/auth/2fa/enroll/confirm`, { challengeToken, code }).pipe(
       tap((res: any) => this.saveSession(res)),
     );
+  }
+
+  private deviceToken(): string | null {
+    try { return typeof localStorage === 'undefined' ? null : localStorage.getItem('2fa_device'); } catch { return null; }
+  }
+
+  private store(key: string, value: string) {
+    try { localStorage.setItem(key, value); } catch { /* almacenamiento bloqueado */ }
   }
 
   register(data: {
@@ -71,6 +109,17 @@ export class AuthService {
     return this.http.post(`${this.apiUrl}/auth/verify-email`, { email, code }).pipe(
       tap((res: any) => this.saveSession(res)),
     );
+  }
+
+  /** Enlace de acceso tras pagar (HU47): crea la contraseña y abre sesión. */
+  redeemAccess(email: string, token: string, password: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/auth/access`, { email, token, password }).pipe(
+      tap((res: any) => this.saveSession(res)),
+    );
+  }
+
+  resendAccess(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.apiUrl}/auth/access/resend`, { email });
   }
 
   resendVerification(email: string): Observable<{ message: string }> {
@@ -171,6 +220,19 @@ export class AuthService {
 
   updateSession(res: any) {
     this.saveSession(res);
+  }
+
+  /**
+   * Entra a una sub-cuenta o vuelve a la agencia (HU72). Recarga la app para
+   * que ninguna pantalla conserve datos de la empresa anterior.
+   */
+  switchTenant(tenantId: string): Observable<unknown> {
+    return this.http.post(`${this.apiUrl}/auth/switch-tenant`, { tenantId }).pipe(
+      tap((res: any) => {
+        this.saveSession(res);
+        if (typeof window !== 'undefined') window.location.assign('/dashboard');
+      }),
+    );
   }
 
   private saveSession(res: any) {

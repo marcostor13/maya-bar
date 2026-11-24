@@ -21,6 +21,11 @@ export interface ResendConfig {
   checkedAt?: string;
   /** null = no se pudo comprobar (key solo de envío). */
   fromVerified: boolean | null;
+  /** Seguimiento de aperturas y clics (HU61). */
+  webhookUrl?: string;
+  hasWebhookSecret?: boolean;
+  trackingEnabled?: boolean;
+  lastWebhookAt?: string;
 }
 
 /** Sin `apiKey` se conserva la que ya estaba guardada. */
@@ -49,6 +54,14 @@ export class ResendApiService {
 
   test(to: string): Observable<{ id: string }> {
     return this.http.post<{ id: string }>(`${this.base}/test`, { to });
+  }
+
+  setWebhookSecret(secret: string): Observable<ResendConfig> {
+    return this.http.put<ResendConfig>(`${this.base}/webhook-secret`, { secret });
+  }
+
+  enableTracking(): Observable<ResendConfig> {
+    return this.http.post<ResendConfig>(`${this.base}/tracking`, {});
   }
 
   remove(): Observable<void> {

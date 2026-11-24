@@ -202,6 +202,8 @@ describe('AiAgentsService', () => {
           gemini: undefined,
           claude: undefined,
         },
+        // HU43 C1: cada respuesta del agente se mide como 1 crédito.
+        meter: { tenantId: expect.any(String), action: 'agent_reply' },
       });
     });
 

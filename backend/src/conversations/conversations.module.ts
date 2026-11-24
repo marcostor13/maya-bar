@@ -1,3 +1,5 @@
+import { WebWidget, WebWidgetSchema } from '../webchat/web-widget.schema';
+import { WebChatHub } from './web-chat-hub';
 import { MessageEvents } from './message-events';
 import { CampaignAttributionModule } from '../campaign-attribution/campaign-attribution.module';
 import { Module } from '@nestjs/common';
@@ -27,6 +29,7 @@ import { InstagramModule } from '../instagram/instagram.module';
 import { InstagramAccountsModule } from '../instagram-accounts/instagram-accounts.module';
 import { MessengerModule } from '../messenger/messenger.module';
 import { MessengerAccountsModule } from '../messenger-accounts/messenger-accounts.module';
+import { LeadAdsModule } from '../lead-ads/lead-ads.module';
 import { AiAgentsModule } from '../ai-agents/ai-agents.module';
 import { AiModule } from '../ai/ai.module';
 import { UploadModule } from '../upload/upload.module';
@@ -43,6 +46,11 @@ import {
 } from '../calls/call-permission.schema';
 import { CallsService } from '../calls/calls.service';
 import { CallsMetaService } from '../calls/calls-meta.service';
+import { VoiceAgentService } from '../calls/voice-agent.service';
+import {
+  OpenAiRealtimeProvider,
+  VOICE_REALTIME_PROVIDER,
+} from '../voice/realtime-provider';
 import { CallsController } from '../calls/calls.controller';
 import { BlockedContact, BlockedContactSchema } from './blocked-contact.schema';
 import { BlockedContactsService } from './blocked-contacts.service';
@@ -68,6 +76,7 @@ import {
     MongooseModule.forFeature([
       { name: Conversation.name, schema: ConversationSchema },
       { name: Message.name, schema: MessageSchema },
+      { name: WebWidget.name, schema: WebWidgetSchema },
       { name: ScheduledMessage.name, schema: ScheduledMessageSchema },
       { name: Customer.name, schema: CustomerSchema },
       { name: User.name, schema: UserSchema },
@@ -85,6 +94,8 @@ import {
     InstagramAccountsModule,
     MessengerModule,
     MessengerAccountsModule,
+    // Los leads de anuncios llegan por el mismo webhook de Página (HU60).
+    LeadAdsModule,
     AiAgentsModule,
     CampaignAttributionModule,
     AiModule,
@@ -105,6 +116,7 @@ import {
   ],
   providers: [
     ConversationsService,
+    WebChatHub,
     ConversationsGateway,
     MessageEvents,
     HandoffService,
@@ -119,7 +131,15 @@ import {
     // Llamadas (HU6): viven aquí porque el webhook de WhatsApp las despacha.
     CallsService,
     CallsMetaService,
+    // Agente de voz (HU73): el proveedor va por token para poder simularlo.
+    VoiceAgentService,
+    { provide: VOICE_REALTIME_PROVIDER, useClass: OpenAiRealtimeProvider },
   ],
-  exports: [ConversationsService, BlockedContactsService, MessageEvents],
+  exports: [
+    ConversationsService,
+    BlockedContactsService,
+    MessageEvents,
+    WebChatHub,
+  ],
 })
 export class ConversationsModule {}

@@ -19,6 +19,7 @@ import { TenantsService } from './tenants.service';
 import { actorOf } from './tenants.controller';
 import { AssignOwnerDto, RecoverOwnerDto } from './dto/create-tenant.dto';
 
+import { Audit } from '../audit/audit.decorator';
 const view = (u: User) => ({
   _id: String(u._id),
   name: u.name,
@@ -75,6 +76,11 @@ export class AdminTenantsController {
    * Devuelve el acceso a un administrador de la empresa en un paso: correo,
    * reactivación, contraseña y cierre de sesiones (HU17).
    */
+  @Audit({
+    action: 'admin.tenants.owner_recovered',
+    resource: 'tenant',
+    tenantParam: 'id',
+  })
   @Post(':id/owner/recover')
   async recover(
     @Param('id') id: string,
@@ -118,6 +124,12 @@ export class AdminTenantsController {
   }
 
   /** Nombra administrador a un usuario de la empresa o crea uno nuevo (HU17). */
+  @Audit({
+    action: 'admin.tenants.owner_assigned',
+    resource: 'tenant',
+    tenantParam: 'id',
+    bodyFields: ['email'],
+  })
   @Post(':id/owner/assign')
   async assign(
     @Param('id') id: string,

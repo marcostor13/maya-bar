@@ -13,6 +13,11 @@ import { MailModule } from '../mail/mail.module';
 import { RefreshToken, RefreshTokenSchema } from './refresh-token.schema';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TurnstileService } from './turnstile.service';
+import { AccountProvisioningService } from './account-provisioning.service';
+import { TwoFactorService } from './two-factor.service';
+import { TwoFactorController } from './two-factor.controller';
+import { User, UserSchema } from '../users/user.schema';
+import { Tenant, TenantSchema } from '../tenants/tenant.schema';
 
 @Module({
   imports: [
@@ -31,6 +36,8 @@ import { TurnstileService } from './turnstile.service';
     }),
     MongooseModule.forFeature([
       { name: RefreshToken.name, schema: RefreshTokenSchema },
+      { name: User.name, schema: UserSchema },
+      { name: Tenant.name, schema: TenantSchema },
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -44,8 +51,15 @@ import { TurnstileService } from './turnstile.service';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, JwtStrategy, ActiveUserCache, TurnstileService],
-  controllers: [AuthController],
-  exports: [ActiveUserCache],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    ActiveUserCache,
+    TurnstileService,
+    AccountProvisioningService,
+    TwoFactorService,
+  ],
+  controllers: [AuthController, TwoFactorController],
+  exports: [ActiveUserCache, AccountProvisioningService],
 })
 export class AuthModule {}

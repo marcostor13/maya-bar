@@ -294,7 +294,7 @@ export class BulkDeleteDto {
 /** Bloqueo a mano desde la pantalla de contactos bloqueados. */
 export class ManualBlockDto {
   @IsIn(['whatsapp', 'instagram', 'messenger', 'email'])
-  channel: 'whatsapp' | 'instagram' | 'messenger' | 'email';
+  channel: 'whatsapp' | 'instagram' | 'messenger' | 'email' | 'web';
 
   @IsString()
   @IsNotEmpty()

@@ -54,10 +54,12 @@ export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
   return { ...k, value: m(k.value), previous: m(k.previous), series: k.series.map(m) };
 }
 
+import { PinnedReportsCardComponent } from '../reports/pinned-reports-card';
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [MessageCostsCardComponent, UserPerformanceCardComponent,
+  imports: [MessageCostsCardComponent, UserPerformanceCardComponent, PinnedReportsCardComponent,
     
     RouterLink, NgTemplateOutlet, LucideAngularModule, BarListComponent, ChartCardComponent, CountUpComponent,
     FunnelComponent, HeatmapComponent, RingComponent, SparklineComponent, TimeChartComponent,
@@ -225,6 +227,8 @@ export function callKpi(key: Tile['key'], k: Kpi | undefined): Kpi {
           @if (isAdmin()) {
             <app-message-costs-card [range]="range()" />
           }
+
+          <app-pinned-reports-card />
 
           <app-user-performance-card [range]="range()" [channel]="channel()" />
 

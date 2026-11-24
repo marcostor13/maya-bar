@@ -22,6 +22,7 @@ import {
   UpdateTenantDto,
 } from './dto/create-tenant.dto';
 
+import { Audit } from '../audit/audit.decorator';
 export const actorOf = (req: AuthReq) => ({
   userId: req.user.userId,
   email: req.user.email,
@@ -43,6 +44,11 @@ export class TenantsController {
   }
 
   // SUPERADMIN: crear tenant + TENANT_ADMIN, devuelve credenciales
+  @Audit({
+    action: 'admin.tenants.created',
+    resource: 'tenant',
+    bodyFields: ['name', 'email', 'plan'],
+  })
   @Post()
   async createTenant(@Body() body: CreateTenantDto, @Request() req: AuthReq) {
     if (req.user.role !== 'SUPERADMIN') throw new ForbiddenException();
@@ -80,6 +86,7 @@ export class TenantsController {
    * La empresa edita sus propios datos de contacto. El plan y el estado son
    * decisiones de la plataforma: solo los cambia el SUPERADMIN por `:id`.
    */
+  @Audit({ action: 'tenant.updated', resource: 'tenant' })
   @Patch('me')
   updateMyTenant(@Request() req: AuthReq, @Body() body: UpdateTenantDto) {
     if (req.user.role !== 'TENANT_ADMIN') throw new ForbiddenException();
@@ -100,6 +107,12 @@ export class TenantsController {
   }
 
   // SUPERADMIN: editar cualquier tenant
+  @Audit({
+    action: 'admin.tenants.updated',
+    resource: 'tenant',
+    tenantParam: 'id',
+    bodyFields: ['plan', 'isActive', 'name'],
+  })
   @Patch(':id')
   updateTenant(
     @Param('id') id: string,
@@ -111,6 +124,11 @@ export class TenantsController {
   }
 
   // SUPERADMIN: eliminar tenant y todos sus datos
+  @Audit({
+    action: 'admin.tenants.deleted',
+    resource: 'tenant',
+    tenantParam: 'id',
+  })
   @Delete(':id')
   removeTenant(
     @Param('id') id: string,

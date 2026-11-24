@@ -27,10 +27,16 @@ export class CreateApiAccessDto {
   @IsMongoId()
   accountId: string;
 
+  /** `automation` = Zapier / Make (HU65): no pide dominios. */
+  @IsOptional()
+  @IsIn(['website', 'automation'])
+  purpose?: 'website' | 'automation';
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
-  allowedDomains: string[];
+  allowedDomains?: string[];
 
   @IsOptional()
   @IsArray()

@@ -150,6 +150,8 @@ export class LeadsController {
     @Query('q') q?: string,
     @Query('tag') tag?: string,
     @Query('overdue') overdue?: string,
+    @Query('heat') heat?: string,
+    @Query('sort') sort?: string,
   ) {
     assertRole(req.user.role, CRM_ROLES);
     return this.service.list(
@@ -163,6 +165,8 @@ export class LeadsController {
         q,
         tag,
         overdue: overdue === 'true',
+        heat,
+        sort,
       },
     );
   }

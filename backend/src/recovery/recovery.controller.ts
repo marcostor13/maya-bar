@@ -9,7 +9,10 @@ import {
   Put,
   Request,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
+import { RecoveryAnalysisService } from './recovery-analysis.service';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ModuleGuard } from '../roles/module.guard';
 import {
@@ -33,7 +36,12 @@ import {
 @Controller('recovery')
 @UseGuards(JwtAuthGuard, ModuleGuard('campaigns'))
 export class RecoveryController {
-  constructor(private recovery: RecoveryService) {}
+  constructor(
+    private recovery: RecoveryService,
+    // Global (HU42); opcional para las pruebas que montan solo el controlador.
+    @Optional() private limits?: PlanLimitsService,
+    @Optional() private analysis?: RecoveryAnalysisService,
+  ) {}
 
   @Get()
   findAll(@Request() req: AuthReq) {
@@ -55,18 +63,21 @@ export class RecoveryController {
   }
 
   @Post()
-  create(@Body() dto: CreateRecoveryPlanDto, @Request() req: AuthReq) {
+  async create(@Body() dto: CreateRecoveryPlanDto, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
+    await this.limits?.assertFeature(req.user.tenantId, 'recovery');
+    await this.analysis?.assertCredits(req.user.tenantId);
     return this.recovery.create(req.user.tenantId, req.user.userId, dto);
   }
 
   @Post(':id/reanalyze')
-  reanalyze(
+  async reanalyze(
     @Param('id') id: string,
     @Body() dto: CreateRecoveryPlanDto,
     @Request() req: AuthReq,
   ) {
     assertRole(req.user.role, CRM_ROLES);
+    await this.analysis?.assertCredits(req.user.tenantId);
     return this.recovery.reanalyze(id, req.user.tenantId, dto);
   }
 

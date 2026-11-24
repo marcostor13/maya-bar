@@ -3,7 +3,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { BillingAccessService } from '../billing/billing-access.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -57,6 +59,8 @@ export class InboxToolsService {
     private gateway: ConversationsGateway,
     private agents: AiAgentsService,
     private leads: LeadsService,
+    // Pausa por cobro (HU41); opcional para las pruebas unitarias.
+    @Optional() private billing?: BillingAccessService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -226,6 +230,21 @@ export class InboxToolsService {
   }
 
   private async deliverOne(job: ScheduledMessage) {
+    // Cuenta en solo lectura: el programado se aplaza una hora (HU41).
+    if (this.billing && !(await this.billing.canOperate(job.tenantId))) {
+      await this.scheduledModel
+        .updateOne(
+          { _id: job._id },
+          {
+            $set: {
+              status: 'pending',
+              sendAt: new Date(Date.now() + 3_600_000),
+            },
+          },
+        )
+        .exec();
+      return;
+    }
     try {
       const msg = await this.conversations.sendManual(
         String(job.conversationId),

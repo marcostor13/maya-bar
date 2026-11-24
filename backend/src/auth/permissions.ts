@@ -7,6 +7,8 @@ export interface AuthReq {
     role: string;
     tenantId: string;
     localIds: string[];
+    /** Usuario de agencia dentro de una sub-cuenta: su empresa propia (HU72). */
+    homeTenantId?: string;
   };
 }
 

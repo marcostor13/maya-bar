@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../auth/auth.service';
 
 import { ToastService } from '../../shared/toast';
+import { BrandService } from '../../core/brand.service';
 
 const TOO_MANY = 'Demasiados intentos. Espera un momento y vuelve a intentarlo.';
 
@@ -29,8 +30,8 @@ export function loginErrorMessage(err: { status?: number; error?: { message?: un
     <div class="login-page">
       <div class="login-card card animate-fade-in">
         <div class="login-header">
-          <img src="/logo.png?v=2" alt="Maya CRM" class="logo-img" />
-          <h1>Bienvenido a Maya</h1>
+          @if (brand.logo()) { <img [src]="brand.logo()" [alt]="brand.brand().appName" class="logo-img" /> }
+          <h1>Bienvenido a {{ brand.custom() ? brand.brand().appName : 'Maya' }}</h1>
           <p>Ingresa a tu cuenta para continuar.</p>
         </div>
 
@@ -66,9 +67,66 @@ export function loginErrorMessage(err: { status?: number; error?: { message?: un
             </button>
           </form>
 
-          <p class="register-link">
-            ¿No tienes cuenta? <a routerLink="/register">Regístrate gratis</a>
-          </p>
+          <!-- En el panel de una agencia (HU72) el alta la hace la agencia. -->
+          @if (!brand.custom()) {
+            <p class="register-link">
+              ¿No tienes cuenta? <a routerLink="/register">Regístrate gratis</a>
+            </p>
+          }
+        } @else if (view() === 'otp') {
+          <form (ngSubmit)="onOtpSubmit()">
+            <p class="hint">
+              @if (otpMethod() === 'email') { Te enviamos un código de 6 dígitos a <strong>{{ emailHint() }}</strong>. }
+              @else { Escribe el código de 6 dígitos de tu app de autenticación. }
+              También puedes usar un código de respaldo.
+            </p>
+            <div class="form-group">
+              <label for="otp-code">Código de acceso</label>
+              <input id="otp-code" class="input otp" name="code" [(ngModel)]="otpCode" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="20" />
+            </div>
+            <label class="remember"><input type="checkbox" name="remember" [(ngModel)]="rememberDevice" /> Recordar este dispositivo 30 días</label>
+            <button type="submit" class="btn btn-primary submit-btn" [disabled]="loading() || !otpCode.trim()">
+              @if (loading()) { Verificando... } @else { Entrar }
+            </button>
+            @if (otpMethod() === 'email') {
+              <button type="button" class="btn btn-ghost submit-btn" (click)="resendOtp()" [disabled]="loading()">Reenviar código</button>
+            }
+            <button type="button" class="btn btn-secondary submit-btn" (click)="backToLogin()">Volver</button>
+          </form>
+        } @else if (view() === 'enroll') {
+          <div class="enroll">
+            <p class="hint">
+              {{ enrollReason() === 'superadmin' ? 'El superadmin debe usar doble factor.' : 'Tu empresa exige doble factor de acceso.' }}
+              Configúralo para entrar.
+            </p>
+            @if (!enrollMethod()) {
+              <button type="button" class="btn btn-primary submit-btn" (click)="startEnroll('totp')" [disabled]="loading()">Usar app de autenticación</button>
+              <button type="button" class="btn btn-secondary submit-btn" (click)="startEnroll('email')" [disabled]="loading()">Recibir el código por correo</button>
+            } @else {
+              @if (enrollMethod() === 'totp') {
+                <p class="hint">Escanea el código con Google Authenticator, Microsoft Authenticator o similar.</p>
+                @if (qr()) { <img class="qr" [src]="qr()" alt="Código QR para la app de autenticación" /> }
+                <p class="hint">¿No puedes escanear? Clave: <span class="mono">{{ enrollSecret() }}</span></p>
+              } @else {
+                <p class="hint">Te enviamos un código a <strong>{{ emailHint() }}</strong>.</p>
+              }
+              <form (ngSubmit)="confirmEnroll()">
+                <div class="form-group">
+                  <label for="enroll-code">Código de 6 dígitos</label>
+                  <input id="enroll-code" class="input otp" name="ecode" [(ngModel)]="otpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" />
+                </div>
+                <button type="submit" class="btn btn-primary submit-btn" [disabled]="loading() || otpCode.trim().length !== 6">Activar y entrar</button>
+              </form>
+            }
+            <button type="button" class="btn btn-secondary submit-btn" (click)="backToLogin()">Volver</button>
+          </div>
+        } @else if (view() === 'backup') {
+          <div class="enroll">
+            <p class="hint"><strong>Guarda estos códigos de respaldo.</strong> Cada uno sirve una sola vez si pierdes el teléfono. No los volverás a ver.</p>
+            <ul class="codes">@for (c of backupCodes(); track c) { <li class="mono">{{ c }}</li> }</ul>
+            <button type="button" class="btn btn-secondary submit-btn" (click)="copyCodes()">Copiar códigos</button>
+            <button type="button" class="btn btn-primary submit-btn" (click)="router.navigate([homeRoute()])">Ya los guardé, continuar</button>
+          </div>
         } @else if (view() === 'forgot') {
           <form (ngSubmit)="onForgotSubmit()">
             <div class="form-group">
@@ -194,6 +252,13 @@ export function loginErrorMessage(err: { status?: number; error?: { message?: un
       font-weight: 500;
     }
 
+    .hint { font-size: 13px; color: var(--color-text-muted); margin: 0 0 16px; line-height: 1.5; }
+    .otp { letter-spacing: 4px; font-size: 18px; text-align: center; }
+    .remember { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-muted); margin-bottom: 8px; }
+    .qr { display: block; width: 180px; height: 180px; margin: 0 auto 12px; }
+    .mono { font-family: monospace; word-break: break-all; }
+    .codes { list-style: none; padding: 0; margin: 0 0 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .codes li { background: var(--color-bg-light); border-radius: var(--radius-sm); padding: 6px 8px; text-align: center; font-size: 14px; }
     .input-eye-wrap { position: relative; }
     .input-eye-wrap .input { padding-right: 42px; width: 100%; box-sizing: border-box; }
     .eye-btn {
@@ -221,14 +286,26 @@ export function loginErrorMessage(err: { status?: number; error?: { message?: un
 export class LoginComponent {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
-  private router = inject(Router);
+  router = inject(Router);
   private toast = inject(ToastService);
+  readonly brand = inject(BrandService);
 
   loading = signal(false);
+  // Doble factor (HU62)
+  private challengeToken = '';
+  otpMethod = signal<'totp' | 'email'>('totp');
+  emailHint = signal('');
+  otpCode = '';
+  rememberDevice = false;
+  enrollReason = signal<'tenant' | 'superadmin'>('tenant');
+  enrollMethod = signal<'totp' | 'email' | null>(null);
+  enrollSecret = signal('');
+  qr = signal('');
+  backupCodes = signal<string[]>([]);
   error = signal('');
   showPassword = signal(false);
 
-  view = signal<'login' | 'forgot' | 'reset'>('login');
+  view = signal<'login' | 'forgot' | 'reset' | 'otp' | 'enroll' | 'backup'>('login');
   forgotEmail = signal('');
   resetCode = signal('');
   newPassword = signal('');
@@ -238,7 +315,7 @@ export class LoginComponent {
     password: ['', Validators.required],
   });
 
-  private homeRoute(): string {
+  homeRoute(): string {
     const user = this.auth.currentUser();
     if (user?.mustChangePassword) return '/change-password';
     if (user?.role === 'SUPERADMIN') return '/admin/tenants';
@@ -252,7 +329,26 @@ export class LoginComponent {
     this.error.set('');
 
     this.auth.login(this.form.value as any).subscribe({
-      next: () => this.router.navigate([this.homeRoute()]),
+      next: (res: any) => {
+        this.loading.set(false);
+        if (res?.twoFactorRequired) {
+          this.challengeToken = res.challengeToken;
+          this.otpMethod.set(res.method);
+          this.emailHint.set(res.emailHint ?? '');
+          this.otpCode = '';
+          this.view.set('otp');
+          return;
+        }
+        if (res?.twoFactorSetupRequired) {
+          this.challengeToken = res.challengeToken;
+          this.enrollReason.set(res.reason);
+          this.enrollMethod.set(null);
+          this.otpCode = '';
+          this.view.set('enroll');
+          return;
+        }
+        this.router.navigate([this.homeRoute()]);
+      },
       error: (err) => {
         // Cuenta registrada que no confirmó su correo: a la pantalla del código,
         // que le manda uno nuevo al llegar.
@@ -270,6 +366,75 @@ export class LoginComponent {
         this.loading.set(false);
       },
     });
+  }
+
+  onOtpSubmit() {
+    this.loading.set(true);
+    this.error.set('');
+    this.auth.verifyTwoFactor(this.challengeToken, this.otpCode.trim(), this.rememberDevice).subscribe({
+      next: () => { this.loading.set(false); this.router.navigate([this.homeRoute()]); },
+      error: (err) => this.fail(err, 'El código no es válido.'),
+    });
+  }
+
+  resendOtp() {
+    this.auth.resendTwoFactor(this.challengeToken).subscribe({
+      next: (r) => { this.emailHint.set(r.emailHint); this.toast.success('Te enviamos un código nuevo'); },
+      error: (err) => this.fail(err, 'No se pudo reenviar el código'),
+    });
+  }
+
+  startEnroll(method: 'totp' | 'email') {
+    this.loading.set(true);
+    this.auth.enrollStart(this.challengeToken, method).subscribe({
+      next: async (r) => {
+        this.loading.set(false);
+        this.enrollMethod.set(method);
+        this.emailHint.set(r.emailHint ?? '');
+        this.enrollSecret.set(r.secret ?? '');
+        if (r.otpauthUrl) {
+          try {
+            const QRCode = await import('qrcode');
+            this.qr.set(await QRCode.toDataURL(r.otpauthUrl, { margin: 1, width: 360 }));
+          } catch { this.qr.set(''); }
+        }
+      },
+      error: (err) => this.fail(err, 'No se pudo empezar la configuración'),
+    });
+  }
+
+  confirmEnroll() {
+    this.loading.set(true);
+    this.auth.enrollConfirm(this.challengeToken, this.otpCode.trim()).subscribe({
+      next: (res: any) => {
+        this.loading.set(false);
+        this.toast.success('Doble factor activado');
+        this.backupCodes.set(res.backupCodes ?? []);
+        this.view.set('backup');
+      },
+      error: (err) => this.fail(err, 'El código no es correcto'),
+    });
+  }
+
+  copyCodes() {
+    navigator.clipboard?.writeText(this.backupCodes().join('\n')).then(
+      () => this.toast.success('Códigos copiados'),
+      () => this.toast.error('No se pudieron copiar'),
+    );
+  }
+
+  backToLogin() {
+    this.challengeToken = '';
+    this.otpCode = '';
+    this.error.set('');
+    this.view.set('login');
+  }
+
+  private fail(err: { status?: number; error?: { message?: unknown } }, fallback: string) {
+    const msg = err.status === 429 ? TOO_MANY : typeof err.error?.message === 'string' ? err.error.message : fallback;
+    this.error.set(msg);
+    this.toast.error(msg);
+    this.loading.set(false);
   }
 
   onForgotSubmit() {

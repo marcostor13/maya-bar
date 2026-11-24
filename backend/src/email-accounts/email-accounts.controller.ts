@@ -12,7 +12,9 @@ import {
   Request,
   Res,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -24,6 +26,7 @@ import {
   UpdateEmailAccountDto,
 } from './dto/email-account.dto';
 
+import { Audit } from '../audit/audit.decorator';
 function provider(p: string): OAuthProvider {
   if (p !== 'gmail' && p !== 'outlook')
     throw new BadRequestException('Proveedor no soportado');
@@ -36,6 +39,8 @@ export class EmailAccountsController {
   constructor(
     private service: EmailAccountsService,
     private oauth: EmailOAuthService,
+    // Global (HU42); opcional para las pruebas que montan solo el controlador.
+    @Optional() private limits?: PlanLimitsService,
   ) {}
 
   @Get()
@@ -59,9 +64,15 @@ export class EmailAccountsController {
     };
   }
 
+  @Audit({
+    action: 'channels.connected',
+    resource: 'email',
+    bodyFields: ['email', 'provider'],
+  })
   @Post()
-  create(@Body() dto: CreateEmailAccountDto, @Request() req: AuthReq) {
+  async create(@Body() dto: CreateEmailAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
+    await this.limits?.assertCanAdd(req.user.tenantId, 'mailboxes');
     return this.service.createCustom(req.user.tenantId, dto);
   }
 
@@ -87,6 +98,7 @@ export class EmailAccountsController {
     return this.service.update(id, req.user.tenantId, dto);
   }
 
+  @Audit({ action: 'channels.disconnected', resource: 'email' })
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

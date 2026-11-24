@@ -41,6 +41,8 @@ export const SECRET_FIELDS = {
   resetPasswordExpires: 0,
   resetPasswordAttempts: 0,
   emailVerificationCodeHash: 0,
+  accessTokenHash: 0,
+  accessTokenExpires: 0,
 } as const;
 
 /** Intentos fallidos antes de invalidar un código de recuperación. */
@@ -489,10 +491,48 @@ export class UsersService implements OnModuleInit {
     user.resetPasswordCode = undefined;
     user.resetPasswordExpires = undefined;
     user.resetPasswordAttempts = undefined;
+    // Con contraseña propia, el enlace de acceso tras pagar ya no hace falta.
+    user.accessTokenHash = undefined;
+    user.accessTokenExpires = undefined;
+    user.accessPending = false;
     // Si la cuenta tenía contraseña temporal, al recuperarla ya estableció una
     // definitiva: no debe forzarse otro cambio en el siguiente login.
     user.mustChangePassword = false;
     return user.save();
+  }
+
+  /** Correos de los superadmin, para avisos de la plataforma (HU47). */
+  async superadminEmails(): Promise<string[]> {
+    const supers = await this.userModel
+      .find({ role: 'SUPERADMIN', isActive: true }, { email: 1 })
+      .lean()
+      .exec();
+    return supers.map((u) => u.email);
+  }
+
+  /**
+   * Canje atómico del enlace de acceso (HU47 C3): solo una petición con ese
+   * token lo consigue; las demás reciben null.
+   */
+  async consumeAccessToken(
+    email: string,
+    tokenHash: string,
+  ): Promise<User | null> {
+    return this.userModel
+      .findOneAndUpdate(
+        {
+          email: this.normalizeEmail(email),
+          isActive: true,
+          accessTokenHash: tokenHash,
+          accessTokenExpires: { $gt: new Date() },
+        },
+        {
+          $unset: { accessTokenHash: '', accessTokenExpires: '' },
+          $set: { accessPending: false, emailVerified: true },
+        },
+        { returnDocument: 'after' },
+      )
+      .exec();
   }
 
   async findOneByEmail(email: string): Promise<User | null> {

@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { BillingAccessService } from '../billing/billing-access.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -41,6 +42,8 @@ export class MessageRetryService {
     @InjectModel(Conversation.name) private convModel: Model<Conversation>,
     private conversations: ConversationsService,
     private gateway: ConversationsGateway,
+    // Pausa por cobro (HU41); opcional para las pruebas unitarias.
+    @Optional() private billing?: BillingAccessService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -76,6 +79,17 @@ export class MessageRetryService {
     };
     for (const msg of candidates) {
       try {
+        // Cuenta en solo lectura: se aplaza una hora (HU41).
+        if (this.billing && !(await this.billing.canOperate(msg.tenantId))) {
+          await this.msgModel
+            .updateOne(
+              { _id: msg._id },
+              { $set: { retryAt: new Date(t + 3_600_000) } },
+            )
+            .exec();
+          stats.deferred++;
+          continue;
+        }
         stats[await this.retryOne(msg, now, brokenAccounts)]++;
       } catch (err) {
         this.logger.error(

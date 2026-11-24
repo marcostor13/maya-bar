@@ -1,5 +1,7 @@
 import { Controller, Get, Header, HttpCode, Param, Post } from '@nestjs/common';
+import { Optional } from '@nestjs/common';
 import { CampaignSenderService } from './campaign-sender.service';
+import { EmailTrackingService } from './email-tracking.service';
 
 function page(title: string, body: string): string {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head><body style="margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:grid;place-items:center;min-height:100vh;background:#f8fafc;color:#0f172a;"><main style="max-width:420px;margin:24px;padding:32px;background:#ffffff;border-radius:24px;box-shadow:0 10px 30px rgba(15,23,42,.08);text-align:center;"><h1 style="font-size:22px;margin:0 0 12px;">${title}</h1>${body}</main></body></html>`;
@@ -18,7 +20,10 @@ const BUTTON =
  */
 @Controller('u')
 export class UnsubscribeController {
-  constructor(private sender: CampaignSenderService) {}
+  constructor(
+    private sender: CampaignSenderService,
+    @Optional() private tracking?: EmailTrackingService,
+  ) {}
 
   @Get(':token')
   @Header('Content-Type', 'text/html; charset=utf-8')
@@ -42,6 +47,12 @@ export class UnsubscribeController {
   @Header('Cache-Control', 'no-store')
   async unsubscribe(@Param('token') token: string): Promise<string> {
     const done = await this.sender.unsubscribe(token);
+    const target = done ? this.sender.verifyUnsubscribeToken(token) : null;
+    // La baja cuenta en las métricas de la última campaña que recibió (HU61).
+    if (target)
+      await this.tracking
+        ?.markUnsubscribed(target.tenantId, target.to)
+        .catch(() => undefined);
     return done
       ? page(
           'Listo',

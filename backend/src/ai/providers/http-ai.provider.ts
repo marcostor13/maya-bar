@@ -15,6 +15,8 @@ const DEFAULT_TOOL_ROUNDS = 4;
 
 interface ClaudeResponse {
   stop_reason?: string;
+  model?: string;
+  usage?: { input_tokens?: number; output_tokens?: number };
   content?: {
     type?: string;
     text?: string;
@@ -221,7 +223,13 @@ export class HttpAiProvider implements AiChatProvider {
       throw new BadRequestException(
         `${this.errorLabel(req)} API error: ${await res.text()}`,
       );
-    return (await res.json()) as ClaudeResponse;
+    const data = (await res.json()) as ClaudeResponse;
+    req.onUsage?.({
+      model: data.model ?? (body.model as string | undefined),
+      inputTokens: data.usage?.input_tokens ?? 0,
+      outputTokens: data.usage?.output_tokens ?? 0,
+    });
+    return data;
   }
 
   /**
@@ -326,9 +334,18 @@ export class HttpAiProvider implements AiChatProvider {
       throw new BadRequestException(
         `${this.errorLabel(req)} API error: ${await res.text()}`,
       );
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const data = await res.json();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const data = (await res.json()) as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+      };
+    };
+    req.onUsage?.({
+      model: gModel,
+      inputTokens: data?.usageMetadata?.promptTokenCount ?? 0,
+      outputTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
+    });
     return String(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
   }
 
@@ -375,8 +392,15 @@ export class HttpAiProvider implements AiChatProvider {
         `${this.errorLabel(req)} API error: ${await res.text()}`,
       );
     const data = (await res.json()) as {
+      model?: string;
       choices?: { message?: OpenAiMessage }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
+    req.onUsage?.({
+      model: data?.model ?? (body.model as string | undefined),
+      inputTokens: data?.usage?.prompt_tokens ?? 0,
+      outputTokens: data?.usage?.completion_tokens ?? 0,
+    });
     return data?.choices?.[0]?.message;
   }
 

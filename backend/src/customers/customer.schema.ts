@@ -62,6 +62,8 @@ export class Customer extends Document {
       'messenger',
       'prospecting',
       'email',
+      'lead_ads',
+      'web',
     ],
     default: 'manual',
   })
@@ -115,6 +117,32 @@ export class Customer extends Document {
 
   @Prop()
   lastVisit?: Date;
+
+  /** Puntaje de 0 a 100 (HU70): reglas + lectura con IA de la conversación. */
+  @Prop({ type: Number, min: 0, max: 100, index: true })
+  score?: number;
+
+  @Prop({ type: String, enum: ['hot', 'warm', 'cold'] })
+  scoreLabel?: 'hot' | 'warm' | 'cold';
+
+  /** Motivo en una línea, para que el vendedor sepa por qué. */
+  @Prop({ trim: true })
+  scoreReason?: string;
+
+  /** Desglose del último cálculo (reglas, IA y lo que leyó la IA). */
+  @Prop({ type: Object })
+  scoreDetail?: {
+    rules: number;
+    ai: number;
+    intent?: string;
+    budget?: string;
+    urgency?: string;
+    objections?: string;
+  };
+
+  /** Último cálculo: limita el recálculo a 1 cada 10 minutos. */
+  @Prop({ type: Date })
+  scoredAt?: Date;
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);

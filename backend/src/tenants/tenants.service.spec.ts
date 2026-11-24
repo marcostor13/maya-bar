@@ -94,6 +94,34 @@ describe('TenantsService', () => {
       return captured;
     }
 
+    it('HU41 C1: nace en prueba de 14 días con el plan Crece', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-12-01T10:00:00Z'));
+      const captured = captureCreated();
+      await service.create({ name: 'Nueva', email: 'n@n.pe' });
+      expect(captured.data.plan).toBe('crece');
+      expect(captured.data.subscription).toEqual({ status: 'trialing' });
+      expect(captured.data.trialEndsAt.toISOString()).toBe(
+        '2026-12-15T10:00:00.000Z',
+      );
+    });
+
+    it('HU41: alargar la prueba reabre una prueba vencida', async () => {
+      tenantModel.findById.mockReturnValue(
+        buildQuery({
+          _id: 't1',
+          email: 'a@a.pe',
+          subscription: { status: 'expired' },
+          get: () => undefined,
+        }),
+      );
+      tenantModel.findByIdAndUpdate.mockReturnValue(buildQuery({ _id: 't1' }));
+      await service.update('507f1f77bcf86cd799439011', {
+        trialEndsAt: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+      });
+      const [, update] = tenantModel.findByIdAndUpdate.mock.calls[0];
+      expect(update.$set['subscription.status']).toBe('trialing');
+    });
+
     it('guarda la empresa con el slug derivado del nombre', async () => {
       const captured = captureCreated();
 
@@ -213,7 +241,7 @@ describe('TenantsService', () => {
       tenantModel.findById.mockReturnValue(
         buildQuery(
           doc({
-            plan: 'starter',
+            plan: 'inicia',
             isActive: true,
             trialEndsAt: new Date('2026-10-20'),
           }),
@@ -224,19 +252,19 @@ describe('TenantsService', () => {
       );
       await service.update(
         tenantId,
-        { plan: 'pro', trialEndsAt: null, isActive: false },
+        { plan: 'crece', trialEndsAt: null, isActive: false },
         actor,
       );
 
       const [, update] = tenantModel.findByIdAndUpdate.mock.calls[0];
       expect(update).toEqual({
-        $set: { plan: 'pro', isActive: false },
+        $set: { plan: 'crece', isActive: false },
         $unset: { trialEndsAt: 1 },
       });
       const actions = auditModel.create.mock.calls.map(([d]) => d.action);
       expect(actions).toEqual(['update', 'suspend']);
       expect(auditModel.create.mock.calls[0][0].changes).toEqual({
-        plan: { from: 'starter', to: 'pro' },
+        plan: { from: 'inicia', to: 'crece' },
         trialEndsAt: { from: '2026-10-20', to: undefined },
       });
     });

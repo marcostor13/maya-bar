@@ -37,6 +37,7 @@ export interface ApiAccessView {
   accountId: string;
   accountLabel: string;
   keyPrefix: string;
+  purpose: 'website' | 'automation';
   allowedDomains: string[];
   allowedIps: string[];
   perMinuteLimit: number;
@@ -215,7 +216,11 @@ export class ApiAccessService {
       accountLabel: account.label,
       keyHash: hashKey(key),
       keyPrefix: key.slice(0, VISIBLE_PREFIX_LENGTH),
-      allowedDomains: this.cleanDomains(dto.allowedDomains),
+      purpose: dto.purpose ?? 'website',
+      allowedDomains: this.cleanDomains(
+        dto.allowedDomains ?? [],
+        dto.purpose === 'automation',
+      ),
       allowedIps: this.cleanIps(dto.allowedIps ?? []),
       perMinuteLimit: dto.perMinuteLimit ?? DEFAULT_PER_MINUTE,
       perDayLimit: dto.perDayLimit ?? DEFAULT_PER_DAY,
@@ -234,7 +239,10 @@ export class ApiAccessService {
     const doc = await this.owned(tenantId, id);
     if (dto.name !== undefined) doc.name = dto.name.trim();
     if (dto.allowedDomains !== undefined)
-      doc.allowedDomains = this.cleanDomains(dto.allowedDomains);
+      doc.allowedDomains = this.cleanDomains(
+        dto.allowedDomains,
+        doc.purpose === 'automation',
+      );
     if (dto.allowedIps !== undefined)
       doc.allowedIps = this.cleanIps(dto.allowedIps);
     if (dto.perMinuteLimit !== undefined)
@@ -286,12 +294,27 @@ export class ApiAccessService {
     req: { origin?: string; referer?: string; ip?: string },
   ): string | null {
     const host = hostOf(req.origin) ?? hostOf(req.referer);
+    // Zapier, Make o un servidor (HU65): sin navegador no hay Origin. Si
+    // llega uno y hay dominios, se comprueba igual; las IPs, siempre.
+    if (access.purpose === 'automation') {
+      if (
+        host &&
+        access.allowedDomains.length &&
+        !domainAllowed(host, access.allowedDomains)
+      )
+        return `El dominio ${host} no está autorizado para este acceso.`;
+      return this.ipProblem(access, req.ip);
+    }
     if (!host)
       return 'Falta la cabecera Origin con el dominio autorizado (p. ej. Origin: https://tudominio.com).';
     if (!domainAllowed(host, access.allowedDomains))
       return `El dominio ${host} no está autorizado para este acceso.`;
+    return this.ipProblem(access, req.ip);
+  }
+
+  private ipProblem(access: ApiAccess, rawIp?: string): string | null {
     if (access.allowedIps.length) {
-      const ip = normalizeIp(req.ip);
+      const ip = normalizeIp(rawIp);
       if (!ip || !access.allowedIps.includes(ip))
         return 'La IP desde la que llamas no está autorizada para este acceso.';
     }
@@ -436,7 +459,7 @@ export class ApiAccessService {
     return KEY_PREFIX + randomBytes(32).toString('base64url');
   }
 
-  private cleanDomains(list: string[]): string[] {
+  private cleanDomains(list: string[], optional = false): string[] {
     const out: string[] = [];
     for (const raw of list) {
       const domain = normalizeDomain(raw);
@@ -444,7 +467,7 @@ export class ApiAccessService {
         throw new BadRequestException(`"${raw}" no es un dominio válido.`);
       if (!out.includes(domain)) out.push(domain);
     }
-    if (!out.length)
+    if (!out.length && !optional)
       throw new BadRequestException('Autoriza al menos un dominio.');
     return out;
   }
@@ -468,6 +491,7 @@ export class ApiAccessService {
       accountId: String(doc.accountId),
       accountLabel: doc.accountLabel,
       keyPrefix: doc.keyPrefix,
+      purpose: doc.purpose ?? 'website',
       allowedDomains: doc.allowedDomains,
       allowedIps: doc.allowedIps,
       perMinuteLimit: doc.perMinuteLimit,

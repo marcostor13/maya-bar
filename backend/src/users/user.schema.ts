@@ -50,6 +50,10 @@ export class User extends Document {
   @Prop({ default: true })
   isActive: boolean;
 
+  /** Desactivado al bajar de plan (HU52): se reactiva solo al volver a subir. */
+  @Prop()
+  deactivatedByPlan?: boolean;
+
   @Prop({ default: false })
   mustChangePassword: boolean;
 
@@ -74,6 +78,19 @@ export class User extends Document {
    */
   @Prop()
   emailVerified?: boolean;
+
+  /**
+   * Enlace de acceso de un solo uso tras pagar (HU47): hash SHA-256 del token
+   * y vencimiento (72 h). Sin contraseña elegida aún, `accessPending` = true.
+   */
+  @Prop()
+  accessTokenHash?: string;
+
+  @Prop()
+  accessTokenExpires?: Date;
+
+  @Prop()
+  accessPending?: boolean;
 
   /** Hash SHA-256 del código enviado; el código en claro solo va en el correo. */
   @Prop()
@@ -100,6 +117,45 @@ export class User extends Document {
   /** Los tokens de acceso emitidos antes de esta fecha ya no valen. */
   @Prop({ type: Date })
   sessionsValidFrom?: Date;
+
+  /** Recibe oportunidades del reparto automático (HU59). Sin el campo: sí. */
+  @Prop()
+  available?: boolean;
+
+  /** Horario en que recibe del reparto (hora de Lima). Sin el campo: siempre. */
+  @Prop({ type: Object })
+  availability?: { days?: number[]; from?: number; to?: number };
+
+  /** Doble factor (HU62). El secreto va cifrado y los códigos de respaldo con hash. */
+  @Prop({ type: Object })
+  twoFactor?: TwoFactorState;
+
+  /** Configuración a medias: secreto o código por correo aún sin confirmar. */
+  @Prop({ type: Object })
+  twoFactorPending?: TwoFactorPending;
+}
+
+export interface TwoFactorState {
+  enabled: boolean;
+  method: 'totp' | 'email';
+  sealedSecret?: string;
+  backupHashes: string[];
+  enabledAt: Date;
+  /** Último paso TOTP aceptado: el mismo código no sirve dos veces. */
+  lastStep?: number;
+  /** Código por correo vigente (método email). */
+  emailCodeHash?: string;
+  emailCodeExpires?: Date;
+  emailCodeAttempts?: number;
+}
+
+export interface TwoFactorPending {
+  method: 'totp' | 'email';
+  sealedSecret?: string;
+  emailCodeHash?: string;
+  emailCodeExpires?: Date;
+  attempts?: number;
+  createdAt: Date;
 }
 
 /** Preferencias de notificaciones push de un usuario. */

@@ -15,6 +15,7 @@ import { User } from '../users/user.schema';
 import { RegisterEventDto } from './dto/event.dto';
 import { MailService, EmailDesign } from '../mail/mail.service';
 import { ImpulsadoresService } from './impulsadores.service';
+import { emitAutomation } from '../automations/automation-bus';
 
 // Registro público, listado/búsqueda de registrations y check-in.
 @Injectable()
@@ -38,6 +39,10 @@ export class RegistrationsService {
     if (!event) throw new NotFoundException('Evento no encontrado');
     if (event.status !== 'published')
       throw new BadRequestException('Evento no disponible');
+    if (event.onlinePayment)
+      throw new BadRequestException(
+        'Este evento vende sus entradas en línea: usa "Comprar entrada".',
+      );
 
     const partySize = dto.partySize ?? 1;
     if (event.capacity > 0) {
@@ -76,6 +81,15 @@ export class RegistrationsService {
     });
 
     const saved = await reg.save();
+    emitAutomation({
+      type: 'event_registered',
+      tenantId: String(event.tenantId),
+      eventId: String(event._id),
+      registrationId: String(saved._id),
+      name: saved.name,
+      email: saved.email,
+      phone: saved.phone,
+    });
 
     const emailDesign = event.invitationDesign?.['emailDesign'] as
       | EmailDesign
@@ -206,6 +220,9 @@ export class RegistrationsService {
     // Una entrada cancelada no da acceso: la puerta la ve en rojo (HU30).
     if (reg.status === 'cancelled')
       throw new ConflictException(`El registro de ${reg.name} está cancelado`);
+    // Una entrada con pago en línea solo vale pagada (HU67).
+    if (reg.paymentStatus && reg.paymentStatus !== 'paid')
+      throw new ConflictException(`La entrada de ${reg.name} no está pagada`);
 
     const alreadyCheckedIn = reg.checkedIn;
     if (!alreadyCheckedIn) {
@@ -263,6 +280,9 @@ export class RegistrationsService {
       throw new BadRequestException('El registro no pertenece a este evento');
     if (reg.status === 'cancelled')
       throw new ConflictException(`El registro de ${reg.name} está cancelado`);
+    // Una entrada con pago en línea solo vale pagada (HU67).
+    if (reg.paymentStatus && reg.paymentStatus !== 'paid')
+      throw new ConflictException(`La entrada de ${reg.name} no está pagada`);
 
     reg.checkedIn = true;
     reg.checkedInAt = new Date();

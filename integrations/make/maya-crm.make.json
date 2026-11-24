@@ -1,0 +1,124 @@
+{
+  "_comment": "App personalizada de Make para Maya CRM (HU65). Cada bloque se pega en su pestaña del editor de apps de Make (Base, Connection, Webhooks, Modules). Ver docs/integraciones-zapier-make.md.",
+  "base": {
+    "baseUrl": "https://api.mayacrm.site/api/v1",
+    "headers": { "Authorization": "Bearer {{connection.apiKey}}" },
+    "response": { "error": { "message": "{{ifempty(body.message, 'Error ' + statusCode)}}" } }
+  },
+  "connection": {
+    "type": "apikey",
+    "parameters": [
+      { "name": "apiKey", "type": "password", "label": "Clave de API (tipo Automatización)", "required": true }
+    ],
+    "communication": {
+      "url": "https://api.mayacrm.site/api/v1/me",
+      "headers": { "Authorization": "Bearer {{parameters.apiKey}}" },
+      "info": { "id": "{{body.accessId}}", "name": "{{body.name}}" }
+    }
+  },
+  "webhooks": {
+    "maya_hook": {
+      "type": "dedicated-attached",
+      "parameters": [
+        {
+          "name": "event",
+          "type": "select",
+          "label": "Disparador",
+          "required": true,
+          "options": [
+            { "label": "Contacto nuevo", "value": "contact.created" },
+            { "label": "Formulario enviado", "value": "form.submitted" },
+            { "label": "Oportunidad cambia de etapa", "value": "lead.stage_changed" },
+            { "label": "Mensaje entrante", "value": "message.received" },
+            { "label": "Registro a evento", "value": "event.registered" }
+          ]
+        }
+      ],
+      "attach": {
+        "url": "/hooks",
+        "method": "POST",
+        "body": { "event": "{{parameters.event}}", "targetUrl": "{{webhook.url}}" },
+        "response": { "data": { "externalHookId": "{{body.id}}" } }
+      },
+      "detach": { "url": "/hooks/{{webhook.externalHookId}}", "method": "DELETE" },
+      "communication": { "output": "{{body}}" }
+    }
+  },
+  "modules": {
+    "watchEvents": {
+      "type": "instant_trigger",
+      "label": "Ver eventos de Maya",
+      "webhook": "maya_hook",
+      "expect": [],
+      "interface": [
+        { "name": "id", "type": "text" },
+        { "name": "event", "type": "text" },
+        { "name": "occurredAt", "type": "date" },
+        { "name": "data", "type": "any" }
+      ]
+    },
+    "upsertContact": {
+      "type": "action",
+      "label": "Crear o actualizar contacto",
+      "communication": { "url": "/contacts", "method": "POST", "body": "{{parameters}}", "response": { "output": "{{body.contact}}" } },
+      "expect": [
+        { "name": "name", "type": "text", "label": "Nombre" },
+        { "name": "email", "type": "email", "label": "Email" },
+        { "name": "phone", "type": "text", "label": "Teléfono (con código de país)" },
+        { "name": "tags", "type": "array", "label": "Etiquetas", "spec": { "type": "text" } },
+        { "name": "notes", "type": "text", "label": "Notas" }
+      ]
+    },
+    "createLead": {
+      "type": "action",
+      "label": "Crear oportunidad",
+      "communication": { "url": "/leads", "method": "POST", "body": "{{parameters}}", "response": { "output": "{{body}}" } },
+      "expect": [
+        { "name": "title", "type": "text", "label": "Título", "required": true },
+        { "name": "contactId", "type": "text", "label": "ID del contacto" },
+        { "name": "contact", "type": "collection", "label": "Contacto (si no hay ID)", "spec": [
+          { "name": "name", "type": "text" }, { "name": "email", "type": "email" }, { "name": "phone", "type": "text" }
+        ] },
+        { "name": "value", "type": "number", "label": "Monto" },
+        { "name": "currency", "type": "text", "label": "Moneda" },
+        { "name": "stage", "type": "text", "label": "Etapa (clave)" }
+      ]
+    },
+    "addTag": {
+      "type": "action",
+      "label": "Añadir etiqueta",
+      "communication": { "url": "/contacts/{{parameters.contactId}}/tags", "method": "POST", "body": { "tags": "{{parameters.tags}}" }, "response": { "output": "{{body}}" } },
+      "expect": [
+        { "name": "contactId", "type": "text", "label": "ID del contacto", "required": true },
+        { "name": "tags", "type": "array", "label": "Etiquetas", "required": true, "spec": { "type": "text" } }
+      ]
+    },
+    "sendWhatsappTemplate": {
+      "type": "action",
+      "label": "Enviar plantilla de WhatsApp",
+      "communication": {
+        "url": "/whatsapp/templates",
+        "method": "POST",
+        "body": { "to": "{{parameters.to}}", "contactId": "{{parameters.contactId}}", "template": { "name": "{{parameters.name}}", "language": "{{parameters.language}}", "variables": "{{parameters.variables}}" } },
+        "response": { "output": "{{body}}" }
+      },
+      "expect": [
+        { "name": "to", "type": "text", "label": "Teléfono" },
+        { "name": "contactId", "type": "text", "label": "ID del contacto (si no hay teléfono)" },
+        { "name": "name", "type": "text", "label": "Plantilla", "required": true },
+        { "name": "language", "type": "text", "label": "Idioma" },
+        { "name": "variables", "type": "array", "label": "Variables", "spec": { "type": "text" } }
+      ]
+    },
+    "searchContacts": {
+      "type": "search",
+      "label": "Buscar contactos",
+      "communication": { "url": "/contacts", "qs": { "email": "{{parameters.email}}", "phone": "{{parameters.phone}}", "limit": "{{parameters.limit}}" }, "response": { "iterate": "{{body}}", "output": "{{item}}" } },
+      "expect": [
+        { "name": "email", "type": "email" },
+        { "name": "phone", "type": "text" },
+        { "name": "limit", "type": "uinteger", "default": 10 }
+      ]
+    }
+  }
+}

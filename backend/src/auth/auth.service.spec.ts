@@ -62,6 +62,8 @@ describe('AuthService', () => {
     create: jest.fn(),
     remove: jest.fn(),
     isActive: jest.fn(() => Promise.resolve(true)),
+    mailBrandFor: jest.fn(() => Promise.resolve(undefined)),
+    isSubAccountOf: jest.fn(() => Promise.resolve(false)),
   };
   const sessions = {
     revoke: jest.fn().mockResolvedValue(undefined),
@@ -473,9 +475,11 @@ describe('AuthService', () => {
       expect(delta).toBeGreaterThan(14 * 60 * 1000);
       expect(delta).toBeLessThanOrEqual(15 * 60 * 1000 + 5000);
 
+      // Sin agencia, el correo sale con la marca de Maya (HU72).
       expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith(
         user.email,
         code,
+        undefined,
       );
       // Mismo mensaje genérico que el caso inexistente (anti-enumeración).
       expect(result).toEqual({

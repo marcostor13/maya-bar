@@ -1,11 +1,12 @@
 import { Component, inject } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { EventDetailStore } from '../event-detail.store';
+import { EventTicketsEditorComponent } from './event-tickets-editor';
 
 @Component({
   selector: 'app-event-general-tab',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, EventTicketsEditorComponent],
   template: `
     <div class="p-6">
 
@@ -53,7 +54,7 @@ import { EventDetailStore } from '../event-detail.store';
 
         <div class="field-row mb-5">
           <div class="field">
-            <label class="field-label">Precio (S/)</label>
+            <label class="field-label">{{ store.onlinePayment() ? 'Precio de referencia (S/)' : 'Precio en el local (S/)' }}</label>
             <input class="input" type="number" formControlName="price" min="0" />
           </div>
           <div class="field">
@@ -77,6 +78,7 @@ import { EventDetailStore } from '../event-detail.store';
         <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
       </form>
     </div>
+    <app-event-tickets-editor />
   `,
   styles: [`
     :host { display: block; }
@@ -101,7 +103,7 @@ import { EventDetailStore } from '../event-detail.store';
   `],
 })
 export class EventGeneralTabComponent {
-  private store = inject(EventDetailStore);
+  store = inject(EventDetailStore);
 
   form = this.store.form;
 

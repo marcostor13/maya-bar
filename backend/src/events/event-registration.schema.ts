@@ -41,6 +41,43 @@ export class EventRegistration extends Document {
 
   @Prop({ type: Object, default: {} })
   customFields: Record<string, string>;
+
+  // ── Pago en línea (HU67). Sin `paymentStatus` = registro gratuito o pago en el local.
+
+  @Prop()
+  ticketType?: string;
+
+  @Prop()
+  ticketTypeName?: string;
+
+  @Prop()
+  amount?: number;
+
+  @Prop()
+  currency?: string;
+
+  /** Comisión de Maya en la venta. */
+  @Prop()
+  feeAmount?: number;
+
+  @Prop({
+    enum: ['pending', 'paid', 'rejected', 'refunded', 'expired'],
+    index: true,
+  })
+  paymentStatus?: 'pending' | 'paid' | 'rejected' | 'refunded' | 'expired';
+
+  @Prop()
+  mpPreferenceId?: string;
+
+  @Prop({ index: true, sparse: true })
+  mpPaymentId?: string;
+
+  @Prop()
+  paidAt?: Date;
+
+  /** Hasta cuándo se guarda el cupo de un pago pendiente. */
+  @Prop()
+  holdExpiresAt?: Date;
 }
 
 export const EventRegistrationSchema =

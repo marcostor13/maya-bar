@@ -1,3 +1,4 @@
+import CATALOG from '../../shared/catalog.generated.json';
 /**
  * Contenido de la landing. Vive separado del componente porque es copy de
  * marketing: se edita mucho más a menudo que la plantilla, y así el diff de un
@@ -60,18 +61,19 @@ export interface Plan {
   id: string;
   name: string;
   tagline: string;
-  /** USD por mes en pago mensual; `null` = precio a medida. */
-  monthly: number | null;
-  /** USD por año en pago anual (10 meses pagados, 12 de uso). */
-  annual: number | null;
-  /** Precio para Perú en soles, sin IGV. No es la conversión exacta: va
-   *  ~10-15 % por debajo y redondeado, ver docs/plan-comercial-maya-crm.md. */
-  pen: { monthly: number; annual: number } | null;
+  /** Precios sin IGV por moneda y periodo, del catálogo (HU40/HU56); `null` = a medida. */
+  prices: { usd: PeriodPrices; pen: PeriodPrices } | null;
   featured?: boolean;
   limits: PlanLimit[];
   /** Línea «Todo lo de X, más:» sobre las funciones. */
   inherits?: string;
   features: string[];
+}
+
+export interface PeriodPrices {
+  monthly: number;
+  quarterly: number;
+  annual: number;
 }
 
 /** Precios ya formateados por moneda; en soles, sin IGV. */
@@ -405,27 +407,69 @@ export const GUARANTEES: Guarantee[] = [
   },
 ];
 
+/**
+ * Catálogo generado desde el backend (HU56): `npm run catalog`. Se importa en
+ * el build, así el HTML prerenderizado ya trae los precios.
+ */
+type CatalogPlan = (typeof CATALOG.plans)[number];
+const catalogPlan = (id: string): CatalogPlan => {
+  const p = CATALOG.plans.find(x => x.id === id);
+  if (!p) throw new Error(`Plan ${id} no está en el catálogo`);
+  return p;
+};
+
+/** Punto de miles a mano, igual que el resto del copy (2.000, 15.000). */
+export const fmt = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+function pricesOf(id: string): { usd: PeriodPrices; pen: PeriodPrices } {
+  const p = catalogPlan(id).prices;
+  if (!p.PEN || !p.USD) throw new Error(`Plan ${id} sin precio`);
+  return { usd: p.USD, pen: p.PEN };
+}
+
+function limitOf(id: string, key: keyof CatalogPlan['limits']): string {
+  const v = catalogPlan(id).limits[key];
+  return v === null ? 'Ilimitados' : fmt(v);
+}
+
+/** "1 agente", "3 agentes", "Agentes ilimitados": cifras del catálogo en el copy. */
+function count(id: string, key: keyof CatalogPlan['limits'], one: string, many: string): string {
+  const v = catalogPlan(id).limits[key];
+  if (v === null) return `${many.charAt(0).toUpperCase()}${many.slice(1)} ilimitados`;
+  return `${fmt(v)} ${v === 1 ? one : many}`;
+}
+
+/** Tope del descuento de la implementación en el plan anual, en %. */
+const SETUP_CREDIT_PCT = Math.round(CATALOG.setup.annualCredit * 100);
+const SETUP_NOTE = `Se descuenta del plan anual (hasta el ${SETUP_CREDIT_PCT} % del año)`;
+
+function setupPrice(id: string): Prices {
+  const p = CATALOG.setup.packages.find(x => x.id === id);
+  if (!p) throw new Error(`Paquete ${id} no está en el catálogo`);
+  return { usd: `US$${fmt(p.price.USD)}`, pen: `S/ ${fmt(p.price.PEN)}` };
+}
+
 export const PLANS: Plan[] = [
   {
     id: 'inicia',
     name: 'Inicia',
     tagline: 'Para ordenar tus ventas y dejar de perder contactos.',
-    monthly: 29,
-    annual: 290,
-    pen: { monthly: 89, annual: 890 },
+    prices: pricesOf('inicia'),
     limits: [
-      { label: 'Usuarios', value: '2' },
-      { label: 'Números de WhatsApp', value: '1' },
-      { label: 'Contactos', value: '2.000' },
-      { label: 'Créditos de IA al mes', value: '500' },
+      { label: 'Usuarios', value: limitOf('inicia', 'users') },
+      { label: 'Números de WhatsApp', value: limitOf('inicia', 'whatsappNumbers') },
+      { label: 'Contactos', value: limitOf('inicia', 'contacts') },
+      { label: 'Créditos de IA al mes', value: limitOf('inicia', 'aiCreditsPerMonth') },
     ],
     features: [
       'Bandeja unificada: WhatsApp, Instagram y Messenger',
-      '1 agente de IA entrenado con tus documentos',
-      '1 buzón de correo (Gmail, Outlook o IMAP)',
+      `${count('inicia', 'aiAgents', 'agente de IA', 'agentes de IA')} entrenado con tus documentos`,
+      `${count('inicia', 'mailboxes', 'buzón de correo', 'buzones de correo')} (Gmail, Outlook o IMAP)`,
       'Contactos, etiquetas, listas y formularios',
       'Seguimiento de oportunidades con bolsa y recordatorios',
-      '1.000 emails de campaña al mes',
+      `${count('inicia', 'activeEvents', 'evento activo', 'eventos activos')} con página pública y registro`,
+      'Prospección de empresas con IA (usa créditos)',
+      `${limitOf('inicia', 'campaignEmailsPerMonth')} emails de campaña al mes`,
       'App móvil con notificaciones',
     ],
   },
@@ -433,22 +477,20 @@ export const PLANS: Plan[] = [
     id: 'crece',
     name: 'Crece',
     tagline: 'Para el equipo comercial que quiere vender más con los mismos contactos.',
-    monthly: 79,
-    annual: 790,
-    pen: { monthly: 249, annual: 2490 },
+    prices: pricesOf('crece'),
     featured: true,
     limits: [
-      { label: 'Usuarios', value: '5' },
-      { label: 'Números de WhatsApp', value: '2' },
-      { label: 'Contactos', value: '15.000' },
-      { label: 'Créditos de IA al mes', value: '3.000' },
+      { label: 'Usuarios', value: limitOf('crece', 'users') },
+      { label: 'Números de WhatsApp', value: limitOf('crece', 'whatsappNumbers') },
+      { label: 'Contactos', value: limitOf('crece', 'contacts') },
+      { label: 'Créditos de IA al mes', value: limitOf('crece', 'aiCreditsPerMonth') },
     ],
     inherits: 'Todo lo de Inicia, más:',
     features: [
       'Campañas masivas por WhatsApp con plantillas de Meta',
-      '3 agentes de IA y 3 buzones de correo',
-      '10.000 emails de campaña al mes',
-      'Eventos con página pública, registro y check-in',
+      `${count('crece', 'aiAgents', 'agente de IA', 'agentes de IA')} y ${count('crece', 'mailboxes', 'buzón de correo', 'buzones de correo')}`,
+      `${limitOf('crece', 'campaignEmailsPerMonth')} emails de campaña al mes`,
+      'Eventos ilimitados con página pública, registro y check-in',
       'Panel de analítica completo por canal y por vendedor',
       'Reparto, derivación y reasignación de oportunidades',
       'Soporte prioritario por WhatsApp',
@@ -458,21 +500,18 @@ export const PLANS: Plan[] = [
     id: 'escala',
     name: 'Escala',
     tagline: 'Para empresas con varios equipos, sedes o marcas.',
-    monthly: 169,
-    annual: 1690,
-    pen: { monthly: 549, annual: 5490 },
+    prices: pricesOf('escala'),
     limits: [
-      { label: 'Usuarios', value: '12' },
-      { label: 'Números de WhatsApp', value: '5' },
-      { label: 'Contactos', value: '60.000' },
-      { label: 'Créditos de IA al mes', value: '10.000' },
+      { label: 'Usuarios', value: limitOf('escala', 'users') },
+      { label: 'Números de WhatsApp', value: limitOf('escala', 'whatsappNumbers') },
+      { label: 'Contactos', value: limitOf('escala', 'contacts') },
+      { label: 'Créditos de IA al mes', value: limitOf('escala', 'aiCreditsPerMonth') },
     ],
     inherits: 'Todo lo de Crece, más:',
     features: [
-      'Asistente de recuperación de clientes con IA',
-      'Prospección de empresas con IA',
-      'Agentes de IA ilimitados y 10 buzones de correo',
-      '40.000 emails de campaña al mes',
+      'Campaña de recuperación de clientes llave en mano: S/ 690 por campaña',
+      `${count('escala', 'aiAgents', 'agente de IA', 'agentes de IA')} y ${count('escala', 'mailboxes', 'buzón de correo', 'buzones de correo')}`,
+      `${limitOf('escala', 'campaignEmailsPerMonth')} emails de campaña al mes`,
       'Multi-sede y roles a medida',
       'Promotores con enlace de referido y visitas',
       'Gerente de éxito asignado',
@@ -482,9 +521,7 @@ export const PLANS: Plan[] = [
     id: 'empresa',
     name: 'Empresa',
     tagline: 'Para operaciones grandes, agencias o integraciones propias.',
-    monthly: null,
-    annual: null,
-    pen: null,
+    prices: null,
     limits: [
       { label: 'Usuarios', value: 'A medida' },
       { label: 'Números de WhatsApp', value: 'A medida' },
@@ -502,14 +539,13 @@ export const PLANS: Plan[] = [
   },
 ];
 
-export const ADDONS: AddOn[] = [
-  { name: 'Usuario adicional', price: { usd: 'US$12/mes', pen: 'S/ 39/mes' } },
-  { name: 'Número de WhatsApp adicional', price: { usd: 'US$15/mes', pen: 'S/ 49/mes' } },
-  { name: '1.000 créditos de IA', price: { usd: 'US$15', pen: 'S/ 49' } },
-  { name: '5.000 créditos de IA', price: { usd: 'US$59', pen: 'S/ 199' } },
-  { name: '10.000 contactos adicionales', price: { usd: 'US$10/mes', pen: 'S/ 35/mes' } },
-  { name: '10.000 emails de campaña', price: { usd: 'US$9', pen: 'S/ 29' } },
-];
+export const ADDONS: AddOn[] = CATALOG.addons.map(a => ({
+  name: a.name,
+  price: {
+    usd: `US$${fmt(a.price.USD)}${a.kind === 'monthly' ? '/mes' : ''}`,
+    pen: `S/ ${fmt(a.price.PEN)}${a.kind === 'monthly' ? '/mes' : ''}`,
+  },
+}));
 
 export const SETUP_PACKAGES: SetupPackage[] = [
   {
@@ -524,8 +560,8 @@ export const SETUP_PACKAGES: SetupPackage[] = [
   },
   {
     name: 'Puesta en marcha',
-    price: { usd: 'US$149', pen: 'S/ 490' },
-    note: 'Gratis con cualquier plan anual',
+    price: setupPrice('puesta'),
+    note: SETUP_NOTE,
     featured: true,
     items: [
       'Conectamos tu WhatsApp, Instagram y Messenger',
@@ -539,8 +575,8 @@ export const SETUP_PACKAGES: SetupPackage[] = [
   },
   {
     name: 'Implementación Pro',
-    price: { usd: 'US$449', pen: 'S/ 1.490' },
-    note: '50% menos con el plan Escala anual',
+    price: setupPrice('pro'),
+    note: SETUP_NOTE,
     items: [
       'Todo lo de Puesta en marcha',
       'Verificación de tu negocio en Meta y alta en la API oficial',
@@ -593,7 +629,13 @@ export const FAQS: Faq[] = [
   },
   {
     q: '¿Cuánto cuesta Maya CRM?',
-    a: 'Maya CRM tiene tres planes: Inicia a US$29 al mes con 2 usuarios, Crece a US$79 al mes con 5 usuarios y Escala a US$169 al mes con 12 usuarios. Pagando al año tienes dos meses gratis. En Perú los planes cuestan S/ 89, S/ 249 y S/ 549 al mes más IGV. Para operaciones grandes existe el plan Empresa, con precio a medida. Todos los planes incluyen 14 días de prueba gratis.',
+    a:
+      `Maya CRM tiene tres planes: Inicia a US$${pricesOf('inicia').usd.monthly} al mes con ${limitOf('inicia', 'users')} usuarios, ` +
+      `Crece a US$${pricesOf('crece').usd.monthly} al mes con ${limitOf('crece', 'users')} usuarios y ` +
+      `Escala a US$${pricesOf('escala').usd.monthly} al mes con ${limitOf('escala', 'users')} usuarios. ` +
+      'Pagando cada tres meses ahorras un 5 % y pagando al año tienes dos meses gratis. ' +
+      `En Perú los planes cuestan S/ ${pricesOf('inicia').pen.monthly}, S/ ${pricesOf('crece').pen.monthly} y S/ ${pricesOf('escala').pen.monthly} al mes más IGV. ` +
+      'Para operaciones grandes existe el plan Empresa, con precio a medida. Todos los planes incluyen 14 días de prueba gratis.',
   },
   {
     q: '¿Los mensajes de WhatsApp están incluidos en el plan?',
@@ -605,7 +647,10 @@ export const FAQS: Faq[] = [
   },
   {
     q: '¿Tengo que pagar la implementación?',
-    a: 'No es obligatorio. Puedes configurar Maya CRM por tu cuenta sin costo. Si prefieres que lo hagamos nosotros, la Puesta en marcha cuesta US$149 (S/ 490 + IGV en Perú) y es gratis con cualquier plan anual; la Implementación Pro, US$449 (S/ 1.490 + IGV), incluye además la verificación en Meta, la migración desde otro CRM y tres capacitaciones.',
+    a:
+      'No es obligatorio. Puedes configurar Maya CRM por tu cuenta sin costo. Si prefieres que lo hagamos nosotros, ' +
+      `la Puesta en marcha cuesta ${setupPrice('puesta').usd} (${setupPrice('puesta').pen} + IGV en Perú) y con el plan anual se descuenta del total (hasta el ${SETUP_CREDIT_PCT} % del año); ` +
+      `la Implementación Pro, ${setupPrice('pro').usd} (${setupPrice('pro').pen} + IGV), incluye además la verificación en Meta, la migración desde otro CRM y tres capacitaciones.`,
   },
   {
     q: '¿Puedo cambiar de plan o cancelar?',

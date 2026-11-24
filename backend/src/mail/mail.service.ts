@@ -37,6 +37,15 @@ export const DEFAULT_EMAIL_DESIGN: EmailDesign = {
   showTicket: true,
 };
 
+/** Marca con la que sale un correo de plataforma (HU72). */
+export interface MailBrand {
+  appName: string;
+  logo?: string;
+}
+
+const escapeAttr = (v: string) =>
+  v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
 @Injectable()
 export class MailService {
   private resend: Resend | null = null;
@@ -90,10 +99,11 @@ export class MailService {
     return this.resend !== null;
   }
 
-  async sendPasswordResetEmail(email: string, code: string) {
+  async sendPasswordResetEmail(email: string, code: string, brand?: MailBrand) {
     await this.sendCodeEmail({
       email,
       code,
+      brand,
       subject: 'Recuperación de contraseña - Maya CRM',
       title: 'Recuperar contraseña',
       intro:
@@ -115,6 +125,21 @@ export class MailService {
     });
   }
 
+  /** Código del segundo factor por correo (HU62). */
+  async sendTwoFactorCodeEmail(email: string, code: string, brand?: MailBrand) {
+    await this.sendCodeEmail({
+      email,
+      code,
+      brand,
+      subject: 'Tu código de acceso - Maya CRM',
+      title: 'Código de acceso',
+      intro:
+        'Escribe este código para terminar de entrar a Maya CRM. Expira en 10 minutos.',
+      footer:
+        'Si no estabas entrando, alguien tiene tu contraseña: cámbiala cuanto antes.',
+    });
+  }
+
   private async sendCodeEmail(params: {
     email: string;
     code: string;
@@ -122,14 +147,29 @@ export class MailService {
     title: string;
     intro: string;
     footer: string;
+    /** Marca blanca de la agencia (HU72): reemplaza "Maya CRM" y el logo. */
+    brand?: MailBrand;
   }) {
-    const { email, code, subject, title, intro, footer } = params;
+    const b = params.brand?.appName ? params.brand : null;
+    const rebrand = (t: string) => (b ? t.replace(/Maya CRM/g, b.appName) : t);
+    const { email, code } = params;
+    const [subject, title, intro, footer] = [
+      params.subject,
+      params.title,
+      params.intro,
+      params.footer,
+    ].map(rebrand);
+    const logoTag = b
+      ? b.logo
+        ? `<img src="${escapeAttr(b.logo)}" alt="${escapeAttr(b.appName)}" style="height: 48px; width: auto;" />`
+        : `<strong style="font-size: 20px; color: #111827;">${escapeAttr(b.appName)}</strong>`
+      : '<img src="cid:logo" alt="Maya CRM" style="height: 48px; width: auto;" />';
     const html = `
       <div style="font-family: 'Inter', Arial, sans-serif; background-color: #f9fafb; padding: 40px 20px;">
         <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
           <div style="padding: 40px; text-align: center;">
             <div style="margin-bottom: 24px;">
-              <img src="cid:logo" alt="Maya CRM" style="height: 48px; width: auto;" />
+              ${logoTag}
             </div>
             <h2 style="color: #111827; font-size: 22px; font-weight: 700; margin-bottom: 12px;">${title}</h2>
             <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
@@ -151,20 +191,26 @@ export class MailService {
     if (this.resend) {
       try {
         const sent = await this.resend.emails.send({
-          from: MailService.PLATFORM_FROM,
+          from: b
+            ? MailService.PLATFORM_FROM.replace(
+                /^[^<]+</,
+                `${b.appName.replace(/[<>"]/g, '')} <`,
+              )
+            : MailService.PLATFORM_FROM,
           to: email,
           subject,
           html,
 
-          attachments: this.logoBase64
-            ? [
-                {
-                  filename: 'logo.png',
-                  content: Buffer.from(this.logoBase64, 'base64'),
-                  cid: 'logo',
-                } as any,
-              ]
-            : [],
+          attachments:
+            !b && this.logoBase64
+              ? [
+                  {
+                    filename: 'logo.png',
+                    content: Buffer.from(this.logoBase64, 'base64'),
+                    cid: 'logo',
+                  } as any,
+                ]
+              : [],
         });
         // El SDK no lanza: un rechazo (dominio sin verificar, clave inválida) llega en `error`.
         if (sent.error) throw new Error(sent.error.message);

@@ -128,6 +128,23 @@ describe('CampaignSenderService', () => {
     service = mod.get(CampaignSenderService);
   });
 
+  it('HU41 C4: con la cuenta en solo lectura la campaña espera sin enviar', async () => {
+    const billing = { canOperate: jest.fn().mockResolvedValue(false) };
+    (service as unknown as { billing: typeof billing }).billing = billing;
+    campaigns.findOneAndUpdate.mockReturnValue(query(campaign()));
+    recipients.find.mockReturnValue(query([recipient()]));
+    await (
+      service as unknown as { runOne(id: Types.ObjectId): Promise<void> }
+    ).runOne(new Types.ObjectId());
+    expect(billing.canOperate).toHaveBeenCalledWith(tenantId);
+    expect(mail.sendHtml).not.toHaveBeenCalled();
+    // No se cancela: solo se suelta el candado.
+    const sets = campaigns.updateOne.mock.calls.map((c: unknown[]) =>
+      JSON.stringify(c[1]),
+    );
+    expect(sets.join()).not.toContain('canceled');
+  });
+
   it('envía el email con variables resueltas, link de baja y cabecera List-Unsubscribe', async () => {
     const r = recipient();
     recipients.find.mockReturnValue(query([r]));

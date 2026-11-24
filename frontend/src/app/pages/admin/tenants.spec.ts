@@ -8,9 +8,9 @@ import { ConfirmService } from '../../shared/confirm';
 
 const LAMAR = {
   _id: 't1', name: 'La Mar S.A.C.', slug: 'la-mar', email: 'admin@lamar.pe', ruc: '20123456789',
-  phone: '+51 999', plan: 'pro', isActive: true, trialEndsAt: '2026-10-20T12:00:00Z',
+  phone: '+51 999', plan: 'crece', isActive: true, trialEndsAt: '2026-10-20T12:00:00Z',
 };
-const CERRADA = { _id: 't2', name: 'Bar Cerrado', slug: 'bar-cerrado', email: 'x@bar.pe', plan: 'starter', isActive: false };
+const CERRADA = { _id: 't2', name: 'Bar Cerrado', slug: 'bar-cerrado', email: 'x@bar.pe', plan: 'inicia', isActive: false };
 
 describe('AdminTenantsComponent', () => {
   let fixture: ComponentFixture<AdminTenantsComponent>;
@@ -84,7 +84,7 @@ describe('AdminTenantsComponent', () => {
       await setup();
       expect(row('La Mar').querySelector('.tenant-slug')!.textContent).toContain('la-mar');
       expect(row('La Mar').querySelector('td[data-label="RUC"]')!.textContent).toContain('20123456789');
-      expect(row('La Mar').querySelector('.badge-plan-pro')!.textContent).toContain('pro');
+      expect(row('La Mar').querySelector('.badge-plan-crece')!.textContent).toContain('crece');
       expect(row('La Mar').querySelector('td[data-label="Trial hasta"]')!.textContent).toContain('20/10/2026');
       expect(row('La Mar').querySelector('.badge-active')!.textContent).toContain('Activa');
 
@@ -110,7 +110,7 @@ describe('AdminTenantsComponent', () => {
       expect(row('La Mar')).toBeUndefined();
       expect(row('Bar Cerrado')).toBeTruthy();
 
-      setValue('select[name="plan"]', 'pro');
+      setValue('select[name="plan"]', 'crece');
       expect(el().textContent).toContain('Ninguna empresa coincide');
     });
 
@@ -129,7 +129,7 @@ describe('AdminTenantsComponent', () => {
   describe('crear', () => {
     const DATA = {
       name: 'Nueva S.A.C.', email: 'admin@nueva.pe', ownerName: 'Juan García',
-      ruc: '20999888777', phone: '+51 911', plan: 'enterprise',
+      ruc: '20999888777', phone: '+51 911', plan: 'escala',
     };
 
     it('exige razón social, email válido y nombre del administrador', async () => {

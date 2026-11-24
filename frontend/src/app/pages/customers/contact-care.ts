@@ -460,7 +460,7 @@ export class ContactCareComponent {
 
   // ── Presentación ──
   isAuto(item: TimelineItem) {
-    return ['assignment', 'system', 'stage_change'].includes(item.type);
+    return ['assignment', 'system', 'stage_change', 'email_open', 'email_click'].includes(item.type);
   }
 
   typeLabel(type: string) {
@@ -468,6 +468,8 @@ export class ContactCareComponent {
     if (known) return known;
     if (type === 'assignment') return 'Asignación';
     if (type === 'stage_change') return 'Cambio de etapa';
+    if (type === 'email_open') return 'Abrió un email';
+    if (type === 'email_click') return 'Clic en un email';
     return 'Sistema';
   }
 
@@ -483,6 +485,8 @@ export class ContactCareComponent {
       case 'assignment': return UserCheck;
       case 'stage_change': return Target;
       case 'system': return Info;
+      case 'email_open': return Mail;
+      case 'email_click': return Target;
       default: return StickyNote;
     }
   }

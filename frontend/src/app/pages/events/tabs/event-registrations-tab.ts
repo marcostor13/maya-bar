@@ -11,11 +11,15 @@ import {
   Download,
   MessageCircle,
   Phone,
+  RotateCcw,
   Search,
   Ticket,
   Users,
 } from 'lucide-angular';
 import { ToastService } from '../../../shared/toast';
+import { ConfirmService } from '../../../shared/confirm';
+import { EventsApiService } from '../../../core/api/events-api.service';
+import type { PaymentStatus, Registration } from '../../../shared/models/event.model';
 import { downloadCsv } from '../../../shared/csv';
 import { EventDetailStore } from '../event-detail.store';
 import { SORT_OPTIONS, telLink, waLink } from './registrations-logic';
@@ -85,6 +89,9 @@ import { SORT_OPTIONS, telLink, waLink } from './registrations-logic';
                   @if (r.checkedIn) {
                     <span class="checkin-pill yes"><lucide-icon [img]="Check" [size]="12" [strokeWidth]="3"></lucide-icon> Ingresó</span>
                   }
+                  @if (r.paymentStatus) {
+                      <span class="badge" [class]="'badge ' + payClass(r.paymentStatus)">{{ payLabel(r.paymentStatus) }}</span>
+                    }
                 </span>
                 <span class="reg-line2">{{ r.impulsadorName || 'Directo' }} · {{ r.createdAt | date:'dd/MM/yy' }}</span>
               </button>
@@ -101,6 +108,11 @@ import { SORT_OPTIONS, telLink, waLink } from './registrations-logic';
                     }
                   </dl>
                   <div class="reg-actions">
+                    @if (r.paymentStatus === 'paid') {
+                      <button type="button" class="btn btn-secondary btn-sm" (click)="refund(r)" [disabled]="refunding() === r._id">
+                        <lucide-icon [img]="RotateCcw" [size]="15"></lucide-icon> Reembolsar
+                      </button>
+                    }
                     @if (telLink(r.phone)) {
                       <a class="btn btn-secondary btn-sm" [href]="telLink(r.phone)">
                         <lucide-icon [img]="Phone" [size]="15"></lucide-icon> Llamar
@@ -188,6 +200,15 @@ import { SORT_OPTIONS, telLink, waLink } from './registrations-logic';
                       [class.badge-danger]="r.status === 'cancelled'">
                       {{ r.status === 'confirmed' ? 'Confirmado' : 'Cancelado' }}
                     </span>
+                    @if (r.paymentStatus) {
+                      <span class="badge" [class]="'badge ' + payClass(r.paymentStatus)">{{ payLabel(r.paymentStatus) }}</span>
+                    }
+                    @if (r.paymentStatus === 'paid') {
+                      <button type="button" class="btn btn-ghost btn-icon btn-sm" aria-label="Reembolsar entrada" title="Reembolsar"
+                        (click)="refund(r)" [disabled]="refunding() === r._id">
+                        <lucide-icon [img]="RotateCcw" [size]="15"></lucide-icon>
+                      </button>
+                    }
                   </td>
                   <td class="td-muted td-date" data-label="Fecha">{{ r.createdAt | date:'dd/MM/yy' }}</td>
                 </tr>
@@ -289,6 +310,10 @@ import { SORT_OPTIONS, telLink, waLink } from './registrations-logic';
 export class EventRegistrationsTabComponent implements OnDestroy {
   private store = inject(EventDetailStore);
   private toast = inject(ToastService);
+  private confirm = inject(ConfirmService);
+  private api = inject(EventsApiService);
+  readonly RotateCcw = RotateCcw;
+  refunding = signal<string | null>(null);
 
   readonly ArrowDown = ArrowDown; readonly ArrowUp = ArrowUp; readonly ArrowUpDown = ArrowUpDown;
   readonly Check = Check; readonly ChevronDown = ChevronDown; readonly Download = Download;
@@ -333,6 +358,39 @@ export class EventRegistrationsTabComponent implements OnDestroy {
     this.regSortBy.set(o.sortBy);
     this.regSortOrder.set(o.sortOrder);
     this.store.loadRegistrations();
+  }
+
+  payLabel(s: PaymentStatus): string {
+    return { pending: 'Pago pendiente', paid: 'Pagada', rejected: 'Pago rechazado', refunded: 'Reembolsada', expired: 'Pago vencido' }[s];
+  }
+
+  payClass(s: PaymentStatus): string {
+    return s === 'paid' ? 'badge-success' : s === 'pending' ? 'badge-warning' : 'badge-neutral';
+  }
+
+  /** Devuelve el dinero en Mercado Pago y anula la entrada (HU67). */
+  async refund(r: Registration) {
+    const eventId = this.store.eventId();
+    if (!eventId) return;
+    const ok = await this.confirm.confirm({
+      title: 'Reembolsar entrada',
+      message: `Se devolverán S/ ${r.amount ?? 0} a ${r.name} en Mercado Pago y su entrada dejará de valer en la puerta.`,
+      confirmText: 'Reembolsar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.refunding.set(r._id);
+    this.api.refundRegistration(eventId, r._id).subscribe({
+      next: (updated) => {
+        this.refunding.set(null);
+        this.store.applyRegistration(updated);
+        this.toast.success('Entrada reembolsada');
+      },
+      error: (err) => {
+        this.refunding.set(null);
+        this.toast.error(err.error?.message || 'No se pudo reembolsar');
+      },
+    });
   }
 
   copyEmail(email: string) {

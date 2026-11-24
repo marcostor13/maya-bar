@@ -76,6 +76,14 @@ export class EventsApiService {
   }
 
   /** Quita un check-in hecho por error (HU30). */
+  /** Reembolsa una entrada pagada en línea (HU67). */
+  refundRegistration(eventId: string, registrationId: string): Observable<Registration> {
+    return this.http.post<Registration>(
+      `${this.base}/events/${eventId}/registrations/${registrationId}/refund`,
+      {},
+    );
+  }
+
   undoCheckIn(eventId: string, registrationId: string): Observable<Registration> {
     return this.http.delete<Registration>(
       `${this.base}/events/${eventId}/registrations/${registrationId}/check-in`,

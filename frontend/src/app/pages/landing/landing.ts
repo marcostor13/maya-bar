@@ -49,12 +49,14 @@ import {
   SETUP_PACKAGES,
   STEPS,
   type Plan,
+  type PeriodPrices,
+  fmt,
 } from './landing.data';
 
 const CURRENCY_KEY = 'maya-landing-currency';
 const TITLE = 'Maya CRM — CRM de ventas y marketing con WhatsApp e IA';
 const DESCRIPTION =
-  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Planes desde US$29 al mes, 14 días gratis.';
+  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Planes desde US$' + PLANS[0].prices!.usd.monthly + ' al mes, 14 días gratis.';
 
 @Component({
   selector: 'app-landing',
@@ -328,6 +330,13 @@ const DESCRIPTION =
             Empieza con 14 días gratis y sin tarjeta.
           </p>
 
+          @if (founderLeft(); as left) {
+            <p class="founder" role="status">
+              <lucide-icon [img]="Sparkles" [size]="14" />
+              Precio fundador: −30 % de por vida en pago trimestral o anual. Quedan <strong>{{ left }}</strong> cupos fundador.
+              <a routerLink="/checkout" [queryParams]="{ plan: 'crece', periodo: 'anual', moneda: currency() === 'pen' ? 'PEN' : 'USD', cupon: 'FUNDADOR' }">Usar cupón</a>
+            </p>
+          }
           <div class="pricing-controls" appReveal>
             <div class="billing-toggle" role="group" aria-label="Periodo de pago">
               <button
@@ -336,6 +345,13 @@ const DESCRIPTION =
                 [attr.aria-pressed]="billing() === 'monthly'"
                 (click)="billing.set('monthly')">
                 Mensual
+              </button>
+              <button
+                type="button"
+                [class.active]="billing() === 'quarterly'"
+                [attr.aria-pressed]="billing() === 'quarterly'"
+                (click)="billing.set('quarterly')">
+                Trimestral <span class="toggle-save">−5 %</span>
               </button>
               <button
                 type="button"
@@ -373,7 +389,7 @@ const DESCRIPTION =
                 <p class="plan-tagline">{{ plan.tagline }}</p>
 
                 <div class="plan-price">
-                  @if (plan.monthly === null) {
+                  @if (plan.prices === null) {
                     <span class="amount custom">A medida</span>
                   } @else {
                     <span class="currency">{{ currency() === 'pen' ? 'S/' : 'US$' }}</span>
@@ -383,7 +399,7 @@ const DESCRIPTION =
                 </div>
                 <p class="plan-billed">{{ billedNote(plan) }}</p>
 
-                @if (plan.monthly === null) {
+                @if (plan.prices === null) {
                   <a class="btn btn-secondary plan-cta" [href]="waPlan(plan.name)" target="_blank" rel="noopener">
                     Hablar con ventas
                   </a>
@@ -392,9 +408,14 @@ const DESCRIPTION =
                     class="btn plan-cta"
                     [class.btn-primary]="plan.featured"
                     [class.btn-secondary]="!plan.featured"
-                    routerLink="/register"
-                    [queryParams]="{ plan: plan.id, pago: billing() === 'annual' ? 'anual' : 'mensual' }">
-                    Probar 14 días gratis
+                    routerLink="/checkout"
+                    [attr.data-buy]="plan.id"
+                    [queryParams]="{ plan: plan.id, periodo: periodParam(), moneda: currency() === 'pen' ? 'PEN' : 'USD' }">
+                    Contratar {{ plan.name }}
+                  </a>
+                  <a class="plan-buy" routerLink="/register"
+                    [queryParams]="{ plan: plan.id, pago: periodParam() }">
+                    o prueba 14 días gratis
                   </a>
                 }
 
@@ -954,6 +975,10 @@ const DESCRIPTION =
         color: var(--color-brand);
         font-size: 11.5px;
       }
+      .founder { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+        margin: 0 auto 20px; padding: 10px 18px; border-radius: var(--radius-pill); width: fit-content; max-width: 100%;
+        background: var(--color-brand-light); color: var(--color-text-main); font-size: 14px; text-align: center; }
+      .founder a { color: var(--color-brand); font-weight: 700; }
       .plans {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -1020,6 +1045,7 @@ const DESCRIPTION =
         color: var(--color-text-muted);
       }
       .plan-cta { width: 100%; gap: 8px; }
+      .plan-buy { display: block; text-align: center; margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--color-brand); }
       .plan-limits {
         display: grid;
         gap: 10px;
@@ -1273,14 +1299,28 @@ export class LandingComponent implements OnInit {
   readonly year = new Date().getFullYear();
 
   menuOpen = signal(false);
-  billing = signal<'monthly' | 'annual'>('monthly');
+  billing = signal<'monthly' | 'quarterly' | 'annual'>('monthly');
+
+  /** Periodo en la URL del checkout y del registro. */
+  periodParam(): string {
+    return ({ monthly: 'mensual', quarterly: 'trimestral', annual: 'anual' } as const)[this.billing()];
+  }
 
   /** El prerender sale en dólares; en el navegador se pasa a soles si el
    *  visitante eligió soles antes o su zona horaria es la de Perú. */
   currency = signal<'usd' | 'pen'>('usd');
 
+  /** Cupos fundador que quedan (HU54); solo en el navegador, no en el prerender. */
+  founderLeft = signal<number | null>(null);
+
   constructor() {
     afterNextRender(() => {
+      fetch(`${environment.apiUrl}/public/checkout/founder`)
+        .then(r => (r.ok ? r.json() : null))
+        .then((f: { active?: boolean; remaining?: number | null } | null) => {
+          if (f?.active && typeof f.remaining === 'number' && f.remaining > 0) this.founderLeft.set(f.remaining);
+        })
+        .catch(() => undefined);
       let saved: string | null = null;
       try {
         saved = localStorage.getItem(CURRENCY_KEY);
@@ -1304,27 +1344,25 @@ export class LandingComponent implements OnInit {
     }
   }
 
-  private prices(plan: Plan): { monthly: number; annual: number } | null {
-    if (this.currency() === 'pen') return plan.pen;
-    return plan.monthly === null || plan.annual === null
-      ? null
-      : { monthly: plan.monthly, annual: plan.annual };
+  private prices(plan: Plan): PeriodPrices | null {
+    return plan.prices ? plan.prices[this.currency()] : null;
   }
 
-  /** Precio mensual mostrado; en anual, el equivalente por mes redondeado. */
+  /** Precio mensual mostrado; en trimestral y anual, el equivalente por mes redondeado. */
   perMonth(plan: Plan): number {
     const p = this.prices(plan);
     if (!p) return 0;
-    return this.billing() === 'annual' ? Math.round(p.annual / 12) : p.monthly;
+    const b = this.billing();
+    return b === 'annual' ? Math.round(p.annual / 12) : b === 'quarterly' ? Math.round(p.quarterly / 3) : p.monthly;
   }
 
   billedNote(plan: Plan): string {
     const p = this.prices(plan);
     if (!p) return 'Cotización según tu operación';
-    if (this.billing() === 'monthly') return 'Facturado mes a mes, sin permanencia';
+    const b = this.billing();
+    if (b === 'monthly') return 'Facturado mes a mes, sin permanencia';
     const sym = this.currency() === 'pen' ? 'S/ ' : 'US$';
-    // Punto de miles a mano, igual que el resto del copy (2.000, 15.000).
-    const fmt = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    if (b === 'quarterly') return `${sym}${fmt(p.quarterly)} cada 3 meses · ahorras ${sym}${fmt(p.monthly * 3 - p.quarterly)}`;
     return `${sym}${fmt(p.annual)} al año · ahorras ${sym}${fmt(p.monthly * 12 - p.annual)}`;
   }
 
@@ -1393,8 +1431,8 @@ export class LandingComponent implements OnInit {
       offers: this.plans.flatMap((p) =>
         (
           [
-            [p.monthly, 'USD'],
-            [p.pen?.monthly ?? null, 'PEN'],
+            [p.prices?.usd.monthly ?? null, 'USD'],
+            [p.prices?.pen.monthly ?? null, 'PEN'],
           ] as const
         )
           .filter(([price]) => price !== null)

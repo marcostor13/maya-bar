@@ -31,9 +31,10 @@ const API = environment.apiUrl;
           </label>
           <select class="select" name="plan" [ngModel]="planFilter()" (ngModelChange)="planFilter.set($event)" aria-label="Filtrar por plan">
             <option value="">Todos los planes</option>
-            <option value="starter">Starter</option>
-            <option value="pro">Pro</option>
-            <option value="enterprise">Enterprise</option>
+            <option value="inicia">Inicia</option>
+            <option value="crece">Crece</option>
+            <option value="escala">Escala</option>
+            <option value="empresa">Empresa</option>
           </select>
           <select class="select" name="status" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)" aria-label="Filtrar por estado">
             <option value="">Todas</option>
@@ -86,9 +87,10 @@ const API = environment.apiUrl;
               <div class="form-group">
                 <label>Plan</label>
                 <select class="input" formControlName="plan">
-                  <option value="starter">Starter</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
+                  <option value="inicia">Inicia</option>
+                  <option value="crece">Crece</option>
+                  <option value="escala">Escala</option>
+                  <option value="empresa">Empresa</option>
                 </select>
               </div>
               <div class="form-actions">
@@ -264,9 +266,9 @@ const API = environment.apiUrl;
     .td-muted { color: var(--color-text-muted); }
 
     .badge { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-    .badge-plan-starter { background: #F8FAFC; color: var(--color-text-muted); }
-    .badge-plan-pro { background: #EFF6FF; color: var(--color-ai); }
-    .badge-plan-enterprise { background: #FFF7ED; color: #D97706; }
+    .badge-plan-inicia { background: var(--color-bg-light); color: var(--color-text-muted); text-transform: capitalize; }
+    .badge-plan-crece { background: var(--color-bg-light); color: var(--color-ai); text-transform: capitalize; }
+    .badge-plan-escala, .badge-plan-empresa { background: var(--color-brand-light); color: var(--color-warning); text-transform: capitalize; }
     .badge-active { background: #F0FDF4; color: var(--color-success); }
     .badge-inactive { background: #FEF2F2; color: var(--color-error); }
 
@@ -350,7 +352,7 @@ export class AdminTenantsComponent implements OnInit {
     ownerName: ['', Validators.required],
     ruc: [''],
     phone: [''],
-    plan: ['starter'],
+    plan: ['inicia'],
   });
 
   ngOnInit() { this.load(); }
@@ -379,13 +381,13 @@ export class AdminTenantsComponent implements OnInit {
   }
 
   openForm() {
-    this.form.reset({ plan: 'starter' });
+    this.form.reset({ plan: 'inicia' });
     this.showForm.set(true);
   }
 
   closeForm() {
     this.showForm.set(false);
-    this.form.reset({ plan: 'starter' });
+    this.form.reset({ plan: 'inicia' });
   }
 
   save() {

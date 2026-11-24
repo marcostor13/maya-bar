@@ -10,7 +10,9 @@ import {
   UseGuards,
   Request,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, CRM_ROLES, type AuthReq } from '../auth/permissions';
@@ -27,7 +29,11 @@ import {
 @Controller('ai-agents')
 @UseGuards(JwtAuthGuard, ModuleGuard('ai-agents'))
 export class AiAgentsController {
-  constructor(private service: AiAgentsService) {}
+  constructor(
+    private service: AiAgentsService,
+    // Global (HU42); opcional para las pruebas que montan solo el controlador.
+    @Optional() private limits?: PlanLimitsService,
+  ) {}
 
   @Get()
   findAll(@Request() req: AuthReq) {
@@ -36,10 +42,11 @@ export class AiAgentsController {
   }
 
   @Post()
-  create(@Body() dto: CreateAiAgentDto, @Request() req: AuthReq) {
+  async create(@Body() dto: CreateAiAgentDto, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);
     if (!dto.name || !dto.systemPrompt)
       throw new BadRequestException('Faltan nombre o prompt');
+    await this.limits?.assertCanAdd(req.user.tenantId, 'aiAgents');
     return this.service.create(req.user.tenantId, req.user.userId, dto);
   }
 

@@ -26,6 +26,29 @@ export interface CampaignRecipient {
   error?: string;
   sentAt?: string;
   shortUrl?: string;
+  /** Seguimiento del email (HU61). */
+  openedAt?: string;
+  opens?: number;
+  clickedAt?: string;
+  clicks?: number;
+  lastClickUrl?: string;
+  bouncedAt?: string;
+  bounceType?: 'hard' | 'soft';
+  complainedAt?: string;
+  unsubscribedAt?: string;
+}
+
+/** Métricas de una campaña de email (HU61). */
+export interface CampaignEmailMetrics {
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  complained: number;
+  unsubscribed: number;
+  rates: { open: number; click: number; bounce: number; unsubscribe: number };
+  clickers: { _id: string; customerId: string; name: string; to: string; clicks: number; clickedAt?: string; lastClickUrl?: string }[];
 }
 
 export interface CampaignRecipientsPage {

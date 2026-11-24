@@ -396,6 +396,8 @@ export class EventDetailComponent implements OnInit {
         this.store.previewUrl.set(ev.imageUrl ?? '');
         this.store.mediaFiles.set(ev.mediaFiles ?? []);
         this.store.formFields.set(ev.formFields ?? []);
+        this.store.onlinePayment.set(!!ev.onlinePayment);
+        this.store.ticketTypes.set((ev.ticketTypes ?? []).map(t => ({ ...t, salesEndAt: t.salesEndAt ? t.salesEndAt.slice(0, 10) : null })));
         this.store.design.set(ev.invitationDesign ?? null);
         this.store.form.patchValue({
           title: ev.title, description: ev.description ?? '', location: ev.location ?? '',

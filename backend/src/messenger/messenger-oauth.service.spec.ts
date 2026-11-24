@@ -66,8 +66,18 @@ describe('MessengerOAuthService', () => {
       expect(url.searchParams.get('redirect_uri')).toBe(
         'https://api.test/messenger-accounts/oauth/callback',
       );
-      expect(url.searchParams.get('scope')).toContain('pages_messaging');
+      expect(url.searchParams.get('scope')).toBe(
+        'pages_show_list,pages_messaging,pages_manage_metadata',
+      );
       expect(url.searchParams.get('state')).toBe('st1');
+    });
+
+    it('pide los permisos de Lead Ads solo si están activados', () => {
+      env.META_LEAD_ADS_ENABLED = 'true';
+      const url = new URL(service.buildAuthorizeUrl('st1'));
+      delete env.META_LEAD_ADS_ENABLED;
+      expect(url.searchParams.get('scope')).toContain('leads_retrieval');
+      expect(url.searchParams.get('scope')).toContain('pages_read_engagement');
     });
   });
 

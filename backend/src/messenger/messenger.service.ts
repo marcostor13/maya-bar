@@ -23,6 +23,9 @@ const SUBSCRIBED_FIELDS = [
   'message_reads',
 ].join(',');
 
+/** Con `leadgen` llegan además los formularios de anuncios (HU60). */
+const SUBSCRIBED_FIELDS_WITH_LEADS = `${SUBSCRIBED_FIELDS},leadgen`;
+
 /** Permisos sin los que no se pueden enviar DMs ni suscribir el webhook. */
 const REQUIRED_SCOPES = ['pages_messaging', 'pages_manage_metadata'];
 
@@ -142,11 +145,32 @@ export class MessengerService {
     if (!config.pageAccessToken || !config.pageId)
       return { success: false, message: 'Faltan Page ID o access token' };
     try {
-      await this.graph.post(`/${config.pageId}/subscribed_apps`, {
-        accessToken: config.pageAccessToken,
-        params: { subscribed_fields: SUBSCRIBED_FIELDS },
-      });
-      return { success: true, message: 'Webhook suscripto correctamente' };
+      // Sin Lead Ads activado no se pide `leadgen` (permiso aún sin aprobar).
+      if (process.env.META_LEAD_ADS_ENABLED !== 'true') {
+        await this.graph.post(`/${config.pageId}/subscribed_apps`, {
+          accessToken: config.pageAccessToken,
+          params: { subscribed_fields: SUBSCRIBED_FIELDS },
+        });
+        return { success: true, message: 'Webhook suscripto correctamente' };
+      }
+      try {
+        await this.graph.post(`/${config.pageId}/subscribed_apps`, {
+          accessToken: config.pageAccessToken,
+          params: { subscribed_fields: SUBSCRIBED_FIELDS_WITH_LEADS },
+        });
+        return { success: true, message: 'Webhook suscripto correctamente' };
+      } catch {
+        // Sin `leads_retrieval` Meta rechaza `leadgen`: los mensajes siguen.
+        await this.graph.post(`/${config.pageId}/subscribed_apps`, {
+          accessToken: config.pageAccessToken,
+          params: { subscribed_fields: SUBSCRIBED_FIELDS },
+        });
+        return {
+          success: true,
+          message:
+            'Webhook suscripto (sin Lead Ads: falta el permiso leads_retrieval)',
+        };
+      }
     } catch (err) {
       return { success: false, message: this.errorMessage(err) };
     }

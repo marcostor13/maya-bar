@@ -21,6 +21,7 @@ import {
 } from './dto/api-access.dto';
 import { ApiWebhookService } from './api-webhook.service';
 
+import { Audit } from '../audit/audit.decorator';
 /** Administración de los accesos de API de la empresa (módulo Integraciones). */
 @Controller('api-access')
 @UseGuards(JwtAuthGuard, ModuleGuard('integrations'))
@@ -40,6 +41,11 @@ export class ApiAccessController {
     return this.service.accounts(req.user.tenantId);
   }
 
+  @Audit({
+    action: 'api_keys.created',
+    resource: 'api_key',
+    bodyFields: ['name'],
+  })
   @Post()
   create(@Body() dto: CreateApiAccessDto, @Request() req: AuthReq) {
     return this.service.create(req.user.tenantId, req.user.userId, dto);
@@ -54,11 +60,13 @@ export class ApiAccessController {
     return this.service.update(req.user.tenantId, id, dto);
   }
 
+  @Audit({ action: 'api_keys.regenerated', resource: 'api_key' })
   @Post(':id/regenerate')
   regenerate(@Param('id') id: string, @Request() req: AuthReq) {
     return this.service.regenerate(req.user.tenantId, id);
   }
 
+  @Audit({ action: 'api_keys.revoked', resource: 'api_key' })
   @Post(':id/revoke')
   revoke(@Param('id') id: string, @Request() req: AuthReq) {
     return this.service.revoke(req.user.tenantId, id);
@@ -66,6 +74,11 @@ export class ApiAccessController {
 
   // --- Webhook de salida (HU15) ---
 
+  @Audit({
+    action: 'api_keys.webhook_set',
+    resource: 'api_key',
+    bodyFields: ['url'],
+  })
   @Put(':id/webhook')
   setWebhook(
     @Param('id') id: string,
@@ -75,6 +88,7 @@ export class ApiAccessController {
     return this.webhooks.setUrl(req.user.tenantId, id, dto.url);
   }
 
+  @Audit({ action: 'api_keys.webhook_removed', resource: 'api_key' })
   @Delete(':id/webhook')
   removeWebhook(@Param('id') id: string, @Request() req: AuthReq) {
     return this.webhooks.removeUrl(req.user.tenantId, id);

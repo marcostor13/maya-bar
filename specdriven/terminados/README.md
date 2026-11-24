@@ -5,6 +5,39 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-24 | [HU73 Agente de IA por voz](2026-11-24-hu73-agente-de-voz/) | Cerrada (falta prueba real) | autoverificación: C2 CUMPLE, C1 [usuario] pendiente de llamada real |
+| 2026-11-24 | [HU72 Plan agencia y marca blanca](2026-11-24-hu72-plan-agencia-marca-blanca/) | Cerrada (fase 1) | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
+| 2026-11-24 | [HU70 Puntaje de leads con IA](2026-11-24-hu70-puntaje-leads-ia/) | Cerrada | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
+| 2026-11-24 | [HU69 Chat web para la página del cliente](2026-11-24-hu69-chat-web/) | Cerrada | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
+| 2026-11-24 | [HU68 Cotizaciones desde la oportunidad](2026-11-24-hu68-cotizaciones/) | Cerrada | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
+| 2026-11-24 | [HU67 Entradas pagadas en línea](2026-11-24-hu67-entradas-pagadas/) | Cerrada | autoverificación (spec-verifier bloqueado): 3 CUMPLE |
+| 2026-11-24 | [HU66 Prueba real de recuperación, SMS y email](2026-11-24-hu66-prueba-real-recuperacion/) | Cerrada (parcial) | autoverificación: C2 CUMPLE; C1 y C3 pendientes del usuario |
+| 2026-11-24 | [HU65 Zapier y Make](2026-11-24-hu65-zapier-y-make/) | Cerrada | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
+| 2026-11-24 | [HU64 Reportes configurables](2026-11-24-hu64-reportes-configurables/) | Cerrada | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
+| 2026-11-24 | [HU63 Registro de actividad](2026-11-24-hu63-auditoria/) | Cerrada | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
+| 2026-11-24 | [HU62 Doble factor de acceso](2026-11-24-hu62-doble-factor/) | Cerrada | autoverificación (spec-verifier bloqueado): 3 CUMPLE |
+| 2026-11-24 | [HU61 Aperturas y clics de email](2026-11-24-hu61-aperturas-y-clics-email/) | Cerrada (pendiente configurar el webhook en Resend) | autoverificación (spec-verifier bloqueado): 3 CUMPLE |
+| 2026-11-24 | [HU60 Meta Lead Ads → contactos](2026-11-24-hu60-meta-lead-ads/) | Cerrada (pendiente App Review del usuario) | autoverificación (spec-verifier bloqueado): 3 CUMPLE |
+| 2026-11-24 | [HU59 Reparto automático round-robin](2026-11-24-hu59-reparto-round-robin/) | Cerrada | autoverificación (spec-verifier bloqueado): 3 CUMPLE |
+| 2026-11-24 | [HU58 Automatizaciones y secuencias](2026-11-24-hu58-automatizaciones/) | Cerrada | autoverificación (spec-verifier bloqueado): 3 CUMPLE |
+| 2026-11-24 | [HU57 Panel de suscripciones e ingresos](2026-11-24-hu57-panel-de-suscripciones/) | Cerrada | spec-verifier: 2 CUMPLE, 1 PARCIAL → corregido |
+| 2026-11-24 | [HU56 — Precios nuevos en la landing](2026-11-24-hu56-precios-nuevos-en-la-landing/cierre.md) | Terminada | spec-verifier: 2 CUMPLE, 1 PARCIAL → corregido |
+| 2026-11-24 | [HU55 — Implementación de pago único descontable](2026-11-24-hu55-implementacion-de-pago-unico/cierre.md) | Terminada | spec-verifier: 2 CUMPLE → hallazgos corregidos |
+| 2026-11-24 | [HU54 — Precio fundador y cupones](2026-11-24-hu54-precio-fundador-y-cupones/cierre.md) | Terminada | spec-verifier: 3 CUMPLE → hallazgos corregidos |
+| 2026-11-24 | [HU53 — Add-ons y recargas](2026-11-24-hu53-addons-y-recargas/cierre.md) | Terminada | spec-verifier: 2 CUMPLE → hallazgos corregidos |
+| 2026-11-24 | [HU52 — Cambio de plan y cancelación](2026-11-24-hu52-cambio-de-plan-y-cancelacion/cierre.md) | Terminada | spec-verifier: 2 CUMPLE + 1 PARCIAL → hallazgos corregidos |
+| 2026-11-24 | [HU51 — Pago fallido, gracia y bloqueo suave](2026-11-24-hu51-pago-fallido-y-bloqueo-suave/cierre.md) | Terminada | spec-verifier: 2 CUMPLE + 1 PARCIAL → hallazgos corregidos |
+| 2026-11-24 | [HU50 — Correos de cobro](2026-11-24-hu50-correos-de-cobro/cierre.md) | Terminada | spec-verifier: 2 CUMPLE + 1 PARCIAL → hallazgos corregidos |
+| 2026-11-24 | [HU49 — Comprobante electrónico SUNAT](2026-11-24-hu49-comprobante-electronico-sunat/cierre.md) | Terminada | spec-verifier: 4 CUMPLE → hallazgos corregidos |
+| 2026-11-24 | [HU48 — Ciclo de vida de la suscripción](2026-11-24-hu48-suscripcion-ciclo-de-vida/cierre.md) | Terminada | spec-verifier: 2 CUMPLE + 1 PARCIAL → corregido |
+| 2026-11-23 | [HU47 — Alta automática tras el pago](2026-11-23-hu47-alta-automatica-de-cuenta/cierre.md) | Terminada | spec-verifier: 3 CUMPLE + 1 PARCIAL → corregido |
+| 2026-11-23 | [HU46 — Checkout desde la landing y la cuenta](2026-11-23-hu46-checkout-desde-la-landing/cierre.md) | Terminada | spec-verifier: 4 CUMPLE → hallazgos corregidos |
+| 2026-11-23 | [HU45 — Mercado Pago y webhook seguro](2026-11-23-hu45-mercado-pago-conexion-y-webhook/cierre.md) | Terminada | spec-verifier: 4 CUMPLE → hallazgos corregidos |
+| 2026-11-23 | [HU44 — Mi plan y consumo](2026-11-23-hu44-mi-plan-y-consumo/cierre.md) | Terminada | spec-verifier: 4 CUMPLE, 1 PARCIAL → corregido |
+| 2026-11-23 | [HU43 — Créditos de IA medidos](2026-11-23-hu43-creditos-de-ia/cierre.md) | Terminada | spec-verifier: 4 CUMPLE → hallazgos corregidos |
+| 2026-11-23 | [HU42 — Límites por plan aplicados](2026-11-23-hu42-limites-por-plan/cierre.md) | Terminada | spec-verifier: 4 CUMPLE, 1 PARCIAL → corregido |
+| 2026-11-23 | [HU41 — Prueba gratis de 14 días real](2026-11-23-hu41-prueba-gratis-14-dias/cierre.md) | Terminada | spec-verifier: 3 CUMPLE, 2 PARCIAL → corregido |
+| 2026-11-23 | [HU40 — Catálogo único de planes y precios](2026-11-23-hu40-catalogo-de-planes/cierre.md) | Terminada | spec-verifier: 3 CUMPLE, 1 PARCIAL → corregido |
 | 2026-11-22 | [HU39 — Inputs sin zoom, puntos de corte y Configuración navegable](2026-11-22-hu39-inputs-y-puntos-de-corte/cierre.md) | Terminada | spec-verifier no ejecutado (bloqueado); autoverificación: 3 CUMPLE |
 | 2026-11-22 | [HU38 — Gestos en la bandeja y gráficos táctiles](2026-11-22-hu38-gestos-bandeja-graficos/cierre.md) | Terminada | spec-verifier no ejecutado (bloqueado); autoverificación: 3 CUMPLE |
 | 2026-11-22 | [HU37 — Tablas y Contactos legibles en el móvil](2026-11-22-hu37-tablas-tarjetas-movil/cierre.md) | Terminada | spec-verifier no ejecutado (bloqueado); autoverificación: 3 CUMPLE (CSS/plantilla, sin prueba de componente) |

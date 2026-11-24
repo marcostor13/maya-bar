@@ -1,0 +1,14 @@
+{
+  "name": "maya-crm-zapier",
+  "version": "1.0.0",
+  "description": "App privada de Zapier para Maya CRM (HU65)",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "validate": "zapier validate",
+    "push": "zapier push"
+  },
+  "dependencies": {
+    "zapier-platform-core": "15.19.0"
+  }
+}

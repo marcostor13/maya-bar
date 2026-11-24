@@ -23,6 +23,7 @@ import {
   UpdateContactActivityDto,
 } from './dto/contact-care.dto';
 
+import { Audit } from '../audit/audit.decorator';
 /**
  * Responsable y bitácora del contacto. Comparte prefijo y permiso con
  * `CustomersController`; va aparte para no mezclar el CRUD con la atención.
@@ -39,6 +40,13 @@ export class ContactCareController {
   }
 
   // Son acciones sobre contactos existentes, no altas: 200 y no 201.
+  @Audit({
+    action: 'customers.bulk_assigned',
+    resource: 'customer',
+    details: (r) => ({
+      count: Array.isArray(r.body?.ids) ? r.body.ids.length : undefined,
+    }),
+  })
   @Post('bulk/assign')
   @HttpCode(200)
   bulkAssign(@Body() dto: BulkAssignDto, @Request() req: AuthReq) {

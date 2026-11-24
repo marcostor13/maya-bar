@@ -6,8 +6,17 @@ import {
   Body,
   Logger,
   HttpCode,
+  Headers,
+  Req,
+  type RawBodyRequest,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { verifyMetaSignature } from '../shared/meta-signature';
+import {
+  LeadAdsService,
+  type LeadgenValue,
+} from '../lead-ads/lead-ads.service';
 import { MessengerAccountsService } from '../messenger-accounts/messenger-accounts.service';
 import { ConversationsService, InboundMessage } from './conversations.service';
 import { MessageType } from './message.schema';
@@ -33,6 +42,7 @@ export class MessengerWebhookController {
     private accounts: MessengerAccountsService,
     private conversations: ConversationsService,
     private config: ConfigService,
+    private leadAds: LeadAdsService,
   ) {}
 
   @Get()
@@ -49,12 +59,20 @@ export class MessengerWebhookController {
 
   @Post()
   @HttpCode(200)
-  inbound(@Body() body: unknown) {
-    void this.handleInbound(body);
+  inbound(
+    @Body() body: unknown,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-hub-signature-256') signature?: string,
+  ) {
+    void this.handleInbound(body, req.rawBody, signature);
     return { received: true };
   }
 
-  private async handleInbound(body: unknown) {
+  private async handleInbound(
+    body: unknown,
+    rawBody?: Buffer,
+    signature?: string,
+  ) {
     try {
       const b = body as MsBody;
       if (b.object && b.object !== 'page') {
@@ -63,6 +81,7 @@ export class MessengerWebhookController {
         );
         return;
       }
+      await this.handleLeadgen(b, rawBody, signature);
       const entry = b.entry?.[0];
       const pageId = entry?.id;
       const event = entry?.messaging?.[0];
@@ -95,6 +114,29 @@ export class MessengerWebhookController {
     } catch (err) {
       this.logger.error(`[MS] Error procesando el webhook: ${String(err)}`);
     }
+  }
+
+  /**
+   * Formularios de anuncios (HU60): llegan como `changes` con field `leadgen`.
+   * Crean contactos, así que con secreto configurado exigen firma válida.
+   */
+  private async handleLeadgen(b: MsBody, rawBody?: Buffer, signature?: string) {
+    const items = (b.entry ?? []).flatMap((e) =>
+      (e.changes ?? [])
+        .filter((c) => c.field === 'leadgen' && c.value)
+        .map((c) => ({
+          pageId: String(c.value?.page_id ?? e.id ?? ''),
+          value: c.value!,
+        })),
+    );
+    if (!items.length) return;
+    const secret = this.config.get<string>('FACEBOOK_APP_SECRET');
+    if (secret && !verifyMetaSignature(rawBody, signature, secret)) {
+      this.logger.warn('[MS] Lead de anuncio con firma inválida — descartado.');
+      return;
+    }
+    for (const it of items)
+      await this.leadAds.handleWebhook(it.pageId, it.value);
   }
 
   private parse(
@@ -155,5 +197,9 @@ interface MsMessaging {
 
 interface MsBody {
   object?: string;
-  entry?: { id?: string; messaging?: MsMessaging[] }[];
+  entry?: {
+    id?: string;
+    messaging?: MsMessaging[];
+    changes?: { field?: string; value?: LeadgenValue }[];
+  }[];
 }

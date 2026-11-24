@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
@@ -29,6 +31,8 @@ export class WhatsAppAccountsService {
     private wa: WhatsAppService,
     private oauth: WhatsAppOAuthService,
     private config: ConfigService,
+    // Global (HU42); opcional para las pruebas unitarias.
+    @Optional() private limits?: PlanLimitsService,
   ) {}
 
   /** URL pública a la que Cloud API debe reenviar los mensajes entrantes. */
@@ -263,6 +267,8 @@ export class WhatsAppAccountsService {
     const existing = await this.model
       .findOne({ tenantId: tid, waPhoneNumberId: data.phoneNumberId })
       .exec();
+    // Solo un número nuevo cuenta contra el plan; reconectar uno existente no (HU42).
+    if (!existing) await this.limits?.assertCanAdd(tenantId, 'whatsappNumbers');
     const account = existing
       ? Object.assign(existing, {
           waAccessToken: long.accessToken,

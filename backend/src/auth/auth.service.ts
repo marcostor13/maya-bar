@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -94,6 +95,7 @@ export class AuthService {
   private async issueRefreshToken(
     userId: string,
     userAgent?: string,
+    actingTenantId?: string | null,
   ): Promise<string> {
     const token = randomBytes(48).toString('base64url');
     await this.refreshTokens.create({
@@ -101,6 +103,9 @@ export class AuthService {
       tokenHash: hashToken(token),
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
       userAgent,
+      ...(actingTenantId
+        ? { actingTenantId: new Types.ObjectId(actingTenantId) }
+        : {}),
     });
     // Toda sesión nueva o renovada pasa por aquí: es el "último acceso".
     await this.sessions.touchAccess(userId);
@@ -128,6 +133,12 @@ export class AuthService {
     if (!(await this.tenantsService.isActive(this.tenantOf(user))))
       throw new UnauthorizedException(TENANT_SUSPENDED);
 
+    // Un usuario de agencia sigue en la sub-cuenta donde estaba, si todavía
+    // la administra (HU72).
+    const acting = await this.actingFor(user, registro.actingTenantId);
+    if (acting && !(await this.tenantsService.isActive(acting)))
+      throw new UnauthorizedException(TENANT_SUSPENDED);
+
     registro.revokedAt = new Date();
     await registro.save();
 
@@ -136,7 +147,48 @@ export class AuthService {
     ).toObject();
     return this.buildSession(
       plano,
-      await this.issueRefreshToken(String(user._id), userAgent),
+      await this.issueRefreshToken(String(user._id), userAgent, acting),
+      acting,
+    );
+  }
+
+  /** La sub-cuenta, si el usuario es administrador de la agencia dueña. */
+  private async actingFor(
+    user: { role?: string; tenantId?: { toString(): string } | null },
+    acting?: Types.ObjectId | string | null,
+  ): Promise<string | null> {
+    const home = this.tenantOf(user);
+    if (!acting || !home || user.role !== 'TENANT_ADMIN') return null;
+    return (await this.tenantsService.isSubAccountOf(String(acting), home))
+      ? String(acting)
+      : null;
+  }
+
+  /**
+   * Cambia de sub-cuenta sin volver a entrar (HU72). Volver a la propia
+   * agencia es pasar su id. Emite una sesión nueva atada a esa sub-cuenta.
+   */
+  async switchTenant(userId: string, target: string, userAgent?: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user || user.isActive === false)
+      throw new UnauthorizedException('Tu cuenta ya no está activa');
+    const home = this.tenantOf(user);
+    if (!home || user.role !== 'TENANT_ADMIN')
+      throw new ForbiddenException('Solo el administrador de la agencia');
+    let acting: string | null = null;
+    if (target !== home) {
+      acting = await this.actingFor(user, target);
+      if (!acting) throw new ForbiddenException('No administras esa cuenta');
+    }
+    if (!(await this.tenantsService.isActive(acting ?? home)))
+      throw new UnauthorizedException(TENANT_SUSPENDED);
+    const plano = (
+      user as unknown as { toObject: () => Record<string, any> }
+    ).toObject();
+    return this.buildSession(
+      plano,
+      await this.issueRefreshToken(userId, userAgent, acting),
+      acting,
     );
   }
 
@@ -169,15 +221,21 @@ export class AuthService {
     );
   }
 
-  private buildSession(user: Record<string, any>, refreshToken: string) {
+  private buildSession(
+    user: Record<string, any>,
+    refreshToken: string,
+    acting?: string | null,
+  ) {
     /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+    const home =
+      (user['tenantId'] as { toString: () => string } | null)?.toString() ??
+      null;
     const payload = {
       sub: user['_id'],
       email: user['email'],
       role: user['role'],
-      tenantId:
-        (user['tenantId'] as { toString: () => string } | null)?.toString() ??
-        null,
+      tenantId: acting ?? home,
+      ...(acting ? { homeTenantId: home } : {}),
       localIds: ((user['localIds'] as unknown[]) ?? []).map((id) => String(id)),
       mustChangePassword: !!user['mustChangePassword'],
       // `iat` va en segundos: con esto una revocación en el mismo segundo que
@@ -192,7 +250,8 @@ export class AuthService {
         email: user['email'],
         name: user['name'],
         role: user['role'],
-        tenantId: user['tenantId'],
+        tenantId: acting ?? user['tenantId'],
+        ...(acting ? { homeTenantId: home } : {}),
         mustChangePassword: !!user['mustChangePassword'],
         referralCode: user['referralCode'] ?? null,
       },
@@ -338,7 +397,11 @@ export class AuthService {
     const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     await this.usersService.saveResetCode(String(user._id), code, expires);
-    await this.mailService.sendPasswordResetEmail(user.email, code);
+    await this.mailService.sendPasswordResetEmail(
+      user.email,
+      code,
+      await this.tenantsService.mailBrandFor(this.tenantOf(user)),
+    );
 
     return { message: 'Si el correo existe, se ha enviado un código.' };
   }

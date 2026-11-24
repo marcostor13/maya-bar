@@ -9,7 +9,7 @@ import { ConfirmService } from '../../shared/confirm';
 const OVERVIEW: TenantOverview = {
   tenant: {
     _id: 't1', name: 'La Mar S.A.C.', slug: 'la-mar', email: 'admin@lamar.pe', ruc: '20123456789',
-    phone: '+51 999', plan: 'pro', isActive: true, trialEndsAt: '2026-10-20T12:00:00Z',
+    phone: '+51 999', plan: 'crece', isActive: true, trialEndsAt: '2026-10-20T12:00:00Z',
   },
   users: [
     { _id: 'u1', name: 'Ana', email: 'ana@lamar.pe', role: 'TENANT_ADMIN', isActive: true, lastAccessAt: '2026-11-17T15:00:00Z' },
@@ -52,7 +52,7 @@ describe('TenantDetailComponent (HU16)', () => {
     fixture.detectChanges();
     http.expectOne((r) => r.url.endsWith('/admin/tenants/t1/overview')).flush(overview);
     http.expectOne((r) => r.url.endsWith('/admin/tenants/t1/audit')).flush([
-      { _id: 'a1', action: 'update', actorEmail: 'root@maya.pe', at: '2026-11-18T10:00:00Z', changes: { plan: { from: 'starter', to: 'pro' } } },
+      { _id: 'a1', action: 'update', actorEmail: 'root@maya.pe', at: '2026-11-18T10:00:00Z', changes: { plan: { from: 'inicia', to: 'crece' } } },
     ]);
     await settle();
   }
@@ -70,13 +70,13 @@ describe('TenantDetailComponent (HU16)', () => {
     expect(el().textContent).toContain('120');
     expect(el().textContent).toContain('enviados (30 días)');
     expect(el().textContent).toContain('Editó los datos');
-    expect(el().textContent).toContain('plan: starter → pro');
+    expect(el().textContent).toContain('plan: inicia → crece');
   });
 
   it('guarda los datos con plan y fechas', async () => {
     await setup();
     const plan = el().querySelector('#td-plan') as HTMLSelectElement;
-    plan.value = 'enterprise';
+    plan.value = 'escala';
     plan.dispatchEvent(new Event('change'));
     const exp = el().querySelector('#td-plan-exp') as HTMLInputElement;
     exp.value = '2027-01-31';
@@ -84,8 +84,8 @@ describe('TenantDetailComponent (HU16)', () => {
     fixture.detectChanges();
     el().querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
     const req = http.expectOne((r) => r.method === 'PATCH' && r.url.endsWith('/tenants/t1'));
-    expect(req.request.body).toMatchObject({ plan: 'enterprise', planExpiresAt: '2027-01-31', trialEndsAt: '2026-10-20' });
-    req.flush({ ...OVERVIEW.tenant, plan: 'enterprise', planExpiresAt: '2027-01-31T00:00:00Z' });
+    expect(req.request.body).toMatchObject({ plan: 'escala', planExpiresAt: '2027-01-31', trialEndsAt: '2026-10-20' });
+    req.flush({ ...OVERVIEW.tenant, plan: 'escala', planExpiresAt: '2027-01-31T00:00:00Z' });
     http.expectOne((r) => r.url.endsWith('/audit')).flush([]);
     expect(toast.success).toHaveBeenCalledWith('Empresa actualizada');
   });

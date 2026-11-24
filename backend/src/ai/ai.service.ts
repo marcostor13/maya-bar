@@ -1,4 +1,11 @@
-import { Injectable, Inject, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  BadRequestException,
+  Optional,
+} from '@nestjs/common';
+import { AiCreditsService } from '../billing/ai-credits.service';
+import type { AiAction } from '../billing/usage-ledger.schema';
 import { ConfigService } from '@nestjs/config';
 import { AI_CHAT_PROVIDER } from './providers/ai-provider.interface';
 import type {
@@ -31,7 +38,11 @@ interface AiOptions {
   /** Herramientas que el modelo puede llamar antes de responder. */
   tools?: AiTool[];
   runTool?: (call: AiToolCall) => Promise<unknown>;
+  /** Mide la llamada en créditos de la empresa (HU43). */
+  meter?: { tenantId: string; action: AiAction; units?: number };
 }
+
+type ChatReq = Parameters<AiChatProvider['chat']>[0];
 
 @Injectable()
 export class AiService {
@@ -43,6 +54,8 @@ export class AiService {
   constructor(
     private configService: ConfigService,
     @Inject(AI_CHAT_PROVIDER) private chatProvider: AiChatProvider,
+    // Global (HU43); opcional para las pruebas unitarias.
+    @Optional() private credits?: AiCreditsService,
   ) {
     this.deepseekKey = configService.get<string>('DEEPSEEK_API_KEY') ?? '';
     this.claudeKey = configService.get<string>('CLAUDE_API_KEY') ?? '';
@@ -60,6 +73,41 @@ export class AiService {
     };
   }
 
+  /**
+   * Ejecuta la llamada midiendo créditos si hay `meter`: comprueba saldo antes
+   * (salvo key propia) y anota tokens y modelo al terminar.
+   */
+  private async metered(
+    req: ChatReq,
+    meter: AiOptions['meter'],
+    byok: boolean,
+    run: (req: ChatReq) => Promise<string>,
+  ): Promise<string> {
+    if (!meter || !this.credits) return run(req);
+    if (!byok)
+      await this.credits.assertCanSpend(
+        meter.tenantId,
+        meter.action,
+        meter.units,
+      );
+    const usage = { inputTokens: 0, outputTokens: 0, model: req.model };
+    const out = await run({
+      ...req,
+      onUsage: (u) => {
+        usage.inputTokens += u.inputTokens;
+        usage.outputTokens += u.outputTokens;
+        usage.model = u.model ?? usage.model;
+      },
+    });
+    await this.credits.record(
+      meter.tenantId,
+      meter.action,
+      { byok, provider: req.provider, ...usage },
+      meter.units,
+    );
+    return out;
+  }
+
   async chat(prompt: string, options: AiOptions = {}): Promise<string> {
     const provider = options.provider ?? 'auto';
     // `??` y no un default de desestructuración: los agentes viejos guardan
@@ -70,38 +118,53 @@ export class AiService {
     if (provider === 'deepseek' || (provider === 'auto' && this.deepseekKey)) {
       if (!this.deepseekKey)
         throw new BadRequestException('DEEPSEEK_API_KEY no configurada');
-      return this.chatProvider.chat({
-        provider: 'deepseek',
-        apiKey: this.deepseekKey,
-        model: 'deepseek-chat',
-        maxTokens,
-        messages,
-        errorLabel: 'DeepSeek',
-      });
+      return this.metered(
+        {
+          provider: 'deepseek',
+          apiKey: this.deepseekKey,
+          model: 'deepseek-chat',
+          maxTokens,
+          messages,
+          errorLabel: 'DeepSeek',
+        },
+        options.meter,
+        false,
+        (r) => this.chatProvider.chat(r),
+      );
     }
     if (provider === 'claude' || (provider === 'auto' && this.claudeKey)) {
       if (!this.claudeKey)
         throw new BadRequestException('CLAUDE_API_KEY no configurada');
-      return this.chatProvider.chat({
-        provider: 'claude',
-        apiKey: this.claudeKey,
-        model: 'claude-haiku-4-5',
-        maxTokens,
-        messages,
-        errorLabel: 'Claude',
-      });
+      return this.metered(
+        {
+          provider: 'claude',
+          apiKey: this.claudeKey,
+          model: 'claude-haiku-4-5',
+          maxTokens,
+          messages,
+          errorLabel: 'Claude',
+        },
+        options.meter,
+        false,
+        (r) => this.chatProvider.chat(r),
+      );
     }
     if (provider === 'openai' || (provider === 'auto' && this.openaiKey)) {
       if (!this.openaiKey)
         throw new BadRequestException('OPENAI_API_KEY no configurada');
-      return this.chatProvider.chat({
-        provider: 'openai',
-        apiKey: this.openaiKey,
-        model: 'gpt-4o-mini',
-        maxTokens,
-        messages,
-        errorLabel: 'OpenAI',
-      });
+      return this.metered(
+        {
+          provider: 'openai',
+          apiKey: this.openaiKey,
+          model: 'gpt-4o-mini',
+          maxTokens,
+          messages,
+          errorLabel: 'OpenAI',
+        },
+        options.meter,
+        false,
+        (r) => this.chatProvider.chat(r),
+      );
     }
     throw new BadRequestException(
       'No hay API key de IA configurada (DEEPSEEK_API_KEY, CLAUDE_API_KEY o OPENAI_API_KEY)',
@@ -153,13 +216,16 @@ export class AiService {
       messages,
       timeoutMs: options.timeoutMs,
     };
-    if (options.tools?.length && options.runTool)
-      return this.chatProvider.chatWithTools({
-        ...req,
-        tools: options.tools,
-        runTool: options.runTool,
-      });
-    return this.chatProvider.chat(req);
+    // Con la key propia de la empresa no se descuentan créditos (HU43).
+    const byok = !!options.apiKeys?.[resolved]?.trim();
+    const { tools, runTool } = options;
+    if (tools?.length && runTool)
+      return this.metered(req, options.meter, byok, (r) =>
+        this.chatProvider.chatWithTools({ ...r, tools, runTool }),
+      );
+    return this.metered(req, options.meter, byok, (r) =>
+      this.chatProvider.chat(r),
+    );
   }
 
   /** Modelos que la API key del tenant puede usar hoy en ese proveedor. */

@@ -42,13 +42,25 @@ export function currentHost(): string {
   return typeof window !== 'undefined' ? window.location.hostname : '';
 }
 
+let panelDomain = false;
+
+/** El host es el panel con marca blanca de una agencia (HU72), no una landing. */
+export function markPanelDomain(): void {
+  panelDomain = true;
+}
+
+export function isPanelDomain(): boolean {
+  return panelDomain;
+}
+
 /** En el navegador: ¿estamos en el dominio propio de un cliente? */
 export function isCustomDomain(): boolean {
   const host = currentHost();
-  return !!host && !isPlatformHost(host);
+  return !!host && !panelDomain && !isPlatformHost(host);
 }
 
 /** Solo para pruebas: simula estar en otro host (`null` vuelve al real). */
 export function setHostForTests(host: string | null): void {
   hostOverride = host;
+  panelDomain = false;
 }

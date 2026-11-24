@@ -16,6 +16,18 @@ import {
 import { RolesModule } from '../roles/roles.module';
 import { SmsModule } from '../sms/sms.module';
 import { TenantsModule } from '../tenants/tenants.module';
+import { LeadsModule } from '../leads/leads.module';
+import { Customer, CustomerSchema } from '../customers/customer.schema';
+import { Lead, LeadSchema } from '../leads/lead.schema';
+import { Event, EventSchema } from '../events/event.schema';
+import { ContactForm, ContactFormSchema } from '../forms/form.schema';
+import { ApiHook, ApiHookSchema, ApiHooksService } from './api-hooks.service';
+import { ApiCrmService } from './api-crm.service';
+import {
+  ApiCrmController,
+  ApiDocsController,
+  AutomationKeyGuard,
+} from './api-crm.controller';
 import {
   ApiAccess,
   ApiAccessSchema,
@@ -45,6 +57,11 @@ import { PublicApiController } from './public-api.controller';
       { name: Conversation.name, schema: ConversationSchema },
       { name: Message.name, schema: MessageSchema },
       { name: WaTemplate.name, schema: WaTemplateSchema },
+      { name: ApiHook.name, schema: ApiHookSchema },
+      { name: Customer.name, schema: CustomerSchema },
+      { name: Lead.name, schema: LeadSchema },
+      { name: Event.name, schema: EventSchema },
+      { name: ContactForm.name, schema: ContactFormSchema },
     ]),
     ConversationsModule,
     WhatsAppAccountsModule,
@@ -53,14 +70,23 @@ import { PublicApiController } from './public-api.controller';
     RolesModule,
     SmsModule,
     TenantsModule,
+    LeadsModule,
   ],
-  controllers: [ApiAccessController, PublicApiController],
+  controllers: [
+    ApiAccessController,
+    PublicApiController,
+    ApiDocsController,
+    ApiCrmController,
+  ],
   providers: [
     ApiAccessService,
     ApiMessagesService,
     ApiSmsService,
     ApiWebhookService,
     ApiKeyGuard,
+    AutomationKeyGuard,
+    ApiHooksService,
+    ApiCrmService,
   ],
 })
 export class ApiAccessModule {}

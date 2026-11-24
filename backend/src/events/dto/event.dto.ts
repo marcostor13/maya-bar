@@ -1,4 +1,9 @@
 import {
+  ArrayMaxSize,
+  IsDateString,
+  IsIn,
+  Matches,
+  Min,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -31,6 +36,32 @@ export class MediaFileDto {
 
   @IsNumber()
   size!: number;
+}
+
+/** Tipo de entrada (HU67). `sold` no se acepta: lo lleva el servidor. */
+export class TicketTypeDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9_-]{1,30}$/)
+  key?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  name: string;
+
+  @IsNumber()
+  @Min(0)
+  price: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  capacity?: number;
+
+  @IsOptional()
+  @IsDateString()
+  salesEndAt?: string | null;
 }
 
 export class FormFieldDto {
@@ -117,6 +148,21 @@ export class CreateEventDto {
   @IsOptional()
   @IsObject()
   invitationDesign?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsBoolean()
+  onlinePayment?: boolean;
+
+  @IsOptional()
+  @IsIn(['PEN', 'USD'])
+  currency?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => TicketTypeDto)
+  ticketTypes?: TicketTypeDto[];
 }
 
 export class UpdateEventDto {
@@ -176,6 +222,21 @@ export class UpdateEventDto {
   @IsOptional()
   @IsObject()
   invitationDesign?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsBoolean()
+  onlinePayment?: boolean;
+
+  @IsOptional()
+  @IsIn(['PEN', 'USD'])
+  currency?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => TicketTypeDto)
+  ticketTypes?: TicketTypeDto[];
 }
 
 export class GenerateDesignDto {

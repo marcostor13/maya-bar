@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  AiCreditsException,
+  AiCreditsService,
+} from '../billing/ai-credits.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AiService, type AiApiKeys, type ChatMessage } from '../ai/ai.service';
@@ -59,6 +63,7 @@ interface AiOptions {
   model?: string;
   apiKeys: AiApiKeys;
   timeoutMs: number;
+  meter?: { tenantId: string; action: 'text' | 'recovery'; units?: number };
 }
 
 interface Classified {
@@ -101,7 +106,19 @@ export class RecoveryAnalysisService {
     private ai: AiService,
     private settings: SettingsService,
     private suppression: SuppressionService,
+    // Global (HU43); opcional para las pruebas unitarias.
+    @Optional() private credits?: AiCreditsService,
   ) {}
+
+  /**
+   * HU43: antes de encolar un análisis, 402 si no hay créditos para al menos
+   * una conversación. Con key propia de DeepSeek no se comprueba.
+   */
+  async assertCredits(tenantId: string): Promise<void> {
+    const cfg = await this.settings.get(tenantId);
+    if (cfg?.deepseekApiKey?.trim()) return;
+    await this.credits?.assertCanSpend(tenantId, 'recovery');
+  }
 
   /**
    * Analiza un plan ya reclamado por el worker. Se puede llamar varias veces
@@ -450,19 +467,28 @@ Responde SOLO con JSON: {"items":[{"id":"","stage":"","note":"","name":""}]}`,
     ];
 
     let error = '';
+    // Se cobra una sola vez por lote aunque el reintento sea por JSON inválido.
+    let charged = false;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const raw = await this.ai.chatMessages(messages, {
           maxTokens: MAX_OUTPUT_TOKENS,
           temperature: 0.1,
           ...ai,
+          meter:
+            ai.meter && !charged
+              ? { ...ai.meter, action: 'recovery', units: chunk.length }
+              : undefined,
         });
+        charged = true;
         const parsed = this.ai.parseJson<
           { items?: Classified[] } | Classified[]
         >(raw);
         const items = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
         return { items: items.filter((i) => i?.id) };
       } catch (err) {
+        // Sin créditos reintentar no sirve: corta todo el análisis (HU43).
+        if (err instanceof AiCreditsException) throw err;
         error = err instanceof Error ? err.message : String(err);
         this.logger.warn(
           `Clasificación de ${chunk.length} conversaciones falló (intento ${attempt + 1}): ${error}`,
@@ -538,6 +564,7 @@ Responde SOLO con JSON:
       );
       return this.ai.parseJson<PlanDraft>(raw);
     } catch (err) {
+      if (err instanceof AiCreditsException) throw err;
       this.logger.warn(`No se pudo redactar el plan: ${String(err)}`);
       return {
         headline: `${segments.reduce((n, s) => n + s.recipients.length, 0)} personas se pueden recuperar`,
@@ -583,6 +610,8 @@ Responde SOLO con JSON:
       model: RECOVERY_MODEL,
       apiKeys: { deepseek: cfg?.deepseekApiKey },
       timeoutMs: AI_TIMEOUT_MS,
+      // Lo que se redacta cuesta 1 crédito; cada conversación analizada, 3 (HU43).
+      meter: { tenantId, action: 'text' },
     };
   }
 }

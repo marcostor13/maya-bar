@@ -67,9 +67,9 @@ describe('Empresas, eventos, campañas y entradas públicas (e2e)', () => {
       const res = await http()
         .patch(`/tenants/${owner.user.tenantId}`)
         .set(bearer(root))
-        .send({ plan: 'pro' })
+        .send({ plan: 'crece' })
         .expect(200);
-      expect((res.body as Doc).plan).toBe('pro');
+      expect((res.body as Doc).plan).toBe('crece');
 
       await http()
         .patch(`/tenants/${owner.user.tenantId}`)
@@ -146,11 +146,11 @@ describe('Empresas, eventos, campañas y entradas públicas (e2e)', () => {
       await http()
         .patch('/tenants/me')
         .set(bearer(owner))
-        .send({ phone: '+51 900 000 000', plan: 'enterprise', isActive: false })
+        .send({ phone: '+51 900 000 000', plan: 'escala', isActive: false })
         .expect(200);
       const me = await http().get('/tenants/me').set(bearer(owner)).expect(200);
       expect((me.body as Doc).phone).toBe('+51 900 000 000');
-      expect((me.body as Doc).plan).not.toBe('enterprise');
+      expect((me.body as Doc).plan).not.toBe('escala');
       expect((me.body as Doc).isActive).not.toBe(false);
 
       const marketing = await createUser(app, owner, 'MARKETING');
@@ -253,13 +253,13 @@ describe('Empresas, eventos, campañas y entradas públicas (e2e)', () => {
           .patch(`/tenants/${tid}`)
           .set(bearer(root))
           .send({
-            plan: 'enterprise',
+            plan: 'escala',
             planExpiresAt: '2027-01-31',
             trialEndsAt: null,
           })
           .expect(200)
       ).body as Doc;
-      expect(patched.plan).toBe('enterprise');
+      expect(patched.plan).toBe('escala');
       expect(String(patched.planExpiresAt)).toContain('2027-01-31');
       expect(patched.trialEndsAt).toBeUndefined();
 
@@ -286,7 +286,7 @@ describe('Empresas, eventos, campañas y entradas públicas (e2e)', () => {
       ).body as Doc[];
       const update = audit.find((a) => a.action === 'update')!;
       expect(update.changes).toMatchObject({
-        plan: { to: 'enterprise' },
+        plan: { to: 'escala' },
         planExpiresAt: { to: '2027-01-31' },
       });
 

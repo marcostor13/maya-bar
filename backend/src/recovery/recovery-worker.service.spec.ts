@@ -1,3 +1,4 @@
+import { AiCreditsException } from '../billing/ai-credits.service';
 import { Types } from 'mongoose';
 import { RecoveryWorker } from './recovery-worker.service';
 import {
@@ -121,6 +122,18 @@ describe('RecoveryWorker', () => {
     await flush();
 
     expect(updates.at(-1)!.update.$set.status).toBe('failed');
+  });
+
+  it('HU43: sin créditos de IA falla a la primera con el aviso', async () => {
+    const { worker, analysis, updates } = setup({ claim: [plan(0)] });
+    analysis.run.mockRejectedValue(new AiCreditsException());
+
+    await worker.kick();
+    await flush();
+
+    const { update } = updates.at(-1)!;
+    expect(update.$set.status).toBe('failed');
+    expect(update.$set['analysis.error']).toMatch(/créditos/i);
   });
 
   it('si el plan dejó de estar en análisis, no lo toca ni avisa', async () => {

@@ -13,11 +13,15 @@ import { environment } from '../../../environments/environment';
 
 const API = environment.apiUrl;
 
-export type Plan = 'starter' | 'pro' | 'enterprise';
+export type Plan = 'inicia' | 'crece' | 'escala' | 'empresa';
 
 export interface TenantRow {
   _id: string;
   name: string;
+  /** Plan Agencia (HU72): sub-cuentas incluidas. */
+  agency?: { seats: number } | null;
+  /** Agencia dueña, si es una sub-cuenta (HU72). */
+  parentTenantId?: string | null;
   slug: string;
   email: string;
   ruc?: string;
@@ -25,6 +29,7 @@ export interface TenantRow {
   plan: Plan;
   planExpiresAt?: string;
   trialEndsAt?: string;
+  legacy?: boolean;
   isActive: boolean;
   createdAt?: string;
 }
@@ -70,6 +75,7 @@ interface TenantForm {
   plan: Plan;
   planExpiresAt: string;
   trialEndsAt: string;
+  legacy: boolean;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -143,9 +149,10 @@ const dateOnly = (iso?: string) => (iso ? iso.slice(0, 10) : '');
                 <div class="field">
                   <label class="label" for="td-plan">Plan</label>
                   <select id="td-plan" class="select" name="plan" [(ngModel)]="form.plan">
-                    <option value="starter">Starter</option>
-                    <option value="pro">Pro</option>
-                    <option value="enterprise">Enterprise</option>
+                    <option value="inicia">Inicia</option>
+                    <option value="crece">Crece</option>
+                    <option value="escala">Escala</option>
+                    <option value="empresa">Empresa</option>
                   </select>
                 </div>
                 <div class="field">
@@ -157,6 +164,10 @@ const dateOnly = (iso?: string) => (iso ? iso.slice(0, 10) : '');
                 <label class="label" for="td-trial">Fin de la prueba</label>
                 <input id="td-trial" class="input" type="date" name="trialEndsAt" [(ngModel)]="form.trialEndsAt" />
               </div>
+              <label class="check-row">
+                <input type="checkbox" name="legacy" [(ngModel)]="form.legacy" />
+                <span>Cliente anterior a los planes: sin límites</span>
+              </label>
             </section>
 
             <section class="card block" aria-labelledby="td-usage">
@@ -175,6 +186,20 @@ const dateOnly = (iso?: string) => (iso ? iso.slice(0, 10) : '');
                 <li><lucide-icon [img]="Mail" [size]="15"></lucide-icon> Correo <strong>{{ o.usage.accounts.email }}</strong></li>
                 <li><lucide-icon [img]="MessageCircle" [size]="15"></lucide-icon> SMS <strong>{{ o.usage.accounts.sms ?? 0 }}</strong></li>
               </ul>
+            </section>
+
+            <section class="card block" aria-labelledby="td-agency">
+              <h2 id="td-agency"><lucide-icon [img]="Building2" [size]="18" [strokeWidth]="2.2"></lucide-icon> Plan Agencia</h2>
+              @if (o.tenant.parentTenantId) {
+                <p class="muted">Es una sub-cuenta de una agencia: no puede ser agencia.</p>
+              } @else {
+                <p class="muted">{{ o.tenant.agency ? 'Agencia con ' + o.tenant.agency.seats + ' sub-cuentas incluidas.' : 'Empresa normal.' }} Pon 0 para quitar el plan.</p>
+                <label class="field-label" for="td-seats">Sub-cuentas incluidas</label>
+                <div class="seats-row">
+                  <input id="td-seats" class="input" type="number" min="0" max="500" name="agencySeats" [(ngModel)]="agencySeats" [ngModelOptions]="{ standalone: true }" />
+                  <button type="button" class="btn btn-primary btn-sm" (click)="saveAgency()" [disabled]="savingAgency()">Guardar</button>
+                </div>
+              }
             </section>
 
             <section class="card block wide" aria-labelledby="td-owner">
@@ -383,10 +408,13 @@ const dateOnly = (iso?: string) => (iso ? iso.slice(0, 10) : '');
     .wide { grid-column: 1 / -1; }
     h2 { margin: 0; font-family: var(--font-heading); font-size: 17px; display: flex; align-items: center; gap: 8px; }
     .sub { margin: 4px 0 0; font-size: 13px; color: var(--color-text-muted); font-weight: 600; }
+    .check-row { display: flex; align-items: center; gap: 10px; min-height: 24px; font-size: 14px; color: var(--color-text-main); cursor: pointer; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .label { font-size: 12.5px; font-weight: 600; }
     .muted { margin: 0; font-size: 13px; color: var(--color-text-muted); line-height: 1.5; }
+    .seats-row { display: flex; gap: 8px; align-items: center; }
+    .seats-row .input { max-width: 120px; }
     .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .stat { display: flex; flex-direction: column; gap: 2px; padding: 14px; border-radius: var(--radius-md); background: var(--color-bg-app); }
     .stat lucide-icon { color: var(--color-brand); }
@@ -435,6 +463,23 @@ export class TenantDetailComponent implements OnInit {
   readonly UserCog = UserCog; readonly UserPlus = UserPlus; readonly Copy = Copy;
 
   tenantId = input.required<string>();
+  agencySeats = 0;
+  savingAgency = signal(false);
+
+  /** Activa o quita el plan Agencia (HU72). */
+  saveAgency() {
+    const seats = Math.max(0, Math.floor(Number(this.agencySeats) || 0));
+    this.savingAgency.set(true);
+    this.http.put<{ agency: { seats: number } | null }>(`${API}/admin/agency/${this.tenantId()}`, { seats }).subscribe({
+      next: (r) => {
+        this.savingAgency.set(false);
+        const o = this.overview();
+        if (o) this.overview.set({ ...o, tenant: { ...o.tenant, agency: r.agency } });
+        this.toast.success(seats ? `Plan Agencia con ${seats} sub-cuentas` : 'Plan Agencia quitado');
+      },
+      error: (err) => { this.savingAgency.set(false); this.toast.error(err.error?.message || 'No se pudo guardar'); },
+    });
+  }
   closed = output<void>();
   /** La lista debe recargarse (datos, estado o eliminación). */
   changed = output<void>();
@@ -457,7 +502,7 @@ export class TenantDetailComponent implements OnInit {
   assignEmail = '';
   busy = signal(false);
   tempPassword = signal<{ email: string; password: string } | null>(null);
-  form: TenantForm = { name: '', email: '', ruc: '', phone: '', plan: 'starter', planExpiresAt: '', trialEndsAt: '' };
+  form: TenantForm = { name: '', email: '', ruc: '', phone: '', plan: 'inicia', planExpiresAt: '', trialEndsAt: '', legacy: false };
   private snapshot = '';
 
   ngOnInit() { this.load(); }
@@ -468,6 +513,7 @@ export class TenantDetailComponent implements OnInit {
     this.http.get<TenantOverview>(`${API}/admin/tenants/${this.tenantId()}/overview`).subscribe({
       next: o => {
         this.overview.set(o);
+        this.agencySeats = o.tenant.agency?.seats ?? 0;
         this.fillForm(o.tenant);
         this.loading.set(false);
         this.loadAudit();
@@ -491,6 +537,7 @@ export class TenantDetailComponent implements OnInit {
     this.form = {
       name: t.name, email: t.email, ruc: t.ruc ?? '', phone: t.phone ?? '', plan: t.plan,
       planExpiresAt: dateOnly(t.planExpiresAt), trialEndsAt: dateOnly(t.trialEndsAt),
+      legacy: !!t.legacy,
     };
     this.snapshot = snapshotOf(this.form);
   }
@@ -509,6 +556,7 @@ export class TenantDetailComponent implements OnInit {
       plan: this.form.plan,
       planExpiresAt: this.form.planExpiresAt || null,
       trialEndsAt: this.form.trialEndsAt || null,
+      legacy: this.form.legacy,
     };
     this.http.patch<TenantRow>(`${API}/tenants/${this.tenantId()}`, body).subscribe({
       next: t => {

@@ -55,11 +55,28 @@ export class CampaignRecipient extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'ShortLink' })
   linkId?: Types.ObjectId;
+
+  // ── Seguimiento del email (HU61, webhooks de Resend) ──
+  @Prop({ type: Date }) deliveredAt?: Date;
+  /** Primera apertura. Aproximada: Apple Mail precarga las imágenes. */
+  @Prop({ type: Date }) openedAt?: Date;
+  @Prop({ default: 0 }) opens: number;
+  @Prop({ type: Date }) clickedAt?: Date;
+  @Prop({ default: 0 }) clicks: number;
+  @Prop() lastClickUrl?: string;
+  @Prop({ type: [String], default: undefined }) clickedUrls?: string[];
+  @Prop({ type: Date }) bouncedAt?: Date;
+  /** `hard` (permanente) o `soft` (temporal). */
+  @Prop() bounceType?: string;
+  @Prop({ type: Date }) complainedAt?: Date;
+  @Prop({ type: Date }) unsubscribedAt?: Date;
 }
 
 export const CampaignRecipientSchema =
   SchemaFactory.createForClass(CampaignRecipient);
 CampaignRecipientSchema.index({ campaignId: 1, status: 1 });
+// El webhook de Resend llega con el id del mensaje.
+CampaignRecipientSchema.index({ providerId: 1 }, { sparse: true });
 CampaignRecipientSchema.index(
   { campaignId: 1, customerId: 1 },
   { unique: true },

@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
+    "catalog": "node scripts/sync-catalog.mjs",
+    "catalog:check": "node scripts/sync-catalog.mjs --check",
     "start": "ng serve",
     "build": "ng build frontend",
     "watch": "ng build frontend --watch --configuration development",

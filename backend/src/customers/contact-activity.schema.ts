@@ -14,7 +14,12 @@ export const CONTACT_ACTIVITY_TYPES = [
 ] as const;
 
 /** Lo que registra la plataforma sola: no se edita ni se borra. */
-export const CONTACT_AUTO_ACTIVITY_TYPES = ['assignment', 'system'] as const;
+export const CONTACT_AUTO_ACTIVITY_TYPES = [
+  'assignment',
+  'system',
+  'email_open',
+  'email_click',
+] as const;
 
 export const ALL_CONTACT_ACTIVITY_TYPES = [
   ...CONTACT_ACTIVITY_TYPES,

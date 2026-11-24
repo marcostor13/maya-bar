@@ -6,6 +6,7 @@ import {
   signal,
   computed,
 } from '@angular/core';
+import { ScoreBadgeComponent } from '../../shared/score-badge';
 import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
@@ -76,6 +77,10 @@ interface Customer {
   totalEvents: number;
   lastVisit?: string;
   createdAt: string;
+  /** Puntaje del contacto (HU70). */
+  score?: number;
+  scoreLabel?: 'hot' | 'warm' | 'cold';
+  scoreReason?: string;
   /** Usuario que atiende al contacto; ausente = sin asignar. */
   ownerId?: OwnerRef | null;
 }
@@ -108,10 +113,12 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
   whatsapp:    { label: 'WhatsApp',    cls: 'badge-success' },
   instagram:   { label: 'Instagram',   cls: 'badge-info'    },
   messenger:   { label: 'Messenger',   cls: 'badge-info'    },
+  lead_ads:    { label: 'Lead Ads',    cls: 'badge-brand'   },
+  web:         { label: 'Chat web',    cls: 'badge-brand'   },
 };
 
 /** Orden de los chips del filtro por origen. */
-const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongodb', 'api', 'whatsapp', 'instagram', 'messenger'];
+const SOURCE_ORDER = ['form', 'reservation', 'event', 'manual', 'import', 'mongodb', 'api', 'whatsapp', 'instagram', 'messenger', 'lead_ads', 'web'];
 
 /** Una columna de la tabla: fija del modelo o descubierta en `customFields`. */
 interface ColumnDef {
@@ -147,7 +154,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
 @Component({
   selector: 'app-customers',
   standalone: true,
-  imports: [ReactiveFormsModule, LucideAngularModule, ContactImportComponent, ContactCareComponent, FormPageComponent],
+  imports: [ReactiveFormsModule, LucideAngularModule, ContactImportComponent, ContactCareComponent, FormPageComponent, ScoreBadgeComponent],
   template: `
     <div class="page animate-fade-in">
 
@@ -241,6 +248,14 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
           <button class="tag-filter-btn" [class.active]="ownerFilter() === 'none'" (click)="ownerFilter.set('none')">
             Sin asignar ({{ unassignedCount() }})
           </button>
+        </div>
+
+        <div class="tag-filters" role="group" aria-label="Filtrar por puntaje">
+          <button class="tag-filter-btn" [class.active]="heatFilter() === ''" (click)="heatFilter.set('')">Cualquier puntaje</button>
+          <button class="tag-filter-btn" [class.active]="heatFilter() === 'hot'" (click)="heatFilter.set('hot')">Calientes</button>
+          <button class="tag-filter-btn" [class.active]="heatFilter() === 'warm'" (click)="heatFilter.set('warm')">Tibios</button>
+          <button class="tag-filter-btn" [class.active]="heatFilter() === 'cold'" (click)="heatFilter.set('cold')">Fríos</button>
+          <button class="tag-filter-btn" [class.active]="byScore()" [attr.aria-pressed]="byScore()" (click)="byScore.set(!byScore())">Mejores primero</button>
         </div>
 
         @if (staticLists().length > 0) {
@@ -475,7 +490,7 @@ const COLUMNS_STORAGE_KEY = 'bar.customers.columns';
                       [title]="'Ver ficha de ' + c.name">
                       <div class="contact-avatar">{{ initials(c.name) }}</div>
                       <div class="contact-info">
-                        <span class="contact-name">{{ c.name }}</span>
+                        <span class="contact-name">{{ c.name }} <app-score-badge [score]="c.score" [heatLabel]="c.scoreLabel" [reason]="c.scoreReason" /></span>
                         <span class="contact-email">{{ c.email || c.phone || '—' }}</span>
                       </div>
                     </button>
@@ -1320,6 +1335,9 @@ export class CustomersComponent implements OnInit {
   allLists        = signal<ListMini[]>([]);
   selectedList    = signal('');
   ownerFilter     = signal<'' | 'mine' | 'none'>('');
+  /** Puntaje (HU70): temperatura y orden. */
+  heatFilter      = signal<'' | 'hot' | 'warm' | 'cold'>('');
+  byScore         = signal(false);
   owners          = signal<ContactOwner[]>([]);
   bulkAssignOpen  = signal(false);
   bulkTagsOpen    = signal(false);
@@ -1365,6 +1383,8 @@ export class CustomersComponent implements OnInit {
     const owner = this.ownerFilter();
     if (owner === 'mine') list = list.filter(c => c.ownerId?._id === this.meId());
     if (owner === 'none') list = list.filter(c => !c.ownerId);
+    const heat = this.heatFilter();
+    if (heat) list = list.filter(c => c.scoreLabel === heat);
     const listId = this.selectedList();
     if (listId) {
       const members = new Set(this.allLists().find(l => l._id === listId)?.memberIds ?? []);
@@ -1385,6 +1405,7 @@ export class CustomersComponent implements OnInit {
         ),
       );
     }
+    if (this.byScore()) list = [...list].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
     return list;
   });
 

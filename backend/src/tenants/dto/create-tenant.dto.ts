@@ -1,3 +1,4 @@
+import { PLAN_IDS, type PlanId } from '../../billing/plans.catalog';
 import {
   IsBoolean,
   IsDateString,
@@ -35,6 +36,10 @@ export class CreateTenantDto {
   @IsOptional()
   @IsString()
   ownerName?: string;
+
+  @IsOptional()
+  @IsIn([...PLAN_IDS])
+  plan?: PlanId;
 }
 
 export class UpdateTenantDto {
@@ -60,8 +65,13 @@ export class UpdateTenantDto {
   phone?: string;
 
   @IsOptional()
-  @IsIn(['starter', 'pro', 'enterprise'])
-  plan?: 'starter' | 'pro' | 'enterprise';
+  @IsIn([...PLAN_IDS])
+  plan?: PlanId;
+
+  /** Cliente anterior al catálogo, sin límites (HU40). Solo el superadmin. */
+  @IsOptional()
+  @IsBoolean()
+  legacy?: boolean;
 
   /** Fecha ISO, o `null` para quitarla. */
   @IsOptional()

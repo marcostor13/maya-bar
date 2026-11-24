@@ -21,6 +21,7 @@ import {
   CreateContactActivityDto,
   UpdateContactActivityDto,
 } from './dto/contact-care.dto';
+import { emitAutomation } from '../automations/automation-bus';
 
 export interface ContactOwner {
   _id: string;
@@ -333,6 +334,13 @@ export class ContactCareService {
         .updateMany(filter, { $addToSet: { tags: { $each: toAdd } } })
         .exec();
       updated = Math.max(updated, res.matchedCount);
+      if (res.modifiedCount)
+        emitAutomation({
+          type: 'tag_added',
+          tenantId,
+          customerIds,
+          tags: toAdd,
+        });
     }
     if (toRemove.length) {
       const res = await this.customerModel

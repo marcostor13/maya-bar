@@ -20,6 +20,11 @@ export interface ResendConfigView {
   checkedAt?: Date;
   /** Si el dominio del remitente está verificado; `null` si no se pudo saber. */
   fromVerified: boolean | null;
+  /** Seguimiento de aperturas y clics (HU61). */
+  webhookUrl: string;
+  hasWebhookSecret: boolean;
+  trackingEnabled: boolean;
+  lastWebhookAt?: Date;
 }
 
 export interface OutgoingMail {
@@ -50,11 +55,16 @@ function fromHeader(name: string, email: string): string {
 export class ResendService {
   private readonly logger = new Logger(ResendService.name);
   private readonly box: SecretBox;
+  private readonly apiBase: string;
 
   constructor(
     @InjectModel(ResendConfig.name) private model: Model<ResendConfig>,
     config: ConfigService,
   ) {
+    this.apiBase = (config.get<string>('PUBLIC_API_URL') ?? '').replace(
+      /\/+$/,
+      '',
+    );
     this.box = new SecretBox(
       config.get<string>('EMAIL_ENCRYPTION_KEY') ||
         config.getOrThrow<string>('JWT_SECRET'),
@@ -227,6 +237,86 @@ export class ResendService {
     }));
   }
 
+  // ── Seguimiento de aperturas y clics (HU61) ─────────────────────────
+
+  /** URL que se pega en Resend → Webhooks para esta empresa. */
+  webhookUrl(tenantId: string): string {
+    return `${this.apiBase}/resend/webhook/${tenantId}`;
+  }
+
+  /** Guarda (o borra con vacío) el secreto de firma `whsec_…` del webhook. */
+  async setWebhookSecret(
+    tenantId: string,
+    secret: string,
+  ): Promise<ResendConfigView> {
+    const value = secret.trim();
+    if (value && !/^whsec_[A-Za-z0-9+/=]{16,}$/.test(value))
+      throw new BadRequestException(
+        'El secreto de firma empieza por "whsec_". Cópialo de Resend → Webhooks.',
+      );
+    const cfg = await this.find(tenantId);
+    if (!cfg) throw new BadRequestException('Guarda primero la configuración');
+    if (value) cfg.sealedWebhookSecret = this.box.encrypt(value);
+    else cfg.sealedWebhookSecret = undefined;
+    await cfg.save();
+    return this.view(cfg);
+  }
+
+  /** Secreto descifrado para verificar la firma, o `null` si no hay. */
+  async webhookSecret(tenantId: string): Promise<string | null> {
+    if (!Types.ObjectId.isValid(tenantId)) return null;
+    const cfg = await this.find(tenantId);
+    return cfg?.sealedWebhookSecret
+      ? this.box.decrypt(cfg.sealedWebhookSecret)
+      : null;
+  }
+
+  async touchWebhook(tenantId: string): Promise<void> {
+    await this.model
+      .updateOne(
+        { tenantId: new Types.ObjectId(tenantId) },
+        { $set: { lastWebhookAt: new Date() } },
+      )
+      .exec();
+  }
+
+  /** Activa el seguimiento de aperturas y clics en el dominio del remitente. */
+  async enableTracking(tenantId: string): Promise<ResendConfigView> {
+    const cfg = await this.find(tenantId);
+    if (!cfg?.sealedKey || !cfg.fromEmail)
+      throw new BadRequestException('Guarda primero la configuración');
+    const client = this.client(this.box.decrypt(cfg.sealedKey));
+    const list = await client.domains.list();
+    if (list.error)
+      throw new BadRequestException(
+        (list.error as { name?: string }).name === 'restricted_api_key'
+          ? 'Tu API key es "solo envío". Activa el seguimiento en Resend → Domains → tu dominio → Configuration, o usa una key con acceso completo.'
+          : `Resend rechazó la consulta: ${list.error.message}`,
+      );
+    const domains =
+      (list.data as { data?: { id: string; name: string }[] } | null)?.data ??
+      [];
+    const mine = domains.find(
+      (d) => d.name.toLowerCase() === domainOf(cfg.fromEmail),
+    );
+    if (!mine)
+      throw new BadRequestException(
+        `El dominio ${domainOf(cfg.fromEmail)} no está en tu cuenta de Resend.`,
+      );
+    const res = await client.domains.update({
+      id: mine.id,
+      openTracking: true,
+      clickTracking: true,
+    });
+    if (res.error)
+      throw new BadRequestException(
+        `Resend no activó el seguimiento: ${res.error.message}`,
+      );
+    cfg.trackingEnabled = true;
+    await cfg.save();
+    return this.view(cfg);
+  }
+
   private usable(cfg: ResendConfig | null): boolean {
     return !!cfg && cfg.enabled && !!cfg.sealedKey && !!cfg.fromEmail;
   }
@@ -248,6 +338,10 @@ export class ResendService {
       domains,
       checkedAt: cfg?.checkedAt,
       fromVerified: domains.length ? mine?.status === 'verified' : null,
+      webhookUrl: cfg ? this.webhookUrl(String(cfg.tenantId)) : '',
+      hasWebhookSecret: !!cfg?.sealedWebhookSecret,
+      trackingEnabled: cfg?.trackingEnabled ?? false,
+      lastWebhookAt: cfg?.lastWebhookAt,
     };
   }
 }

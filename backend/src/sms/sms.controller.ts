@@ -19,6 +19,7 @@ import {
 import { SmsService } from './sms.service';
 import { SaveSmsConfigDto, TestSmsDto } from './dto/sms.dto';
 
+import { Audit } from '../audit/audit.decorator';
 /** Configuración del proveedor: vive en Configuración y es cosa de administradores. */
 @Controller('sms')
 @UseGuards(JwtAuthGuard, ModuleGuard('settings'))
@@ -31,6 +32,11 @@ export class SmsController {
     return this.sms.getConfig(req.user.tenantId);
   }
 
+  @Audit({
+    action: 'channels.configured',
+    resource: 'sms',
+    bodyFields: ['provider', 'enabled'],
+  })
   @Put('config')
   saveConfig(@Body() dto: SaveSmsConfigDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

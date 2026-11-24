@@ -21,7 +21,13 @@ export interface MsPage {
 }
 
 const AUTHORIZE_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
+// `leads_retrieval` y `pages_read_engagement`: leer los formularios de anuncios (HU60).
 const SCOPES = ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'];
+/**
+ * Solo con META_LEAD_ADS_ENABLED=true: mientras Meta no apruebe estos permisos
+ * en la revisión, pedirlos ensucia el login (y el video de la revisión).
+ */
+const LEAD_ADS_SCOPES = ['leads_retrieval', 'pages_read_engagement'];
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
 /**
@@ -100,12 +106,18 @@ export class MessengerOAuthService {
     }
   }
 
+  scopes(): string[] {
+    return this.config.get<string>('META_LEAD_ADS_ENABLED') === 'true'
+      ? [...SCOPES, ...LEAD_ADS_SCOPES]
+      : SCOPES;
+  }
+
   buildAuthorizeUrl(state: string): string {
     const params = new URLSearchParams({
       client_id: this.appId(),
       redirect_uri: this.redirectUri(),
       response_type: 'code',
-      scope: SCOPES.join(','),
+      scope: this.scopes().join(','),
       state,
     });
     return `${AUTHORIZE_URL}?${params.toString()}`;

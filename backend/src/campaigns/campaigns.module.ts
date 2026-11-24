@@ -25,6 +25,16 @@ import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
 import { SmsModule } from '../sms/sms.module';
 import { LinksModule } from '../links/links.module';
 import { ResendModule } from '../resend/resend.module';
+import {
+  ContactActivity,
+  ContactActivitySchema,
+} from '../customers/contact-activity.schema';
+import {
+  EmailEvent,
+  EmailEventSchema,
+  EmailTrackingService,
+} from './email-tracking.service';
+import { ResendWebhookController } from './resend-webhook.controller';
 
 @Module({
   imports: [
@@ -34,6 +44,8 @@ import { ResendModule } from '../resend/resend.module';
       { name: CampaignRecipient.name, schema: CampaignRecipientSchema },
       { name: EmailTemplate.name, schema: EmailTemplateSchema },
       { name: Tenant.name, schema: TenantSchema },
+      { name: EmailEvent.name, schema: EmailEventSchema },
+      { name: ContactActivity.name, schema: ContactActivitySchema },
     ]),
     WhatsAppTemplatesModule,
     MailModule,
@@ -46,7 +58,12 @@ import { ResendModule } from '../resend/resend.module';
     ResendModule,
     CampaignAttributionModule,
   ],
-  controllers: [CampaignsController, UnsubscribeController],
-  providers: [CampaignsService, CampaignSenderService],
+  controllers: [
+    CampaignsController,
+    UnsubscribeController,
+    ResendWebhookController,
+  ],
+  providers: [CampaignsService, CampaignSenderService, EmailTrackingService],
+  exports: [CampaignSenderService],
 })
 export class CampaignsModule {}

@@ -93,6 +93,16 @@ export class Lead extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'User' })
   createdBy?: Types.ObjectId;
+
+  /** Copia del puntaje del contacto (HU70) para ordenar Seguimiento. */
+  @Prop({ type: Number, min: 0, max: 100 })
+  score?: number;
+
+  @Prop({ type: String, enum: ['hot', 'warm', 'cold'] })
+  scoreLabel?: 'hot' | 'warm' | 'cold';
+
+  @Prop({ trim: true })
+  scoreReason?: string;
 }
 
 export const LeadSchema = SchemaFactory.createForClass(Lead);

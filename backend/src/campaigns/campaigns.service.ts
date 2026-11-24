@@ -6,7 +6,9 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
@@ -86,6 +88,8 @@ export class CampaignsService implements OnModuleInit {
     private resendAccounts: ResendService,
     private links: LinksService,
     private attribution: CampaignAttributionService,
+    // Global (HU42); opcional para las pruebas unitarias.
+    @Optional() private limits?: PlanLimitsService,
   ) {}
 
   async findAll(tenantId: string): Promise<Campaign[]> {
@@ -253,6 +257,15 @@ export class CampaignsService implements OnModuleInit {
           sentAt: 1,
           shortUrl: 1,
           customerId: 1,
+          openedAt: 1,
+          opens: 1,
+          clickedAt: 1,
+          clicks: 1,
+          lastClickUrl: 1,
+          bouncedAt: 1,
+          bounceType: 1,
+          complainedAt: 1,
+          unsubscribedAt: 1,
         })
         .sort({ _id: 1 })
         .skip((page - 1) * size)
@@ -424,6 +437,7 @@ export class CampaignsService implements OnModuleInit {
     }
 
     const pending = rows.filter((r) => r.status === 'pending');
+    // Cupo de emails de campaña del mes del plan (HU42) y recargas (HU53), con los destinatarios reales.
     if (!pending.length)
       throw new BadRequestException(
         isEmail
@@ -431,35 +445,45 @@ export class CampaignsService implements OnModuleInit {
           : 'Ningún contacto de la audiencia puede recibir el SMS (sin teléfono o dados de baja)',
       );
 
-    if (wantsLink) {
-      const made = await this.links.createPersonalLinks(
-        tenantId,
-        {
-          destination: campaign.linkUrl!,
-          domain: campaign.linkDomain,
-          channel: isEmail ? 'email' : 'sms',
-          campaignId: campaign._id,
-          title: campaign.name,
-          utm: {
-            source: campaign.type,
-            medium: 'campaign',
-            campaign: campaign.name,
+    const reserved =
+      isEmail && this.limits
+        ? await this.limits.reserveCampaignEmails(tenantId, pending.length)
+        : null;
+    try {
+      if (wantsLink) {
+        const made = await this.links.createPersonalLinks(
+          tenantId,
+          {
+            destination: campaign.linkUrl!,
+            domain: campaign.linkDomain,
+            channel: isEmail ? 'email' : 'sms',
+            campaignId: campaign._id,
+            title: campaign.name,
+            utm: {
+              source: campaign.type,
+              medium: 'campaign',
+              campaign: campaign.name,
+            },
           },
-        },
-        pending.map((r) => ({ customerId: r.customerId })),
-      );
-      pending.forEach((r, i) => {
-        r.shortUrl = made[i].shortUrl;
-        r.linkId = made[i].linkId;
-      });
-    }
+          pending.map((r) => ({ customerId: r.customerId })),
+        );
+        pending.forEach((r, i) => {
+          r.shortUrl = made[i].shortUrl;
+          r.linkId = made[i].linkId;
+        });
+      }
 
-    // Un reenvío parte de cero: los destinatarios del envío anterior se van.
-    await this.recipientModel.deleteMany({ campaignId: campaign._id }).exec();
-    for (let i = 0; i < rows.length; i += 1000)
-      await this.recipientModel.insertMany(rows.slice(i, i + 1000), {
-        ordered: false,
-      });
+      // Un reenvío parte de cero: los destinatarios del envío anterior se van.
+      await this.recipientModel.deleteMany({ campaignId: campaign._id }).exec();
+      for (let i = 0; i < rows.length; i += 1000)
+        await this.recipientModel.insertMany(rows.slice(i, i + 1000), {
+          ordered: false,
+        });
+    } catch (err) {
+      // No se encoló: el cupo y la recarga vuelven.
+      await this.limits?.refundCampaignEmails(tenantId, reserved);
+      throw err;
+    }
 
     const scheduled =
       !!campaign.scheduledAt && campaign.scheduledAt.getTime() > Date.now();
@@ -571,6 +595,10 @@ export class CampaignsService implements OnModuleInit {
       throw new BadRequestException('La campaña ya fue enviada');
     if (campaign.status === 'sending' || campaign.status === 'scheduled')
       throw new BadRequestException('La campaña ya está en proceso de envío');
+
+    // Campañas masivas de WhatsApp desde el plan Crece (HU42), también al reenviar.
+    if (campaign.type === 'whatsapp')
+      await this.limits?.assertFeature(tenantId, 'whatsapp-campaigns');
 
     // Email y SMS no se envían dentro de la petición: se encolan.
     if (campaign.type !== 'whatsapp') return this.enqueue(campaign, tenantId);
@@ -710,10 +738,13 @@ export class CampaignsService implements OnModuleInit {
     return this.customerModel.find(filter).lean<Customer[]>().exec();
   }
 
-  async generateEmail(dto: {
-    topic: string;
-    tone?: string;
-  }): Promise<{ subject: string; body: string }> {
+  async generateEmail(
+    dto: {
+      topic: string;
+      tone?: string;
+    },
+    tenantId?: string,
+  ): Promise<{ subject: string; body: string }> {
     const toneMap: Record<string, string> = {
       amigable: 'amigable y cercano, como si hablaras con un amigo',
       profesional: 'profesional y formal',
@@ -738,7 +769,10 @@ Reglas:
 Responde ÚNICAMENTE con JSON válido sin texto adicional:
 {"subject": "...", "body": "..."}`;
 
-    const text = await this.ai.chat(prompt, { maxTokens: 700 });
+    const text = await this.ai.chat(prompt, {
+      maxTokens: 700,
+      ...(tenantId ? { meter: { tenantId, action: 'text' as const } } : {}),
+    });
     return this.ai.parseJson<{ subject: string; body: string }>(text);
   }
 }

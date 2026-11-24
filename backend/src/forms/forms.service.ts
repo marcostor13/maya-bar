@@ -22,6 +22,7 @@ import { MailService } from '../mail/mail.service';
 import { WhatsAppTemplatesService } from '../whatsapp-templates/whatsapp-templates.service';
 import { NativePushService } from '../notifications/push.service';
 import { PushService } from '../push/push.service';
+import { emitAutomation } from '../automations/automation-bus';
 
 /** Metadatos de la petición pública que sirven para trazar el origen. */
 export interface SubmitContext {
@@ -306,6 +307,20 @@ export class FormsService {
     // y FCM a la app nativa. Mismo criterio que las respuestas automáticas:
     // sin await y con el error tragado, el lead ya está guardado.
     this.notifyNewSubmission(tid, form, customer);
+
+    if (createdContact)
+      emitAutomation({
+        type: 'contact_created',
+        tenantId: String(tid),
+        customerId: String(customer._id),
+        formId: String(form._id),
+      });
+    emitAutomation({
+      type: 'form_submitted',
+      tenantId: String(tid),
+      customerId: String(customer._id),
+      formId: String(form._id),
+    });
 
     return {
       ok: true,

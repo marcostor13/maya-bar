@@ -59,6 +59,8 @@ describe('DashboardComponent', () => {
     // La tarjeta de rendimiento por usuario (HU20) tiene su propio spec.
     http.match((r) => r.url.endsWith('/dashboard/users'))
       .forEach((r) => r.flush({ scope: 'team', channel: null, users: [], totals: {} }));
+    // Reportes fijados (HU64): su propio spec.
+    http.match((r) => r.url.endsWith('/reports/pinned')).forEach((r) => r.flush([]));
     http.verify();
   });
 

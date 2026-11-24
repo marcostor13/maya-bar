@@ -10,7 +10,9 @@ import {
   Request,
   UseGuards,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthReq } from '../auth/permissions';
 import { UsersService } from './users.service';
@@ -23,6 +25,7 @@ import {
   UpdateUserDto,
 } from './dto/user.dto';
 
+import { Audit } from '../audit/audit.decorator';
 /** Quién actúa, con su nombre para el registro. */
 export async function actorOf(
   req: AuthReq,
@@ -44,6 +47,8 @@ export class UsersController {
     private usersService: UsersService,
     private admin: UserAdminService,
     private audit: UserAuditService,
+    // Global (HU42); opcional para las pruebas que montan solo el controlador.
+    @Optional() private limits?: PlanLimitsService,
   ) {}
 
   private assertAdmin(req: AuthReq) {
@@ -56,9 +61,15 @@ export class UsersController {
     return this.usersService.findAllByTenant(req.user.tenantId);
   }
 
+  @Audit({
+    action: 'users.created',
+    resource: 'user',
+    bodyFields: ['email', 'role'],
+  })
   @Post()
   async createUser(@Body() body: CreateUserDto, @Request() req: AuthReq) {
     this.assertAdmin(req);
+    await this.limits?.assertCanAdd(req.user.tenantId, 'users');
     return this.admin.create(
       req.user.tenantId,
       body,
@@ -74,6 +85,11 @@ export class UsersController {
   }
 
   /** Pasa la administración a otro usuario y quien la tenía toma `newRole`. */
+  @Audit({
+    action: 'users.admin_transferred',
+    resource: 'user',
+    bodyFields: ['userId'],
+  })
   @Post('transfer-admin')
   async transferAdmin(@Body() body: TransferAdminDto, @Request() req: AuthReq) {
     this.assertAdmin(req);
@@ -85,6 +101,11 @@ export class UsersController {
     );
   }
 
+  @Audit({
+    action: 'users.updated',
+    resource: 'user',
+    bodyFields: ['role', 'isActive', 'localIds'],
+  })
   @Patch(':id')
   async updateUser(
     @Param('id') id: string,
@@ -92,6 +113,12 @@ export class UsersController {
     @Request() req: AuthReq,
   ) {
     this.assertAdmin(req);
+    // Reactivar cuenta contra el límite de usuarios del plan (HU42).
+    if (body.isActive === true) {
+      const target = await this.usersService.findById(id).catch(() => null);
+      if (target && target.isActive === false)
+        await this.limits?.assertCanAdd(req.user.tenantId, 'users');
+    }
     return this.admin.update(
       id,
       req.user.tenantId,
@@ -100,6 +127,7 @@ export class UsersController {
     );
   }
 
+  @Audit({ action: 'users.access_reset', resource: 'user' })
   @Post(':id/reset-access')
   async resetAccess(
     @Param('id') id: string,
@@ -117,6 +145,7 @@ export class UsersController {
   }
 
   /** Cierra todas las sesiones del usuario sin cambiar su contraseña (HU19). */
+  @Audit({ action: 'users.sessions_revoked', resource: 'user' })
   @Post(':id/sessions/revoke')
   async revokeSessions(@Param('id') id: string, @Request() req: AuthReq) {
     this.assertAdmin(req);
@@ -146,6 +175,7 @@ export class UsersController {
    * `mode=delete` elimina definitivamente, reasignando antes lo que creó a
    * `reassignTo` o, si va vacío, dejándolo a nivel de empresa.
    */
+  @Audit({ action: 'users.deleted', resource: 'user' })
   @Delete(':id')
   async removeUser(
     @Param('id') id: string,

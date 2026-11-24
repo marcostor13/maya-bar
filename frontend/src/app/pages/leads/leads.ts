@@ -6,15 +6,18 @@ import {
   LucideAngularModule, Plus, X, Trash2, Search, Target, TrendingUp, Trophy, CalendarClock,
   AlertTriangle, User, Phone, Mail, MessageSquare, StickyNote, PhoneCall, Users, CheckCircle2,
   Circle, Clock, LayoutGrid, List as ListIcon, Filter, ArrowRight, Coins, Pencil,
-  Hand, Forward, Undo2, Lock, Inbox, Settings2, MoveRight,
+  Hand, Forward, Undo2, Lock, Inbox, Settings2, MoveRight, Flame,
 } from 'lucide-angular';
 import { initialLeadsView, saveLeadsView } from './leads-view';
+import { ScoreBadgeComponent } from '../../shared/score-badge';
 import { AuthService } from '../../auth/auth.service';
 import { LeadAssignComponent, type AssignMode } from './lead-assign';
 import { LeadStagesConfigComponent, type LeadStage } from './lead-stages-config';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { FormPageComponent, snapshotOf } from '../../shared/form-page';
+import { LeadQuotesComponent } from './lead-quotes';
+import { RoutingAvailabilityComponent } from './routing-availability';
 import { RichText } from '../../shared/rich-text';
 import { environment } from '../../../environments/environment';
 
@@ -57,6 +60,10 @@ interface Lead {
   nextActionAt?: string;
   nextActionTitle?: string;
   assignedAt?: string;
+  /** Puntaje del contacto (HU70). */
+  score?: number;
+  scoreLabel?: 'hot' | 'warm' | 'cold';
+  scoreReason?: string;
 }
 
 interface Column {
@@ -148,7 +155,7 @@ function blankForm(stage: string): LeadForm {
 @Component({
   selector: 'app-leads',
   standalone: true,
-  imports: [FormsModule, RichText, LucideAngularModule, LeadAssignComponent, LeadStagesConfigComponent, FormPageComponent],
+  imports: [FormsModule, RichText, LucideAngularModule, LeadAssignComponent, LeadStagesConfigComponent, FormPageComponent, RoutingAvailabilityComponent, LeadQuotesComponent, ScoreBadgeComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -157,6 +164,7 @@ function blankForm(stage: string): LeadForm {
           <p class="page-sub">Tu embudo de oportunidades: en qué etapa está cada cliente y qué toca hacer después</p>
         </div>
         <div class="header-actions">
+          <app-routing-availability />
           <div class="view-toggle">
             <button class="view-btn" [class.active]="view() === 'board'" (click)="setView('board')" title="Tablero" aria-label="Ver tablero">
               <lucide-icon [img]="LayoutGrid" [size]="15" [strokeWidth]="2.5"></lucide-icon>
@@ -263,6 +271,16 @@ function blankForm(stage: string): LeadForm {
           <lucide-icon [img]="Filter" [size]="14" [strokeWidth]="2.5"></lucide-icon>
           Con tarea vencida
         </button>
+        <select class="select toolbar-select" aria-label="Filtrar por puntaje" [ngModel]="heatFilter()" (ngModelChange)="setHeat($event)">
+          <option value="">Cualquier puntaje</option>
+          <option value="hot">Calientes</option>
+          <option value="warm">Tibios</option>
+          <option value="cold">Fríos</option>
+        </select>
+        <button class="btn btn-sm" [class.btn-primary]="byScore()" [class.btn-secondary]="!byScore()" (click)="byScore.set(!byScore())">
+          <lucide-icon [img]="Flame" [size]="14" [strokeWidth]="2.5"></lucide-icon>
+          Mejores primero
+        </button>
       </div>
 
       @if (loading()) {
@@ -272,7 +290,7 @@ function blankForm(stage: string): LeadForm {
       } @else if (view() === 'board') {
         <!-- ── Tablero ── -->
         <div class="board">
-          @for (col of columns(); track col.stage) {
+          @for (col of boardColumns(); track col.stage) {
             <section class="column" [class.drop-target]="dragOverStage() === col.stage"
               (dragover)="onDragOver($event, col.stage)" (dragleave)="onDragLeave(col.stage)" (drop)="onDrop($event, col.stage)">
               <header class="col-head">
@@ -292,6 +310,9 @@ function blankForm(stage: string): LeadForm {
                       <span class="prio" [attr.data-p]="lead.priority" [title]="'Prioridad ' + priorityLabel(lead.priority)"></span>
                       <h4>{{ lead.title }}</h4>
                     </div>
+                    @if (lead.score !== undefined && lead.score !== null) {
+                      <app-score-badge [score]="lead.score" [heatLabel]="lead.scoreLabel" [reason]="lead.scoreReason" />
+                    }
                     <span class="lead-customer">
                       <lucide-icon [img]="User" [size]="12" [strokeWidth]="2.4"></lucide-icon>
                       {{ customerName(lead) }}
@@ -349,6 +370,7 @@ function blankForm(stage: string): LeadForm {
                   <td>
                     <strong>{{ lead.title }}</strong>
                     <span class="prio-inline" [attr.data-p]="lead.priority">{{ priorityLabel(lead.priority) }}</span>
+                    <app-score-badge [score]="lead.score" [heatLabel]="lead.scoreLabel" [reason]="lead.scoreReason" />
                   </td>
                   <td data-label="Cliente">{{ customerName(lead) }}</td>
                   <td data-label="Etapa"><span class="badge" [style.background]="stageColor(lead.stage) + '1A'" [style.color]="stageColor(lead.stage)">{{ stageLabel(lead.stage) }}</span></td>
@@ -495,6 +517,13 @@ function blankForm(stage: string): LeadForm {
           </div>
 
           <div class="detail-col">
+            @if (lead.score !== undefined && lead.score !== null) {
+              <div class="score-why card">
+                <app-score-badge [score]="lead.score" [heatLabel]="lead.scoreLabel" [reason]="lead.scoreReason" />
+                <p>{{ lead.scoreReason || 'Sin motivo todavía' }}</p>
+              </div>
+            }
+            <app-lead-quotes [leadId]="lead._id" [canWork]="canWork(lead)" />
             <!-- Registrar actividad -->
             @if (canWork(lead)) {
             <div class="activity-form">
@@ -796,6 +825,8 @@ function blankForm(stage: string): LeadForm {
     .badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-pill); }
     .muted { color: var(--color-text-muted); }
     .overdue-text { color: #B91C1C; font-weight: 600; }
+    .score-why { display: flex; flex-direction: column; gap: 6px; padding: 16px 20px; margin-bottom: 16px; }
+    .score-why p { margin: 0; font-size: 13px; color: var(--color-text-muted); }
 
     /* Ficha a pantalla completa: datos a la izquierda, actividad a la derecha */
     .detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
@@ -930,7 +961,7 @@ export class LeadsComponent implements OnInit {
   readonly User = User; readonly Phone = Phone; readonly Mail = Mail;
   readonly MessageSquare = MessageSquare; readonly CheckCircle2 = CheckCircle2;
   readonly Circle = Circle; readonly Clock = Clock; readonly LayoutGrid = LayoutGrid;
-  readonly ListIcon = ListIcon; readonly Filter = Filter; readonly ArrowRight = ArrowRight;
+  readonly ListIcon = ListIcon; readonly Filter = Filter; readonly Flame = Flame; readonly ArrowRight = ArrowRight;
   readonly Coins = Coins; readonly Pencil = Pencil; readonly Hand = Hand;
   readonly Forward = Forward; readonly Undo2 = Undo2; readonly Lock = Lock; readonly Inbox = Inbox;
   readonly Settings2 = Settings2;
@@ -982,6 +1013,9 @@ export class LeadsComponent implements OnInit {
   search = signal('');
   ownerFilter = signal('');
   overdue = signal(false);
+  /** Puntaje (HU70): filtro por temperatura y orden por puntaje. */
+  heatFilter = signal('');
+  byScore = signal(false);
   private searchTimer?: ReturnType<typeof setTimeout>;
 
   // ficha
@@ -1003,7 +1037,16 @@ export class LeadsComponent implements OnInit {
   private customerTimer?: ReturnType<typeof setTimeout>;
 
   /** Todas las oportunidades en una lista plana, para la vista de tabla. */
-  allLeads = computed(() => this.columns().flatMap(c => c.leads));
+  allLeads = computed(() => {
+    const all = this.columns().flatMap(c => c.leads);
+    return this.byScore() ? [...all].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)) : all;
+  });
+  /** Columnas del tablero, ordenadas por puntaje si se pidió. */
+  boardColumns = computed(() =>
+    this.byScore()
+      ? this.columns().map(c => ({ ...c, leads: [...c.leads].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)) }))
+      : this.columns(),
+  );
 
   /** Panel de configuración del embudo (solo quien supervisa). */
   stagesOpen = signal(false);
@@ -1033,6 +1076,7 @@ export class LeadsComponent implements OnInit {
     if (this.search().trim()) params.set('q', this.search().trim());
     if (this.ownerFilter()) params.set('ownerId', this.ownerFilter());
     if (this.overdue()) params.set('overdue', 'true');
+    if (this.heatFilter()) params.set('heat', this.heatFilter());
     const query = params.toString();
     this.http.get<Column[]>(`${API}/leads/board${query ? `?${query}` : ''}`).subscribe({
       next: c => { this.columns.set(c); this.loading.set(false); },
@@ -1082,6 +1126,7 @@ export class LeadsComponent implements OnInit {
 
   setOwner(id: string) { this.ownerFilter.set(id); this.load(false); }
   toggleOverdue() { this.overdue.update(v => !v); this.load(false); }
+  setHeat(v: string) { this.heatFilter.set(v); this.load(false); }
 
   // ── Drag & drop ──
   private dragging: Lead | null = null;

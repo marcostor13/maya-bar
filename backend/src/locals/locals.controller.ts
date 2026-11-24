@@ -8,7 +8,9 @@ import {
   Param,
   UseGuards,
   Request,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { ModuleGuard } from '../roles/module.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
@@ -23,7 +25,11 @@ import { CreateLocalDto, UpdateLocalDto } from './dto/create-local.dto';
 @Controller('locals')
 @UseGuards(JwtAuthGuard, ModuleGuard('locals'))
 export class LocalsController {
-  constructor(private localsService: LocalsService) {}
+  constructor(
+    private localsService: LocalsService,
+    // Global (HU42); opcional para las pruebas que montan solo el controlador.
+    @Optional() private limits?: PlanLimitsService,
+  ) {}
 
   @Get()
   findAll(@Request() req: AuthReq) {
@@ -40,10 +46,16 @@ export class LocalsController {
   }
 
   @Post()
-  create(@Body() dto: CreateLocalDto, @Request() req: AuthReq) {
+  async create(@Body() dto: CreateLocalDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
     const tenantId =
       req.user.role === 'SUPERADMIN' ? (dto.tenantId ?? '') : req.user.tenantId;
+    // La segunda sede en adelante es del plan Escala (HU42).
+    if (
+      req.user.role !== 'SUPERADMIN' &&
+      (await this.localsService.findAllByTenant(tenantId)).length >= 1
+    )
+      await this.limits?.assertFeature(tenantId, 'multi-local');
     return this.localsService.create(tenantId, dto);
   }
 

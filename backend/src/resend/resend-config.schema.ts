@@ -46,6 +46,18 @@ export class ResendConfig extends Document {
 
   @Prop({ type: Date })
   checkedAt?: Date;
+
+  /** Secreto de firma del webhook de Resend (`whsec_…`), cifrado (HU61). */
+  @Prop()
+  sealedWebhookSecret?: string;
+
+  /** Seguimiento de aperturas y clics activado en el dominio remitente. */
+  @Prop({ default: false })
+  trackingEnabled: boolean;
+
+  /** Último evento recibido por el webhook: confirma que está bien conectado. */
+  @Prop({ type: Date })
+  lastWebhookAt?: Date;
 }
 
 export const ResendConfigSchema = SchemaFactory.createForClass(ResendConfig);

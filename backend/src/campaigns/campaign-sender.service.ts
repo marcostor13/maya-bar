@@ -1,8 +1,9 @@
 import { CampaignAttributionService } from '../campaign-attribution/campaign-attribution.service';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
+import { BillingAccessService } from '../billing/billing-access.service';
 import { Model, Types } from 'mongoose';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Campaign, CampaignStats } from './campaign.schema';
@@ -112,6 +113,8 @@ export class CampaignSenderService {
     private suppression: SuppressionService,
     private attribution: CampaignAttributionService,
     config: ConfigService,
+    // Opcional: las pruebas unitarias no montan el módulo de cobro.
+    @Optional() private billing?: BillingAccessService,
   ) {
     this.apiBase = (config.get<string>('PUBLIC_API_URL') ?? '').replace(
       /\/+$/,
@@ -232,6 +235,9 @@ export class CampaignSenderService {
       .exec();
     if (!campaign) return;
     try {
+      // Prueba o plan vencidos: la campaña espera, no se cancela (HU41).
+      if (this.billing && !(await this.billing.canOperate(campaign.tenantId)))
+        return;
       await this.processBatch(campaign);
     } catch (err) {
       this.logger.error(

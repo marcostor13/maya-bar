@@ -4,7 +4,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -83,6 +85,8 @@ export class EmailAccountsService {
     private transport: EmailTransportService,
     private oauth: EmailOAuthService,
     config: ConfigService,
+    // Global (HU42); opcional para las pruebas unitarias.
+    @Optional() private limits?: PlanLimitsService,
   ) {
     this.box = new SecretBox(
       config.get<string>('EMAIL_ENCRYPTION_KEY') ||
@@ -202,6 +206,8 @@ export class EmailAccountsService {
         .exec();
       id = String(existing._id);
     } else {
+      // Solo un buzón nuevo cuenta contra el plan; reautorizar uno existente no (HU42).
+      await this.limits?.assertCanAdd(tenantId, 'mailboxes');
       const doc = await this.model.create({
         tenantId: tid,
         label: provider === 'gmail' ? 'Gmail' : 'Outlook',

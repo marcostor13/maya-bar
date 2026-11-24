@@ -95,6 +95,19 @@ La verificación del negocio en Meta ya está **aprobada**.
   datos"; casillas de uso permitido; enviar. Después: método de pago en WhatsApp
   y pasar la app a modo Activo.
 
+## 2d. Meta Lead Ads (HU60, pendiente del usuario)
+
+- El login de Páginas ya pide `leads_retrieval` y `pages_read_engagement`, y al
+  suscribir el webhook se añade el campo `leadgen` (si Meta lo rechaza por falta
+  de permiso, la suscripción de mensajes sigue funcionando).
+- Falta: pedir `leads_retrieval` y `pages_read_engagement` en App Review (video:
+  conectar la Página, enviar un lead de prueba desde la
+  [herramienta de pruebas de Lead Ads](https://developers.facebook.com/tools/lead-ads-testing)
+  y mostrarlo como contacto en Maya); en el panel de la app, suscribir el
+  objeto **Page** al campo `leadgen` con la misma URL `/messenger/webhook`;
+  tener `FACEBOOK_APP_SECRET` en el backend (los leads sin firma válida se
+  descartan); reconectar las Páginas para que el token tenga el permiso nuevo.
+
 ## 3. Por qué no se puede conectar cualquier Página hoy
 
 - La app está en **modo Desarrollo**. En ese modo, Messenger solo entrega al
@@ -189,3 +202,7 @@ estándar.
 un `pageId`. Eso es lo que permite el camino A. Para cerrarlo sin romper A, hay
 que guardar en cada cuenta el *app secret* de la app que la conectó (o el de
 Maya por defecto) y validar la firma con ese secreto.
+
+## 2e. Resultado de la revisión del 2026-11-24
+
+WhatsApp aprobado (acceso avanzado). Los 5 permisos de Páginas e Instagram fueron rechazados por los videos. Plan y materiales: [meta-app-review/README.md](meta-app-review/README.md). Pendientes: [pendientes-usuario.md](pendientes-usuario.md).

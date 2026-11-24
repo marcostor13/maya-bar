@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule, MailCheck, Save, Send, Trash2, KeyRound, CircleCheck, TriangleAlert, ExternalLink,
-} from 'lucide-angular';
+ MousePointerClick, } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { ResendApiService, ResendConfig, ResendDomain } from '../../core/api/resend-api.service';
@@ -120,6 +120,32 @@ type ErrorLike = { error?: { message?: string | string[] } };
           </button>
         </div>
 
+        @if (config()?.hasKey) {
+          <div class="tracking">
+            <span class="label"><lucide-icon [img]="MousePointerClick" [size]="14"></lucide-icon> Aperturas y clics</span>
+            <ol class="steps">
+              <li>En Resend → Webhooks, crea uno con esta URL y los eventos <span class="mono">email.delivered, email.opened, email.clicked, email.bounced, email.complained</span>:
+                <div class="copy"><input class="input mono" [value]="config()?.webhookUrl || ''" readonly aria-label="URL del webhook" /></div>
+              </li>
+              <li>Pega aquí su "Signing secret" (empieza por <span class="mono">whsec_</span>):
+                <div class="copy">
+                  <input class="input mono" type="password" [(ngModel)]="webhookSecret" [placeholder]="config()?.hasWebhookSecret ? 'Guardado · pega otro para cambiarlo' : 'whsec_…'" aria-label="Secreto del webhook" />
+                  <button class="btn btn-secondary btn-sm" (click)="saveSecret()" [disabled]="savingSecret() || !webhookSecret.trim()">Guardar secreto</button>
+                </div>
+              </li>
+              <li>Activa el seguimiento en tu dominio:
+                <button class="btn btn-secondary btn-sm" (click)="enableTracking()" [disabled]="tracking()">
+                  {{ config()?.trackingEnabled ? 'Seguimiento activo · volver a aplicar' : 'Activar aperturas y clics' }}
+                </button>
+              </li>
+            </ol>
+            <p class="hint">
+              @if (config()?.lastWebhookAt) { Último evento recibido: {{ config()?.lastWebhookAt | date: 'dd/MM/yyyy HH:mm' }}. } @else { Aún no llegó ningún evento. }
+              Las aperturas son aproximadas por la privacidad de Apple Mail. Los rebotes duros y las quejas pasan solos a la lista de no contactar.
+            </p>
+          </div>
+        }
+
         <div class="section-footer">
           @if (config()?.hasKey) {
             <button class="btn btn-ghost" (click)="disconnect()">
@@ -158,6 +184,9 @@ type ErrorLike = { error?: { message?: string | string[] } };
     .warn { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--color-warning); }
     .check { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--color-text-main); }
     .test { display:flex; gap:10px; flex-wrap:wrap; }
+    .tracking { display:flex; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--color-border); }
+    .copy { display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+    .copy .input { flex:1; min-width:220px; }
     .test .input { flex:1; min-width:220px; }
     @media (max-width: 700px) { .grid2 { grid-template-columns:1fr; } }
   `],
@@ -169,7 +198,10 @@ export class ResendSettingsComponent implements OnInit {
 
   readonly MailCheck = MailCheck; readonly Save = Save; readonly Send = Send; readonly Trash2 = Trash2;
   readonly KeyRound = KeyRound; readonly CircleCheck = CircleCheck; readonly TriangleAlert = TriangleAlert;
-  readonly ExternalLink = ExternalLink;
+  readonly ExternalLink = ExternalLink; readonly MousePointerClick = MousePointerClick;
+  webhookSecret = '';
+  savingSecret = signal(false);
+  tracking = signal(false);
 
   config = signal<ResendConfig | null>(null);
   loading = signal(true);
@@ -247,6 +279,22 @@ export class ResendSettingsComponent implements OnInit {
           this.toast.error(this.message(err, 'Resend rechazó el envío de prueba'));
         },
       });
+    });
+  }
+
+  saveSecret() {
+    this.savingSecret.set(true);
+    this.api.setWebhookSecret(this.webhookSecret.trim()).subscribe({
+      next: (c) => { this.savingSecret.set(false); this.webhookSecret = ''; this.config.set(c); this.toast.success('Secreto del webhook guardado'); },
+      error: (err: ErrorLike) => { this.savingSecret.set(false); this.toast.error(this.message(err, 'No se pudo guardar el secreto')); },
+    });
+  }
+
+  enableTracking() {
+    this.tracking.set(true);
+    this.api.enableTracking().subscribe({
+      next: (c) => { this.tracking.set(false); this.config.set(c); this.toast.success('Seguimiento de aperturas y clics activado'); },
+      error: (err: ErrorLike) => { this.tracking.set(false); this.toast.error(this.message(err, 'No se pudo activar el seguimiento')); },
     });
   }
 

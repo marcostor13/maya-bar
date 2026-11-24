@@ -125,11 +125,52 @@ describe('MessengerService', () => {
       expect(graph.post).not.toHaveBeenCalled();
     });
 
+    afterEach(() => delete process.env.META_LEAD_ADS_ENABLED);
+
+    it('sin Lead Ads activado se suscribe solo a la mensajería', async () => {
+      graph.post.mockResolvedValue({ success: true });
+      const res = await service.subscribeWebhook(config);
+      expect(res).toEqual({
+        success: true,
+        message: 'Webhook suscripto correctamente',
+      });
+      expect(graph.post).toHaveBeenCalledTimes(1);
+      expect(graph.post).toHaveBeenCalledWith(
+        `/${config.pageId}/subscribed_apps`,
+        expect.objectContaining({
+          params: {
+            subscribed_fields:
+              'messages,messaging_postbacks,message_echoes,message_reads',
+          },
+        }),
+      );
+    });
+
     it('suscribe la página a los campos de mensajería', async () => {
+      process.env.META_LEAD_ADS_ENABLED = 'true';
       graph.post.mockResolvedValue({ success: true });
       const res = await service.subscribeWebhook(config);
       expect(res.success).toBe(true);
       expect(graph.post).toHaveBeenCalledWith(
+        `/${config.pageId}/subscribed_apps`,
+        expect.objectContaining({
+          params: {
+            subscribed_fields:
+              'messages,messaging_postbacks,message_echoes,message_reads,leadgen',
+          },
+        }),
+      );
+    });
+
+    it('sin permiso de Lead Ads se suscribe solo a la mensajería (HU60)', async () => {
+      process.env.META_LEAD_ADS_ENABLED = 'true';
+      graph.post
+        .mockRejectedValueOnce(new MetaApiError('leads_retrieval', 403))
+        .mockResolvedValueOnce({ success: true });
+      const res = await service.subscribeWebhook(config);
+      expect(res.success).toBe(true);
+      expect(res.message).toContain('leads_retrieval');
+      expect(graph.post).toHaveBeenLastCalledWith(
         `/${config.pageId}/subscribed_apps`,
         expect.objectContaining({
           params: {

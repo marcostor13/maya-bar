@@ -20,6 +20,19 @@ export interface EventMediaFile {
   size: number;
 }
 
+/** Tipo de entrada con cupo y fecha de corte propios (HU67). */
+export interface EventTicketType {
+  key: string;
+  name: string;
+  price: number;
+  /** 0 = sin tope propio. */
+  capacity: number;
+  /** Después de esta fecha ya no se vende (preventa). */
+  salesEndAt?: Date | null;
+  /** Vendidas o reservadas en pago pendiente. Lo mueve el servidor. */
+  sold: number;
+}
+
 export interface EventFormField {
   id: string;
   label: string;
@@ -109,6 +122,29 @@ export class Event extends Document {
 
   @Prop({ type: Object, default: null })
   invitationDesign?: Record<string, unknown>;
+
+  /** Cobro de la entrada en línea con el Mercado Pago de la empresa (HU67). */
+  @Prop({ default: false })
+  onlinePayment: boolean;
+
+  @Prop({ default: 'PEN' })
+  currency: string;
+
+  @Prop({
+    type: [
+      {
+        _id: false,
+        key: { type: String, required: true },
+        name: { type: String, required: true },
+        price: { type: Number, required: true, min: 0 },
+        capacity: { type: Number, default: 0, min: 0 },
+        salesEndAt: { type: Date, default: null },
+        sold: { type: Number, default: 0, min: 0 },
+      },
+    ],
+    default: [],
+  })
+  ticketTypes: EventTicketType[];
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);

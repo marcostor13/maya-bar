@@ -4,6 +4,7 @@ import { ToastComponent } from './shared/toast';
 import { ConfirmDialogComponent } from './shared/confirm';
 import { ProgressBarComponent } from './shared/loader';
 import { OfflineBannerComponent } from './shared/offline-banner';
+import { PlanLimitDialogComponent } from './shared/plan-limit';
 import { NativeAppService } from './core/native-app.service';
 import { NetworkService } from './core/network.service';
 
@@ -16,6 +17,7 @@ import { NetworkService } from './core/network.service';
     ConfirmDialogComponent,
     ProgressBarComponent,
     OfflineBannerComponent,
+    PlanLimitDialogComponent,
   ],
   template: `
     <app-progress-bar />
@@ -23,6 +25,7 @@ import { NetworkService } from './core/network.service';
     <router-outlet />
     <app-toast />
     <app-confirm />
+    <app-plan-limit />
   `
 })
 export class App implements OnInit {

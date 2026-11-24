@@ -19,6 +19,7 @@ import { UserAuditService } from './user-audit.service';
 import { actorOf } from './users.controller';
 import { ResetAccessDto, SetActiveDto } from './dto/user.dto';
 
+import { Audit } from '../audit/audit.decorator';
 /**
  * Usuarios de toda la plataforma, para el superadministrador. Cada acción se
  * aplica dentro de la empresa del propio usuario, con las mismas reglas que usa
@@ -49,6 +50,11 @@ export class AdminUsersController {
     return this.audit.list({ targetId });
   }
 
+  @Audit({
+    action: 'admin.users.active_changed',
+    resource: 'user',
+    bodyFields: ['isActive'],
+  })
   @Patch(':id/active')
   async setActive(
     @Param('id') id: string,
@@ -65,6 +71,7 @@ export class AdminUsersController {
     );
   }
 
+  @Audit({ action: 'admin.users.access_reset', resource: 'user' })
   @Post(':id/reset-access')
   async resetAccess(
     @Param('id') id: string,
@@ -82,6 +89,7 @@ export class AdminUsersController {
     );
   }
 
+  @Audit({ action: 'admin.users.sessions_revoked', resource: 'user' })
   @Post(':id/sessions/revoke')
   async revokeSessions(@Param('id') id: string, @Request() req: AuthReq) {
     this.assertSuper(req);
@@ -105,6 +113,7 @@ export class AdminUsersController {
     return this.users.reassignCandidates(id, await this.admin.tenantOf(id));
   }
 
+  @Audit({ action: 'admin.users.deleted', resource: 'user' })
   @Delete(':id')
   async remove(
     @Param('id') id: string,

@@ -45,11 +45,29 @@ describe('LeadsComponent — reparto', () => {
     ]);
     http.expectOne((r) => r.url.includes('/leads/board')).flush(board(leads));
     http.expectOne((r) => r.url.endsWith('/leads/stats')).flush({ open: 3, unassigned: 1, mine: 1, overdueTasks: 0, dueTodayTasks: 0 });
+    http.expectOne((r) => r.url.endsWith('/routing/availability')).flush({ available: true, availability: null });
     fixture.detectChanges();
   }
 
   beforeEach(() => { vi.clearAllMocks(); role = 'MARKETING'; localStorage.removeItem('maya.leads.view'); });
-  afterEach(() => http.verify());
+  // La ficha carga sus cotizaciones (HU68): no es lo que se prueba aquí.
+  afterEach(() => { http.match((r) => r.url.endsWith('/quotes')).forEach((r) => r.flush([])); http.verify(); });
+
+  it('HU70: muestra la insignia, filtra por temperatura y ordena por puntaje', async () => {
+    await setup([
+      { ...lead('a', { _id: ME, name: 'Yo' }), score: 30, scoreLabel: 'cold', scoreReason: 'Poca interacción' },
+      { ...lead('b', { _id: ME, name: 'Yo' }), score: 88, scoreLabel: 'hot', scoreReason: 'Pide precio y lo necesita ya' },
+    ]);
+    const c = fixture.componentInstance;
+    expect(el().textContent).toContain('Caliente 88');
+    c.byScore.set(true);
+    expect(c.allLeads().map((l) => l._id)).toEqual(['b', 'a']);
+    expect(c.boardColumns()[0].leads.map((l) => l._id)).toEqual(['b', 'a']);
+    c.setHeat('hot');
+    const req = http.expectOne((r) => r.url.includes('/leads/board') && r.url.includes('heat=hot'));
+    req.flush(board([]));
+    http.expectOne((r) => r.url.endsWith('/leads/stats')).flush({ open: 0, unassigned: 0, mine: 0, overdueTasks: 0, dueTodayTasks: 0 });
+  });
 
   it('las de la bolsa muestran "Tomar" y tomarla llama a claim', async () => {
     await setup([lead('a'), lead('b', { _id: ME, name: 'Yo Mismo', email: 'me@x.pe' })]);

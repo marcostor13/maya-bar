@@ -18,7 +18,7 @@ export class BlockedContact extends Document {
   @Prop({
     required: true,
     type: String,
-    enum: ['whatsapp', 'instagram', 'messenger', 'email'],
+    enum: ['whatsapp', 'instagram', 'messenger', 'email', 'web'],
   })
   channel: ConversationChannel;
 

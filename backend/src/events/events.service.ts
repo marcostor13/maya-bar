@@ -2,15 +2,19 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomUUID } from 'crypto';
-import { Event } from './event.schema';
+import { Event, type EventTicketType } from './event.schema';
 import { EventRegistration } from './event-registration.schema';
 import { EventTemplate } from './event-template.schema';
 import { Tenant } from '../tenants/tenant.schema';
 import { Local } from '../locals/local.schema';
+import { MpSellerConnection } from '../event-tickets/mp-seller-connection.schema';
 import {
   CreateEventDto,
   UpdateEventDto,
@@ -18,6 +22,7 @@ import {
   GenerateFromPromptDto,
   GenerateDesignDto,
   SaveTemplateDto,
+  type TicketTypeDto,
 } from './dto/event.dto';
 import { AiService } from '../ai/ai.service';
 import { isOwnerScoped } from '../auth/permissions';
@@ -59,6 +64,45 @@ export interface PublicVenue {
 }
 
 // CRUD de eventos, slug, medios, diseño de invitación y compartir.
+/**
+ * Fusiona los tipos de entrada que manda el formulario con los guardados
+ * (HU67): conserva lo vendido por clave y no deja borrar uno con ventas.
+ */
+export function mergeTicketTypes(
+  current: EventTicketType[],
+  incoming: TicketTypeDto[] | undefined,
+): EventTicketType[] {
+  if (!incoming) return current;
+  const byKey = new Map(current.map((t) => [t.key, t]));
+  const used = new Set<string>();
+  const out = incoming.map((t, i) => {
+    let key = t.key || toSlug(t.name).slice(0, 24) || `tipo-${i + 1}`;
+    while (used.has(key)) key = `${key}-${i + 1}`;
+    used.add(key);
+    const prev = byKey.get(key);
+    const sold = prev?.sold ?? 0;
+    const capacity = Math.floor(t.capacity ?? 0);
+    if (capacity && capacity < sold)
+      throw new BadRequestException(
+        `"${t.name}" ya tiene ${sold} entradas vendidas: el cupo no puede ser menor`,
+      );
+    return {
+      key,
+      name: t.name.trim(),
+      price: Math.round(t.price * 100) / 100,
+      capacity,
+      salesEndAt: t.salesEndAt ? new Date(t.salesEndAt) : null,
+      sold,
+    };
+  });
+  for (const prev of current)
+    if (prev.sold > 0 && !used.has(prev.key))
+      throw new BadRequestException(
+        `No puedes quitar "${prev.name}": ya tiene entradas vendidas`,
+      );
+  return out;
+}
+
 @Injectable()
 export class EventsService {
   constructor(
@@ -70,6 +114,12 @@ export class EventsService {
     private ai: AiService,
     @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
     @InjectModel(Local.name) private localModel: Model<Local>,
+    // Global (HU42); opcional para las pruebas unitarias.
+    @Optional() private limits?: PlanLimitsService,
+    // Saber si la empresa puede cobrar entradas en línea (HU67).
+    @Optional()
+    @InjectModel(MpSellerConnection.name)
+    private sellers?: Model<MpSellerConnection>,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -79,10 +129,14 @@ export class EventsService {
     userId: string,
     dto: CreateEventDto,
   ): Promise<Event> {
+    // Publicar cuenta contra los eventos activos del plan; el borrador no (HU42).
+    if (dto.status === 'published')
+      await this.limits?.assertCanAdd(tenantId, 'activeEvents');
     const base = toSlug(dto.title);
     const slug = `${base}-${randomUUID().slice(0, 6)}`;
     const event = new this.eventModel({
       ...dto,
+      ticketTypes: mergeTicketTypes([], dto.ticketTypes),
       tenantId: new Types.ObjectId(tenantId),
       localId: new Types.ObjectId(dto.localId),
       date: new Date(dto.date),
@@ -141,6 +195,7 @@ export class EventsService {
     registrationsCount: number;
     brand: PublicBrand | null;
     venue: PublicVenue | null;
+    payments: { online: boolean; feeIncluded: boolean };
   }> {
     const event = await this.eventModel
       .findOne({ slug, status: 'published' })
@@ -178,7 +233,16 @@ export class EventsService {
       : address
         ? { name: address }
         : null;
-    return { event, registrationsCount, brand, venue };
+    const online =
+      !!event.onlinePayment &&
+      !!(await this.sellers?.exists({ tenantId: event.tenantId }));
+    return {
+      event,
+      registrationsCount,
+      brand,
+      venue,
+      payments: { online, feeIncluded: true },
+    };
   }
 
   async updateEvent(
@@ -193,8 +257,22 @@ export class EventsService {
     if (event.tenantId.toString() !== tenantId) throw new ForbiddenException();
     if (isOwnerScoped(role) && event.createdBy?.toString() !== userId)
       throw new ForbiddenException();
+    // Publicar, o dar fecha futura a uno publicado ya pasado, cuenta como evento activo (HU42).
+    const wasActive =
+      event.status === 'published' &&
+      new Date(event.date).getTime() >= Date.now() - 86_400_000;
+    const willBeActive =
+      (dto.status ?? event.status) === 'published' &&
+      new Date(dto.date ?? event.date).getTime() >= Date.now() - 86_400_000;
+    if (willBeActive && !wasActive)
+      await this.limits?.assertCanAdd(tenantId, 'activeEvents');
     const update: Record<string, unknown> = { ...dto };
     if (dto.date) update['date'] = new Date(dto.date);
+    if (dto.ticketTypes)
+      update['ticketTypes'] = mergeTicketTypes(
+        event.ticketTypes ?? [],
+        dto.ticketTypes,
+      );
     Object.assign(event, update);
     return event.save();
   }
@@ -242,7 +320,10 @@ export class EventsService {
     return event;
   }
 
-  async generateFromPrompt(dto: GenerateFromPromptDto): Promise<{
+  async generateFromPrompt(
+    dto: GenerateFromPromptDto,
+    tenantId?: string,
+  ): Promise<{
     title: string;
     description: string;
     price?: number;
@@ -252,7 +333,10 @@ export class EventsService {
       ? `\nArchivos multimedia disponibles: ${dto.mediaFileNames.join(', ')}`
       : '';
     const prompt = `Eres experto en marketing gastronómico y eventos en LATAM. El organizador quiere crear un evento:${mediaCtx}\n\n"${dto.prompt}"\n\nGenera los datos del evento. Responde SOLO con JSON exacto sin texto adicional:\n{\n  "title": "Título atractivo máx 60 chars",\n  "description": "Descripción 2-3 párrafos español latinoamericano sensorial y apetitoso",\n  "price": 0,\n  "startTime": null\n}\n\nReglas: title máx 60 chars, description usa la info dada, price en soles (0 si gratis), startTime en formato "HH:MM" si se menciona hora, null si no.`;
-    const text = await this.ai.chat(prompt, { maxTokens: 1024 });
+    const text = await this.ai.chat(prompt, {
+      maxTokens: 1024,
+      ...(tenantId ? { meter: { tenantId, action: 'text' as const } } : {}),
+    });
     return this.ai.parseJson<{
       title: string;
       description: string;
@@ -270,6 +354,7 @@ export class EventsService {
     const text = await this.ai.chat(prompt, {
       provider: 'openai',
       maxTokens: 1024,
+      meter: { tenantId, action: 'text' },
     });
     return this.ai.parseJson<{ title: string; description: string }>(text);
   }
@@ -283,6 +368,7 @@ export class EventsService {
     const text = await this.ai.chat(prompt, {
       provider: 'openai',
       maxTokens: 600,
+      meter: { tenantId, action: 'text' },
     });
     return this.ai.parseJson<{ instagram: string; whatsapp: string }>(text);
   }
@@ -296,6 +382,7 @@ export class EventsService {
     const text = await this.ai.chat(prompt, {
       provider: 'openai',
       maxTokens: 400,
+      meter: { tenantId, action: 'text' },
     });
     return this.ai.parseJson<{ hashtags: string[] }>(text);
   }
@@ -309,6 +396,7 @@ export class EventsService {
     const text = await this.ai.chat(prompt, {
       provider: 'openai',
       maxTokens: 1200,
+      meter: { tenantId, action: 'text' },
     });
     return this.ai.parseJson<{ subject: string; body: string }>(text);
   }
@@ -317,6 +405,7 @@ export class EventsService {
 
   async generateDesign(
     dto: GenerateDesignDto,
+    tenantId?: string,
   ): Promise<Record<string, unknown>> {
     const mediaList = (dto.mediaFiles ?? [])
       .map((f) => `- ${f.name} (${f.mimeType}): ${f.url}`)
@@ -379,7 +468,10 @@ Reglas:
 - Si hay imagen de fondo disponible: background.type="image", background.url=URL exacta
 - Si hay video de fondo: background.type="video", background.url=URL exacta`;
 
-    const text = await this.ai.chat(prompt, { maxTokens: 2048 });
+    const text = await this.ai.chat(prompt, {
+      maxTokens: 2048,
+      ...(tenantId ? { meter: { tenantId, action: 'text' as const } } : {}),
+    });
     return this.ai.parseJson<Record<string, unknown>>(text);
   }
 

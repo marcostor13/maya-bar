@@ -274,4 +274,67 @@ describe('LoginComponent', () => {
       expect(el().querySelector('.alert-error')!.textContent).toContain('Código inválido o expirado');
     });
   });
+
+  describe('doble factor (HU62)', () => {
+    it('sin código no hay sesión; con el código entra y recuerda el dispositivo', () => {
+      fillLogin();
+      submit();
+      http.expectOne((r) => r.url.endsWith('/auth/login')).flush({ twoFactorRequired: true, method: 'totp', challengeToken: 'ch1' });
+      fixture.detectChanges();
+      expect(localStorage.getItem('token')).toBeNull();
+      expect(el().textContent).toContain('app de autenticación');
+      const c = fixture.componentInstance;
+      c.otpCode = '123456';
+      c.rememberDevice = true;
+      c.onOtpSubmit();
+      const req = http.expectOne((r) => r.url.endsWith('/auth/2fa/verify'));
+      expect(req.request.body).toEqual({ challengeToken: 'ch1', code: '123456', rememberDevice: true });
+      req.flush({ access_token: 'tok', refresh_token: 'ref', deviceToken: 'dev1', user: { id: 'u1', email: 'ana@x.pe', role: 'TENANT_ADMIN' } });
+      expect(localStorage.getItem('token')).toBe('tok');
+      expect(localStorage.getItem('2fa_device')).toBe('dev1');
+      expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
+
+      // El siguiente login manda la marca del dispositivo.
+      c.view.set('login');
+      fixture.detectChanges();
+      fillLogin();
+      submit();
+      const again = http.expectOne((r) => r.url.endsWith('/auth/login'));
+      expect(again.request.body.deviceToken).toBe('dev1');
+      again.flush({ access_token: 'tok2', refresh_token: 'ref2', user: { id: 'u1', email: 'ana@x.pe', role: 'TENANT_ADMIN' } });
+    });
+
+    it('código incorrecto: aviso y sigue en la pantalla del código', () => {
+      fillLogin();
+      submit();
+      http.expectOne((r) => r.url.endsWith('/auth/login')).flush({ twoFactorRequired: true, method: 'email', challengeToken: 'ch1', emailHint: 'an***@x.pe' });
+      fixture.detectChanges();
+      expect(el().textContent).toContain('an***@x.pe');
+      const c = fixture.componentInstance;
+      c.otpCode = '000000';
+      c.onOtpSubmit();
+      http.expectOne((r) => r.url.endsWith('/auth/2fa/verify')).flush({ message: 'El código no es válido.' }, { status: 401, statusText: 'Unauthorized' });
+      expect(toast.error).toHaveBeenCalledWith('El código no es válido.');
+      expect(c.view()).toBe('otp');
+    });
+
+    it('empresa que lo exige: configura por correo, entra y ve los códigos de respaldo', () => {
+      fillLogin();
+      submit();
+      http.expectOne((r) => r.url.endsWith('/auth/login')).flush({ twoFactorSetupRequired: true, reason: 'tenant', challengeToken: 'ch2' });
+      fixture.detectChanges();
+      expect(el().textContent).toContain('Tu empresa exige doble factor');
+      const c = fixture.componentInstance;
+      c.startEnroll('email');
+      http.expectOne((r) => r.url.endsWith('/auth/2fa/enroll/start')).flush({ method: 'email', emailHint: 'an***@x.pe' });
+      c.otpCode = '654321';
+      c.confirmEnroll();
+      const req = http.expectOne((r) => r.url.endsWith('/auth/2fa/enroll/confirm'));
+      expect(req.request.body).toEqual({ challengeToken: 'ch2', code: '654321' });
+      req.flush({ access_token: 'tok', refresh_token: 'ref', backupCodes: ['abcd-efgh'], user: { id: 'u1', email: 'ana@x.pe', role: 'MANAGER' } });
+      fixture.detectChanges();
+      expect(localStorage.getItem('token')).toBe('tok');
+      expect(el().textContent).toContain('abcd-efgh');
+    });
+  });
 });

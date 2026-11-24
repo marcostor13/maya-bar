@@ -19,6 +19,10 @@ import { Tenant, TenantSchema } from '../tenants/tenant.schema';
 import { Local, LocalSchema } from '../locals/local.schema';
 import { AiModule } from '../ai/ai.module';
 import { MailModule } from '../mail/mail.module';
+import {
+  MpSellerConnection,
+  MpSellerConnectionSchema,
+} from '../event-tickets/mp-seller-connection.schema';
 
 @Module({
   imports: [
@@ -32,6 +36,8 @@ import { MailModule } from '../mail/mail.module';
       { name: Tenant.name, schema: TenantSchema },
       // Lugar del evento en la landing pública (HU33).
       { name: Local.name, schema: LocalSchema },
+      // Cobro de entradas en línea (HU67).
+      { name: MpSellerConnection.name, schema: MpSellerConnectionSchema },
     ]),
     AiModule,
     MailModule,

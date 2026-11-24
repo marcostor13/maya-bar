@@ -2,7 +2,7 @@ import { Component, ElementRef, Injector, afterNextRender, computed, inject, sig
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { LucideAngularModule, Search, KeyRound, Crown, RotateCw, LogOut } from 'lucide-angular';
+import { LucideAngularModule, Search, KeyRound, Crown, RotateCw, LogOut, ShieldOff } from 'lucide-angular';
 import { RolesMatrixComponent } from './roles-matrix';
 import { ROLE_LABELS } from './role-labels';
 import { ResetAccessDialogComponent } from './reset-access-dialog';
@@ -158,6 +158,10 @@ const STAFF_ROLES = ['TENANT_ADMIN', 'MANAGER', 'HOST', 'SERVER', 'KITCHEN', 'BA
                         <button class="btn btn-ghost btn-sm" (click)="revokeSessions(u)"
                           [attr.aria-label]="'Cerrar sesiones de ' + (u.name || u.email)">
                           <lucide-icon [img]="LogOut" [size]="14" [strokeWidth]="2.3"></lucide-icon> Cerrar sesiones
+                        </button>
+                        <button class="btn btn-ghost btn-sm" (click)="resetTwoFactor(u)"
+                          [attr.aria-label]="'Reiniciar doble factor de ' + (u.name || u.email)">
+                          <lucide-icon [img]="ShieldOff" [size]="14" [strokeWidth]="2.3"></lucide-icon> Reiniciar 2FA
                         </button>
                         @if (u.isActive) {
                           <button class="btn btn-danger btn-sm" (click)="deactivate(u)">Desactivar</button>
@@ -542,6 +546,7 @@ export class UsersComponent implements OnInit {
   readonly api = environment.apiUrl + '/users';
   readonly Search = Search;
   readonly KeyRound = KeyRound;
+  readonly ShieldOff = ShieldOff;
   readonly LogOut = LogOut;
   readonly Crown = Crown;
   readonly RotateCw = RotateCw;
@@ -800,6 +805,21 @@ export class UsersComponent implements OnInit {
     this.http.post(`${this.api}/${u._id}/sessions/revoke`, {}).subscribe({
       next: () => this.toast.success('Sesiones cerradas'),
       error: (err) => this.toast.error(err.error?.message || 'No se pudieron cerrar las sesiones'),
+    });
+  }
+
+  /** Perdió el teléfono (HU62): el doble factor se borra y lo vuelve a configurar al entrar. */
+  async resetTwoFactor(u: TenantUser) {
+    const ok = await this.confirm.confirm({
+      title: 'Reiniciar doble factor',
+      message: `${u.name || u.email} tendrá que volver a configurar su doble factor la próxima vez que entre.`,
+      confirmText: 'Reiniciar',
+      danger: true,
+    });
+    if (!ok) return;
+    this.http.post(`${environment.apiUrl}/auth/2fa/reset/${u._id}`, {}).subscribe({
+      next: () => this.toast.success('Doble factor reiniciado'),
+      error: (err) => this.toast.error(err.error?.message || 'No se pudo reiniciar el doble factor'),
     });
   }
 

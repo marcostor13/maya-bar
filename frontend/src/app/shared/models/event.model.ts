@@ -28,6 +28,18 @@ export interface FormField {
   options: string[];
 }
 
+/** Tipo de entrada con cupo propio (HU67). `sold` lo lleva el servidor. */
+export interface TicketType {
+  key?: string;
+  name: string;
+  price: number;
+  capacity: number;
+  salesEndAt?: string | null;
+  sold?: number;
+}
+
+export type PaymentStatus = 'pending' | 'paid' | 'rejected' | 'refunded' | 'expired';
+
 export interface AppEvent {
   _id: string;
   localId: string;
@@ -45,6 +57,9 @@ export interface AppEvent {
   mediaFiles?: MediaFile[];
   formFields?: FormField[];
   invitationDesign?: DesignSpec;
+  onlinePayment?: boolean;
+  currency?: string;
+  ticketTypes?: TicketType[];
 }
 
 export interface Registration {
@@ -60,6 +75,10 @@ export interface Registration {
   createdAt: string;
   customFields?: Record<string, string>;
   impulsadorName?: string | null;
+  ticketTypeName?: string;
+  amount?: number;
+  currency?: string;
+  paymentStatus?: PaymentStatus;
 }
 
 export type CheckInByCodeResult = Registration & {

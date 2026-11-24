@@ -26,13 +26,32 @@ export interface LocalCalling {
   ringTimeoutSec: number;
   missedReplyEnabled: boolean;
   missedReplyText?: string;
+  voiceAgent?: VoicePrefs;
+}
+
+/** Agente de IA que contesta por voz (HU73). */
+export interface VoicePrefs {
+  enabled: boolean;
+  agentId?: string;
+  mode: 'fallback' | 'outside_hours' | 'always';
+  hoursFrom: number;
+  hoursTo: number;
+  days: number[];
+  announce: boolean;
 }
 
 interface SettingsResponse {
   meta: MetaCalling | null;
   metaError?: string;
   local: LocalCalling;
+  voice?: { prefs: VoicePrefs; available: boolean; creditsPerMinute: number } | null;
 }
+
+/** Días para el horario del agente de voz (0 = domingo). */
+export const VOICE_DAYS = [
+  { n: 1, label: 'L' }, { n: 2, label: 'M' }, { n: 3, label: 'X' }, { n: 4, label: 'J' },
+  { n: 5, label: 'V' }, { n: 6, label: 'S' }, { n: 0, label: 'D' },
+];
 
 export const DAYS: { key: string; label: string }[] = [
   { key: 'MONDAY', label: 'Lunes' },
@@ -133,6 +152,58 @@ export const fromHHMM = (v: string) => v.replace(':', '');
             }
           </section>
 
+          @if (voiceInfo(); as vi) {
+            <section class="voice">
+              <h3>Agente de IA por voz</h3>
+              @if (!vi.available) {
+                <p class="warn" role="alert">
+                  <lucide-icon [img]="TriangleAlert" [size]="15" />
+                  El servicio de voz no está configurado en la plataforma.
+                </p>
+              }
+              <label class="row">
+                <input type="checkbox" name="voiceOn" [(ngModel)]="voice.enabled" />
+                <span><strong>Que un agente de IA conteste las llamadas</strong>
+                  <small>Agenda citas, responde con su base de conocimiento y deja recados. Cuesta {{ vi.creditsPerMinute }} créditos por minuto.</small></span>
+              </label>
+              @if (voice.enabled) {
+                <label class="field">
+                  <span>Agente</span>
+                  <select class="select" name="voiceAgent" [(ngModel)]="voice.agentId">
+                    <option [ngValue]="undefined">Elige un agente publicado</option>
+                    @for (a of agents(); track a._id) { <option [ngValue]="a._id">{{ a.name }}</option> }
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Cuándo contesta</span>
+                  <select class="select" name="voiceMode" [(ngModel)]="voice.mode">
+                    <option value="fallback">Si nadie del equipo contesta a tiempo</option>
+                    <option value="outside_hours">Fuera del horario de atención</option>
+                    <option value="always">Siempre</option>
+                  </select>
+                </label>
+                @if (voice.mode === 'outside_hours') {
+                  <div class="hours">
+                    <div class="vdays" role="group" aria-label="Días con atención humana">
+                      @for (d of voiceDays; track d.n) {
+                        <button type="button" class="vday" [class.on]="voice.days.includes(d.n)" [attr.aria-pressed]="voice.days.includes(d.n)" (click)="toggleDay(d.n)">{{ d.label }}</button>
+                      }
+                    </div>
+                    <div class="day">
+                      <span class="day-name">Atención (hora de Lima)</span>
+                      <input class="input" type="number" min="0" max="24" name="vFrom" [(ngModel)]="voice.hoursFrom" aria-label="Desde la hora" />
+                      <input class="input" type="number" min="0" max="24" name="vTo" [(ngModel)]="voice.hoursTo" aria-label="Hasta la hora" />
+                    </div>
+                  </div>
+                }
+                <label class="row">
+                  <input type="checkbox" name="voiceAnnounce" [(ngModel)]="voice.announce" />
+                  <span><strong>Avisar que la llamada se transcribe</strong><small>La transcripción y los recados quedan en el chat del contacto.</small></span>
+                </label>
+              }
+            </section>
+          }
+
           @if (formError()) { <p class="cs-error" role="alert">{{ formError() }}</p> }
         }
       </div>
@@ -156,6 +227,10 @@ export const fromHHMM = (v: string) => v.replace(':', '');
     .warn { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; border-radius: var(--radius-md);
       background: var(--color-bg-light); color: var(--color-warning, var(--color-text-main)); font-size: 13px; }
     .muted { color: var(--color-text-muted); font-size: 14px; }
+    .vdays { display: flex; gap: 6px; flex-wrap: wrap; }
+    .vday { width: 36px; height: 36px; border-radius: var(--radius-pill); border: 1px solid var(--color-border);
+      background: var(--color-white); color: var(--color-text-main); font-weight: 600; cursor: pointer; }
+    .vday.on { background: var(--color-brand); border-color: var(--color-brand); color: var(--color-white); }
     .cs-error { margin: 0; color: var(--color-error); font-size: 13px; }
     @media (max-width: 768px) { .cs-body { grid-template-columns: 1fr; } section { padding: 20px 16px; } }
     @media (max-width: 520px) { .day { grid-template-columns: 1fr 1fr; } .day-name { grid-column: 1 / -1; } }
@@ -177,6 +252,10 @@ export class CallSettingsComponent implements OnInit {
   metaError = signal('');
   formError = signal('');
   days = signal<DayRow[]>([]);
+  voiceInfo = signal<SettingsResponse['voice']>(null);
+  agents = signal<{ _id: string; name: string }[]>([]);
+  readonly voiceDays = VOICE_DAYS;
+  voice: VoicePrefs = { enabled: false, mode: 'fallback', hoursFrom: 9, hoursTo: 18, days: [1, 2, 3, 4, 5], announce: true };
 
   enabled = false;
   showIcon = true;
@@ -192,6 +271,7 @@ export class CallSettingsComponent implements OnInit {
   async ngOnInit() {
     try {
       this.fill(await firstValueFrom(this.http.get<SettingsResponse>(`${API}/${this.accountId()}`)));
+      if (this.voiceInfo()) void this.loadAgents();
     } catch (err) {
       this.toast.error(this.message(err, 'No se pudo cargar la configuración de llamadas'));
       this.close();
@@ -206,7 +286,7 @@ export class CallSettingsComponent implements OnInit {
   private snapshot() {
     return snapshotOf([
       this.enabled, this.showIcon, this.callback, this.hoursOn, this.timezone, this.days(),
-      this.ringTimeoutSec, this.missedReplyEnabled, this.missedReplyText,
+      this.ringTimeoutSec, this.missedReplyEnabled, this.missedReplyText, this.voice,
     ]);
   }
   isDirty() { return !this.loading() && this.snapshot() !== this.formSnapshot; }
@@ -230,6 +310,24 @@ export class CallSettingsComponent implements OnInit {
     this.ringTimeoutSec = res.local.ringTimeoutSec;
     this.missedReplyEnabled = res.local.missedReplyEnabled;
     this.missedReplyText = res.local.missedReplyText ?? '';
+    this.voiceInfo.set(res.voice ?? null);
+    if (res.voice) this.voice = { ...res.voice.prefs, days: [...res.voice.prefs.days] };
+  }
+
+  private async loadAgents() {
+    try {
+      const list = await firstValueFrom(
+        this.http.get<{ _id: string; name: string; published?: boolean }[]>(`${environment.apiUrl}/ai-agents`),
+      );
+      this.agents.set(list.filter((a) => a.published));
+    } catch {
+      this.agents.set([]);
+    }
+  }
+
+  toggleDay(n: number) {
+    const has = this.voice.days.includes(n);
+    this.voice = { ...this.voice, days: has ? this.voice.days.filter((d) => d !== n) : [...this.voice.days, n] };
   }
 
   /** Arma el cuerpo del PUT; null si algo no es válido (y deja el error). */
@@ -245,6 +343,15 @@ export class CallSettingsComponent implements OnInit {
       missedReplyEnabled: this.missedReplyEnabled,
       missedReplyText: this.missedReplyText.trim() || undefined,
     };
+    if (this.voiceInfo()) {
+      const v = this.voice;
+      if (v.enabled && !v.agentId) return this.fail('Elige el agente de IA que contestará las llamadas');
+      const from = Number(v.hoursFrom);
+      const to = Number(v.hoursTo);
+      if (![from, to].every((h) => Number.isInteger(h) && h >= 0 && h <= 24))
+        return this.fail('El horario del agente de voz va de 0 a 24 h');
+      local.voiceAgent = { ...v, hoursFrom: from, hoursTo: to };
+    }
     if (!this.metaLoaded) return { local };
 
     const meta: MetaCalling = {

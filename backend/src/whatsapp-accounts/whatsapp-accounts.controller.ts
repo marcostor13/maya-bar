@@ -9,7 +9,9 @@ import {
   UseGuards,
   Request,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
+import { PlanLimitsService } from '../billing/plan-limits.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { assertRole, MANAGE_ROLES, type AuthReq } from '../auth/permissions';
 import { WhatsAppAccountsService } from './whatsapp-accounts.service';
@@ -18,10 +20,15 @@ import {
   UpdateWhatsAppAccountDto,
 } from './dto/whatsapp-account.dto';
 
+import { Audit } from '../audit/audit.decorator';
 @Controller('whatsapp-accounts')
 @UseGuards(JwtAuthGuard)
 export class WhatsAppAccountsController {
-  constructor(private service: WhatsAppAccountsService) {}
+  constructor(
+    private service: WhatsAppAccountsService,
+    // Global (HU42); opcional para las pruebas que montan solo el controlador.
+    @Optional() private limits?: PlanLimitsService,
+  ) {}
 
   @Get()
   findAll(@Request() req: AuthReq) {
@@ -36,6 +43,7 @@ export class WhatsAppAccountsController {
     return this.service.getOAuthConfig();
   }
 
+  @Audit({ action: 'channels.connected', resource: 'whatsapp' })
   @Post('oauth/connect')
   oauthConnect(
     @Body()
@@ -70,11 +78,13 @@ export class WhatsAppAccountsController {
     };
   }
 
+  @Audit({ action: 'channels.connected', resource: 'whatsapp' })
   @Post()
-  create(@Body() dto: CreateWhatsAppAccountDto, @Request() req: AuthReq) {
+  async create(@Body() dto: CreateWhatsAppAccountDto, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);
     if (!dto.label || !dto.provider)
       throw new BadRequestException('Faltan label o provider');
+    await this.limits?.assertCanAdd(req.user.tenantId, 'whatsappNumbers');
     return this.service.create(req.user.tenantId, dto);
   }
 
@@ -118,6 +128,7 @@ export class WhatsAppAccountsController {
     return this.service.update(id, req.user.tenantId, dto);
   }
 
+  @Audit({ action: 'channels.disconnected', resource: 'whatsapp' })
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, MANAGE_ROLES);

@@ -15,6 +15,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  ArrayMaxSize,
 } from 'class-validator';
 import { CALL_STATUSES } from '../call.schema';
 
@@ -92,10 +93,31 @@ export class MetaCallingDto {
   call_hours?: CallHoursDto;
 }
 
+/** Agente de IA por voz (HU73). */
+export class VoiceAgentDto {
+  @IsBoolean() enabled: boolean;
+  @IsOptional() @IsMongoId() agentId?: string;
+  @IsIn(['fallback', 'outside_hours', 'always'])
+  mode: 'fallback' | 'outside_hours' | 'always';
+  @IsInt() @Min(0) @Max(24) hoursFrom: number;
+  @IsInt() @Min(0) @Max(24) hoursTo: number;
+  @IsArray()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  days: number[];
+  @IsBoolean() announce: boolean;
+}
+
 export class LocalCallingDto {
   @IsOptional() @IsInt() @Min(15) @Max(60) ringTimeoutSec?: number;
   @IsOptional() @IsBoolean() missedReplyEnabled?: boolean;
   @IsOptional() @IsString() @MaxLength(1000) missedReplyText?: string;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => VoiceAgentDto)
+  voiceAgent?: VoiceAgentDto;
 }
 
 export class UpdateCallSettingsDto {

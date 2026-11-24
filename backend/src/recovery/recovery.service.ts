@@ -8,7 +8,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { BillingAccessService } from '../billing/billing-access.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -58,6 +60,8 @@ export class RecoveryService {
     private accounts: WhatsAppAccountsService,
     private settings: SettingsService,
     private suppression: SuppressionService,
+    // Pausa por cobro (HU41); opcional para las pruebas unitarias.
+    @Optional() private billing?: BillingAccessService,
   ) {}
 
   /** Campañas de las que vienen chats de WhatsApp, para elegir qué recuperar. */
@@ -551,6 +555,8 @@ export class RecoveryService {
   private async processPlan(plan: RecoveryPlan): Promise<void> {
     const now = new Date();
     const tenantId = String(plan.tenantId);
+    // Cuenta en solo lectura: la recuperación espera, no se cancela (HU41).
+    if (this.billing && !(await this.billing.canOperate(tenantId))) return;
     const due = plan.segments.filter(
       (s) =>
         (s.sendStatus === 'scheduled' || s.sendStatus === 'sending') &&

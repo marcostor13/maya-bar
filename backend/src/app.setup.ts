@@ -5,11 +5,15 @@ import type { NextFunction, Request, Response } from 'express';
 import { AllExceptionsFilter } from './shared/http-exception.filter';
 import { ShortDomainMiddleware } from './links/redirect.controller';
 
+import { isPanelOrigin } from './agency/white-label';
+
 /** Rutas públicas que aceptan cualquier origen. */
 const PUBLIC_CORS_PREFIXES = [
   '/public/forms',
   '/public/events',
   '/public/landing-domains',
+  // Chat web (HU69): lo llama el widget desde el sitio de la empresa; el dominio lo valida el servicio.
+  '/public/webchat',
 ];
 
 /**
@@ -94,9 +98,16 @@ export function configureApp(app: NestExpressApplication): void {
         ]
       : null;
 
+  const allowed = configuredOrigins
+    ? new Set([...configuredOrigins, ...nativeAppOrigins])
+    : null;
   app.enableCors({
-    origin: configuredOrigins
-      ? [...new Set([...configuredOrigins, ...nativeAppOrigins])]
+    // Además de la lista fija, el dominio de panel de cada agencia (HU72).
+    origin: allowed
+      ? (
+          origin: string | undefined,
+          cb: (err: Error | null, ok?: boolean) => void,
+        ) => cb(null, !origin || allowed.has(origin) || isPanelOrigin(origin))
       : true,
     credentials: true,
   });
