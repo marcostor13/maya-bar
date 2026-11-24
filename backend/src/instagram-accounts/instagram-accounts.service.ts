@@ -58,9 +58,16 @@ export class InstagramAccountsService {
     return this.model.findById(new Types.ObjectId(id)).exec();
   }
 
-  /** Ubica la cuenta por su Instagram User ID — así el webhook (app-level) rutea al tenant correcto. */
+  /**
+   * Ubica la cuenta por su Instagram User ID — así el webhook (app-level) rutea al tenant correcto.
+   * Si la misma cuenta está conectada en varias empresas, gana la activa conectada o renovada más
+   * recientemente (cada login de Instagram actualiza `updatedAt`).
+   */
   findByIgUserId(igUserId: string) {
-    return this.model.findOne({ igBusinessAccountId: igUserId }).exec();
+    return this.model
+      .findOne({ igBusinessAccountId: igUserId, active: { $ne: false } })
+      .sort({ updatedAt: -1 })
+      .exec();
   }
 
   async create(tenantId: string, dto: CreateInstagramAccountDto) {
