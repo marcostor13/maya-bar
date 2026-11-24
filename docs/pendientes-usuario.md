@@ -18,7 +18,7 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | # | Qué | Dónde |
 |---|---|---|
 | 1.1 | Registro como proveedor de tecnología — **hecho** (2026-11-24). | — |
-| 1.2 | **Añadir un método de pago** a la cuenta de WhatsApp. Sin él solo se responden conversaciones que inicia el cliente; no se pueden enviar plantillas. | WhatsApp > Inicio rápido > "Agregar método de pago" |
+| 1.2 | Método de pago de WhatsApp — **hecho**: VISA en la cuenta Maya IA `447412891798170`. La otra cuenta propia, Maya IA `1337226928401858`, sigue sin tarjeta. | business.facebook.com > Cuentas de WhatsApp |
 | 1.3 | **Pasar la app a modo Activo.** Hoy está en Desarrollo: los clientes de otras empresas no pueden usar el registro integrado de WhatsApp ni llegan sus mensajes de Messenger o Instagram. Con WhatsApp aprobado ya puedes activarla; los permisos rechazados seguirán con acceso estándar hasta que se aprueben. | Interruptor "App Mode" arriba del panel |
 | 1.4 | Coolify: `FACEBOOK_LOGIN_CONFIG_ID` = `1075415515523668` — **comprobado**. | — |
 | 1.5 | Videos de Messenger e Instagram subidos y solicitud enviada (2026-11-24). **Esperar el resultado** y responder si Meta pide algo. | Revisión de la app > Solicitudes |
