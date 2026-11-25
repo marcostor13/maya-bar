@@ -40,7 +40,7 @@ export class SeoService {
       'og:title': cfg.title,
       'og:description': cfg.description,
       'og:url': url,
-      'og:locale': cfg.locale ?? 'es_ES',
+      'og:locale': cfg.locale ?? 'es_PE',
       'og:image': image,
       'twitter:card': image ? 'summary_large_image' : 'summary',
       'twitter:title': cfg.title,

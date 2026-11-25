@@ -1442,7 +1442,7 @@ export class LandingComponent implements OnInit {
       title: TITLE,
       description: DESCRIPTION,
       path: '/',
-      image: '/logo.png?v=2',
+      image: '/og-image.png',
       siteName: 'Maya CRM',
       siteUrl,
     });
@@ -1501,6 +1501,24 @@ export class LandingComponent implements OnInit {
         name: f.q,
         acceptedAnswer: { '@type': 'Answer', text: f.a },
       })),
+    });
+
+    // Entidad de la marca: buscadores y asistentes de IA la usan para citarla.
+    this.seo.setJsonLd('org', {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'Maya CRM',
+      url: siteUrl,
+      logo: `${siteUrl}/logo.png?v=2`,
+      description: DESCRIPTION,
+      areaServed: 'Latinoamérica',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'Av. San Felipe 1035, Of. 1205',
+        addressLocality: 'Lima',
+        postalCode: '15072',
+        addressCountry: 'PE',
+      },
     });
 
     this.seo.setJsonLd('site', {

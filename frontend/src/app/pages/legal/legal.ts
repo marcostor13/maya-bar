@@ -1,13 +1,20 @@
 import { Component, computed, inject } from '@angular/core';
-import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LEGAL_CONTACT, LEGAL_DOCS, LegalDocKey } from './legal.data';
+import { SeoService } from '../../shared/seo';
+import { environment } from '../../../environments/environment';
 
 /**
  * Páginas legales públicas (privacidad, términos y eliminación de datos).
  * Meta las exige en la configuración de la app y en la revisión: deben ser
  * URLs públicas del dominio del producto, por eso se prerenderizan.
  */
+const LEGAL_PATHS: Record<LegalDocKey, string> = {
+  privacy: '/privacidad',
+  terms: '/terminos',
+  deletion: '/eliminacion-datos',
+};
+
 @Component({
   selector: 'app-legal',
   standalone: true,
@@ -79,15 +86,19 @@ import { LEGAL_CONTACT, LEGAL_DOCS, LegalDocKey } from './legal.data';
 })
 export class LegalComponent {
   private route = inject(ActivatedRoute);
-  private title = inject(Title);
-  private meta = inject(Meta);
+  private seo = inject(SeoService);
 
   readonly contact = LEGAL_CONTACT;
   readonly doc = computed(() => LEGAL_DOCS[this.route.snapshot.data['doc'] as LegalDocKey]);
 
   constructor() {
     const d = this.doc();
-    this.title.setTitle(`${d.title} — Maya CRM`);
-    this.meta.updateTag({ name: 'description', content: d.intro.slice(0, 155) });
+    // Canónica y Open Graph propias (antes heredaban las de la landing).
+    this.seo.apply({
+      title: `${d.title} — Maya CRM`,
+      description: d.intro.slice(0, 155),
+      path: LEGAL_PATHS[this.route.snapshot.data['doc'] as LegalDocKey],
+      siteUrl: environment.siteUrl,
+    });
   }
 }

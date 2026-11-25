@@ -19,7 +19,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // La CI pasa -PversionCode (número de run + 100) para que Play reciba siempre uno mayor.
         versionCode((project.findProperty("versionCode") ?: "2") as Integer)
-        versionName "1.1"
+        versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

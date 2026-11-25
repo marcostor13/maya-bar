@@ -130,6 +130,17 @@ app.get(
  * a la raíz. Lo que lleva extensión
  * (JS, CSS, imágenes) sigue al `express.static` de abajo.
  */
+/**
+ * SEO: `www.` es la misma web; sin redirigir, el buscador ve dos copias.
+ * El dominio principal sale de `siteUrl`.
+ */
+const SITE_HOST = new URL(environment.siteUrl).host;
+app.use((req, res, next) => {
+  const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(',')[0].trim().toLowerCase();
+  if (host === `www.${SITE_HOST}`) res.redirect(301, `https://${SITE_HOST}${req.originalUrl}`);
+  else next();
+});
+
 app.use((req, res, next) => {
   const forwarded = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim();
   const host = forwarded || req.headers.host || '';
@@ -192,6 +203,17 @@ app.use(
     redirect: false,
   }),
 );
+
+// Un archivo que no existe es 404 (antes devolvía la app con 200: "soft 404").
+app.use((req, res, next) => {
+  if (/\.[a-z0-9]+$/i.test(req.path)) {
+    res.status(404).type('text/plain').send('No encontrado');
+    return;
+  }
+  // El resto de rutas es la app con sesión: no se indexa.
+  res.setHeader('X-Robots-Tag', 'noindex');
+  next();
+});
 
 app.use((req, res, next) => {
   angularApp
