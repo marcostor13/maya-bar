@@ -44,6 +44,12 @@ Perplexity, Claude y los resúmenes con IA de Google.
 6. **Páginas de eventos públicos** fuera del sitemap. Conviene un sitemap dinámico
    solo si los clientes quieren que sus eventos se encuentren en Google.
 
+## Estado de ejecución (2026-11-25)
+- Hecho (HU79–HU83): plantilla prerenderizada, `/recursos`, 6 funciones, 4 industrias, 4 comparativas, 2 guías; sitemap, `llms.txt` y `llms-full.txt` generados desde los datos; enlaces en el pie de la landing.
+- Diferencia con el plan: las páginas tienen 400–700 palabras, no 1 200–1 800. Ampliarlas solo con datos reales (casos, capturas, tiempos medidos).
+- Pendiente del usuario: Search Console/Bing, perfiles de marca, HSTS, caso de cliente real y revisión trimestral de precios de la competencia (`docs/pendientes-usuario.md`).
+- Siguiente: medir 4–6 semanas en Search Console antes de añadir más páginas; panel mensual de 30 preguntas en asistentes de IA.
+
 ## 2. Plan de campaña SEO + GEO (90 días)
 
 ### Objetivo

@@ -1,0 +1,2 @@
+# HU79 · Plan
+`pages/content/`: `content.model.ts`, `content.data.ts`, `content.slugs.ts` (rutas sin cargar el texto en el bundle principal), `content.links.ts`, `facts.ts` (catálogo), `seo-files.ts`, `content-page.ts`, `content-shell.ts`, `resources.ts`. `app.routes.ts` + `app.routes.server.ts` (Prerender). `server.ts`: `/sitemap.xml`, `/llms.txt`, `/llms-full.txt` dinámicos y servir los prerenderizados; se borra `public/sitemap.xml`. Landing: columna "Recursos" en el pie.

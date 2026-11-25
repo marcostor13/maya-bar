@@ -9,6 +9,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isPlatformHost } from './app/shared/custom-domain';
 import { eventMeta, injectMeta, type EventMeta } from './app/shared/event-meta';
+import { CONTENT_PAGES } from './app/pages/content/content.data';
+import { CONTENT_SLUGS } from './app/pages/content/content.slugs';
+import { buildLlms, buildLlmsFull, buildSitemap } from './app/pages/content/seo-files';
 import { environment } from './environments/environment';
 
 /**
@@ -187,9 +190,37 @@ app.get('/', (_req, res, next) => {
   );
 });
 
-// Legales prerenderizadas (`app.routes.server.ts`): `express.static` con
+/**
+ * Sitemap y archivos para asistentes de IA (HU79), generados desde las páginas
+ * de contenido: nunca quedan desactualizados. `llms.txt` parte del texto base
+ * de `public/llms.txt`.
+ */
+const SEO_FILES_CACHE = 'public, max-age=3600';
+/** En el dominio propio de un cliente estos archivos no existen: son de mayacrm.site. */
+app.use(['/sitemap.xml', '/llms.txt', '/llms-full.txt'], (req, res, next) => {
+  const host = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim() || req.headers.host || '';
+  if (isPlatformHost(host, extraAllowedHosts)) next();
+  else res.status(404).end();
+});
+app.get('/sitemap.xml', (_req, res) => {
+  res.setHeader('Cache-Control', SEO_FILES_CACHE);
+  res.type('application/xml').send(buildSitemap(environment.siteUrl, CONTENT_PAGES));
+});
+let llmsBase: string | null = null;
+app.get('/llms.txt', (_req, res) => {
+  llmsBase ??= readFileSync(join(browserDistFolder, 'llms.txt'), 'utf8');
+  res.setHeader('Cache-Control', SEO_FILES_CACHE);
+  res.type('text/plain').send(buildLlms(llmsBase, environment.siteUrl, CONTENT_PAGES));
+});
+app.get('/llms-full.txt', (_req, res) => {
+  res.setHeader('Cache-Control', SEO_FILES_CACHE);
+  res.type('text/plain').send(buildLlmsFull(environment.siteUrl, CONTENT_PAGES));
+});
+
+// Páginas prerenderizadas (`app.routes.server.ts`): `express.static` con
 // `index: false` no abre `privacidad/index.html`, así que se sirven a mano.
-app.get(['/privacidad', '/terminos', '/eliminacion-datos'], (req, res, next) => {
+const PRERENDERED = ['/privacidad', '/terminos', '/eliminacion-datos', '/recursos', ...CONTENT_SLUGS.map((s) => `/${s}`)];
+app.get(PRERENDERED, (req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
   res.sendFile(join(req.path.slice(1), 'index.html'), { root: browserDistFolder }, (err) =>
     err ? next() : undefined,

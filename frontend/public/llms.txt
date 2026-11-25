@@ -54,14 +54,15 @@ showrooms, productoras de eventos, y agencias o consultoras que gestionan varias
 
 ## Cómo se contrata
 
-El precio depende del número de usuarios y de los módulos que se usen; no hay tarifa publicada.
-El contacto es por WhatsApp y la puesta en marcha (importación de la base actual, creación de
-formularios, conexión del WhatsApp y entrenamiento del agente de IA) la hace el equipo de Maya,
-con la mayoría de equipos operativos en la misma semana. Sin permanencia y con los datos
-exportables en cualquier momento.
+Planes publicados con precio (ver "Precios" abajo), pago con Mercado Pago (tarjeta,
+Yape en pagos únicos, PagoEfectivo) y boleta o factura electrónica. Prueba gratis de
+14 días sin tarjeta y sin permanencia; los datos se pueden exportar en cualquier momento.
+Opcionalmente, el equipo de Maya hace la puesta en marcha (importación de la base,
+formularios, conexión de WhatsApp y entrenamiento del agente de IA).
 
 ## Enlaces
 
 - Inicio: https://mayacrm.site/
 - Ingresar: https://mayacrm.site/login
 - Crear cuenta: https://mayacrm.site/register
+- Recursos y guías: https://mayacrm.site/recursos

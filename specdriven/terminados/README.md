@@ -5,6 +5,11 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-25 | [HU83 — Guías: costo de WhatsApp en Perú y paso a la API oficial](2026-11-25-hu83-guias/cierre.md) | Terminada | 3 CUMPLE; 1 frase corregida |
+| 2026-11-25 | [HU82 — Comparativas con HubSpot, Kommo, Leadsales y Wati](2026-11-25-hu82-comparativas/cierre.md) | Terminada (revisar precios cada trimestre) | 2 CUMPLE · 1 PARCIAL (cifras externas sin captura) |
+| 2026-11-25 | [HU81 — Páginas por industria](2026-11-25-hu81-paginas-industrias/cierre.md) | Terminada | NO CUMPLE inicial corregido (cartera por asesor) |
+| 2026-11-25 | [HU80 — Páginas de funciones](2026-11-25-hu80-paginas-funciones/cierre.md) | Terminada | 2 afirmaciones falsas corregidas; límites desde el catálogo |
+| 2026-11-25 | [HU79 — Base de páginas de contenido, sitemap y llms generados](2026-11-25-hu79-paginas-contenido-seo/cierre.md) | Terminada | 3 CUMPLE · PARCIAL corregido |
 | 2026-11-24 | [HU78 — La suscripción mensual se activa y se cancela aunque falle el aviso de Mercado Pago](2026-11-24-hu78-suscripcion-conciliacion/cierre.md) | Terminada (sin compra real todavía) | 4 CUMPLE; hallazgo medio corregido |
 | 2026-11-24 | [HU77 — Sección de planes más clara y confiable](2026-11-24-hu77-planes-rediseno/cierre.md) | Terminada (revisión visual en producción tras el deploy) | 2 CUMPLE · 1 PARCIAL · 1 NO VERIFICADO; M1, B1 y B2 corregidos |
 | 2026-11-24 | [HU76 — Checkout con mejor diseño, pago seguro y móvil](2026-11-24-hu76-checkout-pago-seguro/cierre.md) | Terminada (revisión visual en producción tras el deploy) | 6 CUMPLE · 1 NO VERIFICADO (C6, manual); hallazgos de accesibilidad corregidos |

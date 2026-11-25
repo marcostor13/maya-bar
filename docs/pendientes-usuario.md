@@ -46,6 +46,8 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | HU73, agente de voz | Activarlo en los ajustes de llamadas de un número, llamar fuera de horario y comprobar que la cita aparece en el calendario y cuánto tarda en responder. No se probó contra OpenAI real. |
 | Mercado Pago | Compra real de un plan mensual con tu tarjeta (`docs/activar-compras-mercadopago.md` §7): llega el correo "Nueva venta" a admin@ignia.site y el pago queda en "Por facturar". |
 | Search Console y Bing | Verificar `mayacrm.site` en Google Search Console y Bing Webmaster Tools y enviar `https://mayacrm.site/sitemap.xml` (`docs/plan-seo-geo.md`). |
+| Precios de la competencia | Cada trimestre, revisar las páginas oficiales de HubSpot, Kommo, Leadsales y Wati y actualizar `frontend/src/app/pages/content/data/comparativas.ts` (cifras y fecha de revisión). Próxima: febrero de 2027. |
+| Caso de cliente para SEO | Conseguir un cliente con números reales y su permiso por escrito para publicar un caso (`docs/plan-seo-geo.md`, fase 3). |
 | Perfiles de la marca | LinkedIn, YouTube, Product Hunt, G2, Capterra y Google Business Profile con los mismos datos; luego pasar las URL para el `sameAs` del JSON-LD. |
 | HSTS | Activar `Strict-Transport-Security` en el proxy de Coolify. |
 | Firma del APK | Crear `frontend/android/key.properties` (ver `key.properties.example`) apuntando al keystore y con sus contraseñas; después `./gradlew assembleRelease` genera el APK firmado. |

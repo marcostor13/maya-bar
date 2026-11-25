@@ -1,3 +1,4 @@
+import { CONTENT_SLUGS } from './pages/content/content.slugs';
 import { Routes } from '@angular/router';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
@@ -106,6 +107,16 @@ export const routes: Routes = [
     path: { privacy: 'privacidad', terms: 'terminos', deletion: 'eliminacion-datos' }[doc],
     data: { doc },
     loadComponent: () => import('./pages/legal/legal').then(m => m.LegalComponent),
+  })),
+  // Contenido indexable (HU79–HU83): funciones, industrias, comparativas y guías.
+  {
+    path: 'recursos',
+    loadComponent: () => import('./pages/content/resources').then(m => m.ResourcesComponent),
+  },
+  ...CONTENT_SLUGS.map((slug) => ({
+    path: slug,
+    data: { slug },
+    loadComponent: () => import('./pages/content/content-page').then(m => m.ContentPageComponent),
   })),
   {
     // Link público de una cotización (HU68).

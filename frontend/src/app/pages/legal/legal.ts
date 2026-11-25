@@ -23,7 +23,7 @@ const LEGAL_PATHS: Record<LegalDocKey, string> = {
     <header class="lg-header">
       <div class="lg-wrap">
         <a routerLink="/" aria-label="Maya CRM, inicio">
-          <img src="/logo-light.png?v=2" alt="Maya CRM" width="132" height="36" />
+          <img src="/logo.png?v=2" alt="Maya CRM" width="132" height="36" />
         </a>
       </div>
     </header>

@@ -30,6 +30,7 @@ import {
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { SeoService } from '../../shared/seo';
+import { FUNCTION_LINKS } from '../content/content.links';
 import {
   ArtCampaignComponent,
   ArtFunnelComponent,
@@ -598,6 +599,13 @@ const DESCRIPTION =
           <a href="#base">Base de datos</a>
           <a href="#equipo">Equipo y permisos</a>
           <a href="#precios">Precios</a>
+        </nav>
+        <nav class="footer-links" aria-label="Recursos">
+          <h3>Recursos</h3>
+          @for (l of functionLinks; track l.slug) {
+            <a [routerLink]="'/' + l.slug">{{ l.label }}</a>
+          }
+          <a routerLink="/recursos">Comparativas y guías</a>
         </nav>
         <nav class="footer-links" aria-label="Cuenta">
           <h3>Tu cuenta</h3>
@@ -1225,7 +1233,7 @@ const DESCRIPTION =
       .lp-footer { background: var(--color-text-main); color: rgba(255, 255, 255, 0.66); }
       .footer-inner {
         display: grid;
-        grid-template-columns: 2fr 1fr 1fr 1fr;
+        grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
         gap: 40px;
         padding-top: 56px;
         padding-bottom: 40px;
@@ -1320,6 +1328,7 @@ export class LandingComponent implements OnInit {
   readonly differentiators = DIFFERENTIATORS;
   readonly guarantees = GUARANTEES;
   readonly faqs = FAQS;
+  readonly functionLinks = FUNCTION_LINKS;
   readonly plans = PLANS;
   readonly addons = ADDONS;
   readonly setupPackages = SETUP_PACKAGES;
