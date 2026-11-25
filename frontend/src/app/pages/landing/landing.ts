@@ -1060,7 +1060,7 @@ const DESCRIPTION =
       }
       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
       .plan-price .was { margin-right: 6px; font-size: 18px; font-weight: 600; color: var(--color-text-muted); align-self: center; }
-      .plan-cta { width: 100%; gap: 8px; }
+      .plan-cta { width: 100%; box-sizing: border-box; gap: 8px; white-space: normal; text-align: center; }
       .pay-trust { display: flex; flex-direction: column; align-items: center; gap: 16px; margin: 36px auto 0; padding: 22px 24px;
         max-width: 760px; border-radius: var(--radius-lg); background: var(--color-white); border: 1px solid var(--color-border); }
       .trust-points { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; list-style: none; margin: 0; padding: 0; }
@@ -1303,7 +1303,7 @@ const DESCRIPTION =
         .pay-trust { padding: 18px 16px; }
         .definition-card { padding: 26px 22px; }
         .art-wide, .art-inline { padding: 18px; }
-        .hero-cta .btn, .cta-actions .btn { width: 100%; }
+        .hero-cta .btn, .cta-actions .btn { width: 100%; box-sizing: border-box; }
         .brand img { height: 34px; }
       }
     `,

@@ -31,7 +31,12 @@ import { PAYMENT_LOGOS, YAPE, type PaymentLogo } from './payment-logos.data';
           </li>
         }
         @if (!cardsOnly()) {
-          <li class="pl-chip pl-text" [style.color]="yape.hex" title="Yape">Yape</li>
+          <li class="pl-chip pl-yape" title="Yape">
+            <svg viewBox="0 0 44 24" role="img" aria-label="Yape">
+              <rect width="44" height="24" rx="6" [attr.fill]="yape.hex" />
+              <text x="22" y="16.6" text-anchor="middle" [attr.fill]="yape.fg" font-family="Poppins, Arial, sans-serif" font-size="12.5" font-weight="800" letter-spacing="-0.3">yape</text>
+            </svg>
+          </li>
           <li class="pl-chip pl-text muted" title="PagoEfectivo">PagoEfectivo</li>
         }
       </ul>
@@ -48,6 +53,9 @@ import { PAYMENT_LOGOS, YAPE, type PaymentLogo } from './payment-logos.data';
       box-sizing: border-box; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-white); }
     .pl-chip svg { width: 22px; height: 22px; }
     .pl-text { font: 800 12px var(--font-base); letter-spacing: -0.01em; }
+    .pl-yape { padding: 0 3px; }
+    .pl-chip .pl-yape svg, .pl-yape svg { width: 40px; height: 22px; }
+    .compact .pl-yape svg { width: 34px; height: 18px; }
     .pl-text.muted { color: var(--color-text-main); font-weight: 700; }
     .compact .pl-chip { height: 24px; min-width: 36px; }
     .compact .pl-chip svg { width: 18px; height: 18px; }

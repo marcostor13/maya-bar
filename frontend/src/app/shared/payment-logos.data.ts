@@ -13,4 +13,4 @@ export const PAYMENT_LOGOS: Record<string, PaymentLogo> = {
 };
 
 /** Yape no está en Simple Icons: se muestra como etiqueta de texto con su color. */
-export const YAPE = { id: 'yape', title: 'Yape', hex: '#742284' };
+export const YAPE = { id: 'yape', title: 'Yape', hex: '#742284', fg: '#FFFFFF' };
