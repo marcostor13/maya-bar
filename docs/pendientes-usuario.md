@@ -45,6 +45,7 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | HU72, agencia | Activar el Plan Agencia en una empresa (Empresas > detalle). Para el dominio del panel: CNAME de la agencia hacia la app y el dominio añadido en Coolify (TLS). |
 | HU73, agente de voz | Activarlo en los ajustes de llamadas de un número, llamar fuera de horario y comprobar que la cita aparece en el calendario y cuánto tarda en responder. No se probó contra OpenAI real. |
 | Mercado Pago | Compra real de un plan mensual con tu tarjeta (`docs/activar-compras-mercadopago.md` §7): llega el correo "Nueva venta" a admin@ignia.site y el pago queda en "Por facturar". |
+| Webhook de Mercado Pago | En la app de Mercado Pago (Tus integraciones → Webhooks, modo productivo) marcar los eventos **Pagos**, **Planes y suscripciones** (`subscription_preapproval` y `subscription_authorized_payment`) con la URL `https://api.mayacrm.site/billing/webhooks/mercadopago`. Hasta hoy no ha llegado ningún aviso; mientras tanto la conciliación cada 10 min (HU78) activa las compras. |
 | Yape | Pago real de un plan trimestral o una recarga eligiendo Yape en Mercado Pago (`docs/yape-mercadopago.md`). |
 | HU6, llamadas | Sigue pendiente la llamada real con un número que tenga la Calling API activa. |
 

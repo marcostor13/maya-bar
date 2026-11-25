@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-24 | [HU78 — La suscripción mensual se activa y se cancela aunque falle el aviso de Mercado Pago](2026-11-24-hu78-suscripcion-conciliacion/cierre.md) | Terminada (sin compra real todavía) | 4 CUMPLE; hallazgo medio corregido |
 | 2026-11-24 | [HU77 — Sección de planes más clara y confiable](2026-11-24-hu77-planes-rediseno/cierre.md) | Terminada (revisión visual en producción tras el deploy) | 2 CUMPLE · 1 PARCIAL · 1 NO VERIFICADO; M1, B1 y B2 corregidos |
 | 2026-11-24 | [HU76 — Checkout con mejor diseño, pago seguro y móvil](2026-11-24-hu76-checkout-pago-seguro/cierre.md) | Terminada (revisión visual en producción tras el deploy) | 6 CUMPLE · 1 NO VERIFICADO (C6, manual); hallazgos de accesibilidad corregidos |
 | 2026-11-24 | [HU75 — Aviso de cada venta y facturación manual](2026-11-24-hu75-aviso-de-venta-y-facturacion-manual/cierre.md) | Terminada (prueba real del usuario pendiente) | 5 CUMPLE · 1 PARCIAL · 1 [usuario]; C4 y el reembolso corregidos después |

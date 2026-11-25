@@ -7,7 +7,10 @@ import { User } from '../users/user.schema';
 import { BillingMailer } from './emails/billing-mailer.service';
 import { T, rejectReason } from './emails/billing-email.templates';
 import { PastDueService } from './past-due.service';
-import { MercadoPagoClient } from './mercadopago/mercadopago.client';
+import {
+  MercadoPagoClient,
+  type MpPreapproval,
+} from './mercadopago/mercadopago.client';
 import { PlanChangeService } from './plan-change.service';
 import { Payment } from './payment.schema';
 import { CheckoutSession } from './checkout-session.schema';
@@ -57,6 +60,39 @@ export class SubscriptionLifecycleService implements OnModuleInit {
   onModuleInit() {
     this.hooks.onPayment((e) => this.onRecurringPayment(e));
     this.hooks.onPayment((e) => this.onRecurringRejected(e));
+    this.hooks.onPreapproval((p) => this.onPreapprovalCancelled(p));
+  }
+
+  /**
+   * HU78: el cliente canceló la suscripción desde Mercado Pago (no desde
+   * Maya). Ya no habrá cobros: queda activa hasta el fin del periodo pagado.
+   */
+  async onPreapprovalCancelled(pre: MpPreapproval) {
+    if (pre.status !== 'cancelled' || !pre.id) return;
+    const res = await this.tenants
+      .findOneAndUpdate(
+        {
+          'subscription.mpPreapprovalId': pre.id,
+          'subscription.status': 'active',
+          'subscription.cancelAtPeriodEnd': { $ne: true },
+        },
+        {
+          $set: {
+            'subscription.cancelAtPeriodEnd': true,
+            'subscription.canceledAt': new Date(),
+            'subscription.cancelReason': 'Cancelada desde Mercado Pago',
+          },
+        },
+      )
+      .select('_id')
+      .lean()
+      .exec();
+    if (res) {
+      this.access.invalidate(String(res._id));
+      this.logger.log(
+        `Suscripción ${pre.id} cancelada desde Mercado Pago: termina al fin del periodo`,
+      );
+    }
   }
 
   /** ¿Es un cobro automático de una suscripción ya dada de alta (no la compra)? */

@@ -16,6 +16,18 @@ cuenta de producción de Maya.
   confirmar cada pago con un código de la app, así que no sirve para cobros
   recurrentes automáticos: el mensual queda con tarjeta.
 
+## Comprobado en producción (24-11-2026)
+
+Una preferencia de prueba de S/ 10 en la cuenta de producción muestra en
+Mercado Pago: Tarjeta, Banca y agentes, PagoEfectivo y **Yape**. Si no lo ves:
+
+- **Elegiste mensual.** La suscripción mensual es un preapproval y Mercado
+  Pago solo la cobra con tarjeta. Yape sale en trimestral, anual, extras y la
+  implementación.
+- **El monto supera tu límite de Yape** (S/ 500, 900 o 2 000 según la
+  configuración de la app). Por ejemplo, Crece anual (S/ 2 938,20) no se puede
+  pagar con Yape.
+
 ## Pasos para que funcione (y comprobarlo)
 
 1. **Confirma Yape en tu cuenta.** En tu panel de Mercado Pago →

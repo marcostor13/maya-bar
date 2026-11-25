@@ -21,6 +21,7 @@ import {
   CheckoutSession,
   CheckoutSessionSchema,
 } from './checkout-session.schema';
+import { CheckoutReconcileService } from './checkout-reconcile.service';
 import { CheckoutService } from './checkout.service';
 import {
   AccountCheckoutController,
@@ -109,6 +110,7 @@ import { User, UserSchema } from '../users/user.schema';
     OnboardingService,
     BillingEventsService,
     CheckoutService,
+    CheckoutReconcileService,
     TurnstileService,
     { provide: APP_INTERCEPTOR, useClass: ReadOnlyInterceptor },
   ],

@@ -195,6 +195,18 @@ export class MercadoPagoClient {
     );
   }
 
+  /** Cobros de una suscripción (HU78: conciliación sin webhook). */
+  async searchAuthorizedPayments(
+    preapprovalId: string,
+  ): Promise<MpAuthorizedPayment[]> {
+    const q = new URLSearchParams({ preapproval_id: preapprovalId });
+    const res = await this.request<{ results?: MpAuthorizedPayment[] }>(
+      'GET',
+      `/authorized_payments/search?${q}`,
+    );
+    return res.results ?? [];
+  }
+
   async searchPayments(externalReference: string): Promise<MpPayment[]> {
     const q = new URLSearchParams({
       external_reference: externalReference,

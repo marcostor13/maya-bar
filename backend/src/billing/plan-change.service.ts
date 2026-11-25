@@ -500,9 +500,22 @@ export class PlanChangeService {
     const { t, sub } = await this.paidTenant(tenantId);
     if (!sub.cancelAtPeriodEnd) return { cancelAtPeriodEnd: false };
     if (sub.mpPreapprovalId)
-      await this.mp.updatePreapproval(sub.mpPreapprovalId, {
-        status: 'authorized',
-      });
+      await this.mp
+        .updatePreapproval(sub.mpPreapprovalId, { status: 'authorized' })
+        .catch(async (err) => {
+          this.logger.warn(`Reanudar ${sub.mpPreapprovalId}: ${String(err)}`);
+          // Cancelada desde Mercado Pago (HU78): no se puede reanudar.
+          const pre = await this.mp
+            .getPreapproval(sub.mpPreapprovalId!)
+            .catch(() => null);
+          if (pre?.status === 'cancelled')
+            throw new BadRequestException(
+              'Tu suscripción se canceló en Mercado Pago. Vuelve a elegir tu plan para reactivarla.',
+            );
+          throw new ServiceUnavailableException(
+            'No pudimos reanudar el cobro en Mercado Pago. Inténtalo de nuevo en un momento.',
+          );
+        });
     await this.tenants
       .updateOne(
         { _id: t._id },
