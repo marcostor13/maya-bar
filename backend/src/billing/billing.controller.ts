@@ -19,6 +19,7 @@ import { Tenant } from '../tenants/tenant.schema';
 import { PlanLimitsService } from './plan-limits.service';
 import { Payment } from './payment.schema';
 import { BillingInfoDto, docNumberError } from './dto/billing-info.dto';
+import { MarkInvoicedDto } from './dto/mark-invoiced.dto';
 import { LIMIT_KEYS } from './plans.catalog';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthReq } from '../auth/permissions';
@@ -78,7 +79,21 @@ export class BillingController {
   @Get('admin/receipts')
   receiptQueue(@Request() req: AuthReq, @Query('status') status?: string) {
     this.superadmin(req);
-    return this.invoicing.queue(status === 'pending' ? 'pending' : 'failed');
+    return this.invoicing.queue(
+      status === 'pending' || status === 'manual' ? status : 'failed',
+    );
+  }
+
+  /** Pago facturado a mano fuera de Maya (HU75). */
+  @Post('admin/receipts/:paymentId/invoiced')
+  async markInvoiced(
+    @Request() req: AuthReq,
+    @Param('paymentId') paymentId: string,
+    @Body() body: MarkInvoicedDto,
+  ) {
+    this.superadmin(req);
+    await this.invoicing.markInvoiced(paymentId, body?.reference);
+    return { ok: true };
   }
 
   @Post('admin/receipts/:paymentId/retry')

@@ -30,6 +30,7 @@ import { InboxActionsComponent, type ActionKind } from './inbox-actions';
 import { InboxFiltersComponent } from './inbox-filters';
 import { BlockDialogComponent, type BlockDialogResult } from './block-dialog';
 import { InboxTrashComponent } from './inbox-trash';
+import { highlightParts } from './search-highlight';
 import { mergeMessages } from './merge-messages';
 import { WaTemplatePickerComponent } from './wa-template-picker';
 import { windowState, formatLeft, type ChatWindow } from './wa-window';
@@ -191,6 +192,8 @@ interface Conv {
   emailSubject?: string;
   /** Bloqueado: sus mensajes se descartan y no se le puede escribir. */
   blocked?: boolean;
+  /** Mensaje por el que apareció en la búsqueda (HU74). */
+  match?: { messageId: string; at: string; snippet: string };
   blockedAt?: string;
   blockedReason?: string;
   /** El bloqueo también quedó aplicado en WhatsApp. */
@@ -303,7 +306,7 @@ const EMOJIS = [
             <input
               class="input search-input"
               type="search"
-              [placeholder]="box() === 'email' ? 'Buscar por nombre, correo o asunto' : 'Buscar por nombre o número'"
+              [placeholder]="box() === 'email' ? 'Buscar por nombre, correo, asunto o mensaje' : 'Buscar por nombre, número o mensaje'"
               [ngModel]="search()"
               (ngModelChange)="onSearch($event)"
               aria-label="Buscar conversaciones"
@@ -433,10 +436,19 @@ const EMOJIS = [
                     <span class="chat-account">{{ accountName(c) }}</span>
                   }
                   <div class="chat-item-bottom">
-                    <span class="chat-preview">
-                      @if (c.lastMessageDirection === 'out') { <span class="you">Tú:</span> }
-                      {{ c.lastMessagePreview || 'Sin mensajes' }}
-                    </span>
+                    @if (c.match && search().trim()) {
+                      <span class="chat-preview chat-match" [title]="c.match.snippet">
+                        <lucide-icon [img]="Search" [size]="13" [strokeWidth]="2.4"></lucide-icon>
+                        @for (p of matchParts(c.match.snippet); track $index) {
+                          @if (p.hit) { <mark>{{ p.text }}</mark> } @else { {{ p.text }} }
+                        }
+                      </span>
+                    } @else {
+                      <span class="chat-preview">
+                        @if (c.lastMessageDirection === 'out') { <span class="you">Tú:</span> }
+                        {{ c.lastMessagePreview || 'Sin mensajes' }}
+                      </span>
+                    }
                     @if (c.unreadCount > 0) {
                       <span class="unread">{{ c.unreadCount > 99 ? '99+' : c.unreadCount }}</span>
                     }
@@ -791,7 +803,7 @@ const EMOJIS = [
                     <span><app-rich-text [text]="m.text" /></span>
                   </div>
                 } @else {
-                <div class="row" [class.out]="m.direction === 'out'" [id]="'msg-' + m._id">
+                <div class="row" [class.out]="m.direction === 'out'" [class.search-hit]="hitId() === m._id" [id]="'msg-' + m._id">
                   <div class="bubble" [attr.data-author]="m.author" [class.failed]="m.status === 'failed'" [class.email]="isEmail()"
                     (appLongPress)="openMsgMenu(m)">
                     @if (!isEmail()) {
@@ -1546,6 +1558,10 @@ const EMOJIS = [
       flex: 1; min-width: 0; font-size: 13.5px; color: var(--color-text-muted);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .chat-match { display: flex; align-items: center; gap: 4px; }
+    .chat-match lucide-icon { flex-shrink: 0; color: var(--color-text-muted); }
+    .chat-match mark, .search-hit mark { background: color-mix(in srgb, var(--color-warning) 30%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; }
+    .row.search-hit .bubble { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand) 35%, transparent); transition: box-shadow 0.3s; }
     .chat-preview .you { color: var(--color-text-main); font-weight: 600; }
 
     .unread {
@@ -2448,6 +2464,11 @@ export class InboxComponent implements OnInit, OnDestroy {
   messages = signal<Msg[]>([]);
   selectedId = signal<string | null>(null);
   search = signal('');
+  /** Mensaje al que saltar al abrir un chat encontrado por la búsqueda (HU74). */
+  private jumpTo: string | null = null;
+  /** Mensaje resaltado un momento tras el salto. */
+  hitId = signal<string | null>(null);
+  private hitTimer?: ReturnType<typeof setTimeout>;
   filter = signal<Filter>('all');
   /** Filtros que resuelve el servidor: agente IA y etiquetas del contacto. */
   agentFilter = signal('');
@@ -3077,6 +3098,7 @@ export class InboxComponent implements OnInit, OnDestroy {
     this.revokePreview();
     this.allLoaded = false;
     this.templateOpen.set(false);
+    this.jumpTo = c.match && this.search().trim() ? c.match.messageId : null;
     this.loadMessages();
     this.loadWindow(c._id);
     // Siempre: el contador local puede ir por detrás del servidor.
@@ -3097,7 +3119,8 @@ export class InboxComponent implements OnInit, OnDestroy {
         this.messages.set([...list, ...this.pendingBubbles(id, list)]);
         this.loadingMessages.set(false);
         this.allLoaded = list.length < 50;
-        this.scrollToBottom();
+        if (this.jumpTo) this.jumpToMatch(id, this.jumpTo);
+        else this.scrollToBottom();
       },
       error: () => {
         this.loadingMessages.set(false);
@@ -4144,6 +4167,57 @@ export class InboxComponent implements OnInit, OnDestroy {
         ? list.map(m => (m._id === msg._id ? msg : m))
         : [...list, msg],
     );
+  }
+
+  /** Trozos del fragmento con la búsqueda marcada (HU74). */
+  matchParts(text: string) {
+    return highlightParts(text, this.search());
+  }
+
+  /**
+   * Lleva la vista al mensaje encontrado por la búsqueda y lo resalta (HU74).
+   * Si no está entre lo cargado, trae páginas anteriores (hasta 10).
+   */
+  private jumpToMatch(convId: string, messageId: string, pages = 0) {
+    if (this.selectedId() !== convId) return;
+    if (this.messages().some(m => m._id === messageId)) {
+      this.jumpTo = null;
+      this.hitId.set(messageId);
+      setTimeout(() => this.document.getElementById(`msg-${messageId}`)?.scrollIntoView({ block: 'center' }));
+      if (this.hitTimer) clearTimeout(this.hitTimer);
+      this.hitTimer = setTimeout(() => this.hitId.set(null), 2500);
+      return;
+    }
+    const first = this.messages()[0];
+    if (this.allLoaded || !first || pages >= 10) {
+      this.jumpTo = null;
+      this.scrollToBottom();
+      this.toast.info('No se encontró el mensaje en el historial reciente del chat');
+      return;
+    }
+    // Marca la carga para que el scroll del usuario no pida la misma página.
+    this.loadingOlder.set(true);
+    this.http
+      .get<Msg[]>(`${API}/conversations/${convId}/messages?limit=50&before=${encodeURIComponent(first.at)}`)
+      .subscribe({
+        next: older => {
+          this.loadingOlder.set(false);
+          if (this.selectedId() !== convId) return;
+          if (older.length < 50) this.allLoaded = true;
+          if (older.length) {
+            this.messages.update(list => {
+              const known = new Set(list.map(m => m._id));
+              return [...older.filter(m => !known.has(m._id)), ...list];
+            });
+          }
+          this.jumpToMatch(convId, messageId, pages + 1);
+        },
+        error: () => {
+          this.loadingOlder.set(false);
+          this.jumpTo = null;
+          this.toast.error('No se pudieron cargar los mensajes anteriores');
+        },
+      });
   }
 
   private scrollToBottom() {

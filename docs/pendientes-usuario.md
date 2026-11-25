@@ -32,6 +32,9 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | `OPENAI_API_KEY` | Agente de voz (HU73), con OpenAI Realtime. **Ya está puesta** (comprobado 2026-11-24). | — |
 | `VOICE_REALTIME_MODEL` | Opcional; si falta se usa `gpt-realtime`. No hace falta ponerla. | — |
 | `META_LEAD_ADS_ENABLED` | Ver 1.7 | `false` hasta que Meta apruebe |
+| `SALES_NOTIFY_EMAIL` | Aviso de cada venta (HU75). Opcional: si falta va a `admin@ignia.site`. | — |
+| `INVOICING_AUTO` | Emisión automática con Nubefact. Déjala sin poner (o `false`): facturas a mano desde Facturación > Comprobantes > Por facturar. | `false` |
+| `NUBEFACT_URL`, `NUBEFACT_TOKEN` | Solo cuando quieras facturación automática. Ver `docs/facturacion-nubefact.md`. | pendiente |
 
 ## 3. Pruebas reales que solo tú puedes hacer
 
@@ -41,6 +44,8 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | HU70, puntaje de leads | Recibir mensajes reales y comprobar que el puntaje y el motivo tienen sentido (usa créditos de IA). |
 | HU72, agencia | Activar el Plan Agencia en una empresa (Empresas > detalle). Para el dominio del panel: CNAME de la agencia hacia la app y el dominio añadido en Coolify (TLS). |
 | HU73, agente de voz | Activarlo en los ajustes de llamadas de un número, llamar fuera de horario y comprobar que la cita aparece en el calendario y cuánto tarda en responder. No se probó contra OpenAI real. |
+| Mercado Pago | Compra real de un plan mensual con tu tarjeta (`docs/activar-compras-mercadopago.md` §7): llega el correo "Nueva venta" a admin@ignia.site y el pago queda en "Por facturar". |
+| Yape | Pago real de un plan trimestral o una recarga eligiendo Yape en Mercado Pago (`docs/yape-mercadopago.md`). |
 | HU6, llamadas | Sigue pendiente la llamada real con un número que tenga la Calling API activa. |
 
 ## 4. Fuera de lo hecho

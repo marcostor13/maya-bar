@@ -1,7 +1,8 @@
 import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
-import { LucideAngularModule, RotateCw, Send } from 'lucide-angular';
+import { FormsModule } from '@angular/forms';
+import { LucideAngularModule, RotateCw, Send, FileCheck } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { environment } from '../../../environments/environment';
 import { RECEIPT_STATUS, money } from './billing-admin.shared';
@@ -32,15 +33,16 @@ export interface EmailLog {
 @Component({
   selector: 'app-billing-queues',
   standalone: true,
-  imports: [DatePipe, LucideAngularModule],
+  imports: [DatePipe, FormsModule, LucideAngularModule],
   template: `
     @if (mode() === 'receipts') {
       <div class="pills" role="radiogroup" aria-label="Comprobantes">
+        <button type="button" class="pill" role="radio" [attr.aria-checked]="status() === 'manual'" [class.active]="status() === 'manual'" (click)="setStatus('manual')">Por facturar</button>
         <button type="button" class="pill" role="radio" [attr.aria-checked]="status() === 'failed'" [class.active]="status() === 'failed'" (click)="setStatus('failed')">Con error</button>
         <button type="button" class="pill" role="radio" [attr.aria-checked]="status() === 'pending'" [class.active]="status() === 'pending'" (click)="setStatus('pending')">En cola</button>
       </div>
       @if (loading()) { <p class="muted">Cargando…</p> }
-      @else if (!receipts().length) { <div class="card empty"><p>{{ status() === 'failed' ? 'Ningún comprobante con error.' : 'No hay comprobantes en cola.' }}</p></div> }
+      @else if (!receipts().length) { <div class="card empty"><p>{{ emptyText() }}</p></div> }
       @else {
         <div class="table-card table-cards card">
           <table>
@@ -54,6 +56,10 @@ export interface EmailLog {
                   <td data-label="Documento">{{ which(p).label }} <span class="badge" [class]="badge(which(p).doc?.status)">{{ statusLabel(which(p).doc?.status) }}</span></td>
                   <td data-label="Error" class="err">{{ which(p).doc?.error || '—' }}</td>
                   <td data-label="" class="actions">
+                    @if (status() === 'manual') {
+                      <input class="input ref-input" [(ngModel)]="refs[p._id]" placeholder="Serie-número (opcional)" maxlength="40" aria-label="Serie y número del comprobante" />
+                      <button type="button" class="btn btn-primary btn-sm" [disabled]="marking() === p._id" (click)="markInvoiced(p)"><lucide-icon [img]="FileCheck" [size]="14" /> Marcar facturado</button>
+                    }
                     @if (status() === 'failed') {
                       <button type="button" class="btn btn-secondary btn-sm" (click)="retry(p)"><lucide-icon [img]="RotateCw" [size]="14" /> Reintentar</button>
                     }
@@ -99,6 +105,8 @@ export interface EmailLog {
     .empty { padding: 40px; text-align: center; color: var(--color-text-muted); }
     .err { color: var(--color-error); font-size: 13px; max-width: 320px; }
     .actions { white-space: nowrap; text-align: right; }
+    .ref-input { width: 170px; display: inline-block; margin-right: 8px; padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+    @media (max-width: 720px) { .actions { white-space: normal; } .ref-input { width: 100%; margin: 0 0 8px; } }
   `],
 })
 export class BillingQueuesComponent implements OnInit {
@@ -107,17 +115,36 @@ export class BillingQueuesComponent implements OnInit {
   private api = `${environment.apiUrl}/billing/admin`;
   readonly RotateCw = RotateCw;
   readonly Send = Send;
+  readonly FileCheck = FileCheck;
   readonly money = money;
 
   mode = input<'receipts' | 'emails'>('receipts');
-  status = signal<'failed' | 'pending'>('failed');
+  /** Por facturar primero: con la facturación manual (HU75) es lo que hay que atender. */
+  status = signal<'failed' | 'pending' | 'manual'>('manual');
+  /** Serie y número escritos por fila al marcar como facturado. */
+  refs: Record<string, string> = {};
+  marking = signal<string | null>(null);
   receipts = signal<QueuedPayment[]>([]);
   emails = signal<EmailLog[]>([]);
   loading = signal(true);
 
   ngOnInit() { this.load(); }
 
-  setStatus(s: 'failed' | 'pending') { this.status.set(s); this.load(); }
+  setStatus(s: 'failed' | 'pending' | 'manual') { this.status.set(s); this.load(); }
+
+  emptyText() {
+    return { manual: 'No hay pagos por facturar.', failed: 'Ningún comprobante con error.', pending: 'No hay comprobantes en cola.' }[this.status()];
+  }
+
+  /** El comprobante se emitió fuera de Maya (HU75). */
+  markInvoiced(p: QueuedPayment) {
+    this.marking.set(p._id);
+    const reference = (this.refs[p._id] ?? '').trim();
+    this.http.post(`${this.api}/receipts/${p._id}/invoiced`, reference ? { reference } : {}).subscribe({
+      next: () => { this.marking.set(null); this.toast.success('Pago marcado como facturado'); this.load(); },
+      error: err => { this.marking.set(null); this.toast.error(err.error?.message || 'No se pudo marcar como facturado'); },
+    });
+  }
 
   load() {
     this.loading.set(true);

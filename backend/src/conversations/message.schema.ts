@@ -180,6 +180,8 @@ export class Message extends Document {
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ conversationId: 1, at: -1 });
+// Búsqueda en los mensajes de la empresa, los más recientes primero (HU74).
+MessageSchema.index({ tenantId: 1, at: -1 });
 // Rendimiento por usuario en el dashboard (HU20): solo los enviados a mano.
 MessageSchema.index(
   { tenantId: 1, sentBy: 1, at: 1 },

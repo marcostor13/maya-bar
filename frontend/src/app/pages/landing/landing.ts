@@ -35,6 +35,7 @@ import {
   ArtFunnelComponent,
   ArtInboxComponent,
 } from './landing-art';
+import { PaymentLogosComponent } from '../../shared/payment-logos';
 import { RevealDirective } from './reveal.directive';
 import {
   ADDONS,
@@ -68,6 +69,7 @@ const DESCRIPTION =
     ArtInboxComponent,
     ArtFunnelComponent,
     ArtCampaignComponent,
+    PaymentLogosComponent,
   ],
   template: `
     <header class="lp-header" [class.open]="menuOpen()">
@@ -392,6 +394,9 @@ const DESCRIPTION =
                   @if (plan.prices === null) {
                     <span class="amount custom">A medida</span>
                   } @else {
+                    @if (listMonthly(plan); as list) {
+                      <s class="was"><span class="sr-only">Antes </span>{{ currency() === 'pen' ? 'S/' : 'US$' }}{{ list }}</s>
+                    }
                     <span class="currency">{{ currency() === 'pen' ? 'S/' : 'US$' }}</span>
                     <span class="amount">{{ perMonth(plan) }}</span>
                     <span class="period">/mes{{ currency() === 'pen' ? ' + IGV' : '' }}</span>
@@ -438,6 +443,15 @@ const DESCRIPTION =
                 </ul>
               </article>
             }
+          </div>
+
+          <div class="pay-trust" appReveal>
+            <ul class="trust-points">
+              <li><lucide-icon [img]="Check" [size]="15" /> 14 días gratis, sin tarjeta</li>
+              <li><lucide-icon [img]="Check" [size]="15" /> Sin permanencia</li>
+              <li><lucide-icon [img]="Check" [size]="15" /> Boleta o factura electrónica</li>
+            </ul>
+            <app-payment-logos [cardsOnly]="billing() === 'monthly'" />
           </div>
 
           <div class="meta-note" appReveal>
@@ -1044,7 +1058,14 @@ const DESCRIPTION =
         font-size: 13px;
         color: var(--color-text-muted);
       }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+      .plan-price .was { margin-right: 6px; font-size: 18px; font-weight: 600; color: var(--color-text-muted); align-self: center; }
       .plan-cta { width: 100%; gap: 8px; }
+      .pay-trust { display: flex; flex-direction: column; align-items: center; gap: 16px; margin: 36px auto 0; padding: 22px 24px;
+        max-width: 760px; border-radius: var(--radius-lg); background: var(--color-white); border: 1px solid var(--color-border); }
+      .trust-points { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; list-style: none; margin: 0; padding: 0; }
+      .trust-points li { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--color-text-main); }
+      .trust-points lucide-icon { color: var(--color-success); }
       .plan-buy { display: block; text-align: center; margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--color-brand); }
       .plan-limits {
         display: grid;
@@ -1273,7 +1294,13 @@ const DESCRIPTION =
         .band { padding: 56px 0; }
         .grid-4, .plans, .addons ul { grid-template-columns: 1fr; }
         .plan-tagline, .plan-billed { min-height: 0; }
-        .billing-toggle button { padding: 10px 14px; }
+        .pricing-controls { margin-bottom: 28px; }
+        .billing-toggle { width: 100%; box-sizing: border-box; }
+        .billing-toggle button { flex: 1 1 0; flex-direction: column; justify-content: center; gap: 3px; padding: 8px 6px; font-size: 13px; }
+        .toggle-save { padding: 1px 7px; font-size: 10.5px; }
+        .plan-card.featured { order: -1; }
+        .plan-card:hover { transform: none; }
+        .pay-trust { padding: 18px 16px; }
         .definition-card { padding: 26px 22px; }
         .art-wide, .art-inline { padding: 18px; }
         .hero-cta .btn, .cta-actions .btn { width: 100%; }
@@ -1354,6 +1381,13 @@ export class LandingComponent implements OnInit {
     if (!p) return 0;
     const b = this.billing();
     return b === 'annual' ? Math.round(p.annual / 12) : b === 'quarterly' ? Math.round(p.quarterly / 3) : p.monthly;
+  }
+
+  /** Precio mensual sin descuento, para tacharlo en trimestral y anual. */
+  listMonthly(plan: Plan): number | null {
+    const p = this.prices(plan);
+    if (!p || this.billing() === 'monthly') return null;
+    return p.monthly > this.perMonth(plan) ? p.monthly : null;
   }
 
   billedNote(plan: Plan): string {

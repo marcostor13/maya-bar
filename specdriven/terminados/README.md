@@ -5,6 +5,10 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-24 | [HU77 — Sección de planes más clara y confiable](2026-11-24-hu77-planes-rediseno/cierre.md) | Terminada (revisión visual en producción tras el deploy) | 2 CUMPLE · 1 PARCIAL · 1 NO VERIFICADO; M1, B1 y B2 corregidos |
+| 2026-11-24 | [HU76 — Checkout con mejor diseño, pago seguro y móvil](2026-11-24-hu76-checkout-pago-seguro/cierre.md) | Terminada (revisión visual en producción tras el deploy) | 6 CUMPLE · 1 NO VERIFICADO (C6, manual); hallazgos de accesibilidad corregidos |
+| 2026-11-24 | [HU75 — Aviso de cada venta y facturación manual](2026-11-24-hu75-aviso-de-venta-y-facturacion-manual/cierre.md) | Terminada (prueba real del usuario pendiente) | 5 CUMPLE · 1 PARCIAL · 1 [usuario]; C4 y el reembolso corregidos después |
+| 2026-11-24 | [HU74 Buscar dentro de las conversaciones](2026-11-24-hu74-buscar-en-conversaciones/) | Cerrada (falta prueba manual C9) | spec-verifier: 8 CUMPLE, 1 NO VERIFICADO |
 | 2026-11-24 | [HU73 Agente de IA por voz](2026-11-24-hu73-agente-de-voz/) | Cerrada (falta prueba real) | autoverificación: C2 CUMPLE, C1 [usuario] pendiente de llamada real |
 | 2026-11-24 | [HU72 Plan agencia y marca blanca](2026-11-24-hu72-plan-agencia-marca-blanca/) | Cerrada (fase 1) | autoverificación (spec-verifier bloqueado): 2 CUMPLE |
 | 2026-11-24 | [HU70 Puntaje de leads con IA](2026-11-24-hu70-puntaje-leads-ia/) | Cerrada | autoverificación (spec-verifier bloqueado): 2 CUMPLE |

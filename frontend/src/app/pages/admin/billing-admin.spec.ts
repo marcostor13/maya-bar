@@ -142,6 +142,8 @@ describe('Panel de suscripciones (HU57)', () => {
     await setup();
     const f = TestBed.createComponent(BillingQueuesComponent);
     f.detectChanges();
+    http.expectOne(r => r.url === `${API}/receipts` && r.params.get('status') === 'manual').flush([]);
+    f.componentInstance.setStatus('failed');
     http.expectOne(r => r.url === `${API}/receipts` && r.params.get('status') === 'failed')
       .flush([{ _id: 'p9', concept: 'Plan Inicia', amount: 116.82, currency: 'PEN', paidAt: '2026-11-01', receipt: { status: 'failed', error: 'RUC no válido' } }]);
     f.detectChanges();
@@ -151,5 +153,24 @@ describe('Panel de suscripciones (HU57)', () => {
     http.expectOne(`${API}/receipts/p9/retry`).flush({ ok: true });
     http.expectOne(r => r.url === `${API}/receipts`).flush([]);
     expect(toast.success).toHaveBeenCalled();
+  });
+
+  it('marca como facturado un pago por facturar a mano (HU75)', async () => {
+    await setup();
+    const f = TestBed.createComponent(BillingQueuesComponent);
+    f.detectChanges();
+    http.expectOne(r => r.url === `${API}/receipts` && r.params.get('status') === 'manual')
+      .flush([{ _id: 'p7', concept: 'Plan Crece (mensual)', amount: 293.82, currency: 'PEN', paidAt: '2026-11-24', receipt: { status: 'manual' } }]);
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Por facturar');
+    f.componentInstance.refs['p7'] = ' B001-15 ';
+    const btn = [...el.querySelectorAll<HTMLButtonElement>('[data-receipt="p7"] button')].find(b => b.textContent!.includes('Marcar facturado'))!;
+    btn.click();
+    const req = http.expectOne(`${API}/receipts/p7/invoiced`);
+    expect(req.request.body).toEqual({ reference: 'B001-15' });
+    req.flush({ ok: true });
+    http.expectOne(r => r.url === `${API}/receipts`).flush([]);
+    expect(toast.success).toHaveBeenCalledWith('Pago marcado como facturado');
   });
 });

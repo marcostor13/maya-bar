@@ -89,15 +89,33 @@ export class InvoicingService implements OnModuleInit {
   /** Pago aprobado → comprobante en cola; reembolso → nota de crédito (C3). */
   async onPayment({ payment, previousStatus }: PaymentChange) {
     if (payment.status === 'approved' && previousStatus !== 'approved') {
+      // Sin INVOICING_AUTO=true el comprobante se emite a mano (HU75).
+      const auto = this.config.get<string>('INVOICING_AUTO') === 'true';
       const res = await this.payments
         .updateOne(
           { _id: payment._id, 'receipt.status': { $exists: false } },
-          { $set: { 'receipt.status': 'pending', 'receipt.attempts': 0 } },
+          {
+            $set: auto
+              ? { 'receipt.status': 'pending', 'receipt.attempts': 0 }
+              : { 'receipt.status': 'manual' },
+          },
         )
         .exec();
-      if (res.modifiedCount) this.kick(payment._id, 'receipt');
+      if (res.modifiedCount && auto) this.kick(payment._id, 'receipt');
     }
     if (payment.status === 'refunded') {
+      // Reembolsado antes de facturarlo a mano: sale de "Por facturar" (HU75).
+      await this.payments
+        .updateOne(
+          { _id: payment._id, 'receipt.status': 'manual' },
+          {
+            $set: {
+              'receipt.status': 'skipped',
+              'receipt.skippedReason': 'Reembolsado antes de facturar',
+            },
+          },
+        )
+        .exec();
       const res = await this.payments
         .updateOne(
           {
@@ -642,8 +660,8 @@ export class InvoicingService implements OnModuleInit {
     return admin?.email ?? tenant?.email;
   }
 
-  /** Cola del superadmin: comprobantes fallidos o pendientes. */
-  async queue(status: 'failed' | 'pending' = 'failed') {
+  /** Cola del superadmin: comprobantes fallidos, pendientes o por facturar a mano. */
+  async queue(status: 'failed' | 'pending' | 'manual' = 'failed') {
     return this.payments
       .find({
         $or: [
@@ -658,6 +676,30 @@ export class InvoicingService implements OnModuleInit {
       )
       .lean()
       .exec();
+  }
+
+  /**
+   * El superadmin emitió el comprobante fuera de Maya (HU75): deja el pago
+   * como "No aplica" con la referencia, y sale de la lista por facturar.
+   */
+  async markInvoiced(paymentId: string, reference?: string): Promise<void> {
+    if (!Types.ObjectId.isValid(paymentId)) throw new NotFoundException();
+    const ref = (reference ?? '').trim().slice(0, 40);
+    const res = await this.payments
+      .updateOne(
+        { _id: new Types.ObjectId(paymentId), 'receipt.status': 'manual' },
+        {
+          $set: {
+            'receipt.status': 'skipped',
+            'receipt.skippedReason': ref
+              ? `Facturado a mano: ${ref}`
+              : 'Facturado a mano',
+          },
+        },
+      )
+      .exec();
+    if (!res.matchedCount)
+      throw new BadRequestException('Este pago no está por facturar');
   }
 
   /** Reintento manual: solo lo fallido vuelve a la cola, con intentos a cero (H3). */

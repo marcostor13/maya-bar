@@ -15,6 +15,17 @@ import {
 import { Interval } from '@nestjs/schedule';
 import { Model, Types, type QueryFilter } from 'mongoose';
 import { Conversation, ConversationChannel } from './conversation.schema';
+import { escapeRegex, searchSnippet } from './search-snippet';
+
+/** Coincidencias de mensajes que se revisan como máximo por búsqueda (HU74). */
+const MESSAGE_SEARCH_LIMIT = 500;
+
+/** Mensaje por el que una conversación aparece en la búsqueda (HU74). */
+export interface ConversationSearchMatch {
+  messageId: string;
+  at: Date;
+  snippet: string;
+}
 import {
   Message,
   MessageAuthor,
@@ -740,13 +751,28 @@ export class ConversationsService {
         ],
       });
     }
-    if (filters.q) {
-      const rx = new RegExp(
-        filters.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-        'i',
-      );
+    const q = filters.q?.trim() ?? '';
+    let matches = new Map<string, ConversationSearchMatch>();
+    if (q) {
+      const rx = new RegExp(escapeRegex(q), 'i');
+      matches = await this.searchMessages(tenantId, q, rx);
       and.push({
-        $or: [{ contact: rx }, { contactName: rx }, { lastMessagePreview: rx }],
+        $or: [
+          { contact: rx },
+          { contactName: rx },
+          { lastMessagePreview: rx },
+          ...(matches.size
+            ? [
+                {
+                  _id: {
+                    $in: [...matches.keys()].map(
+                      (id) => new Types.ObjectId(id),
+                    ),
+                  },
+                },
+              ]
+            : []),
+        ],
       });
     }
     if (and.length) query.$and = and;
@@ -755,7 +781,65 @@ export class ConversationsService {
       .sort({ lastMessageAt: -1 })
       .limit(200)
       .exec();
-    return this.withCrmInfo(tenantId, convs);
+    const list = await this.withCrmInfo(tenantId, convs);
+    if (!matches.size) return list;
+    return list.map((c) => {
+      const match = matches.get(String(c._id));
+      if (!match) return c;
+      // `withCrmInfo` devuelve documentos o, si añadió campos, objetos planos.
+      const plain: Record<string, unknown> =
+        c instanceof this.convModel
+          ? (c.toObject() as unknown as Record<string, unknown>)
+          : (c as unknown as Record<string, unknown>);
+      return { ...plain, match } as unknown as typeof c;
+    });
+  }
+
+  /**
+   * Búsqueda en el texto de los mensajes de la empresa (HU74): la coincidencia
+   * más reciente de cada conversación. Con menos de 2 caracteres no se busca
+   * (coincidiría con casi todo). Si la consulta se corta, se sigue sin ella.
+   */
+  private async searchMessages(
+    tenantId: string,
+    q: string,
+    rx: RegExp,
+  ): Promise<Map<string, ConversationSearchMatch>> {
+    const out = new Map<string, ConversationSearchMatch>();
+    if (q.length < 2) return out;
+    try {
+      const hits = await this.msgModel
+        .find(
+          {
+            tenantId: new Types.ObjectId(tenantId),
+            author: { $ne: 'system' },
+            $or: [{ text: rx }, { transcript: rx }, { subject: rx }],
+          },
+          { conversationId: 1, text: 1, transcript: 1, subject: 1, at: 1 },
+        )
+        .sort({ at: -1 })
+        .limit(MESSAGE_SEARCH_LIMIT)
+        .maxTimeMS(5000)
+        .lean()
+        .exec();
+      for (const m of hits) {
+        const key = String(m.conversationId);
+        if (out.has(key)) continue;
+        const source = [m.text, m.transcript, m.subject].find(
+          (t) => t && rx.test(t),
+        );
+        out.set(key, {
+          messageId: String(m._id),
+          at: m.at,
+          snippet: searchSnippet(source ?? '', q),
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Búsqueda en mensajes cortada (${tenantId}): ${(err as Error).message}`,
+      );
+    }
+    return out;
   }
 
   /**

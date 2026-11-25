@@ -38,6 +38,21 @@ describe('Landing: precios (HU56)', () => {
     expect(href).toContain('/checkout?plan=crece&periodo=anual');
   });
 
+  it('HU77: en anual tacha el precio mensual de lista y muestra el sello de pago seguro', async () => {
+    const { f, el } = await render();
+    expect(el.querySelector('.plan-price .was')).toBeNull();
+    // El mensual es suscripción: solo tarjetas.
+    expect(el.querySelector('.pay-trust [title="Yape"]')).toBeNull();
+    const annual = [...el.querySelectorAll('.billing-toggle button')].find(b => b.textContent!.includes('Anual')) as HTMLButtonElement;
+    annual.click();
+    f.detectChanges();
+    const crece = CATALOG.plans.find(p => p.id === 'crece')!.prices.USD!;
+    const card = el.querySelector('[data-buy="crece"]')!.closest('.plan-card')!;
+    expect(card.querySelector('.was')!.textContent).toContain(String(crece.monthly));
+    expect(el.querySelector('.pay-trust [aria-label="Mercado Pago"]')).not.toBeNull();
+    expect(el.querySelector('.pay-trust [title="Yape"]')).not.toBeNull();
+  });
+
   it('trimestral muestra el equivalente mensual con el −5 % y el total del trimestre', async () => {
     const { f, el } = await render();
     const q = [...el.querySelectorAll('.billing-toggle button')].find(b => b.textContent!.includes('Trimestral')) as HTMLButtonElement;

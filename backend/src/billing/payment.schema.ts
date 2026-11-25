@@ -3,7 +3,13 @@ import { Document, Types } from 'mongoose';
 
 export type PaymentStatus = 'approved' | 'pending' | 'rejected' | 'refunded';
 
-export type ReceiptStatus = 'pending' | 'issued' | 'failed' | 'skipped';
+/** `manual`: la facturación automática está apagada; se emite a mano (HU75). */
+export type ReceiptStatus =
+  | 'pending'
+  | 'issued'
+  | 'failed'
+  | 'skipped'
+  | 'manual';
 
 /** Datos de un comprobante emitido (o en cola) ante SUNAT (HU49). */
 export interface ReceiptDoc {

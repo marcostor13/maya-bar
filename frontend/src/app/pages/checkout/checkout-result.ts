@@ -5,6 +5,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LucideAngularModule, CheckCircle2, Clock, XCircle, Loader2 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../auth/auth.service';
+import { PaymentLogosComponent } from '../../shared/payment-logos';
 
 export interface CheckoutStatus {
   status: 'pending' | 'awaiting_payment' | 'paid' | 'rejected' | 'fulfilled';
@@ -32,9 +33,10 @@ const MAX_POLLS = 60;
 @Component({
   selector: 'app-checkout-result',
   standalone: true,
-  imports: [RouterLink, LucideAngularModule],
+  imports: [RouterLink, LucideAngularModule, PaymentLogosComponent],
   template: `
     <div class="result-page">
+      <a routerLink="/" class="brand"><img src="/logo.png?v=2" alt="Maya CRM" /></a>
       <div class="card result animate-fade-in" role="status" aria-live="polite">
         @switch (view()) {
           @case ('done') {
@@ -99,14 +101,28 @@ const MAX_POLLS = 60;
             <p>Esto suele tardar unos segundos. No cierres esta página.</p>
           }
         }
+        @if (s(); as st) {
+          <dl class="recap" data-testid="recap">
+            <div><dt>Compra</dt><dd>{{ st.kind === 'addon' ? st.itemName : 'Plan ' + st.planName }}</dd></div>
+            <div><dt>Total</dt><dd>{{ money(st.total, st.currency) }}</dd></div>
+          </dl>
+        }
+        <app-payment-logos class="by" [cardsOnly]="s()?.mode === 'subscription'" />
       </div>
     </div>
   `,
   styles: [`
-    .result-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px;
-      box-sizing: border-box; background: var(--color-bg-app); }
-    .result { width: 100%; max-width: 480px; padding: 32px 28px; text-align: center; display: flex; flex-direction: column;
-      align-items: center; gap: 12px; }
+    .result-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+      padding: 24px 16px; box-sizing: border-box; background: var(--color-bg-app); }
+    .brand img { height: 32px; display: block; }
+    .result { width: 100%; max-width: 480px; padding: 36px 28px 28px; text-align: center; display: flex; flex-direction: column;
+      align-items: center; gap: 12px; box-sizing: border-box; }
+    .recap { width: 100%; margin: 10px 0 0; padding: 14px 16px; border-radius: 16px; background: var(--color-bg-light); display: grid; gap: 8px; box-sizing: border-box; }
+    .recap div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+    .recap dt { color: var(--color-text-muted); }
+    .recap dd { margin: 0; font-weight: 600; text-align: right; }
+    .by { margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--color-border); width: 100%; }
+    @media (max-width: 480px) { .result { padding: 28px 18px 22px; } h1 { font-size: 19px; } }
     h1 { font-family: var(--font-heading); font-size: 21px; margin: 0; }
     p { margin: 0; color: var(--color-text-muted); font-size: 14px; line-height: 1.6; }
     .ok { color: var(--color-success); } .warn { color: var(--color-warning); } .bad { color: var(--color-error); }
@@ -123,6 +139,10 @@ export class CheckoutResultComponent implements OnInit, OnDestroy {
   readonly CheckCircle2 = CheckCircle2; readonly Clock = Clock; readonly XCircle = XCircle; readonly Loader2 = Loader2;
 
   s = signal<CheckoutStatus | null>(null);
+
+  money(n: number, currency: 'PEN' | 'USD') {
+    return `${currency === 'USD' ? 'US$' : 'S/'} ${n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   missing = signal(false);
   polls = signal(0);
   private timer?: ReturnType<typeof setTimeout>;

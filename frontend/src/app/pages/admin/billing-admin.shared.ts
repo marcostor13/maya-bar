@@ -27,6 +27,7 @@ export const RECEIPT_STATUS: Record<string, { label: string; badge: string }> = 
   issued: { label: 'Emitido', badge: 'badge-success' },
   failed: { label: 'Con error', badge: 'badge-danger' },
   skipped: { label: 'No aplica', badge: 'badge-neutral' },
+  manual: { label: 'Por facturar', badge: 'badge-warning' },
 };
 
 export function money(n: number | null | undefined, currency = 'PEN'): string {

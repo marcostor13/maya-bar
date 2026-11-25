@@ -44,8 +44,13 @@ describe('Alta automática tras el pago (HU47)', () => {
   let sendHtml: jest.SpyInstance;
   const http = () => request(app.getHttpServer());
 
+  /** Correos al comprador: sin el aviso interno de venta (HU75). */
+  const buyerMails = () =>
+    sendHtml.mock.calls
+      .map((c) => (c as [{ subject: string; html: string }])[0])
+      .filter((m) => !m.subject.startsWith('Nueva venta'));
   const lastLink = () => {
-    const html = (sendHtml.mock.calls.at(-1) as [{ html: string }])[0].html;
+    const html = buyerMails().at(-1)!.html;
     const m =
       /acceso\?token=([\w-]+)&amp;email=|acceso\?token=([\w-]+)&email=/.exec(
         html,
@@ -115,7 +120,7 @@ describe('Alta automática tras el pago (HU47)', () => {
       emailVerified: true,
       accessPending: true,
     });
-    expect(sendHtml).toHaveBeenCalledTimes(1);
+    expect(buyerMails()).toHaveLength(1);
     const st = (await http().get(`/public/checkout/${session}`).expect(200))
       .body as Body;
     expect(st.status).toBe('fulfilled');
@@ -253,10 +258,16 @@ describe('Alta automática tras el pago (HU47)', () => {
   it('A1: si falla el correo de acceso, el reintento no suma otro periodo y el correo sí llega', async () => {
     const email = 'falla-correo@e2e.test';
     const session = await buy(email, 'Falla Correo');
-    sendHtml.mockRejectedValueOnce(new Error('Resend caído'));
+    // Falla el correo de acceso; el aviso de venta (HU75) sí sale.
+    sendHtml.mockImplementation((m: { subject: string }) =>
+      m.subject.startsWith('Nueva venta')
+        ? Promise.resolve('mock')
+        : Promise.reject(new Error('Resend caído')),
+    );
     await expect(
       app.get(PaymentsService).syncFromMp(approved(session)),
     ).rejects.toThrow('Resend caído');
+    sendHtml.mockResolvedValue('mock');
     const end1 = (await tenants.findOne({ email }).lean())!.subscription!
       .currentPeriodEnd!;
     sendHtml.mockClear();
@@ -265,7 +276,7 @@ describe('Alta automática tras el pago (HU47)', () => {
     const end2 = (await tenants.findOne({ email }).lean())!.subscription!
       .currentPeriodEnd!;
     expect(end2.getTime()).toBe(end1.getTime());
-    expect(sendHtml).toHaveBeenCalledTimes(1);
+    expect(buyerMails()).toHaveLength(1);
     const st = (await http().get(`/public/checkout/${session}`).expect(200))
       .body as Body;
     expect(st.status).toBe('fulfilled');

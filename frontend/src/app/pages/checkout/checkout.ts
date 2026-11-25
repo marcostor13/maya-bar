@@ -1,12 +1,13 @@
 import { Component, OnInit, PLATFORM_ID, computed, inject, signal, viewChild } from '@angular/core';
-import { TitleCasePipe, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormBuilder, ReactiveFormsModule, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { LucideAngularModule, Lock, ShieldCheck } from 'lucide-angular';
+import { LucideAngularModule, Lock, ShieldCheck, RefreshCw, CalendarCheck, TicketPercent, FileText, LoaderCircle } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ToastService } from '../../shared/toast';
 import { TurnstileComponent } from '../../shared/turnstile';
+import { PaymentLogosComponent } from '../../shared/payment-logos';
 import { AuthService } from '../../auth/auth.service';
 import { isValidRuc } from './ruc';
 
@@ -40,106 +41,158 @@ export function docValidator(group: AbstractControl): ValidationErrors | null {
   return /^\d{8}$/.test(num) ? null : { dni: true };
 }
 
-/** Checkout de planes (HU46): resumen con IGV, datos y salto a Mercado Pago. */
+/** Checkout de planes (HU46; diseño HU76): resumen con IGV, datos, sello de pago seguro y salto a Mercado Pago. */
 @Component({
   selector: 'app-checkout',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink, TitleCasePipe, LucideAngularModule, TurnstileComponent],
+  imports: [ReactiveFormsModule, RouterLink, LucideAngularModule, TurnstileComponent, PaymentLogosComponent],
   template: `
-    <div class="checkout-page">
+    <div class="checkout-page animate-fade-in">
       <header class="top">
         <a routerLink="/" class="brand"><img src="/logo.png?v=2" alt="Maya CRM" /></a>
-        <span class="secure"><lucide-icon [img]="Lock" [size]="14" /> Pago seguro con Mercado Pago</span>
+        <span class="secure-badge"><lucide-icon [img]="ShieldCheck" [size]="15" /> Pago seguro</span>
       </header>
 
+      <ol class="steps" aria-label="Pasos de la compra">
+        <li class="done"><span>1</span> Tu plan</li>
+        <li class="done"><span>2</span> Tus datos</li>
+        <li><span>3</span> Pago en Mercado Pago</li>
+      </ol>
+
       <div class="layout">
+        <!-- Plan -->
+        <section class="card config" aria-labelledby="plan-t">
+          <h1 class="title" id="plan-t">Elige tu plan</h1>
+
+          <div class="group">
+            <p class="group-label" id="g-plan">Plan</p>
+            <div class="plan-opts" role="radiogroup" aria-labelledby="g-plan">
+              @for (p of planOptions; track p.id) {
+                <button type="button" class="plan-opt" role="radio" [attr.aria-checked]="plan() === p.id" [class.active]="plan() === p.id" (click)="setPlan(p.id)">
+                  <span class="plan-opt-name">{{ p.name }}
+                    @if (p.featured) { <span class="tag">Más elegido</span> }
+                  </span>
+                  <span class="plan-opt-desc">{{ p.desc }}</span>
+                  <span class="radio-dot" aria-hidden="true"></span>
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="group">
+            <p class="group-label" id="g-period">Forma de pago</p>
+            <div class="seg" role="radiogroup" aria-labelledby="g-period">
+              @for (p of periods; track p) {
+                <button type="button" class="seg-btn" role="radio" [attr.aria-checked]="period() === p" [class.active]="period() === p" (click)="setPeriod(p)">
+                  {{ periodName(p) }}
+                  @if (periodSave(p); as save) { <span class="save">{{ save }}</span> }
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="group-row">
+            <div class="group">
+              <p class="group-label" id="g-cur">Moneda</p>
+              <div class="seg" role="radiogroup" aria-labelledby="g-cur">
+                <button type="button" class="seg-btn" role="radio" [attr.aria-checked]="currency() === 'PEN'" [class.active]="currency() === 'PEN'" (click)="setCurrency('PEN')">Soles (S/)</button>
+                <button type="button" class="seg-btn" role="radio" [attr.aria-checked]="currency() === 'USD'" [class.active]="currency() === 'USD'" (click)="setCurrency('USD')">Dólares (US$)</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <p class="group-label" id="g-setup">Implementación</p>
+            <div class="setup-opts" role="radiogroup" aria-labelledby="g-setup">
+              @for (o of setupOptions; track o.id) {
+                <button type="button" class="setup-opt" role="radio" [attr.aria-checked]="setup() === o.id" [class.active]="setup() === o.id" (click)="setSetup(o.id)">
+                  <span class="radio-dot" aria-hidden="true"></span>
+                  <span><strong>{{ o.label }}</strong><small>{{ o.desc }}</small></span>
+                </button>
+              }
+            </div>
+          </div>
+        </section>
+
         <!-- Resumen -->
-        <aside class="card summary">
-          <h1 class="title">Tu plan</h1>
-          <div class="pills" role="radiogroup" aria-label="Plan">
-            @for (p of plans; track p) {
-              <button type="button" class="pill" [class.active]="plan() === p" (click)="setPlan(p)" [attr.aria-pressed]="plan() === p">{{ p | titlecase }}</button>
-            }
-          </div>
-          <div class="pills" role="radiogroup" aria-label="Periodo">
-            @for (p of periods; track p) {
-              <button type="button" class="pill" [class.active]="period() === p" (click)="setPeriod(p)" [attr.aria-pressed]="period() === p">{{ periodLabel(p) }}</button>
-            }
-          </div>
-          <div class="pills small" role="radiogroup" aria-label="Moneda">
-            <button type="button" class="pill" [class.active]="currency() === 'PEN'" (click)="setCurrency('PEN')">Soles (Perú)</button>
-            <button type="button" class="pill" [class.active]="currency() === 'USD'" (click)="setCurrency('USD')">Dólares</button>
-          </div>
-
-          <div class="pills small setup-pick" role="radiogroup" aria-label="Implementación">
-            @for (o of setupOptions; track o.id) {
-              <button type="button" class="pill" role="radio" [attr.aria-checked]="setup() === o.id" [class.active]="setup() === o.id" (click)="setSetup(o.id)">{{ o.label }}</button>
-            }
-          </div>
-
-          @if (quote(); as q) {
-            <dl class="lines">
-              <div><dt>Plan {{ q.planName }} · {{ periodLabel(period()) }}</dt><dd>{{ money(q.listSubtotal ?? q.subtotal - (q.addonsSubtotal ?? 0)) }}</dd></div>
-              @if (q.addonsSubtotal) {
-                <div><dt>Extras contratados</dt><dd data-testid="addons">{{ money(q.addonsSubtotal) }}</dd></div>
-              }
-              @if (q.discount) {
-                <div class="discount"><dt>Cupón {{ q.couponCode }}{{ q.couponLabel ? ' · ' + q.couponLabel : '' }}</dt><dd data-testid="discount">−{{ money(q.discount) }}</dd></div>
-              }
-              @if (q.currency === 'PEN') {
-                <div><dt>IGV (18 %)</dt><dd data-testid="igv">{{ money(q.igv) }}</dd></div>
-              }
-              <div class="total"><dt>{{ q.setup ? 'Total del plan' : 'Total' }}</dt><dd data-testid="total">{{ money(q.total) }}</dd></div>
-            </dl>
-            @if (q.setup; as st) {
-              <dl class="lines setup-lines">
-                <div><dt>{{ st.name }}</dt><dd>{{ money(st.price) }}</dd></div>
-                @if (st.discount) {
-                  <div class="discount"><dt>Descuento por plan anual</dt><dd data-testid="setup-discount">−{{ money(st.discount) }}</dd></div>
+        <aside class="summary-col">
+          <div class="card summary">
+            <h2 class="title">Resumen</h2>
+            @if (quote(); as q) {
+              <dl class="lines">
+                <div><dt>Plan {{ q.planName }} · {{ periodName(period()) }}</dt><dd>{{ money(q.listSubtotal ?? q.subtotal - (q.addonsSubtotal ?? 0)) }}</dd></div>
+                @if (q.addonsSubtotal) {
+                  <div><dt>Extras contratados</dt><dd data-testid="addons">{{ money(q.addonsSubtotal) }}</dd></div>
                 }
-                @if (q.currency === 'PEN') { <div><dt>IGV (18 %)</dt><dd>{{ money(st.igv) }}</dd></div> }
-                <div class="total"><dt>{{ st.separate ? 'Implementación (pago aparte)' : 'Hoy pagas' }}</dt>
-                  <dd data-testid="due-today">{{ money(st.separate ? st.total : q.dueToday ?? q.total) }}</dd></div>
+                @if (q.discount) {
+                  <div class="discount"><dt>Cupón {{ q.couponCode }}{{ q.couponLabel ? ' · ' + q.couponLabel : '' }}</dt><dd data-testid="discount">−{{ money(q.discount) }}</dd></div>
+                }
+                @if (q.currency === 'PEN') {
+                  <div><dt>IGV (18 %)</dt><dd data-testid="igv">{{ money(q.igv) }}</dd></div>
+                }
+                <div class="total"><dt>{{ q.setup ? 'Total del plan' : 'Total' }}</dt><dd data-testid="total" aria-live="polite">{{ money(q.total) }}</dd></div>
               </dl>
-              @if (st.separate) {
-                <p class="note">La implementación se paga aparte, justo después de activar tu suscripción mensual.</p>
+              @if (q.setup; as st) {
+                <dl class="lines setup-lines">
+                  <div><dt>{{ st.name }}</dt><dd>{{ money(st.price) }}</dd></div>
+                  @if (st.discount) {
+                    <div class="discount"><dt>Descuento por plan anual</dt><dd data-testid="setup-discount">−{{ money(st.discount) }}</dd></div>
+                  }
+                  @if (q.currency === 'PEN') { <div><dt>IGV (18 %)</dt><dd>{{ money(st.igv) }}</dd></div> }
+                  <div class="total"><dt>{{ st.separate ? 'Implementación (pago aparte)' : 'Hoy pagas' }}</dt>
+                    <dd data-testid="due-today">{{ money(st.separate ? st.total : q.dueToday ?? q.total) }}</dd></div>
+                </dl>
+                @if (st.separate) {
+                  <p class="note">La implementación se paga aparte, justo después de activar tu suscripción mensual.</p>
+                }
               }
-            }
-            <p class="note">
-              @if (q.mode === 'subscription') { Cobro automático cada mes con tarjeta. Cancela cuando quieras. }
-              @else { Pago único con tarjeta, Yape o PagoEfectivo. Te avisamos antes de renovar. }
-            </p>
-          } @else {
-            <p class="note">Calculando…</p>
-          }
-
-          <div class="coupon">
-            @if (appliedCoupon()) {
-              <p class="note">Cupón <strong>{{ appliedCoupon() }}</strong> aplicado.
-                <button type="button" class="btn btn-ghost btn-sm" (click)="removeCoupon()">Quitar</button>
+              <p class="note renew">
+                <lucide-icon [img]="q.mode === 'subscription' ? RefreshCw : CalendarCheck" [size]="14" />
+                @if (q.mode === 'subscription') { <span>Cobro automático cada mes con tarjeta. Cancela cuando quieras.</span> }
+                @else { <span>Pago único con tarjeta, Yape o PagoEfectivo. Te avisamos antes de renovar.</span> }
               </p>
             } @else {
-              <label class="field">
-                <span>¿Tienes un cupón?</span>
-                <span class="coupon-row">
-                  <input class="input" [value]="couponInput()" (input)="couponInput.set($any($event.target).value)"
-                    (keydown.enter)="$event.preventDefault(); applyCoupon()" autocomplete="off" aria-describedby="coupon-error" />
-                  <button type="button" class="btn btn-secondary btn-sm" (click)="applyCoupon()" [disabled]="!couponInput().trim()">Aplicar</button>
-                </span>
-              </label>
-              @if (couponError()) { <p class="coupon-error" id="coupon-error" role="alert">{{ couponError() }}</p> }
+              <div class="skeleton" role="status" aria-label="Calculando el precio">
+                <span></span><span></span><span class="wide"></span>
+              </div>
             }
+
+            <div class="coupon">
+              @if (appliedCoupon()) {
+                <p class="coupon-ok"><lucide-icon [img]="TicketPercent" [size]="15" /> Cupón <strong>{{ appliedCoupon() }}</strong> aplicado
+                  <button type="button" class="btn btn-ghost btn-sm" (click)="removeCoupon()">Quitar</button>
+                </p>
+              } @else if (!couponOpen()) {
+                <button type="button" class="coupon-toggle" (click)="couponOpen.set(true)"><lucide-icon [img]="TicketPercent" [size]="15" /> ¿Tienes un cupón?</button>
+              } @else {
+                <label class="field">
+                  <span>Código del cupón</span>
+                  <span class="coupon-row">
+                    <input class="input" [value]="couponInput()" (input)="couponInput.set($any($event.target).value)"
+                      (keydown.enter)="$event.preventDefault(); applyCoupon()" autocomplete="off" aria-describedby="coupon-error" />
+                    <button type="button" class="btn btn-secondary btn-sm" (click)="applyCoupon()" [disabled]="!couponInput().trim()">Aplicar</button>
+                  </span>
+                </label>
+              }
+              @if (couponError()) { <p class="coupon-error" id="coupon-error" role="alert">{{ couponError() }}</p> }
+            </div>
+
+            <ul class="assure">
+              <li><lucide-icon [img]="Lock" [size]="15" /> Tus datos de tarjeta los escribes en Mercado Pago: Maya nunca los ve.</li>
+              <li><lucide-icon [img]="FileText" [size]="15" /> Boleta o factura electrónica a tu nombre.</li>
+              <li><lucide-icon [img]="ShieldCheck" [size]="15" /> Sin permanencia: cancelas cuando quieras.</li>
+            </ul>
           </div>
         </aside>
 
         <!-- Datos -->
-        <form class="card form" [formGroup]="form" (ngSubmit)="submit()">
-          <h2 class="title">Tus datos</h2>
+        <form id="checkout-form" class="card form" [formGroup]="form" (ngSubmit)="submit()" aria-labelledby="data-t">
+          <h2 class="title" id="data-t">Tus datos</h2>
           <div formGroupName="buyer" class="grid">
-            <label class="field"><span>Empresa</span><input class="input" formControlName="company" autocomplete="organization" /></label>
+            <label class="field"><span>Empresa</span><input class="input" formControlName="company" autocomplete="organization" placeholder="Nombre de tu negocio" /></label>
             <label class="field"><span>Tu nombre</span><input class="input" formControlName="name" autocomplete="name" /></label>
-            <label class="field"><span>Correo</span><input class="input" type="email" formControlName="email" autocomplete="email" /></label>
-            <label class="field"><span>Teléfono</span><input class="input" type="tel" formControlName="phone" autocomplete="tel" /></label>
+            <label class="field"><span>Correo</span><input class="input" type="email" formControlName="email" autocomplete="email" placeholder="tu@empresa.com" /></label>
+            <label class="field"><span>Teléfono <em>(opcional)</em></span><input class="input" type="tel" formControlName="phone" autocomplete="tel" placeholder="+51 999 999 999" /></label>
           </div>
 
           <h2 class="title">Comprobante</h2>
@@ -153,14 +206,14 @@ export function docValidator(group: AbstractControl): ValidationErrors | null {
             </label>
             <label class="field">
               <span>{{ isFactura() ? 'RUC' : 'DNI' }}</span>
-              <input class="input" formControlName="docNumber" inputmode="numeric" [attr.maxlength]="isFactura() ? 11 : 8" />
+              <input class="input" formControlName="docNumber" inputmode="numeric" [attr.maxlength]="isFactura() ? 11 : 8" [attr.aria-invalid]="!!docError()" />
             </label>
             <label class="field"><span>{{ isFactura() ? 'Razón social' : 'Nombre completo' }}</span><input class="input" formControlName="legalName" /></label>
             @if (isFactura()) {
               <label class="field"><span>Dirección fiscal</span><input class="input" formControlName="address" /></label>
             }
           </div>
-          @if (docError(); as e) { <p class="form-error" data-testid="doc-error">{{ e }}</p> }
+          @if (docError(); as e) { <p class="form-error" data-testid="doc-error" role="alert">{{ e }}</p> }
 
           <label class="check-row">
             <input type="checkbox" formControlName="acceptTerms" />
@@ -170,54 +223,157 @@ export function docValidator(group: AbstractControl): ValidationErrors | null {
           @if (!loggedIn() && siteKey) {
             <app-turnstile [siteKey]="siteKey" (token)="captchaToken.set($event)" />
           }
-          @if (error()) { <p class="form-error">{{ error() }}</p> }
+          @if (error()) { <p class="form-error" role="alert">{{ error() }}</p> }
 
-          <button type="submit" class="btn btn-primary btn-lg pay" [disabled]="!canSubmit()">
-            <lucide-icon [img]="ShieldCheck" [size]="18" />
-            {{ loading() ? 'Conectando con Mercado Pago…' : 'Pagar ' + (quote() ? money(quote()!.setup && !quote()!.setup!.separate ? quote()!.dueToday! : quote()!.total) : '') }}
+          <button type="submit" class="btn btn-primary btn-lg pay pay-main" [disabled]="!canSubmit()">
+            @if (loading()) { <lucide-icon [img]="LoaderCircle" [size]="18" class="spin" /> Conectando con Mercado Pago… }
+            @else { <lucide-icon [img]="Lock" [size]="17" /> Pagar {{ payAmount() }} }
           </button>
+          <p class="pay-hint">Te llevamos a Mercado Pago para completar el pago de forma segura.</p>
+          <app-payment-logos [cardsOnly]="quote()?.mode === 'subscription'" />
         </form>
+      </div>
+
+      <!-- Barra de pago fija en móvil -->
+      <div class="mobile-bar">
+        <div class="mb-total">
+          <small>{{ quote()?.setup && !quote()!.setup!.separate ? 'Hoy pagas' : 'Total' }}</small>
+          <strong>{{ payAmount() || '—' }}</strong>
+        </div>
+        <button type="submit" form="checkout-form" class="btn btn-primary pay" [disabled]="!canSubmit()">
+          @if (loading()) { <lucide-icon [img]="LoaderCircle" [size]="16" class="spin" /> Conectando… }
+          @else { <lucide-icon [img]="Lock" [size]="15" /> Pagar }
+        </button>
       </div>
     </div>
   `,
   styles: [`
-    .checkout-page { min-height: 100vh; background: var(--color-bg-app); padding: 24px 16px 48px; box-sizing: border-box; }
-    .top { max-width: 1040px; margin: 0 auto 24px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .brand img { height: 36px; }
-    .secure { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--color-text-muted); }
-    .layout { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
-    .card { padding: 24px; min-width: 0; }
-    .title { font-family: var(--font-heading); font-size: 18px; font-weight: 700; margin: 0 0 14px; }
-    .form .title:not(:first-child) { margin-top: 24px; }
-    .pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-    .pill { min-height: 36px; padding: 0 14px; border-radius: var(--radius-pill); border: 1px solid var(--color-border);
-      background: var(--color-white); color: var(--color-text-main); font: 600 13px var(--font-base); cursor: pointer; }
-    .pill.active { background: var(--color-brand); border-color: var(--color-brand); color: var(--color-white); }
-    .pills.small .pill { min-height: 30px; font-size: 12px; }
-    .lines { margin: 16px 0 8px; display: grid; gap: 8px; }
+    :host { display: block; }
+    .checkout-page { min-height: 100vh; background: var(--color-bg-app); padding: 20px 16px 48px; box-sizing: border-box; }
+    .top { max-width: 1080px; margin: 0 auto 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .brand img { height: 34px; display: block; }
+    .secure-badge { display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: var(--radius-pill);
+      background: var(--color-white); border: 1px solid var(--color-border); font-size: 13px; font-weight: 600; color: var(--color-text-main); }
+    .secure-badge lucide-icon { color: var(--color-success); }
+
+    .steps { max-width: 1080px; margin: 0 auto 22px; padding: 0; list-style: none; display: flex; gap: 8px; flex-wrap: wrap; }
+    .steps li { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--color-text-muted); }
+    .steps li:not(:last-child)::after { content: ''; width: 28px; height: 1px; background: var(--color-border); margin-left: 4px; }
+    .steps span { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 12px; background: var(--color-white); border: 1px solid var(--color-border); }
+    .steps li.done { color: var(--color-text-main); }
+    .steps li.done span { background: var(--color-brand); border-color: var(--color-brand); color: var(--color-white); }
+
+    .layout { max-width: 1080px; margin: 0 auto; display: grid; gap: 20px; align-items: start;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+      grid-template-areas: "config summary" "form summary"; }
+    .config { grid-area: config; }
+    .form { grid-area: form; }
+    .summary-col { grid-area: summary; position: sticky; top: 20px; }
+    .card { padding: 24px; min-width: 0; box-sizing: border-box; }
+    .title { font-family: var(--font-heading); font-size: 18px; font-weight: 700; margin: 0 0 16px; }
+    .form .title:not(:first-child) { margin-top: 26px; }
+
+    .group { margin-bottom: 18px; min-width: 0; }
+    .group:last-child { margin-bottom: 0; }
+    .group-label { margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--color-text-muted); }
+
+    .plan-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .plan-opt, .setup-opt { position: relative; text-align: left; cursor: pointer; font: inherit; color: var(--color-text-main);
+      background: var(--color-white); border: 1.5px solid var(--color-border); border-radius: 16px;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast); }
+    .plan-opt { display: flex; flex-direction: column; gap: 4px; padding: 14px 40px 14px 14px; min-height: 76px; }
+    .plan-opt:hover, .setup-opt:hover { border-color: var(--color-brand); }
+    .plan-opt.active, .setup-opt.active { border-color: var(--color-brand); background: var(--color-brand-light); box-shadow: 0 0 0 3px var(--color-brand-light); }
+    .plan-opt-name { font-family: var(--font-heading); font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .plan-opt-desc { font-size: 12.5px; line-height: 1.35; color: var(--color-text-muted); }
+    .tag { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--color-brand); color: var(--color-white); font: 600 10.5px var(--font-base); }
+    .radio-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); box-sizing: border-box; flex: none; background: var(--color-white); }
+    .plan-opt .radio-dot { position: absolute; top: 14px; right: 14px; }
+    .active .radio-dot { border: 5px solid var(--color-brand); }
+
+    .seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: var(--radius-pill); background: var(--color-bg-light); border: 1px solid var(--color-border); width: fit-content; max-width: 100%; box-sizing: border-box; }
+    .seg-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--radius-pill);
+      background: transparent; color: var(--color-text-muted); font: 600 13px var(--font-base); cursor: pointer; }
+    .seg-btn.active { background: var(--color-white); color: var(--color-text-main); box-shadow: var(--shadow-md); }
+    .save { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--color-brand-light); color: var(--color-brand); font-size: 11px; font-weight: 700; }
+
+    .setup-opts { display: grid; gap: 8px; }
+    .setup-opt { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; }
+    .setup-opt strong { display: block; font-size: 14px; }
+    .setup-opt small { display: block; font-size: 12.5px; color: var(--color-text-muted); margin-top: 2px; }
+    .setup-opt .radio-dot { margin-top: 1px; }
+
+    .lines { margin: 0 0 8px; display: grid; gap: 10px; }
     .lines div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
     .lines dt { color: var(--color-text-muted); margin: 0; }
-    .lines dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .lines dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
     .lines .discount dd { color: var(--color-success); }
+    .lines .total { border-top: 1px dashed var(--color-border); padding-top: 12px; font-size: 15px; }
+    .lines .total dt { color: var(--color-text-main); font-weight: 700; }
+    .lines .total dd { font-family: var(--font-heading); font-size: 22px; font-weight: 700; }
+    .setup-lines { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+    .note { font-size: 13px; color: var(--color-text-muted); margin: 8px 0 0; }
+    .renew { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--color-bg-light); }
+    .renew lucide-icon { flex: none; margin-top: 2px; }
+    .skeleton { display: grid; gap: 10px; }
+    .skeleton span { height: 14px; border-radius: 8px; background: var(--color-bg-light); width: 70%; animation: pulse 1.2s ease-in-out infinite; }
+    .skeleton .wide { height: 22px; width: 100%; }
+    @keyframes pulse { 50% { opacity: .5; } }
+
     .coupon { margin-top: 16px; }
-    .setup-pick { margin-top: 12px; flex-wrap: wrap; }
-    .setup-lines { margin-top: 12px; }
+    .coupon-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+      color: var(--color-brand); font: 600 13px var(--font-base); }
+    .coupon-ok { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; font-size: 13px; color: var(--color-text-main); }
+    .coupon-ok lucide-icon { color: var(--color-success); }
     .coupon-row { display: flex; gap: 8px; align-items: center; }
     .coupon-row .input { flex: 1; min-width: 0; text-transform: uppercase; }
-    .coupon-error { color: var(--color-danger); margin: 6px 0 0; font-size: 13px; }
-    .lines .total { border-top: 1px solid var(--color-border); padding-top: 10px; font-size: 17px; }
-    .lines .total dt { color: var(--color-text-main); font-weight: 700; }
-    .note { font-size: 13px; color: var(--color-text-muted); margin: 8px 0 0; }
+    .coupon-error { color: var(--color-error); margin: 6px 0 0; font-size: 13px; }
+
+    .assure { list-style: none; margin: 18px 0 0; padding: 16px 0 0; border-top: 1px solid var(--color-border); display: grid; gap: 10px; }
+    .assure li { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--color-text-muted); line-height: 1.4; }
+    .assure lucide-icon { color: var(--color-success); flex: none; margin-top: 1px; }
+
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; min-width: 0; }
-    .check-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; margin: 20px 0 12px; }
+    .field em { font-style: normal; font-weight: 500; color: var(--color-text-muted); }
+    .check-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; margin: 22px 0 14px; cursor: pointer; }
+    .check-row input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--color-brand); flex: none; }
     .check-row a { color: var(--color-brand); }
     .form-error { color: var(--color-error); font-size: 13px; margin: 10px 0 0; }
-    .pay { width: 100%; justify-content: center; margin-top: 12px; }
-    @media (max-width: 860px) {
-      .layout { grid-template-columns: minmax(0, 1fr); }
-      .grid { grid-template-columns: minmax(0, 1fr); }
+    .pay { width: 100%; justify-content: center; gap: 8px; }
+    .pay-main { margin-top: 14px; }
+    .pay-hint { margin: 10px 0 16px; text-align: center; font-size: 12.5px; color: var(--color-text-muted); }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .mobile-bar { display: none; }
+    .pay:focus-visible, .plan-opt:focus-visible, .setup-opt:focus-visible, .seg-btn:focus-visible, .coupon-toggle:focus-visible {
+      outline: 2px solid var(--color-brand); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { .spin, .skeleton span { animation: none; } }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "config" "summary" "form"; }
+      .summary-col { position: static; }
+    }
+    @media (max-width: 640px) {
+      .checkout-page { padding: 14px 12px 112px; }
       .card { padding: 20px 16px; }
+      .steps li { font-size: 12px; }
+      .steps li:not(:last-child)::after { width: 12px; }
+      .plan-opts { grid-template-columns: minmax(0, 1fr); }
+      .plan-opt { min-height: 0; }
+      .seg { width: 100%; }
+      .seg-btn { flex: 1 1 auto; justify-content: center; padding: 0 10px; }
+      .grid { grid-template-columns: minmax(0, 1fr); }
+      .pay-main { display: none; }
+      .mobile-bar { display: flex; align-items: center; gap: 12px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: var(--color-white);
+        border-top: 1px solid var(--color-border); box-shadow: var(--shadow-lg); }
+      .mb-total { display: flex; flex-direction: column; min-width: 0; }
+      .mb-total small { font-size: 11.5px; color: var(--color-text-muted); }
+      .mb-total strong { font-family: var(--font-heading); font-size: 18px; white-space: nowrap; }
+      .mobile-bar .pay { flex: 1; width: auto; min-height: 46px; }
     }
   `],
 })
@@ -232,7 +388,16 @@ export class CheckoutComponent implements OnInit {
 
   readonly Lock = Lock;
   readonly ShieldCheck = ShieldCheck;
-  readonly plans = PLANS;
+  readonly RefreshCw = RefreshCw;
+  readonly CalendarCheck = CalendarCheck;
+  readonly TicketPercent = TicketPercent;
+  readonly FileText = FileText;
+  readonly LoaderCircle = LoaderCircle;
+  readonly planOptions: { id: PlanKey; name: string; desc: string; featured?: boolean }[] = [
+    { id: 'inicia', name: 'Inicia', desc: 'Ordena tus ventas y no pierdas contactos.' },
+    { id: 'crece', name: 'Crece', desc: 'Equipo comercial con campañas y agentes de IA.', featured: true },
+    { id: 'escala', name: 'Escala', desc: 'Más usuarios, volumen y automatización.' },
+  ];
   readonly periods = PERIODS;
   readonly siteKey = environment.turnstileSiteKey;
 
@@ -244,10 +409,12 @@ export class CheckoutComponent implements OnInit {
   /** Implementación (HU55): '' = autoservicio. */
   setup = signal<'' | 'puesta' | 'pro'>('');
   readonly setupOptions = [
-    { id: '' as const, label: 'Lo configuro yo' },
-    { id: 'puesta' as const, label: 'Puesta en marcha' },
-    { id: 'pro' as const, label: 'Implementación Pro' },
+    { id: '' as const, label: 'Lo configuro yo', desc: 'Sin costo extra. Guías paso a paso y soporte.' },
+    { id: 'puesta' as const, label: 'Puesta en marcha', desc: 'Conectamos tus canales y dejamos todo listo contigo.' },
+    { id: 'pro' as const, label: 'Implementación Pro', desc: 'Lo configuramos por ti: agentes, flujos y capacitación.' },
   ];
+  /** El campo del cupón se abre a pedido para no distraer del pago. */
+  couponOpen = signal(false);
   couponInput = signal('');
   appliedCoupon = signal('');
   couponError = signal('');
@@ -308,7 +475,7 @@ export class CheckoutComponent implements OnInit {
     const impl = q.get('implementacion');
     if (impl === 'puesta' || impl === 'pro') this.setup.set(impl);
     const cupon = q.get('cupon');
-    if (cupon) { this.couponInput.set(cupon); this.appliedCoupon.set(cupon.trim().toUpperCase()); }
+    if (cupon) { this.couponOpen.set(true); this.couponInput.set(cupon); this.appliedCoupon.set(cupon.trim().toUpperCase()); }
     this.loadQuote();
     if (this.loggedIn()) this.prefill();
   }
@@ -339,7 +506,16 @@ export class CheckoutComponent implements OnInit {
     this.loadQuote();
   }
 
-  periodLabel(p: string) { return ({ mensual: 'Mensual', trimestral: 'Trimestral (−5 %)', anual: 'Anual (2 meses gratis)' } as Record<string, string>)[p] ?? p; }
+  periodName(p: string) { return ({ mensual: 'Mensual', trimestral: 'Trimestral', anual: 'Anual' } as Record<string, string>)[p] ?? p; }
+  periodSave(p: string) { return ({ trimestral: '−5 %', anual: '2 meses gratis' } as Record<string, string>)[p] ?? ''; }
+
+  /** Lo que se cobra hoy en Mercado Pago (plan + implementación si van juntos). */
+  payAmount = computed(() => {
+    const q = this.quote();
+    if (!q) return '';
+    return this.money(q.setup && !q.setup.separate ? q.dueToday ?? q.total : q.total);
+  });
+
 
   money(n: number) {
     const sym = this.currency() === 'USD' ? 'US$' : 'S/';

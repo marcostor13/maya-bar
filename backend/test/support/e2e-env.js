@@ -34,6 +34,9 @@ function isolateEnv(overrides) {
       SUPERADMIN_2FA: 'optional',
       // Secreto falso para firmar los webhooks simulados de Meta.
       FACEBOOK_APP_SECRET: 'e2e-app-secret',
+      // Las e2e de comprobantes (HU49) prueban la emisión automática; la de
+      // HU75 la apaga para probar la facturación manual.
+      INVOICING_AUTO: 'true',
     },
     overrides,
   );

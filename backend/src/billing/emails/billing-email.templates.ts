@@ -381,6 +381,56 @@ export const T = {
       },
     );
   },
+
+  /** Al dueño: nueva venta con los datos para facturar a mano (HU75). */
+  saleAlert(p: {
+    concept: string;
+    amount: number;
+    currency: string;
+    paidAt: Date;
+    paymentType?: string;
+    providerPaymentId?: string;
+    company?: string;
+    buyer?: { name?: string; email?: string; phone?: string };
+    billing?: {
+      docType?: string;
+      docNumber?: string;
+      legalName?: string;
+      address?: string;
+      email?: string;
+    };
+    invoicing: 'manual' | 'auto';
+    url: string;
+  }) {
+    const rows: [string, string][] = [
+      ['Concepto', p.concept],
+      ['Monto', money(p.amount, p.currency)],
+      ['Fecha', longDate(p.paidAt)],
+      ['Medio de pago', p.paymentType ?? '—'],
+      ['Pago en Mercado Pago', p.providerPaymentId ?? '—'],
+      ['Empresa', p.company ?? '—'],
+      ['Comprador', p.buyer?.name ?? '—'],
+      ['Correo', p.buyer?.email ?? '—'],
+      ['Teléfono', p.buyer?.phone ?? '—'],
+      ['Comprobante', p.billing?.docType ?? '—'],
+      ['RUC / DNI', p.billing?.docNumber ?? '—'],
+      ['Razón social / nombre', p.billing?.legalName ?? '—'],
+      ['Dirección fiscal', p.billing?.address ?? '—'],
+      ['Correo de facturación', p.billing?.email ?? '—'],
+    ];
+    return build(`Nueva venta: ${p.concept} · ${money(p.amount, p.currency)}`, {
+      title: 'Nueva venta en Maya',
+      body: [
+        `${esc(p.company ?? p.buyer?.name ?? 'Un cliente')} pagó ${esc(money(p.amount, p.currency))}.`,
+        p.invoicing === 'manual'
+          ? '<b>Facturación manual:</b> Maya no emite el comprobante. Emítelo tú y márcalo como facturado en el panel.'
+          : 'El comprobante se emite automáticamente.',
+      ],
+      rows,
+      cta: { label: 'Ver pagos por facturar', url: p.url },
+      footer: 'Aviso interno de Maya CRM.',
+    });
+  },
 };
 
 /** Motivos de rechazo de Mercado Pago en lenguaje claro. */

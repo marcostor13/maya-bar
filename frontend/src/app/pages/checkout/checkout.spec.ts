@@ -146,6 +146,52 @@ describe('Checkout (HU46)', () => {
     post.flush({ message: 'Mercado Pago no respondió' }, { status: 400, statusText: 'Bad Request' });
     expect(toast.error).toHaveBeenCalled();
   });
+
+  it('HU76: muestra el sello de pago seguro; en mensual solo tarjetas, en pago único también Yape', async () => {
+    const http = setup({ plan: 'crece', periodo: 'mensual' });
+    const f = TestBed.createComponent(CheckoutComponent);
+    f.detectChanges();
+    http.expectOne(r => r.url === `${API}/public/checkout/quote`).flush({ plan: 'crece', planName: 'Crece', period: 'monthly', currency: 'PEN', subtotal: 249, igv: 44.82, total: 293.82, mode: 'subscription' });
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Pago seguro procesado por');
+    expect(el.querySelector('[aria-label="Mercado Pago"]')).not.toBeNull();
+    expect(el.querySelector('[aria-label="Visa"]')).not.toBeNull();
+    expect(el.querySelector('[title="Yape"]')).toBeNull();
+    // El monto del botón y de la barra móvil es el total del plan.
+    expect(el.querySelector('.pay-main')!.textContent).toContain('S/ 293.82');
+    expect(el.querySelector('.mobile-bar')!.textContent).toContain('S/ 293.82');
+
+    f.componentInstance.setPeriod('anual');
+    http.expectOne(r => r.url === `${API}/public/checkout/quote`).flush({ plan: 'crece', planName: 'Crece', period: 'annual', currency: 'PEN', subtotal: 2490, igv: 448.2, total: 2938.2, mode: 'one_time' });
+    f.detectChanges();
+    expect(el.querySelector('[title="Yape"]')).not.toBeNull();
+    expect(el.querySelector('[role="radio"][aria-checked="true"]')!.textContent).toContain('Crece');
+  });
+
+  it('HU76: el cupón se abre a pedido y llega abierto si viene en la URL', async () => {
+    const http = setup({ plan: 'crece', periodo: 'mensual' });
+    const f = TestBed.createComponent(CheckoutComponent);
+    f.detectChanges();
+    http.expectOne(r => r.url === `${API}/public/checkout/quote`).flush({ plan: 'crece', planName: 'Crece', period: 'monthly', currency: 'PEN', subtotal: 249, igv: 44.82, total: 293.82, mode: 'subscription' });
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('.coupon .input')).toBeNull();
+    (el.querySelector('.coupon-toggle') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(el.querySelector('.coupon .input')).not.toBeNull();
+  });
+
+  it('HU76: con ?cupon= el cupón llega abierto y aplicado', async () => {
+    const http = setup({ plan: 'crece', periodo: 'anual', cupon: 'lanza' });
+    const f = TestBed.createComponent(CheckoutComponent);
+    f.detectChanges();
+    http.expectOne(r => r.url === `${API}/public/checkout/quote` && r.params.get('coupon') === 'LANZA')
+      .flush({ plan: 'crece', planName: 'Crece', period: 'annual', currency: 'PEN', subtotal: 2490, igv: 448.2, total: 2938.2, mode: 'one_time', couponCode: 'LANZA' });
+    f.detectChanges();
+    expect(f.componentInstance.couponOpen()).toBe(true);
+    expect((f.nativeElement as HTMLElement).textContent).toContain('LANZA');
+  });
 });
 
 describe('Resultado del checkout (HU46)', () => {
