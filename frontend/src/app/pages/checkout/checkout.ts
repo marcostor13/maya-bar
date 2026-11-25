@@ -276,6 +276,7 @@ export function docValidator(group: AbstractControl): ValidationErrors | null {
 
     .group { margin-bottom: 18px; min-width: 0; }
     .group:last-child { margin-bottom: 0; }
+    .group-row { margin-bottom: 18px; }
     .group-label { margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--color-text-muted); }
 
     .plan-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -359,12 +360,16 @@ export function docValidator(group: AbstractControl): ValidationErrors | null {
     @media (max-width: 640px) {
       .checkout-page { padding: 14px 12px 112px; }
       .card { padding: 20px 16px; }
-      .steps li { font-size: 12px; }
-      .steps li:not(:last-child)::after { width: 12px; }
+      .steps { flex-wrap: nowrap; gap: 6px; }
+      .steps li { font-size: 11.5px; gap: 5px; white-space: nowrap; }
+      .steps li:not(:last-child)::after { width: 8px; margin-left: 0; }
+      .steps span { width: 20px; height: 20px; font-size: 11px; }
       .plan-opts { grid-template-columns: minmax(0, 1fr); }
       .plan-opt { min-height: 0; }
       .seg { width: 100%; }
-      .seg-btn { flex: 1 1 auto; justify-content: center; padding: 0 10px; }
+      .seg { flex-wrap: nowrap; }
+      .seg-btn { flex: 1 1 0; flex-direction: column; justify-content: center; gap: 2px; padding: 6px 4px; min-width: 0; }
+      .save { padding: 1px 6px; font-size: 10px; }
       .grid { grid-template-columns: minmax(0, 1fr); }
       .pay-main { display: none; }
       .mobile-bar { display: flex; align-items: center; gap: 12px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;

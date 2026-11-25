@@ -16,7 +16,7 @@ Pedido: `hu.md` · Spec: `spec.md` · Plan: `plan.md` · Tareas: `tasks.md`
 | C3 | Cupón a pedido / abierto desde la URL | CUMPLE | `couponOpen`; 2 pruebas |
 | C4 | radiogroup / aria-checked | CUMPLE | `checkout.ts`; spec |
 | C5 | Pruebas anteriores siguen pasando | CUMPLE | 1034/1034 |
-| C6 | 390 px sin scroll horizontal, barra fija | NO VERIFICADO → revisión en producción | CSS `@media (max-width: 640px)` |
+| C6 | 390 px sin scroll horizontal, barra fija | CUMPLE (producción, iframe 390 px: scrollWidth 375, barra fixed) | CSS `@media (max-width: 640px)` |
 | C7 | Resultado con resumen | CUMPLE | `checkout-result.ts` `recap` |
 
 ## Qué se implementó

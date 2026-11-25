@@ -14,7 +14,7 @@ Pedido: `hu.md` · Spec: `spec.md` · Plan: `plan.md` · Tareas: `tasks.md`
 | C1 | Precio de lista tachado en trimestral/anual | CUMPLE | `landing.ts` `listMonthly`; `landing.spec.ts` (HU77) |
 | C2 | Bloque de confianza con Mercado Pago y Yape | CUMPLE (tras corrección: en mensual solo tarjetas) | `landing.ts` `.pay-trust`; spec |
 | C3 | Pruebas de HU56 siguen pasando | CUMPLE | 1034/1034 |
-| C4 | 390 px: selector sin desbordar, Crece primero | NO VERIFICADO → revisión en producción | CSS `@media (max-width: 640px)` |
+| C4 | 390 px: selector sin desbordar, Crece primero | CUMPLE (producción, iframe 390 px: toggle 325/325, Crece arriba) | CSS `@media (max-width: 640px)` |
 
 ## Qué se implementó
 
