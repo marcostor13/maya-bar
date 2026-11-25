@@ -5,8 +5,11 @@ import {
   writeResponseToNodeResponse,
 } from '@angular/ssr/node';
 import express from 'express';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isPlatformHost } from './app/shared/custom-domain';
+import { eventMeta, injectMeta, type EventMeta } from './app/shared/event-meta';
+import { environment } from './environments/environment';
 
 /**
  * Servidor SSR de la aplicación. El despliegue es un contenedor Node en Coolify
@@ -35,6 +38,50 @@ const angularApp = new AngularNodeAppEngine({
   trustProxyHeaders: true,
   ...(extraAllowedHosts.length ? { allowedHosts: extraAllowedHosts } : {}),
 });
+
+/**
+ * Vista previa de los enlaces de eventos. WhatsApp, Facebook y compañía no
+ * ejecutan JavaScript: sin esto veían el título, la descripción y el logo de
+ * Maya del caparazón de cliente. Se consulta el evento en la API y se ponen
+ * sus etiquetas en el HTML. Si la API falla o tarda, se entrega el caparazón
+ * tal cual (la página funciona igual).
+ */
+const API = (process.env['BACKEND_URL'] || environment.apiUrl).replace(/\/$/, '');
+const META_TTL_MS = 5 * 60_000;
+const metaCache = new Map<string, { at: number; meta: EventMeta | null }>();
+let csrShell: string | null = null;
+
+function shell(): string {
+  csrShell ??= readFileSync(join(browserDistFolder, 'index.csr.html'), 'utf8');
+  return csrShell;
+}
+
+async function getJson<T>(url: string): Promise<T | null> {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(2500), headers: { accept: 'application/json' } });
+    return r.ok ? ((await r.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function metaFor(key: string, slug: () => Promise<string | null>, pageUrl: string): Promise<EventMeta | null> {
+  const hit = metaCache.get(key);
+  if (hit && Date.now() - hit.at < META_TTL_MS) return hit.meta;
+  const s = await slug();
+  const data = s
+    ? await getJson<Parameters<typeof eventMeta>[0]>(`${API}/public/events/${encodeURIComponent(s)}`)
+    : null;
+  const meta = data?.event?.title ? eventMeta(data, pageUrl, environment.siteUrl) : null;
+  metaCache.set(key, { at: Date.now(), meta });
+  if (metaCache.size > 500) metaCache.delete(metaCache.keys().next().value as string);
+  return meta;
+}
+
+function sendShell(res: express.Response, meta: EventMeta | null) {
+  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+  res.type('html').send(meta ? injectMeta(shell(), meta) : shell());
+}
 
 /** Sonda de salud para el healthcheck del contenedor: no pasa por Angular. */
 app.get('/healthz', (_req, res) => {
@@ -90,8 +137,23 @@ app.use((req, res, next) => {
   // En el dominio del cliente solo existe la landing: nada de /login ni del
   // resto de la app bajo su marca.
   if (req.path !== '/') return res.redirect(302, '/');
-  res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
-  res.sendFile('index.csr.html', { root: browserDistFolder }, (err) => (err ? next() : undefined));
+  const h = host.toLowerCase().replace(/:\d+$/, '');
+  metaFor(
+    `host:${h}`,
+    async () =>
+      (await getJson<{ slug: string }>(`${API}/public/landing-domains/resolve?host=${encodeURIComponent(h)}`))?.slug ?? null,
+    `https://${h}/`,
+  )
+    .then((meta) => sendShell(res, meta))
+    .catch(next);
+});
+
+/** Página pública de un evento (`/e/:slug`) con su vista previa. */
+app.get('/e/:slug', (req, res, next) => {
+  const slug = String(req.params['slug']);
+  metaFor(`slug:${slug}`, async () => slug, `${environment.siteUrl.replace(/\/$/, '')}/e/${encodeURIComponent(slug)}`)
+    .then((meta) => sendShell(res, meta))
+    .catch(next);
 });
 
 /**
