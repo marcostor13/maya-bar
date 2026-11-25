@@ -11,7 +11,7 @@ import {
   MercadoPagoClient,
   type MpPreapproval,
 } from './mercadopago/mercadopago.client';
-import { PlanChangeService } from './plan-change.service';
+import { MP_CANCEL_REASON, PlanChangeService } from './plan-change.service';
 import { Payment } from './payment.schema';
 import { CheckoutSession } from './checkout-session.schema';
 import { BillingHooks, type PaymentChange } from './billing-hooks.service';
@@ -69,6 +69,28 @@ export class SubscriptionLifecycleService implements OnModuleInit {
    */
   async onPreapprovalCancelled(pre: MpPreapproval) {
     if (pre.status !== 'cancelled' || !pre.id) return;
+    // En impago no hay periodo pagado por delante: se cierra ya (como HU51).
+    const pastDue = await this.tenants
+      .findOneAndUpdate(
+        {
+          'subscription.mpPreapprovalId': pre.id,
+          'subscription.status': 'past_due',
+        },
+        {
+          $set: {
+            'subscription.status': 'canceled',
+            'subscription.canceledAt': new Date(),
+            'subscription.cancelReason': MP_CANCEL_REASON,
+          },
+        },
+      )
+      .select('_id')
+      .lean()
+      .exec();
+    if (pastDue) {
+      this.access.invalidate(String(pastDue._id));
+      return;
+    }
     const res = await this.tenants
       .findOneAndUpdate(
         {
@@ -80,7 +102,7 @@ export class SubscriptionLifecycleService implements OnModuleInit {
           $set: {
             'subscription.cancelAtPeriodEnd': true,
             'subscription.canceledAt': new Date(),
-            'subscription.cancelReason': 'Cancelada desde Mercado Pago',
+            'subscription.cancelReason': MP_CANCEL_REASON,
           },
         },
       )

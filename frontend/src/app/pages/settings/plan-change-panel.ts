@@ -1,3 +1,4 @@
+import { RouterLink } from '@angular/router';
 import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -14,7 +15,7 @@ export interface PlanOption {
 }
 export interface PlanOptions {
   current: string; paid: boolean; pastDue?: boolean; period?: string; currency?: 'PEN' | 'USD';
-  currentPeriodEnd?: string; cancelAtPeriodEnd: boolean; pendingPlan?: string;
+  currentPeriodEnd?: string; cancelAtPeriodEnd: boolean; canceledInMp?: boolean; pendingPlan?: string;
   plans: PlanOption[];
   users: { id: string; name?: string; email: string; role: string }[];
 }
@@ -29,17 +30,23 @@ const LABELS: Record<string, string> = {
   selector: 'app-plan-change-panel',
   standalone: true,
   host: { '(document:keydown.escape)': 'closeModals()' },
-  imports: [FormsModule, DatePipe, LucideAngularModule],
+  imports: [FormsModule, DatePipe, LucideAngularModule, RouterLink],
   template: `
     @if (opts(); as o) {
       @if (o.paid) {
         @if (o.pastDue) {
           <button class="btn btn-ghost btn-sm cancel-link" type="button" (click)="cancelOpen.set(true)" [disabled]="busy()">Cancelar mi plan</button>
         } @else if (o.cancelAtPeriodEnd) {
-          <p class="note warn">Cancelaste tu plan: sigue activo hasta el <strong>{{ o.currentPeriodEnd | date: 'd MMM y' }}</strong>; luego queda en solo lectura.</p>
-          <button class="btn btn-primary btn-sm" type="button" (click)="reactivate()" [disabled]="busy()">
-            <lucide-icon [img]="RotateCcw" [size]="14" /> Reactivar mi plan
-          </button>
+          <p class="note warn">Cancelaste tu plan{{ o.canceledInMp ? ' en Mercado Pago' : '' }}: sigue activo hasta el <strong>{{ o.currentPeriodEnd | date: 'd MMM y' }}</strong>; luego queda en solo lectura.</p>
+          @if (o.canceledInMp) {
+            <a class="btn btn-primary btn-sm" routerLink="/checkout" [queryParams]="{ plan: o.current }">
+              <lucide-icon [img]="RotateCcw" [size]="14" /> Volver a suscribirme
+            </a>
+          } @else {
+            <button class="btn btn-primary btn-sm" type="button" (click)="reactivate()" [disabled]="busy()">
+              <lucide-icon [img]="RotateCcw" [size]="14" /> Reactivar mi plan
+            </button>
+          }
         } @else {
           @if (o.pendingPlan) {
             <p class="note">Pasarás al plan <strong>{{ nameOf(o.pendingPlan) }}</strong> el {{ o.currentPeriodEnd | date: 'd MMM y' }}.

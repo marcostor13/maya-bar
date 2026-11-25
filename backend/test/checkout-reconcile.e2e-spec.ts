@@ -134,6 +134,9 @@ describe('Conciliación de compras sin webhook (HU78, e2e)', () => {
       .get(BillingHooks)
       .emitPreapproval({ id: preId, status: 'cancelled' });
     const after = (await tenants.findById(t._id).lean())!.subscription!;
+    expect(
+      (await app.get(PlanChangeService).options(String(t._id))).canceledInMp,
+    ).toBe(true);
     expect(after).toMatchObject({ status: 'active', cancelAtPeriodEnd: true });
     jest
       .spyOn(mp, 'updatePreapproval')
@@ -170,6 +173,43 @@ describe('Conciliación de compras sin webhook (HU78, e2e)', () => {
     ).toMatchObject({
       status: 'active',
       period: 'annual',
+    });
+  });
+
+  it('mensual cancelada antes de pagar → la compra queda rechazada y no se vuelve a consultar', async () => {
+    const publicId = await buy('cancelada-hu78@e2e.test', 'mensual');
+    const preId = (await sessions.findOne({ publicId }).lean())!
+      .mpPreapprovalId!;
+    await age(publicId);
+    jest
+      .spyOn(mp, 'getPreapproval')
+      .mockResolvedValue({ id: preId, status: 'cancelled' });
+    await app.get(CheckoutReconcileService).reconcile();
+    expect((await sessions.findOne({ publicId }).lean())!.status).toBe(
+      'rejected',
+    );
+  });
+
+  it('impago y cancelada desde Mercado Pago → se cierra ya', async () => {
+    const t = (await tenants
+      .findOne({ email: 'mensual-hu78@e2e.test' })
+      .lean())!;
+    const preId = t.subscription!.mpPreapprovalId!;
+    await tenants.updateOne(
+      { _id: t._id },
+      {
+        $set: {
+          'subscription.status': 'past_due',
+          'subscription.cancelAtPeriodEnd': false,
+        },
+      },
+    );
+    await app
+      .get(BillingHooks)
+      .emitPreapproval({ id: preId, status: 'cancelled' });
+    expect((await tenants.findById(t._id).lean())!.subscription).toMatchObject({
+      status: 'canceled',
+      cancelReason: 'Cancelada desde Mercado Pago',
     });
   });
 

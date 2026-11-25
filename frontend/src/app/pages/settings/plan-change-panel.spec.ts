@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { PlanChangePanelComponent, PlanOptions } from './plan-change-panel';
@@ -30,7 +31,7 @@ describe('PlanChangePanelComponent (HU52)', () => {
     await TestBed.configureTestingModule({
       imports: [PlanChangePanelComponent],
       providers: [
-        provideHttpClient(), provideHttpClientTesting(),
+        provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
         { provide: ToastService, useValue: toast },
         { provide: ConfirmService, useValue: confirm },
       ],
@@ -93,6 +94,14 @@ describe('PlanChangePanelComponent (HU52)', () => {
     button(el, 'Reactivar mi plan').click();
     http.expectOne(`${API}/reactivate`).flush({});
     http.expectOne(`${API}/options`).flush(BASE);
+  });
+
+  it('cancelada en Mercado Pago: ofrece volver a suscribirse, no reactivar (HU78)', async () => {
+    const { el } = await render({ cancelAtPeriodEnd: true, canceledInMp: true });
+    expect(el.textContent).toContain('Cancelaste tu plan en Mercado Pago');
+    expect(button(el, 'Reactivar mi plan')).toBeUndefined();
+    const link = [...el.querySelectorAll('a')].find(a => a.textContent?.includes('Volver a suscribirme'));
+    expect(link?.getAttribute('href')).toBe('/checkout?plan=crece');
   });
 
   it('un error muestra toast con el mensaje del servidor', async () => {

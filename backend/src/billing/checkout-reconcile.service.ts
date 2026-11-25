@@ -71,6 +71,16 @@ export class CheckoutReconcileService {
     if (preapprovalId) {
       const pre = await this.mp.getPreapproval(preapprovalId);
       await this.hooks.emitPreapproval(pre);
+      // Cancelada antes de pagar: la compra no seguirá; no se vuelve a consultar.
+      if (pre.status === 'cancelled') {
+        await this.sessions
+          .updateOne(
+            { publicId, status: { $in: ['pending', 'awaiting_payment'] } },
+            { $set: { status: 'rejected' } },
+          )
+          .exec();
+        return;
+      }
       if (pre.status !== 'authorized') return;
       for (const auth of await this.mp.searchAuthorizedPayments(
         preapprovalId,

@@ -41,6 +41,9 @@ export interface Excess {
  * prorrateado, bajar al fin del periodo eligiendo qué usuarios conservar,
  * cancelar al fin del periodo y reactivar antes de que termine.
  */
+/** Motivo que se guarda cuando el cliente cancela en Mercado Pago (HU78). */
+export const MP_CANCEL_REASON = 'Cancelada desde Mercado Pago';
+
 @Injectable()
 export class PlanChangeService {
   private readonly logger = new Logger(PlanChangeService.name);
@@ -157,6 +160,8 @@ export class PlanChangeService {
       currency: sub?.currency,
       currentPeriodEnd: sub?.currentPeriodEnd,
       cancelAtPeriodEnd: !!sub?.cancelAtPeriodEnd,
+      // Cancelada en Mercado Pago (HU78): no se puede reanudar, se vuelve a comprar.
+      canceledInMp: sub?.cancelReason === MP_CANCEL_REASON,
       pendingPlan: sub?.pendingPlan,
       plans,
       users: users.map((u) => ({
