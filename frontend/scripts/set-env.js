@@ -12,6 +12,8 @@ const siteUrl = process.env.SITE_URL || 'https://mayacrm.site';
 const whatsappNumber = process.env.WHATSAPP_NUMBER || '51975760418';
 // Clave pública (va en el HTML): el secreto vive solo en el backend.
 const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? '0x4AAAAAAFyRq2FkWFMu0uNq';
+// Píxel de Meta para la publicidad propia (HU84); público, va en el HTML. Vacío = sin píxel.
+const metaPixelId = process.env.META_PIXEL_ID ?? '1379074650817335';
 
 const content = `export const environment = {
   production: true,
@@ -21,6 +23,8 @@ const content = `export const environment = {
   whatsappNumber: '${whatsappNumber}',
   /** Clave pública de Cloudflare Turnstile (captcha del registro). Vacía = sin captcha. */
   turnstileSiteKey: '${turnstileSiteKey}',
+  /** Píxel de Meta (HU84): solo carga con consentimiento y en páginas públicas. */
+  metaPixelId: '${metaPixelId}',
 };
 `;
 
