@@ -55,10 +55,10 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | Yape | Pago real de un plan trimestral o una recarga eligiendo Yape en Mercado Pago (`docs/yape-mercadopago.md`). |
 | HU6, llamadas | Sigue pendiente la llamada real con un número que tenga la Calling API activa. |
 | Meta Ads: cuenta publicitaria | "Maya CRM – PEN" (1187816430486461) creada: falta agregar la tarjeta en Facturación y pagos. |
-| Meta Ads: píxel y CAPI (HU84) | Píxel "Conjunto MayaCRM" (1379074650817335) ya en `environment.prod.ts` y conectado a la cuenta. En Coolify (backend): `META_PIXEL_ID=1379074650817335` y `META_PIXEL_ID` y `META_CAPI_TOKEN` (Administrador de eventos > Configuración > Generar token de acceso). Para probar, `META_TEST_EVENT_CODE` y "Probar eventos". |
+| Meta Ads: píxel y CAPI (HU84) | Píxel "Conjunto MayaCRM" (1379074650817335) ya en `environment.prod.ts` y conectado a la cuenta. En Coolify (backend): `META_PIXEL_ID=1379074650817335` y `META_CAPI_TOKEN` (Administrador de eventos > Configuración > Generar token de acceso). Para probar, `META_TEST_EVENT_CODE` y "Probar eventos". |
 | Meta Ads: dominio | Tras el deploy, pulsar "Verificar dominio" en Configuración del negocio > Dominios > mayacrm.site. |
-| Meta Ads: WhatsApp de la página | El 991 172 822 no está en el portafolio "Maya IA", así que no se puede vincular a la página para anuncios de clic a WhatsApp. Opciones: compartir su cuenta de WhatsApp con el portafolio, o usar el 986 842 903 o el 948 780 715, que sí están. |
-| Meta Ads: Instagram | Terminar el inicio de sesión que abre "Conectar cuenta" en la página de Facebook, y poner el enlace de la biografía desde la app del celular (`docs/meta-ads-contenido.md`). |
+| Meta Ads: WhatsApp de la página | Revalidado el 2026-11-25: Meta rechaza el 991 172 822 ("tu página de Facebook también debe estar en el mismo portfolio comercial"). No está en los portafolios "Maya IA" ni "Marcos Torres Alarcón". Hay que compartir su cuenta de WhatsApp con "Maya IA" (1181735023516920) desde el portafolio donde está, o, si está en la app WhatsApp Business del celular, vincularlo desde la app (Herramientas > Facebook e Instagram). |
+| Meta Ads: Instagram | @mayacrmperu ya está vinculado a la página. Falta poner el enlace de la biografía desde la app del celular (`docs/meta-ads-contenido.md`). |
 
 ## 4. Fuera de lo hecho
 
