@@ -76,6 +76,8 @@ export class MetaTrackingService {
   private pricingSeen = false;
   private pricingObserver?: IntersectionObserver;
   private currentUrl = '/';
+  /** Última página que ya mandó PageView, sin el `#ancla`. */
+  private trackedPage: string | null = null;
   private started = false;
 
   init(): void {
@@ -107,7 +109,12 @@ export class MetaTrackingService {
     this.bannerVisible.set(this.eligible(url) && this.consent() === null);
     if (!this.active) return;
     this.ensurePixel();
-    this.fbq('track', 'PageView');
+    // Saltar a una sección de la misma página (`/#precios`) no es otra visita.
+    const page = url.split('#')[0];
+    if (page !== this.trackedPage) {
+      this.trackedPage = page;
+      this.fbq('track', 'PageView');
+    }
     this.watchPricing();
   }
 

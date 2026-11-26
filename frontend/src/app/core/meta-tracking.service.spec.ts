@@ -53,6 +53,17 @@ describe('MetaTrackingService (HU84)', () => {
     expect(calls()).toContainEqual(['consent', 'revoke']);
   });
 
+  it('saltar a una sección de la misma página no manda otro PageView', () => {
+    localStorage.setItem(CONSENT_KEY, 'all');
+    const t = make();
+    t.init();
+    t.onPage('/?utm_source=x');
+    t.onPage('/?utm_source=x#precios');
+    t.onPage('/register');
+    const views = calls().filter((c) => c[1] === 'PageView').length;
+    expect(views).toBe(2);
+  });
+
   it('"Solo necesarias" nunca carga el píxel', () => {
     const t = make();
     t.onPage('/');
