@@ -7,5 +7,5 @@ export const environment = {
   /** Clave pública de Cloudflare Turnstile (captcha del registro). Vacía = sin captcha. */
   turnstileSiteKey: '0x4AAAAAAFyRq2FkWFMu0uNq',
   /** Píxel de Meta de la publicidad propia (HU84). Vacío = sin medición ni aviso de cookies. */
-  metaPixelId: '',
+  metaPixelId: '1379074650817335',
 };
