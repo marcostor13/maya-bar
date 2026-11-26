@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LEGAL_CONTACT, LEGAL_DOCS, LegalDocKey } from './legal.data';
 import { SeoService } from '../../shared/seo';
 import { environment } from '../../../environments/environment';
+import { MetaTrackingService } from '../../core/meta-tracking.service';
 
 /**
  * Páginas legales públicas (privacidad, términos y eliminación de datos).
@@ -61,6 +62,9 @@ const LEGAL_PATHS: Record<LegalDocKey, string> = {
         <a routerLink="/privacidad">Política de privacidad</a>
         <a routerLink="/terminos">Términos del servicio</a>
         <a routerLink="/eliminacion-datos">Eliminación de datos</a>
+        @if (tracking.pixelId) {
+          <button type="button" class="lg-link" (click)="tracking.reopen()">Preferencias de cookies</button>
+        }
       </nav>
     </main>
   `,
@@ -81,12 +85,14 @@ const LEGAL_PATHS: Record<LegalDocKey, string> = {
       li { margin-bottom: 6px; }
       a { color: var(--color-brand); }
       .lg-nav { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 32px; font-size: 14px; }
+      .lg-link { background: none; border: 0; padding: 0; font: inherit; color: var(--color-brand); text-decoration: underline; cursor: pointer; }
     `,
   ],
 })
 export class LegalComponent {
   private route = inject(ActivatedRoute);
   private seo = inject(SeoService);
+  readonly tracking = inject(MetaTrackingService);
 
   readonly contact = LEGAL_CONTACT;
   readonly doc = computed(() => LEGAL_DOCS[this.route.snapshot.data['doc'] as LegalDocKey]);

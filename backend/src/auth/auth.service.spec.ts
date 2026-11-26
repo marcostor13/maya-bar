@@ -1,3 +1,4 @@
+import { MetaCapiService } from '../meta-ads/meta-capi.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { RefreshToken } from './refresh-token.schema';
@@ -74,6 +75,7 @@ describe('AuthService', () => {
     sendPasswordResetEmail: jest.fn(),
     sendEmailVerificationEmail: jest.fn(),
   };
+  const metaCapi = { reportRegistration: jest.fn().mockResolvedValue(null) };
   const jwtService = { sign: jest.fn().mockReturnValue('signed.jwt.token') };
   // El modelo de refresh tokens: login emite uno en cada sesión.
   const refreshTokenModel = {
@@ -96,6 +98,7 @@ describe('AuthService', () => {
         { provide: TenantsService, useValue: tenantsService },
         { provide: MailService, useValue: mailService },
         { provide: UserSessionsService, useValue: sessions },
+        { provide: MetaCapiService, useValue: metaCapi },
         {
           provide: getModelToken(RefreshToken.name),
           useValue: refreshTokenModel,
@@ -218,6 +221,38 @@ describe('AuthService', () => {
   describe('registerTenant', () => {
     beforeEach(() => {
       usersService.findOneByEmailAnyStatus.mockResolvedValue(null);
+    });
+
+    it('guarda el origen del registro y avisa a Meta con el mismo event_id que devuelve (HU84)', async () => {
+      tenantsService.create.mockResolvedValue({
+        _id: tenantOid,
+        name: 'Bar Maya',
+      });
+      usersService.create.mockResolvedValue(
+        makeUserDoc({ email: 'owner@bar.com' }),
+      );
+      const acquisition = {
+        consent: true,
+        utmSource: 'facebook',
+        fbc: 'fb.1.1.x',
+        capturedAt: new Date(),
+      };
+
+      const result = await service.registerTenant({
+        name: 'Bar Maya',
+        email: 'owner@bar.com',
+        ownerName: 'Owner',
+        ownerPassword: PASSWORD,
+        acquisition,
+      });
+
+      expect(tenantsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ acquisition }),
+      );
+      expect(metaCapi.reportRegistration).toHaveBeenCalledWith(
+        String(tenantOid),
+      );
+      expect(result).toMatchObject({ metaEventId: `reg_${String(tenantOid)}` });
     });
 
     it('creates the tenant and a TENANT_ADMIN user bound to it', async () => {

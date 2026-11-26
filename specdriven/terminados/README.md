@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-25 | [HU84 — Medición para Meta Ads: píxel, CAPI y consentimiento](2026-11-25-hu84-medicion-meta-ads/cierre.md) | Terminada (activar con el id del píxel y las variables META_*) | 4 CUMPLE · 2 PARCIAL corregidos (píxel en rutas privadas, revocación) · C7 [usuario] |
 | 2026-11-25 | [HU83 — Guías: costo de WhatsApp en Perú y paso a la API oficial](2026-11-25-hu83-guias/cierre.md) | Terminada | 3 CUMPLE; 1 frase corregida |
 | 2026-11-25 | [HU82 — Comparativas con HubSpot, Kommo, Leadsales y Wati](2026-11-25-hu82-comparativas/cierre.md) | Terminada (revisar precios cada trimestre) | 2 CUMPLE · 1 PARCIAL (cifras externas sin captura) |
 | 2026-11-25 | [HU81 — Páginas por industria](2026-11-25-hu81-paginas-industrias/cierre.md) | Terminada | NO CUMPLE inicial corregido (cartera por asesor) |

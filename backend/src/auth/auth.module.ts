@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { MetaAdsModule } from '../meta-ads/meta-ads.module';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -24,6 +25,7 @@ import { Tenant, TenantSchema } from '../tenants/tenant.schema';
     forwardRef(() => UsersModule),
     TenantsModule,
     MailModule,
+    MetaAdsModule,
     PassportModule,
     // Límite por IP de las rutas de /auth. El tope por defecto (60/min) solo
     // lo notan los bots; cada ruta sensible fija el suyo con @Throttle. Las

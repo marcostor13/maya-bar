@@ -3,6 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../auth/auth.service';
+import { MetaTrackingService } from '../../core/meta-tracking.service';
 import { ToastService } from '../../shared/toast';
 import { TurnstileComponent } from '../../shared/turnstile';
 import { environment } from '../../../environments/environment';
@@ -245,6 +246,7 @@ export class RegisterComponent {
   private auth = inject(AuthService);
   private router = inject(Router);
   private toast = inject(ToastService);
+  private tracking = inject(MetaTrackingService);
 
   /** Vacía en las pruebas (y en cualquier entorno sin captcha): el widget no se pinta. */
   readonly siteKey = environment.turnstileSiteKey;
@@ -290,7 +292,11 @@ export class RegisterComponent {
     this.error.set('');
 
     const val = this.form.value as any;
-    const body = this.siteKey ? { ...val, captchaToken: this.captchaToken() } : val;
+    const body = {
+      ...val,
+      ...(this.siteKey ? { captchaToken: this.captchaToken() } : {}),
+      acquisition: this.tracking.acquisition(),
+    };
     this.auth.register(body).subscribe({
       next: (res: any) => {
         this.loading.set(false);
@@ -299,6 +305,7 @@ export class RegisterComponent {
           this.toast.success('Te enviamos un código a tu correo');
           return;
         }
+        this.tracking.trackRegistration(res?.metaEventId);
         this.router.navigate(['/onboarding']);
       },
       error: (err) => {
@@ -317,7 +324,8 @@ export class RegisterComponent {
     this.loading.set(true);
     this.error.set('');
     this.auth.verifyEmail(this.pendingEmail(), this.code().trim()).subscribe({
-      next: () => {
+      next: (res: { metaEventId?: string } | null) => {
+        this.tracking.trackRegistration(res?.metaEventId);
         this.toast.success('Correo confirmado');
         this.router.navigate(['/onboarding']);
       },

@@ -182,6 +182,32 @@ export class Tenant extends Document {
   /** Doble factor obligatorio para todo el equipo (HU62). */
   @Prop({ default: false })
   require2fa: boolean;
+
+  /** De qué campaña llegó la empresa al registrarse (HU84). */
+  @Prop({ type: Object })
+  acquisition?: TenantAcquisition;
+}
+
+/**
+ * Origen del registro (HU84): parámetros UTM y de Meta del primer toque, y si
+ * la persona aceptó las cookies de medición. Sin `consent` no se envía nada a
+ * la API de conversiones.
+ */
+export interface TenantAcquisition {
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  fbclid?: string;
+  fbc?: string;
+  fbp?: string;
+  landingPath?: string;
+  referrer?: string;
+  consent: boolean;
+  ip?: string;
+  userAgent?: string;
+  capturedAt: Date;
 }
 
 export const TenantSchema = SchemaFactory.createForClass(Tenant);

@@ -11,4 +11,6 @@ export const environment = {
   whatsappNumber: '51975760418',
   /** Clave pública de Cloudflare Turnstile (captcha del registro). Vacía = sin captcha. */
   turnstileSiteKey: '',
+  /** Píxel de Meta de la publicidad propia (HU84). Vacío = sin medición ni aviso de cookies. */
+  metaPixelId: '',
 };

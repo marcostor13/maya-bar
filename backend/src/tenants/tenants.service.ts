@@ -96,6 +96,7 @@ export class TenantsService {
     ruc?: string;
     phone?: string;
     plan?: Tenant['plan'];
+    acquisition?: Tenant['acquisition'];
   }): Promise<Tenant> {
     const slug = this.slugify(data.name);
     const exists = await this.tenantModel.findOne({

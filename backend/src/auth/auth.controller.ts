@@ -95,11 +95,27 @@ export class AuthController {
 
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60 * MINUTE } })
-  async register(@Body() body: RegisterTenantDto, @Ip() ip: string) {
+  async register(
+    @Body() body: RegisterTenantDto,
+    @Ip() ip: string,
+    @Headers('user-agent') ua?: string,
+  ) {
     await this.turnstile.assertHuman(body.captchaToken, ip);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { captchaToken: _token, ...data } = body;
-    return this.authService.registerTenant(data);
+    const { captchaToken: _token, acquisition, ...data } = body;
+    return this.authService.registerTenant({
+      ...data,
+      ...(acquisition
+        ? {
+            acquisition: {
+              ...acquisition,
+              ip,
+              userAgent: ua?.slice(0, 500),
+              capturedAt: new Date(),
+            },
+          }
+        : {}),
+    });
   }
 
   @Post('verify-email')

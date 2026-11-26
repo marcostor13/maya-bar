@@ -24,7 +24,7 @@ const UPDATED = '5 de noviembre de 2026';
 export const LEGAL_DOCS: Record<LegalDocKey, LegalDoc> = {
   privacy: {
     title: 'Política de privacidad',
-    updated: UPDATED,
+    updated: '25 de noviembre de 2026',
     intro:
       'Maya CRM es una plataforma de ventas y marketing que permite a las empresas atender a sus clientes por WhatsApp, Messenger, Instagram, correo y SMS desde una sola bandeja. Esta política explica qué datos tratamos, para qué y cómo puedes ejercer tus derechos, conforme a la Ley N.° 29733 de Protección de Datos Personales del Perú y a las condiciones de la plataforma de Meta.',
     sections: [
@@ -65,7 +65,15 @@ export const LEGAL_DOCS: Record<LegalDocKey, LegalDoc> = {
           'Mantener la seguridad de la plataforma, prevenir fraude y cumplir obligaciones legales.',
         ],
         paragraphs: [
-          'No vendemos datos personales, no los usamos para publicidad propia y no los compartimos con terceros para sus propios fines. Los datos de Meta se usan únicamente para prestar el servicio de mensajería al cliente que los conectó.',
+          'No vendemos datos personales ni los compartimos con terceros para sus propios fines. Los datos de los contactos de nuestros clientes y los que recibimos de Meta por las cuentas que ellos conectan se usan únicamente para prestarles el servicio y nunca para publicidad.',
+        ],
+      },
+      {
+        title: 'Cookies y medición de nuestros anuncios',
+        paragraphs: [
+          'En nuestro sitio web usamos cookies necesarias para que funcione (sesión, idioma, moneda) y, solo si las aceptas en el aviso de cookies, el píxel de Meta y su API de conversiones para medir nuestros propios anuncios en Facebook e Instagram. La base es tu consentimiento; si no lo das, no se cargan ni se envía nada a Meta.',
+          'Con tu consentimiento enviamos a Meta las páginas que visitas en nuestro sitio, los clics a WhatsApp y, si creas una cuenta, el registro y los pagos de tu suscripción. Tu correo, tu teléfono y el identificador de tu empresa viajan cifrados con SHA-256, junto con tu dirección IP, tu navegador y los identificadores de las cookies de Meta (_fbp y _fbc). Meta los usa para saber qué anuncio funcionó y mostrar nuestros anuncios a personas parecidas.',
+          'También guardamos de qué campaña llegaste (parámetros UTM) para saber qué canales nos traen clientes. Puedes cambiar tu decisión cuando quieras con el enlace "Preferencias de cookies" al pie de esta página. Si ya creaste tu cuenta y no quieres que sigamos enviando a Meta los eventos de tu empresa (por ejemplo, los pagos), o quieres que borremos estos datos, escríbenos al correo de contacto.',
         ],
       },
       {
@@ -76,6 +84,7 @@ export const LEGAL_DOCS: Record<LegalDocKey, LegalDoc> = {
           'Mensajería: Meta (WhatsApp, Messenger e Instagram) y proveedores de correo y SMS.',
           'Inteligencia artificial: OpenAI, Anthropic, DeepSeek, Groq o Google, según el asistente que configure el cliente. Se envía solo el contenido necesario para generar la respuesta.',
           'Seguridad: Cloudflare (protección contra bots).',
+          'Publicidad propia, solo con tu consentimiento: Meta Platforms (píxel y API de conversiones).',
         ],
       },
       {

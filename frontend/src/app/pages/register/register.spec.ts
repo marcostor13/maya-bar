@@ -98,7 +98,7 @@ describe('RegisterComponent', () => {
 
     const req = http.expectOne((r) => r.url.endsWith('/auth/register'));
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual(DATA);
+    expect(req.request.body).toEqual({ ...DATA, acquisition: { consent: false } });
     req.flush({ access_token: 'tok', refresh_token: 'ref', user: { id: 'u1', email: DATA['email'], role: 'TENANT_ADMIN' } });
 
     expect(TestBed.inject(AuthService).isAuthenticated()).toBe(true);
@@ -143,7 +143,7 @@ describe('RegisterComponent', () => {
 
       submit();
       const req = http.expectOne((r) => r.url.endsWith('/auth/register'));
-      expect(req.request.body).toEqual({ ...DATA, captchaToken: 'tok-captcha' });
+      expect(req.request.body).toEqual({ ...DATA, captchaToken: 'tok-captcha', acquisition: { consent: false } });
       req.flush({ verificationRequired: true, email: DATA['email'] });
     });
 

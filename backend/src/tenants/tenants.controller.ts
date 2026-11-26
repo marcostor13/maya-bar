@@ -78,8 +78,13 @@ export class TenantsController {
   // Las rutas `me` van ANTES de `:id`: Nest resuelve por orden de
   // declaración y `:id` se quedaría con "me".
   @Get('me')
-  getMyTenant(@Request() req: AuthReq) {
-    return this.tenantsService.findById(req.user.tenantId);
+  async getMyTenant(@Request() req: AuthReq) {
+    const tenant = await this.tenantsService.findById(req.user.tenantId);
+    // El origen del registro (HU84) lleva IP y navegador del dueño: no se
+    // muestra al resto del equipo.
+    const plain = tenant.toObject() as Record<string, unknown>;
+    delete plain.acquisition;
+    return plain;
   }
 
   /**

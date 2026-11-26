@@ -1,3 +1,4 @@
+import type { AcquisitionPayload } from '../core/meta-tracking.service';
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
@@ -96,7 +97,9 @@ export class AuthService {
     phone?: string;
     ownerName: string;
     ownerPassword: string;
-    captchaToken?: string;
+    captchaToken?: string | null;
+    /** Origen de la visita y consentimiento de medición (HU84). */
+    acquisition?: AcquisitionPayload;
   }): Observable<any> {
     // Con verificación de correo activa el alta no trae sesión: llega
     // `{ verificationRequired, email }` y la sesión sale de verifyEmail().
