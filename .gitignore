@@ -40,3 +40,6 @@ Thumbs.db
 !.vscode/settings.json
 !.vscode/extensions.json
 !.vscode/mcp.json
+
+# Inventario local de bases de clientes: no publicar (repo público)
+docs/mongo-colecciones-*.md
