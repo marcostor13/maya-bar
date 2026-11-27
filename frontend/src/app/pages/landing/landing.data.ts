@@ -390,8 +390,8 @@ export const DIFFERENTIATORS: Pain[] = [
 
 export const GUARANTEES: Guarantee[] = [
   {
-    title: '14 días gratis',
-    body: 'Pruébalo con tu equipo y tus contactos reales antes de pagar. Sin tarjeta para empezar.',
+    title: 'Demo en vivo',
+    body: 'Antes de pagar te mostramos Maya funcionando con una cuenta de ejemplo y resolvemos tus dudas por WhatsApp.',
   },
   {
     title: 'Sin permanencia',
@@ -635,7 +635,7 @@ export const FAQS: Faq[] = [
       `Escala a US$${pricesOf('escala').usd.monthly} al mes con ${limitOf('escala', 'users')} usuarios. ` +
       'Pagando cada tres meses ahorras un 5 % y pagando al año tienes dos meses gratis. ' +
       `En Perú los planes cuestan S/ ${pricesOf('inicia').pen.monthly}, S/ ${pricesOf('crece').pen.monthly} y S/ ${pricesOf('escala').pen.monthly} al mes más IGV. ` +
-      'Para operaciones grandes existe el plan Empresa, con precio a medida. Todos los planes incluyen 14 días de prueba gratis.',
+      'Para operaciones grandes existe el plan Empresa, con precio a medida. Antes de contratar puedes pedir una demo en vivo por WhatsApp.',
   },
   {
     q: '¿Los mensajes de WhatsApp están incluidos en el plan?',

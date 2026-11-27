@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FUNCTION_LINKS } from './content.links';
+import { environment } from '../../../environments/environment';
 
 /** Cabecera y pie comunes de las páginas de contenido y de `/recursos` (HU79). */
 @Component({
@@ -17,7 +18,7 @@ import { FUNCTION_LINKS } from './content.links';
           <a routerLink="/recursos" class="hide-sm">Recursos</a>
           <a routerLink="/" fragment="precios" class="hide-sm">Precios</a>
           <a routerLink="/login" class="hide-sm">Ingresar</a>
-          <a class="btn btn-primary btn-sm" routerLink="/register">Probar gratis</a>
+          <a class="btn btn-primary btn-sm" href="https://wa.me/{{ waNumber }}?text=Hola%2C%20quiero%20ver%20una%20demo%20de%20Maya%20CRM" target="_blank" rel="noopener">Pide tu demo</a>
         </nav>
       </div>
     </header>
@@ -38,7 +39,7 @@ import { FUNCTION_LINKS } from './content.links';
           <h3>Maya CRM</h3>
           <a routerLink="/recursos">Recursos y guías</a>
           <a routerLink="/" fragment="precios">Precios</a>
-          <a routerLink="/register">Crear cuenta</a>
+          <a routerLink="/checkout">Contratar un plan</a>
           <a routerLink="/privacidad">Privacidad</a>
           <a routerLink="/terminos">Términos</a>
         </nav>
@@ -66,5 +67,6 @@ import { FUNCTION_LINKS } from './content.links';
   ],
 })
 export class ContentShellComponent {
+  readonly waNumber = environment.whatsappNumber;
   readonly links = FUNCTION_LINKS;
 }

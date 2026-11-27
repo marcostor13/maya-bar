@@ -54,9 +54,13 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | Webhook de Mercado Pago | En la app de Mercado Pago (Tus integraciones → Webhooks, modo productivo) marcar los eventos **Pagos**, **Planes y suscripciones** (`subscription_preapproval` y `subscription_authorized_payment`) con la URL `https://api.mayacrm.site/billing/webhooks/mercadopago`. Hasta hoy no ha llegado ningún aviso; mientras tanto la conciliación cada 10 min (HU78) activa las compras. |
 | Yape | Pago real de un plan trimestral o una recarga eligiendo Yape en Mercado Pago (`docs/yape-mercadopago.md`). |
 | HU6, llamadas | Sigue pendiente la llamada real con un número que tenga la Calling API activa. |
-| Meta Ads: CAPI (HU84) | El backend con la API de conversiones no se desplegó: el run de 43ea8af falló por el frontend y los siguientes no tocaron backend. Lanzar en GitHub Actions "Deploy to Coolify" > Run workflow > target `backend`. Luego probar con `META_TEST_EVENT_CODE` y "Probar eventos". |
-| Meta Ads: WhatsApp de la página | Revalidado el 2026-11-25: Meta rechaza el 991 172 822 ("tu página de Facebook también debe estar en el mismo portfolio comercial"). No está en los portafolios "Maya IA" ni "Marcos Torres Alarcón". Hay que compartir su cuenta de WhatsApp con "Maya IA" (1181735023516920) desde el portafolio donde está, o, si está en la app WhatsApp Business del celular, vincularlo desde la app (Herramientas > Facebook e Instagram). |
-| Meta Ads: Instagram | @mayacrmperu ya está vinculado a la página. Falta poner el enlace de la biografía desde la app del celular (`docs/meta-ads-contenido.md`). |
+| Meta Ads: CAPI (HU84) | Ya no hay registro gratis (HU87): `CompleteRegistration` deja de dispararse. Quitar `META_TEST_EVENT_CODE` del backend en Coolify y redesplegar; el evento a medir pasa a ser la compra. |
+| Meta Ads: página, WhatsApp e Instagram | Hecho el 2026-11-26: la página Maya CRM pasó al portafolio "Marcos Torres Alarcón" (1035475214106769), donde está la cuenta de WhatsApp del 991 172 822, y se compartió con "Maya IA" con acceso total para los anuncios. El 991 172 822 es el número principal de la página e @mayacrmperu volvió a vincularse. Si "Maya CRM – PEN" no ofrece la página o el Instagram al crear anuncios, asignarlos en Maya IA > Cuentas publicitarias. |
+| Meta Ads: Instagram | Falta poner el enlace de la biografía desde la app del celular (`docs/meta-ads-contenido.md`). |
+| HU85, IA de la plataforma | Tras desplegar: en `/admin/ai` pegar la API key, elegir el modelo, "Probar", activar y guardar; luego probar un agente de una empresa sin key propia (`docs/ia-de-la-plataforma.md`). |
+| HU86, cuenta demo | Tras desplegar: Empresas > "Crear / restablecer demo" > copiar los accesos y entrar en una ventana de incógnito. Restablecer antes de cada demo o grabación. Desde la demo no se puede enviar por WhatsApp (no tiene token). |
+| HU87, sin prueba gratis | La web usa por defecto el 51991172822 (agente de ventas). Si Coolify define `WHATSAPP_NUMBER` para el frontend con otro número, cambiarlo o borrarlo. Ya no hay registro gratis: las cuentas nacen al pagar en /checkout. |
+| Meta Ads: campañas | Los borradores A y B se borraron el 2026-11-26 (había prueba gratis). Plan nuevo con videos en `docs/meta-ads-guiones.md`: grabar y pasarme los videos; los subo como borradores y tú publicas. |
 
 ## 4. Fuera de lo hecho
 

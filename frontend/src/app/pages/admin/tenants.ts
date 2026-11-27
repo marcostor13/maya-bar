@@ -1,3 +1,4 @@
+import { DemoResetComponent } from './demo-reset';
 import { Component, HostListener, computed, inject, signal, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormBuilder, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
@@ -12,7 +13,7 @@ const API = environment.apiUrl;
 @Component({
   selector: 'app-admin-tenants',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, LucideAngularModule, DatePipe, TenantDetailComponent],
+  imports: [ReactiveFormsModule, FormsModule, LucideAngularModule, DatePipe, TenantDetailComponent, DemoResetComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -20,7 +21,10 @@ const API = environment.apiUrl;
           <h1>Empresas</h1>
           <p class="subtitle">Gestión de todos los tenants registrados en la plataforma.</p>
         </div>
-        <button class="btn btn-primary" (click)="openForm()">+ Nueva empresa</button>
+        <div class="header-actions">
+          <app-demo-reset />
+          <button class="btn btn-primary" (click)="openForm()">+ Nueva empresa</button>
+        </div>
       </div>
 
       @if (!loading() && tenants().length > 0) {
@@ -157,7 +161,6 @@ const API = environment.apiUrl;
                 <th>Email</th>
                 <th>RUC</th>
                 <th>Plan</th>
-                <th>Trial hasta</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -174,7 +177,6 @@ const API = environment.apiUrl;
                   <td data-label="Plan">
                     <span class="badge" [class]="'badge-plan-' + t.plan">{{ t.plan }}</span>
                   </td>
-                  <td class="td-muted" data-label="Trial hasta">{{ t.trialEndsAt ? (t.trialEndsAt | date:'dd/MM/yyyy') : '—' }}</td>
                   <td data-label="Estado">
                     <span class="badge" [class.badge-active]="t.isActive" [class.badge-inactive]="!t.isActive">
                       {{ t.isActive ? 'Activa' : 'Suspendida' }}
@@ -201,6 +203,7 @@ const API = environment.apiUrl;
     .page { padding: 32px 40px; width: 100%; box-sizing: border-box; }
     .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; }
     .page-header h1 { margin-bottom: 4px; font-size: 26px; }
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
     .search { position: relative; flex: 1; min-width: 220px; }
     .search lucide-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); pointer-events: none; }

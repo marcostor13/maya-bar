@@ -24,6 +24,8 @@ export class AiCreditsException extends HttpException {
 
 export interface AiUsage {
   byok: boolean;
+  /** Cuenta de IA de la plataforma (HU85): gratis para la empresa, costo para Maya. */
+  platform?: boolean;
   provider?: string;
   model?: string;
   inputTokens?: number;
@@ -193,7 +195,8 @@ export class AiCreditsService {
   ): Promise<void> {
     try {
       const now = new Date();
-      const credits = usage.byok ? 0 : CREDIT_COSTS[action] * units;
+      const credits =
+        usage.byok || usage.platform ? 0 : CREDIT_COSTS[action] * units;
       let fromPurchased = 0;
       if (credits) {
         const b = await this.balance(tenantId, now);
@@ -220,6 +223,7 @@ export class AiCreditsService {
         credits,
         fromPurchased,
         byok: usage.byok,
+        platformAi: !!usage.platform,
         provider: usage.provider,
         aiModel: usage.model,
         inputTokens: usage.inputTokens ?? 0,

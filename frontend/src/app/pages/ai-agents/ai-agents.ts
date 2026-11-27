@@ -1,3 +1,4 @@
+import { PlatformAiNoticeComponent } from './platform-ai-notice';
 import { Component, inject, signal, OnInit, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -168,7 +169,7 @@ function blankAgent(): Agent {
 @Component({
   selector: 'app-ai-agents',
   standalone: true,
-  imports: [FormsModule, RichText, LucideAngularModule, RouterLink, AgentCalendarSection, FormPageComponent],
+  imports: [FormsModule, RichText, LucideAngularModule, RouterLink, AgentCalendarSection, FormPageComponent, PlatformAiNoticeComponent],
   template: `
     <div class="page animate-fade-in">
       <div class="page-header">
@@ -689,6 +690,7 @@ function blankAgent(): Agent {
 
             <!-- AVANZADO -->
             @if (section() === 'advanced') {
+              <app-platform-ai-notice />
               <div class="field">
                 <label class="field-label">Proveedor de IA</label>
                 <select class="select" [(ngModel)]="form.provider" (ngModelChange)="onProviderChange($event)">

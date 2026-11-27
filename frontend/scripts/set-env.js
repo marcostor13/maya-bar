@@ -9,7 +9,7 @@ const path = require('path');
  */
 const apiUrl = process.env.BACKEND_URL || 'https://api.mayacrm.site';
 const siteUrl = process.env.SITE_URL || 'https://mayacrm.site';
-const whatsappNumber = process.env.WHATSAPP_NUMBER || '51975760418';
+const whatsappNumber = process.env.WHATSAPP_NUMBER || '51991172822';
 // Clave pública (va en el HTML): el secreto vive solo en el backend.
 const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? '0x4AAAAAAFyRq2FkWFMu0uNq';
 // Píxel de Meta para la publicidad propia (HU84); público, va en el HTML. Vacío = sin píxel.

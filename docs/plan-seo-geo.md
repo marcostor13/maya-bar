@@ -60,7 +60,7 @@ pregunte por esas herramientas.
 **Indicadores**
 - Impresiones y clics en Search Console.
 - Palabras clave en el top 10.
-- Registros de prueba que llegan por orgánico.
+- Demos pedidas y pagos que llegan por orgánico.
 - Menciones en un panel fijo de 30 preguntas, medido cada mes en ChatGPT,
   Gemini, Perplexity y Claude.
 
@@ -111,7 +111,7 @@ pregunte por esas herramientas.
   - Plantillas de WhatsApp aprobadas por Meta: guía.
   - Cuánto cuesta enviar mensajes de WhatsApp en Perú (2026).
   - Cómo responder leads de Meta Ads en menos de 5 minutos.
-- Cada guía enlaza a su página de función y termina con la prueba de 14 días.
+- Cada guía enlaza a su página de función y termina con la invitación a la demo por WhatsApp (sin prueba gratis desde HU87).
 - Distribución:
   - Resumen en LinkedIn.
   - Video corto en YouTube y Reels con el mismo título.

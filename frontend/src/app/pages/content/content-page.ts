@@ -105,10 +105,10 @@ export function longDate(iso: string): string {
         </article>
 
         <section class="card cta">
-          <h2>Pruébalo con tus propios contactos</h2>
-          <p>14 días gratis, sin tarjeta y sin permanencia. Si prefieres, lo dejamos funcionando por ti.</p>
+          <h2>Míralo funcionando antes de contratar</h2>
+          <p>Te mostramos una demo en vivo por WhatsApp. Sin permanencia y, si prefieres, lo dejamos funcionando por ti.</p>
           <div class="cta-actions">
-            <a class="btn btn-primary btn-lg" routerLink="/register">Crear cuenta gratis <lucide-icon [img]="ArrowRight" [size]="18" /></a>
+            <a class="btn btn-primary btn-lg" href="https://wa.me/{{ waNumber }}?text=Hola%2C%20quiero%20ver%20una%20demo%20de%20Maya%20CRM" target="_blank" rel="noopener">Pide tu demo <lucide-icon [img]="ArrowRight" [size]="18" /></a>
             <a class="btn btn-secondary btn-lg" routerLink="/" fragment="precios">Ver precios</a>
           </div>
         </section>
@@ -181,6 +181,7 @@ export function longDate(iso: string): string {
   ],
 })
 export class ContentPageComponent {
+  readonly waNumber = environment.whatsappNumber;
   private route = inject(ActivatedRoute);
   private seo = inject(SeoService);
 

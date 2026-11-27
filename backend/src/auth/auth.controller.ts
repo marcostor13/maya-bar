@@ -1,5 +1,6 @@
 import {
   Controller,
+  GoneException,
   Post,
   Patch,
   Body,
@@ -18,7 +19,6 @@ import {
   ChangePasswordDto,
   ForgotPasswordDto,
   LoginDto,
-  RegisterTenantDto,
   ResendVerificationDto,
   ResetPasswordDto,
   RefreshTokenDto,
@@ -93,29 +93,12 @@ export class AuthController {
     return { ok: true };
   }
 
+  /** Sin registro público (HU87): las cuentas nuevas nacen al pagar en el checkout. */
   @Post('register')
-  @Throttle({ default: { limit: 5, ttl: 60 * MINUTE } })
-  async register(
-    @Body() body: RegisterTenantDto,
-    @Ip() ip: string,
-    @Headers('user-agent') ua?: string,
-  ) {
-    await this.turnstile.assertHuman(body.captchaToken, ip);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { captchaToken: _token, acquisition, ...data } = body;
-    return this.authService.registerTenant({
-      ...data,
-      ...(acquisition
-        ? {
-            acquisition: {
-              ...acquisition,
-              ip,
-              userAgent: ua?.slice(0, 500),
-              capturedAt: new Date(),
-            },
-          }
-        : {}),
-    });
+  register() {
+    throw new GoneException(
+      'El alta es con pago: elige un plan en mayacrm.site/#precios o pide una demo.',
+    );
   }
 
   @Post('verify-email')

@@ -125,6 +125,22 @@ describe('AiCreditsService (HU43)', () => {
     );
   });
 
+  it('HU85 C5: con la IA de la plataforma anota 0 créditos pero sí el costo', async () => {
+    const { svc, ledger, tenants } = setup({ usedFromPlan: 500 });
+    await svc.record(TID, 'agent_reply', {
+      byok: false,
+      platform: true,
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    });
+    expect(tenants.updateOne).not.toHaveBeenCalled();
+    const row = ledger.create.mock.calls[0][0];
+    expect(row).toMatchObject({ credits: 0, byok: false, platformAi: true });
+    expect(row.costUsd).toBeGreaterThan(0);
+  });
+
   it('unidades: 3 créditos por conversación de recuperación', async () => {
     const { svc } = setup({ usedFromPlan: 490 });
     await expect(svc.assertCanSpend(TID, 'recovery', 4)).rejects.toMatchObject({

@@ -7,7 +7,14 @@ import {
 import { AiCreditsService } from '../billing/ai-credits.service';
 import type { AiAction } from '../billing/usage-ledger.schema';
 import { ConfigService } from '@nestjs/config';
+import { getModelToken } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { TenantConfig } from '../settings/tenant-config.schema';
 import { AI_CHAT_PROVIDER } from './providers/ai-provider.interface';
+import {
+  PlatformAiService,
+  type PlatformAiAccount,
+} from './platform-ai/platform-ai.service';
 import type {
   AiChatProvider,
   AiTool,
@@ -44,6 +51,16 @@ interface AiOptions {
 
 type ChatReq = Parameters<AiChatProvider['chat']>[0];
 
+/** De dónde sale la key: de la empresa, de la plataforma (HU85) o del servidor con créditos. */
+type KeySource = 'byok' | 'platform' | 'credits';
+
+const ERROR_LABEL: Record<string, string> = {
+  deepseek: 'DeepSeek',
+  claude: 'Claude',
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+};
+
 @Injectable()
 export class AiService {
   private deepseekKey: string;
@@ -56,6 +73,11 @@ export class AiService {
     @Inject(AI_CHAT_PROVIDER) private chatProvider: AiChatProvider,
     // Global (HU43); opcional para las pruebas unitarias.
     @Optional() private credits?: AiCreditsService,
+    // HU85; opcional para las pruebas unitarias.
+    @Optional() private platform?: PlatformAiService,
+    @Optional()
+    @Inject(getModelToken(TenantConfig.name))
+    private tenantConfigs?: Model<TenantConfig>,
   ) {
     this.deepseekKey = configService.get<string>('DEEPSEEK_API_KEY') ?? '';
     this.claudeKey = configService.get<string>('CLAUDE_API_KEY') ?? '';
@@ -74,17 +96,52 @@ export class AiService {
   }
 
   /**
+   * Cuenta de IA de la plataforma (HU85) si está activa y la empresa no tiene
+   * ninguna API key propia; con key propia la empresa elige proveedor y modelo.
+   */
+  async platformFor(apiKeys?: AiApiKeys): Promise<PlatformAiAccount | null> {
+    if (!this.platform) return null;
+    if (
+      Object.values(apiKeys ?? {}).some((k) =>
+        (k as string | undefined)?.trim(),
+      )
+    )
+      return null;
+    return this.platform.active();
+  }
+
+  /**
+   * Keys propias de la empresa para las llamadas que no las traen (`chat()` de
+   * textos y puntaje): con alguna propia no se le regala la IA de la plataforma.
+   */
+  private async tenantKeys(tenantId?: string): Promise<AiApiKeys | undefined> {
+    if (!tenantId || !this.tenantConfigs || !Types.ObjectId.isValid(tenantId))
+      return undefined;
+    const cfg = await this.tenantConfigs
+      .findOne({ tenantId: new Types.ObjectId(tenantId) })
+      .select('deepseekApiKey claudeApiKey openaiApiKey geminiApiKey')
+      .lean<Partial<TenantConfig>>()
+      .exec();
+    return {
+      deepseek: cfg?.deepseekApiKey,
+      claude: cfg?.claudeApiKey,
+      openai: cfg?.openaiApiKey,
+      gemini: cfg?.geminiApiKey,
+    };
+  }
+
+  /**
    * Ejecuta la llamada midiendo créditos si hay `meter`: comprueba saldo antes
-   * (salvo key propia) y anota tokens y modelo al terminar.
+   * (salvo key propia o de la plataforma) y anota tokens y modelo al terminar.
    */
   private async metered(
     req: ChatReq,
     meter: AiOptions['meter'],
-    byok: boolean,
+    source: KeySource,
     run: (req: ChatReq) => Promise<string>,
   ): Promise<string> {
     if (!meter || !this.credits) return run(req);
-    if (!byok)
+    if (source === 'credits')
       await this.credits.assertCanSpend(
         meter.tenantId,
         meter.action,
@@ -102,7 +159,12 @@ export class AiService {
     await this.credits.record(
       meter.tenantId,
       meter.action,
-      { byok, provider: req.provider, ...usage },
+      {
+        byok: source === 'byok',
+        platform: source === 'platform',
+        provider: req.provider,
+        ...usage,
+      },
       meter.units,
     );
     return out;
@@ -114,6 +176,24 @@ export class AiService {
     // `maxTokens: null` y OpenAI rechaza el body con un null ahí.
     const maxTokens = options.maxTokens ?? 1024;
     const messages: ChatMessage[] = [{ role: 'user', content: prompt }];
+
+    const platform = await this.platformFor(
+      options.apiKeys ?? (await this.tenantKeys(options.meter?.tenantId)),
+    );
+    if (platform)
+      return this.metered(
+        {
+          provider: platform.provider,
+          apiKey: platform.apiKey,
+          model: platform.model,
+          maxTokens,
+          messages,
+          errorLabel: ERROR_LABEL[platform.provider],
+        },
+        options.meter,
+        'platform',
+        (r) => this.chatProvider.chat(r),
+      );
 
     if (provider === 'deepseek' || (provider === 'auto' && this.deepseekKey)) {
       if (!this.deepseekKey)
@@ -128,7 +208,7 @@ export class AiService {
           errorLabel: 'DeepSeek',
         },
         options.meter,
-        false,
+        'credits',
         (r) => this.chatProvider.chat(r),
       );
     }
@@ -145,7 +225,7 @@ export class AiService {
           errorLabel: 'Claude',
         },
         options.meter,
-        false,
+        'credits',
         (r) => this.chatProvider.chat(r),
       );
     }
@@ -162,7 +242,7 @@ export class AiService {
           errorLabel: 'OpenAI',
         },
         options.meter,
-        false,
+        'credits',
         (r) => this.chatProvider.chat(r),
       );
     }
@@ -189,8 +269,9 @@ export class AiService {
     );
   }
 
-  /** ¿Hay alguna key de IA utilizable, del tenant o del servidor? */
-  hasAnyKey(apiKeys?: AiApiKeys): boolean {
+  /** ¿Hay alguna key de IA utilizable: de la empresa, de la plataforma o del servidor? */
+  async hasAnyKey(apiKeys?: AiApiKeys): Promise<boolean> {
+    if (await this.platformFor(apiKeys)) return true;
     return Object.values(this.resolveKeys(apiKeys)).some(Boolean);
   }
 
@@ -204,26 +285,37 @@ export class AiService {
     const temperature = options.temperature ?? 0.4;
     // trata cadena vacía como "usar el modelo por defecto"
     const model = options.model?.trim() || undefined;
-    const keys = this.resolveKeys(options.apiKeys);
-    const resolved = this.resolveProvider(provider, keys);
-
-    const req = {
-      provider: resolved,
-      apiKey: keys[resolved],
-      model,
+    const base = {
       maxTokens,
       temperature,
       messages,
       timeoutMs: options.timeoutMs,
     };
-    // Con la key propia de la empresa no se descuentan créditos (HU43).
-    const byok = !!options.apiKeys?.[resolved]?.trim();
+    let req: ChatReq;
+    let source: KeySource;
+    const platform = await this.platformFor(options.apiKeys);
+    if (platform) {
+      // La plataforma fija proveedor y modelo, pida lo que pida el agente.
+      req = {
+        ...base,
+        provider: platform.provider,
+        apiKey: platform.apiKey,
+        model: platform.model,
+      };
+      source = 'platform';
+    } else {
+      const keys = this.resolveKeys(options.apiKeys);
+      const resolved = this.resolveProvider(provider, keys);
+      req = { ...base, provider: resolved, apiKey: keys[resolved], model };
+      // Con la key propia de la empresa no se descuentan créditos (HU43).
+      source = options.apiKeys?.[resolved]?.trim() ? 'byok' : 'credits';
+    }
     const { tools, runTool } = options;
     if (tools?.length && runTool)
-      return this.metered(req, options.meter, byok, (r) =>
+      return this.metered(req, options.meter, source, (r) =>
         this.chatProvider.chatWithTools({ ...r, tools, runTool }),
       );
-    return this.metered(req, options.meter, byok, (r) =>
+    return this.metered(req, options.meter, source, (r) =>
       this.chatProvider.chat(r),
     );
   }

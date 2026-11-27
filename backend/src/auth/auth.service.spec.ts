@@ -65,6 +65,7 @@ describe('AuthService', () => {
     isActive: jest.fn(() => Promise.resolve(true)),
     mailBrandFor: jest.fn(() => Promise.resolve(undefined)),
     isSubAccountOf: jest.fn(() => Promise.resolve(false)),
+    endUnpaidTrial: jest.fn(() => Promise.resolve()),
   };
   const sessions = {
     revoke: jest.fn().mockResolvedValue(undefined),
@@ -216,135 +217,6 @@ describe('AuthService', () => {
     });
   });
 
-  // ─── registerTenant ────────────────────────────────────────────────────────
-
-  describe('registerTenant', () => {
-    beforeEach(() => {
-      usersService.findOneByEmailAnyStatus.mockResolvedValue(null);
-    });
-
-    it('guarda el origen del registro y avisa a Meta con el mismo event_id que devuelve (HU84)', async () => {
-      tenantsService.create.mockResolvedValue({
-        _id: tenantOid,
-        name: 'Bar Maya',
-      });
-      usersService.create.mockResolvedValue(
-        makeUserDoc({ email: 'owner@bar.com' }),
-      );
-      const acquisition = {
-        consent: true,
-        utmSource: 'facebook',
-        fbc: 'fb.1.1.x',
-        capturedAt: new Date(),
-      };
-
-      const result = await service.registerTenant({
-        name: 'Bar Maya',
-        email: 'owner@bar.com',
-        ownerName: 'Owner',
-        ownerPassword: PASSWORD,
-        acquisition,
-      });
-
-      expect(tenantsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ acquisition }),
-      );
-      expect(metaCapi.reportRegistration).toHaveBeenCalledWith(
-        String(tenantOid),
-      );
-      expect(result).toMatchObject({ metaEventId: `reg_${String(tenantOid)}` });
-    });
-
-    it('creates the tenant and a TENANT_ADMIN user bound to it', async () => {
-      const tenant = { _id: tenantOid, name: 'Bar Maya' };
-      tenantsService.create.mockResolvedValue(tenant);
-      const owner = makeUserDoc({ email: 'owner@bar.com', name: 'Owner' });
-      usersService.create.mockResolvedValue(owner);
-
-      const result = await service.registerTenant({
-        name: 'Bar Maya',
-        ruc: '123',
-        email: 'owner@bar.com',
-        phone: '999',
-        ownerName: 'Owner',
-        ownerPassword: PASSWORD,
-      });
-
-      expect(tenantsService.create).toHaveBeenCalledWith({
-        name: 'Bar Maya',
-        email: 'owner@bar.com',
-        ruc: '123',
-        phone: '999',
-      });
-      expect(usersService.create).toHaveBeenCalledWith({
-        email: 'owner@bar.com',
-        password: PASSWORD,
-        name: 'Owner',
-        role: 'TENANT_ADMIN',
-        tenantId: tenantOid,
-      });
-      if (!('access_token' in result)) throw new Error('sin sesión');
-      expect(result.access_token).toBe('signed.jwt.token');
-      expect(result.user.email).toBe('owner@bar.com');
-    });
-
-    const signup = {
-      name: 'Bar Maya',
-      email: 'owner@bar.com',
-      ownerName: 'Owner',
-      ownerPassword: PASSWORD,
-    };
-
-    it('con correo configurado no abre sesión: crea la cuenta sin confirmar y manda el código', async () => {
-      mailService.isConfigured = true;
-      tenantsService.create.mockResolvedValue({ _id: tenantOid });
-      const owner = makeUserDoc({
-        email: 'owner@bar.com',
-        emailVerified: false,
-      });
-      usersService.create.mockResolvedValue(owner);
-
-      const result = await service.registerTenant(signup);
-
-      expect(usersService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ emailVerified: false }),
-      );
-      expect(result).toEqual({
-        verificationRequired: true,
-        email: 'owner@bar.com',
-      });
-      expect(refreshTokenModel.create).not.toHaveBeenCalled();
-      const [to, code] = mailService.sendEmailVerificationEmail.mock
-        .calls[0] as [string, string];
-      expect(to).toBe('owner@bar.com');
-      expect(code).toMatch(/^\d{6}$/);
-      // En la base solo queda el hash del código.
-      expect(owner.emailVerificationCodeHash).toBe(sha256(code));
-      expect(owner.emailVerificationAttempts).toBe(0);
-      expect(owner.save).toHaveBeenCalled();
-    });
-
-    it('descarta un registro anterior sin confirmar con el mismo email', async () => {
-      usersService.findOneByEmailAnyStatus.mockResolvedValue(
-        makeUserDoc({ emailVerified: false, tenantId: tenantOid }),
-      );
-      tenantsService.create.mockResolvedValue({ _id: tenantOid });
-      usersService.create.mockResolvedValue(makeUserDoc());
-
-      await service.registerTenant(signup);
-
-      expect(tenantsService.remove).toHaveBeenCalledWith(String(tenantOid));
-    });
-
-    it('nunca descarta una cuenta confirmada o creada por un administrador', async () => {
-      usersService.findOneByEmailAnyStatus.mockResolvedValue(makeUserDoc());
-      tenantsService.create.mockRejectedValue(new Error('conflict'));
-
-      await expect(service.registerTenant(signup)).rejects.toThrow('conflict');
-      expect(tenantsService.remove).not.toHaveBeenCalled();
-    });
-  });
-
   // ─── verificación de correo ────────────────────────────────────────────────
 
   describe('validateUser con correo sin confirmar', () => {
@@ -389,6 +261,17 @@ describe('AuthService', () => {
       expect(user.emailVerificationCodeHash).toBeUndefined();
       expect(user.save).toHaveBeenCalled();
       expect(result.access_token).toBe('signed.jwt.token');
+    });
+
+    it('HU87: una cuenta pendiente con prueba entra sin prueba gratis y sin evento de registro', async () => {
+      const user = pending();
+      usersService.findOneByEmailAnyStatus.mockResolvedValue(user);
+      const result = await service.verifyEmail('user@test.com', '123456');
+      expect(tenantsService.endUnpaidTrial).toHaveBeenCalledWith(
+        String(user.tenantId),
+      );
+      expect(metaCapi.reportRegistration).not.toHaveBeenCalled();
+      expect((result as { metaEventId?: string }).metaEventId).toBeUndefined();
     });
 
     it('un código incorrecto suma un intento y al quinto invalida el código', async () => {

@@ -74,7 +74,7 @@ export class ProspectingResearchService {
     };
   }
 
-  hasAi(keys: ProspectingKeys): boolean {
+  hasAi(keys: ProspectingKeys): Promise<boolean> {
     return this.ai.hasAnyKey(keys.ai);
   }
 

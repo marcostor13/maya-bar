@@ -145,7 +145,7 @@ export class MetaTrackingService {
   trackRegistration(eventId?: string): void {
     if (!eventId || this.consent() !== 'all' || !this.pixelId || !isPlatformHost(currentHost())) return;
     this.ensurePixel();
-    this.fbq('track', 'CompleteRegistration', { content_name: 'Registro prueba 14 días' }, { eventID: eventId });
+    this.fbq('track', 'CompleteRegistration', { content_name: 'Registro' }, { eventID: eventId });
   }
 
   /** Datos de origen para el registro. Sin consentimiento no viajan los identificadores de Meta. */

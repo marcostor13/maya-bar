@@ -57,22 +57,24 @@ export async function login(
 let seq = 0;
 
 /** Da de alta una empresa nueva y devuelve la sesión de su administrador. */
+/**
+ * Empresa nueva con su administrador y su sesión. Sin registro público
+ * (HU87), la crea el superadmin como en una venta cerrada fuera de la web.
+ */
 export async function registerTenant(
   app: NestExpressApplication,
   name = 'Empresa',
 ): Promise<Session & { email: string; password: string }> {
   const email = `owner${++seq}-${Date.now()}@e2e.test`;
-  const password = 'Clave-Segura-123';
+  const admin = await login(app, ADMIN.email, ADMIN.password);
   const res = await request(app.getHttpServer())
-    .post('/auth/register')
-    .send({
-      name: `${name} ${seq}`,
-      email,
-      ownerName: `Dueño ${seq}`,
-      ownerPassword: password,
-    })
+    .post('/tenants')
+    .set(bearer(admin))
+    .send({ name: `${name} ${seq}`, email, ownerName: `Dueño ${seq}` })
     .expect(201);
-  return { ...toSession(res.body as SessionBody), email, password };
+  const { password } = (res.body as { credentials: { password: string } })
+    .credentials;
+  return { ...(await login(app, email, password)), email, password };
 }
 
 /** Crea un usuario con el rol dado en la empresa del admin y abre su sesión. */

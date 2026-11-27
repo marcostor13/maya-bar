@@ -124,7 +124,7 @@ _Fecha: 2026-09-28. Fuentes de mercado y competencia al final. Cifras con (?) no
 | Multi-sede y roles a medida | — | — | ✓ | ✓ |
 | Soporte | Chat | WhatsApp prioritario | WhatsApp + gerente de éxito | SLA + gerente dedicado |
 
-**Anual:** paga 10 meses y usa 12 (≈17 % de descuento) y la puesta en marcha va incluida. **Mensual:** sin permanencia. **Prueba:** 14 días gratis sin tarjeta; ya existe `trialEndsAt` al registrarse.
+**Anual:** paga 10 meses y usa 12 (≈17 % de descuento) y la puesta en marcha va incluida. **Mensual:** sin permanencia. **Prueba:** ya no hay prueba gratis (HU87, 2026-11-26): demo en vivo y la cuenta nace al pagar.
 
 ### 5.2 Créditos de IA (unidad única de consumo)
 

@@ -105,16 +105,11 @@ export class TenantsService {
     if (exists)
       throw new ConflictException('Email or business name already registered');
 
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-
-    // Prueba de 14 días con todo el plan Crece (HU41).
+    // Sin prueba gratis (HU87): el plan lo activa el pago o el superadmin.
     const tenant = new this.tenantModel({
       plan: 'crece',
       ...data,
       slug,
-      trialEndsAt,
-      subscription: { status: 'trialing' },
     });
     try {
       return await tenant.save();
@@ -133,6 +128,19 @@ export class TenantsService {
    * Activa un plan pagado (HU47). Si quedaba periodo vigente, el nuevo se suma
    * al final; si no, empieza hoy.
    */
+  /** Sin prueba gratis (HU87): una prueba sin pago pasa a vencida (solo lectura). */
+  async endUnpaidTrial(id: string): Promise<void> {
+    await this.tenantModel
+      .updateOne(
+        { _id: id, 'subscription.status': 'trialing' },
+        {
+          $set: { 'subscription.status': 'expired' },
+          $unset: { trialEndsAt: 1 },
+        },
+      )
+      .exec();
+  }
+
   async activatePlan(
     tenantId: string | Types.ObjectId,
     p: {

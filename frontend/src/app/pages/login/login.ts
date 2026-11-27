@@ -70,7 +70,7 @@ export function loginErrorMessage(err: { status?: number; error?: { message?: un
           <!-- En el panel de una agencia (HU72) el alta la hace la agencia. -->
           @if (!brand.custom()) {
             <p class="register-link">
-              ¿No tienes cuenta? <a routerLink="/register">Regístrate gratis</a>
+              ¿No tienes cuenta? <a routerLink="/" fragment="precios">Mira los planes</a>
             </p>
           }
         } @else if (view() === 'otp') {

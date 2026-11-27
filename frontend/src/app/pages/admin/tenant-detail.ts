@@ -74,7 +74,6 @@ interface TenantForm {
   phone: string;
   plan: Plan;
   planExpiresAt: string;
-  trialEndsAt: string;
   legacy: boolean;
 }
 
@@ -159,10 +158,6 @@ const dateOnly = (iso?: string) => (iso ? iso.slice(0, 10) : '');
                   <label class="label" for="td-plan-exp">Vence el plan</label>
                   <input id="td-plan-exp" class="input" type="date" name="planExpiresAt" [(ngModel)]="form.planExpiresAt" />
                 </div>
-              </div>
-              <div class="field">
-                <label class="label" for="td-trial">Fin de la prueba</label>
-                <input id="td-trial" class="input" type="date" name="trialEndsAt" [(ngModel)]="form.trialEndsAt" />
               </div>
               <label class="check-row">
                 <input type="checkbox" name="legacy" [(ngModel)]="form.legacy" />
@@ -502,7 +497,7 @@ export class TenantDetailComponent implements OnInit {
   assignEmail = '';
   busy = signal(false);
   tempPassword = signal<{ email: string; password: string } | null>(null);
-  form: TenantForm = { name: '', email: '', ruc: '', phone: '', plan: 'inicia', planExpiresAt: '', trialEndsAt: '', legacy: false };
+  form: TenantForm = { name: '', email: '', ruc: '', phone: '', plan: 'inicia', planExpiresAt: '', legacy: false };
   private snapshot = '';
 
   ngOnInit() { this.load(); }
@@ -536,7 +531,7 @@ export class TenantDetailComponent implements OnInit {
   private fillForm(t: TenantRow) {
     this.form = {
       name: t.name, email: t.email, ruc: t.ruc ?? '', phone: t.phone ?? '', plan: t.plan,
-      planExpiresAt: dateOnly(t.planExpiresAt), trialEndsAt: dateOnly(t.trialEndsAt),
+      planExpiresAt: dateOnly(t.planExpiresAt),
       legacy: !!t.legacy,
     };
     this.snapshot = snapshotOf(this.form);
@@ -555,7 +550,6 @@ export class TenantDetailComponent implements OnInit {
       phone: this.form.phone.trim(),
       plan: this.form.plan,
       planExpiresAt: this.form.planExpiresAt || null,
-      trialEndsAt: this.form.trialEndsAt || null,
       legacy: this.form.legacy,
     };
     this.http.patch<TenantRow>(`${API}/tenants/${this.tenantId()}`, body).subscribe({

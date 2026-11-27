@@ -1,17 +1,13 @@
-import { Component, PLATFORM_ID, inject, signal, viewChild } from '@angular/core';
+import { Component, PLATFORM_ID, inject, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../auth/auth.service';
-import { MetaTrackingService } from '../../core/meta-tracking.service';
 import { ToastService } from '../../shared/toast';
-import { TurnstileComponent } from '../../shared/turnstile';
-import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-register',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink, TurnstileComponent],
+  imports: [RouterLink],
   template: `
     <div class="register-page">
       <div class="register-card card animate-fade-in">
@@ -21,8 +17,8 @@ import { environment } from '../../../environments/environment';
             <h1>Revisa tu correo</h1>
             <p>Enviamos un código de 6 dígitos a <strong>{{ pendingEmail() }}</strong>.</p>
           } @else {
-            <h1>Empieza gratis</h1>
-            <p>14 días de prueba, sin tarjeta de crédito.</p>
+            <h1>Elige tu plan</h1>
+            <p>Las cuentas nuevas se crean al pagar. Te llevamos a los planes…</p>
           }
         </div>
 
@@ -49,49 +45,7 @@ import { environment } from '../../../environments/environment';
             </div>
           </form>
         } @else {
-        <form [formGroup]="form" (ngSubmit)="onSubmit()" class="register-form">
-          <div class="form-section">
-            <h3 class="form-section-title">Tu negocio</h3>
-            <div class="form-group">
-              <label>Razón social *</label>
-              <input class="input" formControlName="name" placeholder="Ej: Restaurante La Mar S.A.C." />
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>RUC / NIF</label>
-                <input class="input" formControlName="ruc" placeholder="20123456789" />
-              </div>
-              <div class="form-group">
-                <label>Teléfono</label>
-                <input class="input" formControlName="phone" placeholder="+51 999 999 999" />
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Email del negocio *</label>
-              <input class="input" formControlName="email" type="email" placeholder="contacto@tunegocio.com" />
-            </div>
-          </div>
-
-          <div class="form-section">
-            <h3 class="form-section-title">Tu cuenta de acceso</h3>
-            <div class="form-group">
-              <label>Tu nombre *</label>
-              <input class="input" formControlName="ownerName" placeholder="Juan Pérez" />
-            </div>
-            <div class="form-group">
-              <label>Contraseña *</label>
-              <input class="input" formControlName="ownerPassword" type="password" placeholder="Mínimo 8 caracteres" />
-            </div>
-          </div>
-
-          @if (siteKey) {
-            <app-turnstile [siteKey]="siteKey" (token)="captchaToken.set($event)" />
-          }
-
-          <button type="submit" class="btn btn-primary submit-btn" [disabled]="loading() || form.invalid || (!!siteKey && !captchaToken())">
-            @if (loading()) { Creando cuenta... } @else { Crear cuenta gratis }
-          </button>
-        </form>
+        <a class="btn btn-primary submit-btn" routerLink="/checkout">Ver planes</a>
         }
 
         <p class="login-link">
@@ -141,19 +95,6 @@ import { environment } from '../../../environments/environment';
       margin: 0;
     }
 
-    .form-section {
-      margin-bottom: 24px;
-    }
-
-    .form-section-title {
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--color-text-muted);
-      margin-bottom: 12px;
-      font-family: var(--font-base);
-    }
 
     .form-group {
       margin-bottom: 14px;
@@ -167,11 +108,6 @@ import { environment } from '../../../environments/environment';
       margin-bottom: 6px;
     }
 
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
 
     .submit-btn {
       width: 100%;
@@ -192,11 +128,6 @@ import { environment } from '../../../environments/environment';
       justify-content: space-between;
       gap: 8px;
       margin-top: 16px;
-    }
-
-    app-turnstile {
-      display: block;
-      margin: 8px 0 4px;
     }
 
     .submit-btn:disabled {
@@ -237,86 +168,52 @@ import { environment } from '../../../environments/environment';
     @media (max-width: 480px) {
       .register-card { padding: 24px 18px; }
       .register-header h1 { font-size: 20px; }
-      .form-row { grid-template-columns: 1fr; gap: 14px; }
     }
   `],
 })
+/**
+ * Sin registro gratis (HU87): las cuentas nacen al pagar en el checkout. Esta
+ * ruta solo confirma el correo de cuentas pendientes (el login manda aquí) y
+ * redirige al checkout los enlaces viejos, conservando plan y periodo.
+ */
 export class RegisterComponent {
-  private fb = inject(FormBuilder);
   private auth = inject(AuthService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private toast = inject(ToastService);
-  private tracking = inject(MetaTrackingService);
-
-  /** Vacía en las pruebas (y en cualquier entorno sin captcha): el widget no se pinta. */
-  readonly siteKey = environment.turnstileSiteKey;
-  private turnstile = viewChild(TurnstileComponent);
 
   loading = signal(false);
   resending = signal(false);
   error = signal('');
-  captchaToken = signal<string | null>(null);
   /** Con valor, la pantalla pide el código enviado a este correo. */
   pendingEmail = signal('');
   code = signal('');
 
-  form = this.fb.group({
-    name: ['', Validators.required],
-    ruc: [''],
-    phone: [''],
-    email: ['', [Validators.required, Validators.email]],
-    ownerName: ['', Validators.required],
-    ownerPassword: ['', [Validators.required, Validators.minLength(8)]],
-  });
-
   constructor() {
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) return;
     // El login manda aquí a quien intenta entrar sin haber confirmado: se le
     // envía un código nuevo y se le pide directamente.
-    if (isPlatformBrowser(inject(PLATFORM_ID))) {
-      const email = (history.state as { verifyEmail?: string } | null)?.verifyEmail;
-      if (email) {
-        this.pendingEmail.set(email);
-        this.onResend();
-      }
+    const email = (history.state as { verifyEmail?: string } | null)?.verifyEmail;
+    if (email) {
+      this.pendingEmail.set(email);
+      this.onResend();
+      return;
     }
+    this.toCheckout();
+  }
+
+  private toCheckout() {
+    const q = this.route.snapshot.queryParamMap;
+    const queryParams: Record<string, string> = {};
+    const plan = q.get('plan');
+    const periodo = q.get('periodo') ?? q.get('pago');
+    if (plan) queryParams['plan'] = plan;
+    if (periodo) queryParams['periodo'] = periodo;
+    this.router.navigate(['/checkout'], { queryParams, replaceUrl: true });
   }
 
   codeValid() {
     return /^\d{6}$/.test(this.code().trim());
-  }
-
-  onSubmit() {
-    if (this.form.invalid) return;
-    if (this.siteKey && !this.captchaToken()) return;
-    this.loading.set(true);
-    this.error.set('');
-
-    const val = this.form.value as any;
-    const body = {
-      ...val,
-      ...(this.siteKey ? { captchaToken: this.captchaToken() } : {}),
-      acquisition: this.tracking.acquisition(),
-    };
-    this.auth.register(body).subscribe({
-      next: (res: any) => {
-        this.loading.set(false);
-        if (res?.verificationRequired) {
-          this.pendingEmail.set(res.email ?? val.email);
-          this.toast.success('Te enviamos un código a tu correo');
-          return;
-        }
-        this.tracking.trackRegistration(res?.metaEventId);
-        this.router.navigate(['/onboarding']);
-      },
-      error: (err) => {
-        const msg = err.error?.message || 'Error al crear la cuenta';
-        this.error.set(msg);
-        this.toast.error(msg);
-        this.loading.set(false);
-        // El token del captcha ya se gastó: hace falta uno nuevo para reintentar.
-        this.turnstile()?.reset();
-      },
-    });
   }
 
   onVerify() {
@@ -324,8 +221,7 @@ export class RegisterComponent {
     this.loading.set(true);
     this.error.set('');
     this.auth.verifyEmail(this.pendingEmail(), this.code().trim()).subscribe({
-      next: (res: { metaEventId?: string } | null) => {
-        this.tracking.trackRegistration(res?.metaEventId);
+      next: () => {
         this.toast.success('Correo confirmado');
         this.router.navigate(['/onboarding']);
       },
@@ -353,8 +249,6 @@ export class RegisterComponent {
   }
 
   useOtherEmail() {
-    this.pendingEmail.set('');
-    this.code.set('');
-    this.error.set('');
+    this.router.navigate(['/login']);
   }
 }

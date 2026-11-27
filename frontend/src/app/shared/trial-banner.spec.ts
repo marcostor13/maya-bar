@@ -37,16 +37,10 @@ describe('TrialBannerComponent (HU41 C3)', () => {
     expect(daysLeft('2026-11-30T00:00:00Z', NOW)).toBe(0);
   });
 
-  it('muestra los días restantes en tono informativo', async () => {
+  it('HU87: una prueba histórica no muestra aviso de prueba gratis', async () => {
     const el = await render({ status: 'trialing', planName: 'Crece', readOnly: false, trialEndsAt: '2026-12-11T12:00:00Z' });
-    expect(el.textContent).toContain('Te quedan 10 días de prueba gratis del plan Crece');
-    expect(el.querySelector('.trial.warn')).toBeNull();
-  });
-
-  it('desde el día 11 pasa a tono de aviso', async () => {
-    const el = await render({ status: 'trialing', readOnly: false, trialEndsAt: '2026-12-04T12:00:00Z' });
-    expect(el.textContent).toContain('Te quedan 3 días');
-    expect(el.querySelector('.trial.warn')).not.toBeNull();
+    expect(el.querySelector('.trial')).toBeNull();
+    expect(el.textContent).not.toContain('prueba gratis');
   });
 
   it('vencida: solo lectura con "Elegir plan"', async () => {

@@ -177,6 +177,18 @@ export class AiAgentsService {
     };
   }
 
+  /** La IA de la plataforma aplica a la empresa (HU85): sin key propia y activa. */
+  async platformAi(
+    tenantId: string,
+  ): Promise<{ active: boolean; provider?: string; model?: string }> {
+    const acc = await this.ai.platformFor(
+      await this.getTenantApiKeys(tenantId),
+    );
+    return acc
+      ? { active: true, provider: acc.provider, model: acc.model }
+      : { active: false };
+  }
+
   // ---- CRUD agentes ----
 
   private tenantMatch(tenantId: string): { $in: (string | Types.ObjectId)[] } {

@@ -61,6 +61,13 @@ export class AiAgentsController {
     return this.service.listModels(req.user.tenantId, provider);
   }
 
+  /** Si la empresa usa la IA de la plataforma (HU85) y con qué modelo. */
+  @Get('platform-ai')
+  platformAi(@Request() req: AuthReq) {
+    assertRole(req.user.role, CRM_ROLES);
+    return this.service.platformAi(req.user.tenantId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: AuthReq) {
     assertRole(req.user.role, CRM_ROLES);

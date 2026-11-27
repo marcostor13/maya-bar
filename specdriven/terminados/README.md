@@ -5,6 +5,9 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-26 | [HU87 — Quitar la prueba gratis: el alta es con pago](2026-11-26-hu87-sin-prueba-gratis/cierre.md) | Terminada (pendiente deploy) | 6 CUMPLE · C5 corregido · C8 verde |
+| 2026-11-26 | [HU86 — Cuenta demo con datos ficticios](2026-11-26-hu86-cuenta-demo/cierre.md) | Terminada (pendiente prueba del usuario en producción) | 7 CUMPLE · C2 corregido · C9 [usuario] |
+| 2026-11-26 | [HU85 — IA de la plataforma gratis para empresas sin key propia](2026-11-26-hu85-ia-de-la-plataforma/cierre.md) | Terminada (configurar en /admin/ai tras desplegar) | 10 CUMPLE · 2 PARCIAL corregidos (chat() con key propia, prueba backend, docs) · C13 [usuario] |
 | 2026-11-25 | [HU84 — Medición para Meta Ads: píxel, CAPI y consentimiento](2026-11-25-hu84-medicion-meta-ads/cierre.md) | Terminada (activar con el id del píxel y las variables META_*) | 4 CUMPLE · 2 PARCIAL corregidos (píxel en rutas privadas, revocación) · C7 [usuario] |
 | 2026-11-25 | [HU83 — Guías: costo de WhatsApp en Perú y paso a la API oficial](2026-11-25-hu83-guias/cierre.md) | Terminada | 3 CUMPLE; 1 frase corregida |
 | 2026-11-25 | [HU82 — Comparativas con HubSpot, Kommo, Leadsales y Wati](2026-11-25-hu82-comparativas/cierre.md) | Terminada (revisar precios cada trimestre) | 2 CUMPLE · 1 PARCIAL (cifras externas sin captura) |

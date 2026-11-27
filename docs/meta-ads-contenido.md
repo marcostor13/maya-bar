@@ -1,5 +1,9 @@
 # Contenido para Facebook e Instagram — Maya CRM
 
+> **2026-11-26 (HU87):** ya no hay prueba gratis. Las campañas A y B con imagen se borraron; las
+> reemplazan los videos de `docs/meta-ads-guiones.md`. Las imágenes de `docs/meta-assets/anuncios/`
+> que dicen "Prueba gratis 14 días" no se deben usar.
+
 Fecha: 2026-11-25 · Estado: borrador para aprobar. No se publica nada sin tu visto bueno.
 
 Reglas:
@@ -17,7 +21,7 @@ Imágenes de marca (en `docs/meta-assets/`):
 |---|---|---|
 | Nombre | Maya CRM | Maya CRM (@mayacrmperu) |
 | Categoría | Software | Software (perfil profesional) |
-| Presentación | CRM con WhatsApp e IA: capta, responde y vende desde una sola plataforma. Prueba gratis 14 días. | CRM con WhatsApp e IA para vender más. / Bandeja compartida · Agentes de IA 24/7 · Campañas / Prueba gratis 14 días 👇 |
+| Presentación | CRM con WhatsApp e IA: capta, responde y vende desde una sola plataforma. Pide tu demo por WhatsApp. | CRM con WhatsApp e IA para vender más. / Bandeja compartida · Agentes de IA 24/7 · Campañas / Pide tu demo 👇 |
 | Enlace | `https://mayacrm.site/?utm_source=facebook&utm_medium=social&utm_campaign=perfil` | `https://mayacrm.site/?utm_source=instagram&utm_medium=social&utm_campaign=bio` (se pone desde la app del celular) |
 | Área | Lima, Perú | — |
 | Botón | Enviar mensaje de WhatsApp (cuando se vincule el número) | Contacto: WhatsApp |
@@ -29,7 +33,7 @@ Formato: 1080×1350 (4:5) para el feed. Las que dicen "Reel" son video vertical 
 
 **1. Presentación (carrusel)**
 - Pieza: portada con el logo y "Vende más por WhatsApp con IA". Luego 4 láminas: bandeja, agente de IA, campañas y formularios.
-- Texto: Maya CRM junta en un solo lugar los WhatsApp, Instagram, Messenger y correos de tu equipo. Un agente de IA responde al instante con la información de tu negocio, cada interesado queda como contacto con su vendedor, y cuando no compran les vuelves a escribir con una campaña. Prueba gratis 14 días en mayacrm.site.
+- Texto: Maya CRM junta en un solo lugar los WhatsApp, Instagram, Messenger y correos de tu equipo. Un agente de IA responde al instante con la información de tu negocio, cada interesado queda como contacto con su vendedor, y cuando no compran les vuelves a escribir con una campaña. Pide tu demo por WhatsApp.
 
 **2. Bandeja compartida (Reel de pantalla, 15–20 s)**
 - Gancho en pantalla: "¿Tu equipo comparte un solo WhatsApp?"
@@ -48,7 +52,7 @@ Formato: 1080×1350 (4:5) para el feed. Las que dicen "Reel" son video vertical 
 - Nota: no prometer que "nunca se equivoca". Un modelo de lenguaje puede fallar; por eso se revisa.
 
 **4. Precios (imagen)**
-- Pieza: tres columnas: Inicia S/ 99, Crece S/ 249 y Escala S/ 549, al mes + IGV. Debajo: "Pagas por equipo, no por usuario · Prueba 14 días".
+- Pieza: tres columnas: Inicia S/ 99, Crece S/ 249 y Escala S/ 549, al mes + IGV. Debajo: "Pagas por equipo, no por usuario · Demo en vivo".
 - Texto: Planes desde S/ 99 al mes + IGV con 2 usuarios incluidos. Crece trae 5 usuarios y 3 agentes de IA; Escala, 12 usuarios y agentes ilimitados. Sin permanencia: pagas mes a mes. Detalle en mayacrm.site/#precios.
 
 **5. Educativa: cuánto cuesta WhatsApp en Perú (carrusel)**
@@ -76,22 +80,22 @@ Formato: 1080×1350 (4:5) para el feed. Las que dicen "Reel" son video vertical 
 - Guion:
   1. "Soy Marcos, hice Maya CRM porque vi a negocios perder clientes en WhatsApp por no responder a tiempo."
   2. Qué hace en una frase.
-  3. "Pruébalo 14 días gratis; si tienes dudas, escríbeme por WhatsApp."
+  3. "Escríbeme por WhatsApp y te muestro la demo en vivo."
 - Texto: Quién está detrás de Maya CRM y por qué lo construimos.
 
-## Anuncios (para las campañas A y B)
+## Anuncios (textos base; las campañas A y B se borraron)
 
 Textos principales (variedad de ángulos):
 1. **Dolor:** ¿Cuántos clientes se te pierden en WhatsApp por responder tarde? Con Maya CRM tu equipo atiende desde un solo número y un agente de IA responde al instante, incluso de noche.
 2. **IA:** Tu agente de IA responde precios, horarios y requisitos con tus propios documentos. Cuando el cliente está listo, lo toma tu vendedor.
 3. **Equipo:** Todo tu equipo en un solo WhatsApp: cada conversación con responsable, notas y etapa. Nadie responde dos veces ni se olvida a nadie.
-4. **Precio:** Desde S/ 99 al mes + IGV con 2 usuarios incluidos. Prueba 14 días gratis con el plan Crece completo.
+4. **Precio:** Desde S/ 99 al mes + IGV con 2 usuarios incluidos. Pide la demo en vivo antes de contratar.
 5. **Captación:** Del formulario al WhatsApp en segundos: el interesado llena tu formulario y recibe tu mensaje al instante.
 
-Títulos (máximo 40 caracteres): "Vende más por WhatsApp con IA" · "Tu equipo en un solo WhatsApp" · "IA que responde con tus datos" · "Prueba Maya CRM 14 días gratis".
+Títulos (máximo 40 caracteres): "Vende más por WhatsApp con IA" · "Tu equipo en un solo WhatsApp" · "IA que responde con tus datos" · "Mira la demo de Maya CRM".
 
 Botón:
 - Campaña A: "Enviar mensaje de WhatsApp", con el mensaje prellenado "Hola, quiero ver una demo de Maya CRM".
-- Campaña B: "Registrarte".
+- Campaña B (borrada): ya no hay registro gratis.
 
 UTM de los anuncios: `utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}`.

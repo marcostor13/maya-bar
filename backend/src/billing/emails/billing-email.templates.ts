@@ -225,23 +225,6 @@ export const T = {
     });
   },
 
-  /** Recordatorio de prueba: días 10, 13 y 14. */
-  trial(p: { daysLeft: number; plansUrl: string }) {
-    const when =
-      p.daysLeft <= 0
-        ? 'hoy es el último día'
-        : p.daysLeft === 1
-          ? 'te queda 1 día'
-          : `te quedan ${p.daysLeft} días`;
-    return build(`Tu prueba de Maya CRM: ${when}`, {
-      title: `En tu prueba ${when}`,
-      body: [
-        'Elige un plan para seguir usando Maya sin perder nada de lo que configuraste.',
-      ],
-      cta: { label: 'Elegir plan', url: p.plansUrl },
-    });
-  },
-
   /** Renovación trimestral o anual, 7 días antes (HU48). */
   renewal(p: PlanInfo & { endDate: Date; payUrl: string }) {
     return build(`Tu plan ${p.planName} vence el ${longDate(p.endDate)}`, {

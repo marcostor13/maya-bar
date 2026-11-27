@@ -1,9 +1,4 @@
 import {
-  MetaCapiService,
-  registrationEventId,
-} from '../meta-ads/meta-capi.service';
-import type { TenantAcquisition } from '../tenants/tenant.schema';
-import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -51,7 +46,6 @@ export class AuthService {
     @InjectModel(RefreshToken.name)
     private refreshTokens: Model<RefreshToken>,
     private sessions: UserSessionsService,
-    private metaCapi: MetaCapiService,
   ) {}
 
   /**
@@ -280,75 +274,6 @@ export class AuthService {
     return this.login((updatedUser as any).toObject());
   }
 
-  /**
-   * Alta pública de una empresa. Con proveedor de correo, la cuenta nace sin
-   * confirmar: no hay sesión hasta que se escribe el código enviado al correo,
-   * así un bot no obtiene una cuenta usable con un email inventado. Sin
-   * proveedor (desarrollo y pruebas) no hay forma de entregar el código y se
-   * entra directo, como antes.
-   */
-  async registerTenant(data: {
-    name: string;
-    ruc?: string;
-    email: string;
-    phone?: string;
-    ownerName: string;
-    ownerPassword: string;
-    acquisition?: TenantAcquisition;
-  }) {
-    await this.discardPendingRegistration(data.email);
-    const mustVerify = this.mailService.isConfigured;
-
-    const tenant = await this.tenantsService.create({
-      name: data.name,
-      email: data.email,
-      ruc: data.ruc,
-      phone: data.phone,
-      ...(data.acquisition ? { acquisition: data.acquisition } : {}),
-    });
-
-    const user = await this.usersService.create({
-      email: data.email,
-      password: data.ownerPassword,
-      name: data.ownerName,
-      role: 'TENANT_ADMIN',
-      tenantId: tenant._id,
-      ...(mustVerify ? { emailVerified: false } : {}),
-    });
-
-    if (mustVerify) {
-      await this.sendVerificationCode(user);
-      return { verificationRequired: true, email: user.email };
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    const session = await this.login((user as any).toObject());
-    return { ...session, ...this.trackRegistration(String(tenant._id)) };
-  }
-
-  /**
-   * Registro confirmado (HU84): avisa a Meta por la API de conversiones sin
-   * esperar y devuelve el `event_id` para que el píxel del navegador mande el
-   * mismo evento y Meta lo cuente una sola vez.
-   */
-  private trackRegistration(tenantId: string) {
-    void this.metaCapi.reportRegistration(tenantId);
-    return { metaEventId: registrationEventId(tenantId) };
-  }
-
-  /**
-   * Quien se registra y nunca confirma deja su email ocupado. Si vuelve a
-   * registrarse con él, se descarta el intento anterior (empresa y usuario):
-   * nunca pudo entrar, así que no tiene datos. Una cuenta confirmada o creada
-   * por un administrador no se toca.
-   */
-  private async discardPendingRegistration(email: string): Promise<void> {
-    const existing = await this.usersService.findOneByEmailAnyStatus(email);
-    if (!existing || existing.emailVerified !== false || !existing.tenantId)
-      return;
-    await this.tenantsService.remove(String(existing.tenantId));
-  }
-
   private async sendVerificationCode(user: User): Promise<void> {
     const code = randomInt(100000, 1000000).toString();
     user.emailVerificationCodeHash = hashToken(code);
@@ -394,10 +319,11 @@ export class AuthService {
     const plano = (
       user as unknown as { toObject: () => Record<string, any> }
     ).toObject();
-    const session = await this.login(plano, userAgent);
-    return user.tenantId
-      ? { ...session, ...this.trackRegistration(String(user.tenantId)) }
-      : session;
+    // Cuentas pendientes de antes de HU87: no estrenan la prueba gratis al
+    // confirmar; entran en solo lectura hasta que paguen un plan.
+    if (user.tenantId)
+      await this.tenantsService.endUnpaidTrial(String(user.tenantId));
+    return this.login(plano, userAgent);
   }
 
   /** Respuesta idéntica exista o no la cuenta: no sirve para enumerar emails. */

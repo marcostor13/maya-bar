@@ -112,11 +112,13 @@ export class RecoveryAnalysisService {
 
   /**
    * HU43: antes de encolar un análisis, 402 si no hay créditos para al menos
-   * una conversación. Con key propia de DeepSeek no se comprueba.
+   * una conversación. Con key propia de DeepSeek o con la IA de la plataforma
+   * (HU85) no se comprueba.
    */
   async assertCredits(tenantId: string): Promise<void> {
     const cfg = await this.settings.get(tenantId);
     if (cfg?.deepseekApiKey?.trim()) return;
+    if (await this.ai.platformFor(tenantKeys(cfg))) return;
     await this.credits?.assertCanSpend(tenantId, 'recovery');
   }
 
@@ -608,12 +610,30 @@ Responde SOLO con JSON:
     return {
       provider: 'deepseek',
       model: RECOVERY_MODEL,
-      apiKeys: { deepseek: cfg?.deepseekApiKey },
+      // Todas las keys de la empresa: con alguna propia no se usa la IA de la
+      // plataforma (HU85); el proveedor sigue siendo DeepSeek.
+      apiKeys: tenantKeys(cfg),
       timeoutMs: AI_TIMEOUT_MS,
       // Lo que se redacta cuesta 1 crédito; cada conversación analizada, 3 (HU43).
       meter: { tenantId, action: 'text' },
     };
   }
+}
+
+function tenantKeys(
+  cfg?: {
+    deepseekApiKey?: string;
+    claudeApiKey?: string;
+    openaiApiKey?: string;
+    geminiApiKey?: string;
+  } | null,
+): AiApiKeys {
+  return {
+    deepseek: cfg?.deepseekApiKey,
+    claude: cfg?.claudeApiKey,
+    openai: cfg?.openaiApiKey,
+    gemini: cfg?.geminiApiKey,
+  };
 }
 
 const MESSAGE_RULES = `REGLAS PARA CADA MENSAJE (es una plantilla de WhatsApp de marketing que revisa Meta):

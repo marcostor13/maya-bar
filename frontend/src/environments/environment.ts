@@ -3,7 +3,7 @@ export const environment = {
   apiUrl: 'http://localhost:3000',
   siteUrl: 'http://localhost:4200',
   /** Número de WhatsApp al que apunta cada CTA de la landing (formato E.164 sin +). */
-  whatsappNumber: '51975760418',
+  whatsappNumber: '51991172822',
   /** Clave pública de Cloudflare Turnstile (captcha del registro). Vacía = sin captcha. */
   turnstileSiteKey: '0x4AAAAAAFyRq2FkWFMu0uNq',
   /** Píxel de Meta de la publicidad propia (HU84). Vacío = sin medición ni aviso de cookies. */

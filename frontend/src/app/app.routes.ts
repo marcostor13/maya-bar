@@ -348,6 +348,12 @@ export const routes: Routes = [
         canActivate: [roleGuard('SUPERADMIN')],
       },
       {
+        // IA de la plataforma para las empresas sin key propia (HU85).
+        path: 'admin/ai',
+        loadComponent: () => import('./pages/admin/platform-ai').then(m => m.AdminPlatformAiComponent),
+        canActivate: [roleGuard('SUPERADMIN')],
+      },
+      {
         path: 'admin/users',
         loadComponent: () => import('./pages/admin/users').then(m => m.AdminUsersComponent),
         canActivate: [roleGuard('SUPERADMIN')],

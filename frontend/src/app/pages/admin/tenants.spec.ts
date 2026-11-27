@@ -85,11 +85,10 @@ describe('AdminTenantsComponent', () => {
       expect(row('La Mar').querySelector('.tenant-slug')!.textContent).toContain('la-mar');
       expect(row('La Mar').querySelector('td[data-label="RUC"]')!.textContent).toContain('20123456789');
       expect(row('La Mar').querySelector('.badge-plan-crece')!.textContent).toContain('crece');
-      expect(row('La Mar').querySelector('td[data-label="Trial hasta"]')!.textContent).toContain('20/10/2026');
+      expect(row('La Mar').querySelector('td[data-label="Trial hasta"]')).toBeNull();
       expect(row('La Mar').querySelector('.badge-active')!.textContent).toContain('Activa');
 
       expect(row('Bar Cerrado').querySelector('td[data-label="RUC"]')!.textContent).toContain('—');
-      expect(row('Bar Cerrado').querySelector('td[data-label="Trial hasta"]')!.textContent).toContain('—');
       expect(row('Bar Cerrado').querySelector('.badge-inactive')!.textContent).toContain('Suspendida');
     });
 

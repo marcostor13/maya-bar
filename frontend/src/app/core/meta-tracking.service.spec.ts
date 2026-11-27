@@ -104,7 +104,7 @@ describe('MetaTrackingService (HU84)', () => {
     t.trackRegistration('reg_abc');
     const q = (window as W).fbq!.queue!;
     expect(q.some((c) => c[0] === 'track' && c[1] === 'Contact')).toBe(true);
-    expect(q).toContainEqual(['track', 'CompleteRegistration', { content_name: 'Registro prueba 14 días' }, { eventID: 'reg_abc' }]);
+    expect(q).toContainEqual(['track', 'CompleteRegistration', { content_name: 'Registro' }, { eventID: 'reg_abc' }]);
   });
 
   it('atribución de primer toque: guarda UTM y fbclid; una campaña posterior no la pisa', () => {

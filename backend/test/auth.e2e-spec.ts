@@ -1,3 +1,6 @@
+import { getModelToken } from '@nestjs/mongoose';
+import type { Model } from 'mongoose';
+import { Tenant } from '../src/tenants/tenant.schema';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import {
@@ -46,7 +49,7 @@ describe('Autenticación (e2e)', () => {
     await http().post('/auth/login').send({}).expect(400);
   });
 
-  it('registra una empresa y abre sesión como su administrador', async () => {
+  it('el superadmin crea una empresa y su administrador entra', async () => {
     const owner = await registerTenant(app, 'Registro');
     expect(owner.user.role).toBe('TENANT_ADMIN');
     expect(owner.user.tenantId).toBeTruthy();
@@ -58,16 +61,27 @@ describe('Autenticación (e2e)', () => {
     expect(again.user.tenantId).toBe(owner.user.tenantId);
   });
 
-  it('no registra con contraseña corta', async () => {
-    await http()
+  it('HU87 C1: el registro público ya no existe y no crea nada', async () => {
+    const before = await app
+      .get<Model<Tenant>>(getModelToken(Tenant.name))
+      .countDocuments();
+    const res = await http()
       .post('/auth/register')
       .send({
-        name: 'X',
-        email: 'corta@e2e.test',
+        name: 'Gratis',
+        email: 'gratis@e2e.test',
         ownerName: 'X',
-        ownerPassword: '1234',
+        ownerPassword: 'Clave-Segura-123',
       })
-      .expect(400);
+      .expect(410);
+    expect((res.body as { message: string }).message).toContain('pago');
+    expect(
+      await app.get<Model<Tenant>>(getModelToken(Tenant.name)).countDocuments(),
+    ).toBe(before);
+    await http()
+      .post('/auth/login')
+      .send({ email: 'gratis@e2e.test', password: 'Clave-Segura-123' })
+      .expect(401);
   });
 
   it('rota el refresh token y el anterior deja de valer', async () => {

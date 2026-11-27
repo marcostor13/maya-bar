@@ -154,6 +154,10 @@ export class Tenant extends Document {
   @Prop({ default: true })
   isActive: boolean;
 
+  /** Empresa demo con datos ficticios (HU86): se borra y regenera desde el panel. */
+  @Prop()
+  demo?: boolean;
+
   /**
    * Empresa de tipo agencia (HU72): la activa el superadmin con las
    * sub-cuentas incluidas en su plan. Sin este campo, es una empresa normal.

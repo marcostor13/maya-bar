@@ -1,5 +1,7 @@
 # Plan Meta Ads — Maya CRM
 
+> **2026-11-26 (HU87):** ya no hay prueba gratis ni registro público. La campaña B y los eventos `CompleteRegistration`/`StartTrial` quedan obsoletos; la estrategia vigente son videos a WhatsApp → demo → pago (`docs/meta-ads-guiones.md`). El evento a medir pasa a ser `Purchase`.
+
 Fecha: 2026-11-25 · Estado: en ejecución (HU84 hecha; ver "Estado" al final)
 
 ## 1. Diagnóstico

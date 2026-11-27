@@ -13,7 +13,7 @@ import { environment } from '../../../environments/environment';
 const API = `${environment.apiUrl}/billing/admin`;
 const SUMMARY = {
   mrr: { PEN: 943.17, USD: 0 }, byPlan: [{ plan: 'crece', planName: 'Crece', count: 2, mrr: { PEN: 485.67, USD: 0 } }],
-  active: 4, newThisMonth: 1, canceledThisMonth: 1, cancelScheduled: 2, churnPct: 20, trials: 3, trialConversionPct: 25, trialCohort: 8,
+  active: 4, newThisMonth: 1, canceledThisMonth: 1, cancelScheduled: 2, churnPct: 20,
   pastDue: 2, revenueThisMonth: { PEN: 1200, USD: 0 },
 };
 const DETAIL: SubscriptionDetail = {
@@ -37,7 +37,7 @@ describe('Panel de suscripciones (HU57)', () => {
   }
   afterEach(() => { http?.verify(); vi.clearAllMocks(); });
 
-  it('muestra el resumen con MRR, churn, pruebas e ingresos por plan', async () => {
+  it('muestra el resumen con MRR, churn e ingresos (sin KPI de pruebas, HU87) por plan', async () => {
     await setup();
     const f = TestBed.createComponent(AdminBillingComponent);
     f.detectChanges();
@@ -46,7 +46,7 @@ describe('Panel de suscripciones (HU57)', () => {
     const el = f.nativeElement as HTMLElement;
     expect(el.querySelector('[data-testid="mrr"]')!.textContent).toContain('943.17');
     expect(el.textContent).toContain('Churn 20 %');
-    expect(el.textContent).toContain('Conversión 25 %');
+    expect(el.textContent).not.toContain('Pruebas activas');
     expect(el.textContent).toContain('Crece');
   });
 
@@ -109,9 +109,9 @@ describe('Panel de suscripciones (HU57)', () => {
     f.componentRef.setInput('tenantId', 't1');
     f.detectChanges();
     http.expectOne(`${API}/subscriptions/t1`).flush(DETAIL);
-    f.componentInstance.extendTrial();
-    http.expectOne(`${API}/subscriptions/t1/extend-trial`).flush({ message: 'Solo se puede alargar la prueba de una cuenta que aún no paga un plan.' }, { status: 400, statusText: 'Bad Request' });
-    expect(toast.error).toHaveBeenCalledWith('Solo se puede alargar la prueba de una cuenta que aún no paga un plan.');
+    f.componentInstance.resendAccess();
+    http.expectOne(`${API}/subscriptions/t1/resend-access`).flush({ message: 'La cuenta ya tiene acceso' }, { status: 400, statusText: 'Bad Request' });
+    expect(toast.error).toHaveBeenCalledWith('La cuenta ya tiene acceso');
   });
 
   it('crea un cupón y lo pausa', async () => {

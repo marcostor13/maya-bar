@@ -39,7 +39,6 @@ export interface Actor {
   email: string;
 }
 
-const DAY_MS = 86400_000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -85,12 +84,6 @@ export class SubscriptionsAdminService {
     const pastDue = subs.filter(
       (t) => status(t) === 'past_due' && !graceOver(t),
     ).length;
-    const trials = subs.filter(
-      (t) =>
-        (status(t) ?? 'trialing') === 'trialing' &&
-        !!t.trialEndsAt &&
-        new Date(t.trialEndsAt) > now,
-    ).length;
     // Bajas del mes: canceladas de verdad (no las que piden cancelar al vencer)
     // y las que se cayeron por impago al vencer la gracia.
     const inMonth = (d?: Date | string) =>
@@ -121,21 +114,7 @@ export class SubscriptionsAdminService {
         { $group: { _id: '$tenantId', first: { $min: '$paidAt' } } },
       ])
       .exec();
-    const firstPaid = new Map(firsts.map((f) => [String(f._id), f.first]));
     const newThisMonth = firsts.filter((f) => f.first >= monthStart).length;
-
-    // Conversión de prueba a pago: empresas con prueba creadas en los últimos
-    // 90 días. Las que pagaron el mismo día del alta compraron directo, sin prueba.
-    const since = new Date(now.getTime() - 90 * DAY_MS);
-    const createdOf = (t: (typeof subs)[number]) =>
-      (t as { createdAt?: Date }).createdAt;
-    const cohort = subs.filter((t) => {
-      const created = createdOf(t);
-      if (!created || new Date(created) < since || !t.trialEndsAt) return false;
-      const first = firstPaid.get(String(t._id));
-      return !first || first.getTime() - new Date(created).getTime() > DAY_MS;
-    });
-    const converted = cohort.filter((t) => firstPaid.has(String(t._id))).length;
 
     const revenue = await this.payments
       .aggregate<{
@@ -161,11 +140,6 @@ export class SubscriptionsAdminService {
       canceledThisMonth,
       cancelScheduled,
       churnPct: base ? round2((canceledThisMonth / base) * 100) : 0,
-      trials,
-      trialConversionPct: cohort.length
-        ? round2((converted / cohort.length) * 100)
-        : 0,
-      trialCohort: cohort.length,
       pastDue,
       revenueThisMonth,
     };
@@ -334,34 +308,6 @@ export class SubscriptionsAdminService {
   // ── Acciones ───────────────────────────────────────────────────────────
 
   /** Alargar la prueba (solo cuentas que nunca pagaron un plan). */
-  async extendTrial(actor: Actor, id: string, days: number, now = new Date()) {
-    const t = await this.tenantOrThrow(id);
-    const st = t.subscription?.status ?? 'trialing';
-    const neverPaid = !t.subscription?.period;
-    if (!(st === 'trialing' || (st === 'expired' && neverPaid)))
-      throw new BadRequestException(
-        'Solo se puede alargar la prueba de una cuenta que aún no paga un plan.',
-      );
-    const from =
-      t.trialEndsAt && new Date(t.trialEndsAt) > now
-        ? new Date(t.trialEndsAt)
-        : now;
-    const trialEndsAt = new Date(from.getTime() + days * DAY_MS);
-    await this.tenants
-      .updateOne(
-        { _id: t._id },
-        { $set: { trialEndsAt, 'subscription.status': 'trialing' } },
-      )
-      .exec();
-    this.access.invalidate(String(t._id));
-    await this.record(actor, t._id, 'extend_trial', {
-      days,
-      from: t.trialEndsAt,
-      to: trialEndsAt,
-    });
-    return { trialEndsAt };
-  }
-
   /**
    * Cambiar el plan con precio especial: el precio pactado (sin IGV, por
    * periodo) reemplaza al de catálogo y al cupón; el periodo pagado no se mueve.

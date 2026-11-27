@@ -62,7 +62,7 @@ describe('TenantDetailComponent (HU16)', () => {
   it('C8: muestra datos, usuarios, uso y registro', async () => {
     await setup();
     expect((el().querySelector('#td-name') as HTMLInputElement).value).toBe('La Mar S.A.C.');
-    expect((el().querySelector('#td-trial') as HTMLInputElement).value).toBe('2026-10-20');
+    expect(el().querySelector('#td-trial')).toBeNull();
     expect(el().textContent).toContain('ana@lamar.pe');
     expect(el().textContent).toContain('Administrador');
     expect(el().textContent).toContain('Desactivado');
@@ -84,7 +84,8 @@ describe('TenantDetailComponent (HU16)', () => {
     fixture.detectChanges();
     el().querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
     const req = http.expectOne((r) => r.method === 'PATCH' && r.url.endsWith('/tenants/t1'));
-    expect(req.request.body).toMatchObject({ plan: 'escala', planExpiresAt: '2027-01-31', trialEndsAt: '2026-10-20' });
+    expect(req.request.body).toMatchObject({ plan: 'escala', planExpiresAt: '2027-01-31' });
+    expect(req.request.body.trialEndsAt).toBeUndefined();
     req.flush({ ...OVERVIEW.tenant, plan: 'escala', planExpiresAt: '2027-01-31T00:00:00Z' });
     http.expectOne((r) => r.url.endsWith('/audit')).flush([]);
     expect(toast.success).toHaveBeenCalledWith('Empresa actualizada');

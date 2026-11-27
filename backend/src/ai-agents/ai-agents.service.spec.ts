@@ -35,6 +35,7 @@ const mockRag = {
 
 const mockAi = {
   chatMessages: jest.fn(),
+  platformFor: jest.fn(),
 };
 
 const mockStore = { search: jest.fn() };
@@ -153,6 +154,28 @@ describe('AiAgentsService', () => {
   // ─── findOne ───────────────────────────────────────────────────────────────
 
   describe('findOne', () => {
+    it('HU85 C11: platformAi informa la IA de la plataforma con las keys de la empresa', async () => {
+      mockAi.platformFor.mockResolvedValueOnce({
+        provider: 'claude',
+        model: 'claude-haiku-4-5',
+        apiKey: 'secreta',
+      });
+      const r = await service.platformAi('507f1f77bcf86cd799439011');
+      expect(mockAi.platformFor).toHaveBeenCalledWith(
+        expect.objectContaining({ openai: 'tenant-openai' }),
+      );
+      expect(r).toEqual({
+        active: true,
+        provider: 'claude',
+        model: 'claude-haiku-4-5',
+      });
+      expect(JSON.stringify(r)).not.toContain('secreta');
+      mockAi.platformFor.mockResolvedValueOnce(null);
+      await expect(
+        service.platformAi('507f1f77bcf86cd799439011'),
+      ).resolves.toEqual({ active: false });
+    });
+
     it('returns the agent when found', async () => {
       const agent = makeAgent();
       agentModel.findOne.mockReturnValue(buildQuery(agent));

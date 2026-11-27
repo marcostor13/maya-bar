@@ -76,11 +76,6 @@ describe('Plantillas de correos de cobro (HU50)', () => {
       ],
     ],
     [
-      'prueba',
-      T.trial({ daysLeft: 4, plansUrl: 'https://app/checkout' }),
-      ['4 días', 'https://app/checkout', 'Elegir plan'],
-    ],
-    [
       'renovación',
       T.renewal({
         ...plan,

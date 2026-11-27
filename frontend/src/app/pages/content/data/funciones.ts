@@ -13,7 +13,7 @@ export const FUNCTION_PAGES: ContentPage[] = [
     title: 'CRM para WhatsApp con IA y campañas | Maya CRM',
     description: `CRM para vender por WhatsApp: bandeja para todo el equipo, agentes de IA, campañas y contactos en un solo lugar. Desde ${FROM_PRICE} al mes.`,
     h1: 'CRM para WhatsApp: vende por WhatsApp con todo tu equipo y con IA',
-    answer: `Un CRM para WhatsApp guarda cada conversación de WhatsApp en la ficha del contacto, deja que varios vendedores atiendan el mismo número y permite enviar campañas a segmentos. Maya CRM hace eso y suma formularios, eventos, Instagram, Messenger y agentes de inteligencia artificial que responden solos. Los planes empiezan en ${FROM_PRICE} al mes por equipo, con 14 días gratis.`,
+    answer: `Un CRM para WhatsApp guarda cada conversación de WhatsApp en la ficha del contacto, deja que varios vendedores atiendan el mismo número y permite enviar campañas a segmentos. Maya CRM hace eso y suma formularios, eventos, Instagram, Messenger y agentes de inteligencia artificial que responden solos. Los planes empiezan en ${FROM_PRICE} al mes por equipo, con demo en vivo antes de contratar.`,
     updated: UPDATED,
     sections: [
       {

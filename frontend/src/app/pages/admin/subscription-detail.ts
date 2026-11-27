@@ -2,7 +2,7 @@ import { Component, HostListener, OnInit, inject, input, output, signal } from '
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { LucideAngularModule, CalendarPlus, Repeat, Banknote, Undo2, Mail, KeyRound, FileText } from 'lucide-angular';
+import { LucideAngularModule, Repeat, Banknote, Undo2, Mail, KeyRound, FileText } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { ConfirmService } from '../../shared/confirm';
 import { FormPageComponent } from '../../shared/form-page';
@@ -35,7 +35,7 @@ const ACTION_LABEL: Record<string, string> = {
   resend_receipt: 'Reenvió un comprobante',
 };
 
-type Modal = 'trial' | 'plan' | 'refund' | null;
+type Modal = 'plan' | 'refund' | null;
 
 /** Ficha de una suscripción con su historial y acciones (HU57). */
 @Component({
@@ -59,9 +59,6 @@ type Modal = 'trial' | 'plan' | 'refund' | null;
           <div class="block-head">
             <h2>Suscripción</h2>
             <div class="row-actions">
-              @if (canExtend(v)) {
-                <button type="button" class="btn btn-ghost btn-sm" (click)="modal.set('trial')"><lucide-icon [img]="CalendarPlus" [size]="15" /> Alargar prueba</button>
-              }
               @if (canChangePlan(v)) {
                 <button type="button" class="btn btn-ghost btn-sm" (click)="openPlan(v)"><lucide-icon [img]="Repeat" [size]="15" /> Cambiar plan o precio</button>
               }
@@ -72,7 +69,7 @@ type Modal = 'trial' | 'plan' | 'refund' | null;
             <div><dt>Estado</dt><dd><span class="badge" [class]="statusOf(v).badge">{{ statusOf(v).label }}</span></dd></div>
             <div><dt>Periodo</dt><dd>{{ v.tenant.subscription?.period ? periodLabel[v.tenant.subscription!.period!] : '—' }}</dd></div>
             <div><dt>Precio pactado</dt><dd data-testid="amount">{{ v.tenant.subscription?.amount != null ? money(v.tenant.subscription!.amount!, v.tenant.subscription!.currency) + ' sin IGV' : '—' }}</dd></div>
-            <div><dt>{{ v.tenant.subscription?.period ? 'Vence' : 'Prueba hasta' }}</dt>
+            <div><dt>Vence</dt>
               <dd>{{ (v.tenant.subscription?.currentPeriodEnd ?? v.tenant.trialEndsAt) | date: 'd MMM y' }}</dd></div>
             <div><dt>Cobro</dt><dd>{{ v.tenant.subscription?.mpPreapprovalId ? 'Automático (Mercado Pago)' : 'Pago único o manual' }}</dd></div>
             @if (v.tenant.subscription?.discount) { <div><dt>Cupón</dt><dd>{{ v.tenant.subscription!.discount!.code }}</dd></div> }
@@ -145,20 +142,6 @@ type Modal = 'trial' | 'plan' | 'refund' | null;
         <p class="muted">Cargando…</p>
       }
     </app-form-page>
-
-    @if (modal() === 'trial') {
-      <div class="overlay" (click)="modal.set(null)">
-        <form class="modal card modal-card" role="dialog" aria-modal="true" aria-labelledby="trial-title" (click)="$event.stopPropagation()" (ngSubmit)="extendTrial()">
-          <h3 id="trial-title">Alargar la prueba</h3>
-          <label for="trial-days">Días extra</label>
-          <input id="trial-days" class="input" type="number" min="1" max="60" name="days" [(ngModel)]="trialDays" required />
-          <div class="modal-actions">
-            <button type="button" class="btn btn-ghost" (click)="modal.set(null)">Cancelar</button>
-            <button type="submit" class="btn btn-primary" [disabled]="busy()">Alargar</button>
-          </div>
-        </form>
-      </div>
-    }
 
     @if (modal() === 'refund' && refunding(); as rp) {
       <div class="overlay" (click)="modal.set(null)">
@@ -256,7 +239,6 @@ export class SubscriptionDetailComponent implements OnInit {
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
   private api = `${environment.apiUrl}/billing/admin/subscriptions`;
-  readonly CalendarPlus = CalendarPlus;
   readonly Repeat = Repeat;
   readonly Banknote = Banknote;
   readonly Undo2 = Undo2;
@@ -276,7 +258,6 @@ export class SubscriptionDetailComponent implements OnInit {
   modal = signal<Modal>(null);
   busy = signal(false);
   paymentOpen = signal(false);
-  trialDays = 7;
   planForm = { plan: 'crece', amount: 0, reason: '' };
   pay = { plan: 'crece', period: 'monthly', currency: 'PEN', total: 0, method: 'transfer', reference: '' };
   /** Clave de idempotencia del pago manual: una por formulario abierto. */
@@ -301,10 +282,6 @@ export class SubscriptionDetailComponent implements OnInit {
     const s = v.tenant.subscription?.status ?? (v.tenant.trialEndsAt ? 'trialing' : 'legacy');
     return SUB_STATUS[s] ?? { label: s, badge: 'badge-neutral' };
   }
-  canExtend(v: SubscriptionDetail) {
-    const s = v.tenant.subscription;
-    return !s?.period && (!s || s.status === 'trialing' || s.status === 'expired');
-  }
   canChangePlan(v: SubscriptionDetail) {
     const s = v.tenant.subscription;
     return !!s?.period && (s.status === 'active' || s.status === 'past_due');
@@ -320,12 +297,6 @@ export class SubscriptionDetailComponent implements OnInit {
       next: () => { this.busy.set(false); this.toast.success(ok); after?.(); this.load(); this.changed.emit(); },
       error: err => { this.busy.set(false); this.toast.error(err.error?.message || 'No se pudo completar la acción'); },
     });
-  }
-
-  extendTrial() {
-    const days = Number(this.trialDays);
-    if (!(days >= 1 && days <= 60)) { this.toast.error('Indica entre 1 y 60 días'); return; }
-    this.post(`${this.tenantId()}/extend-trial`, { days }, `Prueba alargada ${days} días`, () => this.modal.set(null));
   }
 
   openPlan(v: SubscriptionDetail) {

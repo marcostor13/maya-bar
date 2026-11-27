@@ -1,7 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model } from 'mongoose';
 import { Tenant } from '../../tenants/tenant.schema';
 import { CheckoutSession } from '../checkout-session.schema';
@@ -11,7 +10,6 @@ import { PLANS } from '../plans.catalog';
 import { BillingMailer } from './billing-mailer.service';
 import { T, periodName, rejectReason } from './billing-email.templates';
 
-const DAY_MS = 24 * 3600_000;
 /** Destino del aviso de ventas si no se configura `SALES_NOTIFY_EMAIL` (HU75). */
 export const DEFAULT_SALES_EMAIL = 'admin@ignia.site';
 
@@ -38,12 +36,9 @@ function saleConcept(
     : `Plan ${plan} (${periodName(session.period)})`;
   return session.kind === 'upgrade' ? `Cambio a ${what}` : what;
 }
-/** Días que quedan de prueba en los que se avisa: día 10, 13 y 14 de 14. */
-export const TRIAL_NOTICE_DAYS_LEFT = [4, 1, 0];
-
 /**
  * Avisos de cobro que no nacen de un alta ni de un comprobante (HU50):
- * PagoEfectivo pendiente, pago rechazado de una compra, prueba por vencer y créditos de IA al 80 % / 100 %.
+ * PagoEfectivo pendiente, pago rechazado de una compra y créditos de IA al 80 % / 100 %.
  */
 @Injectable()
 export class BillingNoticesService implements OnModuleInit {
@@ -197,40 +192,6 @@ export class BillingNoticesService implements OnModuleInit {
         url: this.mailer.frontendUrl('/admin/billing'),
       }),
     });
-  }
-
-  /** Recordatorios de prueba: quedan 4, 1 y 0 días (días 10, 13 y 14). */
-  @Cron(CronExpression.EVERY_HOUR)
-  async trialReminders(now = new Date()): Promise<number> {
-    const trials = await this.tenants
-      .find({
-        'subscription.status': 'trialing',
-        trialEndsAt: { $gt: now, $lte: new Date(now.getTime() + 5 * DAY_MS) },
-        isActive: { $ne: false },
-      })
-      .select('_id trialEndsAt')
-      .limit(500)
-      .lean()
-      .exec();
-    let sent = 0;
-    for (const t of trials) {
-      const daysLeft = Math.floor(
-        (t.trialEndsAt!.getTime() - now.getTime()) / DAY_MS,
-      );
-      if (!TRIAL_NOTICE_DAYS_LEFT.includes(daysLeft)) continue;
-      const ok = await this.mailer.trySend({
-        key: `trial:${String(t._id)}:${daysLeft}`,
-        type: 'trial',
-        to: await this.mailer.recipients(t._id),
-        tenantId: t._id,
-        content: T.trial({
-          daysLeft,
-          plansUrl: this.mailer.frontendUrl('/checkout'),
-        }),
-      });
-      if (ok) sent++;
-    }
-    return sent;
   }
 
   /** Créditos de IA al 80 % y al 100 %, una vez por mes y umbral. */

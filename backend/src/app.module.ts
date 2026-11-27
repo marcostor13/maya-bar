@@ -25,6 +25,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ApiAccessModule } from './api-access/api-access.module';
 import { SettingsModule } from './settings/settings.module';
 import { ListsModule } from './lists/lists.module';
+import { DemoModule } from './demo/demo.module';
 import { VisitsModule } from './visits/visits.module';
 import { ImpulsadorModule } from './impulsador/impulsador.module';
 import { WhatsAppAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
@@ -88,6 +89,7 @@ import { AgencyModule } from './agency/agency.module';
     CampaignsModule,
     WhatsAppModule,
     SettingsModule,
+    DemoModule,
     ListsModule,
     VisitsModule,
     ImpulsadorModule,

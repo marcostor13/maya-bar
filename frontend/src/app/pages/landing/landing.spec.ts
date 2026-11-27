@@ -29,6 +29,13 @@ describe('Landing: precios (HU56)', () => {
     expect(text).toContain('S/ 249');
   });
 
+  it('HU87 C5: no ofrece prueba gratis y los CTA llevan a la demo por WhatsApp o al checkout', async () => {
+    const { el } = await render();
+    expect(el.textContent).not.toMatch(/14 d[ií]as|prueba gratis|sin tarjeta|Crear cuenta/i);
+    expect(el.querySelector('a[href*="/register"]')).toBeNull();
+    expect(el.querySelectorAll('a[href*="wa.me/"]').length).toBeGreaterThan(2);
+  });
+
   it('C2: el botón de Crece en anual lleva al checkout de Crece anual', async () => {
     const { f, el } = await render();
     const annual = [...el.querySelectorAll('.billing-toggle button')].find(b => b.textContent!.includes('Anual')) as HTMLButtonElement;

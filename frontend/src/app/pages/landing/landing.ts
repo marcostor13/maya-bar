@@ -58,7 +58,7 @@ import {
 const CURRENCY_KEY = 'maya-landing-currency';
 const TITLE = 'Maya CRM — CRM de ventas y marketing con WhatsApp e IA';
 const DESCRIPTION =
-  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Planes desde US$' + PLANS[0].prices!.usd.monthly + ' al mes, 14 días gratis.';
+  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Planes desde US$' + PLANS[0].prices!.usd.monthly + ' al mes. Pide una demo en vivo.';
 
 @Component({
   selector: 'app-landing',
@@ -89,7 +89,7 @@ const DESCRIPTION =
 
         <div class="header-actions">
           <a class="btn btn-secondary btn-sm" routerLink="/login">Ingresar</a>
-          <a class="btn btn-primary btn-sm" routerLink="/register">Crear cuenta</a>
+          <a class="btn btn-primary btn-sm" [href]="waDemo()" target="_blank" rel="noopener">Pide tu demo</a>
         </div>
 
         <button
@@ -111,7 +111,7 @@ const DESCRIPTION =
           <a href="#preguntas" (click)="menuOpen.set(false)">Preguntas</a>
           <div class="header-mobile-actions">
             <a class="btn btn-secondary" routerLink="/login">Ingresar</a>
-            <a class="btn btn-primary" routerLink="/register">Crear cuenta</a>
+            <a class="btn btn-primary" [href]="waDemo()" target="_blank" rel="noopener">Pide tu demo</a>
           </div>
         </div>
       }
@@ -330,7 +330,7 @@ const DESCRIPTION =
           </h2>
           <p class="section-intro center" appReveal>
             Todos los planes incluyen WhatsApp, Instagram, Messenger, email y agentes de IA.
-            Empieza con 14 días gratis y sin tarjeta.
+            Antes de contratar, te mostramos una demo en vivo por WhatsApp.
           </p>
 
           @if (founderLeft(); as left) {
@@ -419,10 +419,7 @@ const DESCRIPTION =
                     [queryParams]="{ plan: plan.id, periodo: periodParam(), moneda: currency() === 'pen' ? 'PEN' : 'USD' }">
                     Contratar {{ plan.name }}
                   </a>
-                  <a class="plan-buy" routerLink="/register"
-                    [queryParams]="{ plan: plan.id, pago: periodParam() }">
-                    o prueba 14 días gratis
-                  </a>
+                  <a class="plan-buy" [href]="waDemo()" target="_blank" rel="noopener">o pide una demo</a>
                 }
 
                 <dl class="plan-limits">
@@ -448,7 +445,7 @@ const DESCRIPTION =
 
           <div class="pay-trust" appReveal>
             <ul class="trust-points">
-              <li><lucide-icon [img]="Check" [size]="15" /> 14 días gratis, sin tarjeta</li>
+              <li><lucide-icon [img]="Check" [size]="15" /> Demo en vivo antes de pagar</li>
               <li><lucide-icon [img]="Check" [size]="15" /> Sin permanencia</li>
               <li><lucide-icon [img]="Check" [size]="15" /> Boleta o factura electrónica</li>
             </ul>
@@ -575,7 +572,7 @@ const DESCRIPTION =
               <lucide-icon [img]="MessageCircle" [size]="18" />
               Escribir por WhatsApp
             </a>
-            <a class="btn btn-lg cta-ghost" routerLink="/register">Crear mi cuenta</a>
+            <a class="btn btn-lg cta-ghost" href="#precios">Ver planes</a>
           </div>
         </div>
       </section>
@@ -610,7 +607,7 @@ const DESCRIPTION =
         <nav class="footer-links" aria-label="Cuenta">
           <h3>Tu cuenta</h3>
           <a routerLink="/login">Ingresar</a>
-          <a routerLink="/register">Crear cuenta</a>
+          <a routerLink="/checkout">Contratar un plan</a>
           <a href="#preguntas">Preguntas frecuentes</a>
           <a [href]="waDemo()" target="_blank" rel="noopener">Hablar por WhatsApp</a>
         </nav>

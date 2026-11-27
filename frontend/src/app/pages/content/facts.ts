@@ -61,7 +61,7 @@ export const FROM_PRICE = `US$ ${cheapest.usd} (S/ ${cheapest.pen})`;
 
 /** Texto común: cómo se paga. */
 export const PRICING_NOTE =
-  'Precios mensuales sin IGV, por equipo y no por vendedor. El pago trimestral tiene 5 % de descuento y el anual cuesta 10 meses. Prueba gratis de 14 días sin tarjeta y sin permanencia. Hay plan Empresa a medida.';
+  'Precios mensuales sin IGV, por equipo y no por vendedor. El pago trimestral tiene 5 % de descuento y el anual cuesta 10 meses. Sin permanencia y con demo en vivo antes de contratar. Hay plan Empresa a medida.';
 
 /**
  * Tarifas de lista de Meta para WhatsApp Business Platform en Perú (USD por

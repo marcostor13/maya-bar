@@ -13,7 +13,6 @@ import { NubefactProvider } from '../src/billing/invoicing/nubefact.provider';
 import { InvoicingService } from '../src/billing/invoicing/invoicing.service';
 import { BillingEmail } from '../src/billing/emails/billing-email.schema';
 import { BillingNoticesService } from '../src/billing/emails/billing-notices.service';
-import { Tenant } from '../src/tenants/tenant.schema';
 
 const wait = (ms = 80) => new Promise((r) => setTimeout(r, ms));
 let seq = 0;
@@ -226,27 +225,6 @@ describe('Correos de cobro (HU50)', () => {
     const e = (await emails.findOne({ to: email, type: 'rejected' }).lean())!;
     expect(e.html).toContain('saldo suficiente');
     expect(e.html).toContain('/checkout?plan=crece&amp;periodo=anual');
-  });
-
-  it('prueba: aviso a los 4 días restantes, una sola vez', async () => {
-    const owner = await registerTenant(app, 'Prueba Mail');
-    await app
-      .get<Model<Tenant>>(getModelToken(Tenant.name))
-      .updateOne(
-        { _id: owner.user.tenantId },
-        { $set: { trialEndsAt: new Date(Date.now() + 4.5 * 86400_000) } },
-      );
-    const svc = app.get(BillingNoticesService);
-    await svc.trialReminders();
-    await svc.trialReminders();
-    const sent = await emails
-      .find({
-        tenantId: new Types.ObjectId(owner.user.tenantId!),
-        type: 'trial',
-      })
-      .lean();
-    expect(sent).toHaveLength(1);
-    expect(sent[0].key).toBe(`trial:${owner.user.tenantId}:4`);
   });
 
   it('créditos de IA: aviso al 80 % y al 100 %, una vez por umbral', async () => {

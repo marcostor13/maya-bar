@@ -12,7 +12,6 @@ import {
 import { Type } from 'class-transformer';
 import {
   IsIn,
-  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -34,14 +33,6 @@ import {
 import { SubscriptionsAdminService } from './subscriptions-admin.service';
 
 import { Audit } from '../audit/audit.decorator';
-class ExtendTrialDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(60)
-  days: number;
-}
-
 class ChangePlanDto {
   @IsIn(PLAN_IDS)
   plan: PlanId;
@@ -143,22 +134,6 @@ export class SubscriptionsAdminController {
   detail(@Request() req: AuthReq, @Param('tenantId') id: string) {
     this.actor(req);
     return this.admin.detail(id);
-  }
-
-  @Audit({
-    action: 'admin.billing.trial_extended',
-    resource: 'subscription',
-    idParam: 'tenantId',
-    tenantParam: 'tenantId',
-    bodyFields: ['days'],
-  })
-  @Post(':tenantId/extend-trial')
-  extendTrial(
-    @Request() req: AuthReq,
-    @Param('tenantId') id: string,
-    @Body() dto: ExtendTrialDto,
-  ) {
-    return this.admin.extendTrial(this.actor(req), id, dto.days);
   }
 
   @Audit({

@@ -75,40 +75,15 @@ describe('Suscripciones e ingresos (HU57)', () => {
   it('solo el superadmin entra', async () => {
     const owner = await registerTenant(app, 'Curiosa');
     await http().get(`${api}/summary`).set(bearer(owner)).expect(403);
-    await http()
-      .post(`${api}/${owner.user.tenantId}/extend-trial`)
-      .set(bearer(owner))
-      .send({ days: 30 })
-      .expect(403);
   });
 
-  it('alarga la prueba y queda registrado quién lo hizo', async () => {
-    const owner = await registerTenant(app, 'Prueba Larga');
-    const id = owner.user.tenantId!;
-    const before = await detail(id);
-    const res = (
-      await http()
-        .post(`${api}/${id}/extend-trial`)
-        .set(bearer(admin))
-        .send({ days: 7 })
-        .expect(201)
-    ).body as { trialEndsAt: string };
-    const from = before.tenant.trialEndsAt
-      ? new Date(before.tenant.trialEndsAt).getTime()
-      : Date.now();
-    expect(new Date(res.trialEndsAt).getTime() - from).toBeGreaterThanOrEqual(
-      7 * 86400_000 - 5000,
-    );
+  it('HU87: ya no existe alargar la prueba', async () => {
+    const owner = await registerTenant(app, 'Sin prueba');
     await http()
-      .post(`${api}/${id}/extend-trial`)
+      .post(`${api}/${owner.user.tenantId}/extend-trial`)
       .set(bearer(admin))
-      .send({ days: 0 })
-      .expect(400);
-    const d = await detail(id);
-    expect(d.actions[0]).toMatchObject({
-      action: 'extend_trial',
-      actorEmail: ADMIN.email,
-    });
+      .send({ days: 7 })
+      .expect(404);
   });
 
   it('C2: el pago manual activa la suscripción y emite el comprobante', async () => {
@@ -252,19 +227,19 @@ describe('Suscripciones e ingresos (HU57)', () => {
       .expect(400);
   });
 
-  it('resumen: MRR normalizado, pruebas activas, lista con filtros y reenvío de comprobante', async () => {
+  it('resumen: MRR normalizado, sin KPIs de prueba, lista con filtros y reenvío de comprobante', async () => {
     const s = (
       await http().get(`${api}/summary`).set(bearer(admin)).expect(200)
     ).body as {
       mrr: { PEN: number };
       active: number;
-      trials: number;
+      trials?: number;
       byPlan: { plan: string }[];
     };
     // La cuenta con Escala trimestral a 1.200 aporta 400 al mes.
     expect(s.mrr.PEN).toBeGreaterThanOrEqual(400);
     expect(s.active).toBeGreaterThanOrEqual(1);
-    expect(s.trials).toBeGreaterThanOrEqual(1);
+    expect(s.trials).toBeUndefined();
     expect(s.byPlan.some((p) => p.plan === 'escala')).toBe(true);
 
     const list = (
@@ -278,15 +253,6 @@ describe('Suscripciones e ingresos (HU57)', () => {
     expect(
       list.rows.every((r) => r.status === 'active' && r.period === 'quarterly'),
     ).toBe(true);
-    const trials = (
-      await http()
-        .get(api)
-        .query({ status: 'trialing', q: 'Prueba Larga' })
-        .set(bearer(admin))
-        .expect(200)
-    ).body as { rows: unknown[] };
-    expect(trials.rows).toHaveLength(1);
-
     const d = await detail(list.rows[0]._id);
     await http()
       .post(`${api}/payments/${d.payments[0]._id}/resend-receipt`)

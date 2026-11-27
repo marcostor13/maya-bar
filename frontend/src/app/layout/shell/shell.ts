@@ -833,6 +833,7 @@ export class ShellComponent {
           { key: 'admin-users', label: 'Usuarios', icon: Users, route: '/admin/users' },
           { key: 'admin-billing', label: 'Suscripciones', icon: Wallet, route: '/admin/billing' },
           { key: 'admin-onboarding', label: 'Implementaciones', icon: ClipboardCheck, route: '/admin/onboarding' },
+          { key: 'admin-ai', label: 'IA de la plataforma', icon: Bot, route: '/admin/ai' },
         ],
       }];
     }

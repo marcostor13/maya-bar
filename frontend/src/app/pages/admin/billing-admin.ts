@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { LucideAngularModule, Search, TrendingUp, Users, AlertTriangle, Clock, ClipboardCheck } from 'lucide-angular';
+import { LucideAngularModule, Search, TrendingUp, Users, AlertTriangle, ClipboardCheck } from 'lucide-angular';
 import { ToastService } from '../../shared/toast';
 import { environment } from '../../../environments/environment';
 import { SubscriptionDetailComponent } from './subscription-detail';
@@ -19,9 +19,6 @@ export interface BillingSummary {
   canceledThisMonth: number;
   cancelScheduled: number;
   churnPct: number;
-  trials: number;
-  trialConversionPct: number;
-  trialCohort: number;
   pastDue: number;
   revenueThisMonth: { PEN: number; USD: number };
 }
@@ -84,11 +81,6 @@ type Tab = 'summary' | 'subscriptions' | 'coupons' | 'receipts' | 'emails';
                 <span class="kpi-label">Bajas del mes</span>
                 <strong>{{ s.canceledThisMonth }}</strong>
                 <span class="kpi-sub">Churn {{ s.churnPct }} % · {{ s.cancelScheduled }} se cancelan al vencer</span>
-              </div>
-              <div class="card kpi">
-                <span class="kpi-label"><lucide-icon [img]="Clock" [size]="15" /> Pruebas activas</span>
-                <strong>{{ s.trials }}</strong>
-                <span class="kpi-sub">Conversión {{ s.trialConversionPct }} % ({{ s.trialCohort }} en 90 días)</span>
               </div>
               <button type="button" class="card kpi kpi-link" (click)="filterPastDue()">
                 <span class="kpi-label"><lucide-icon [img]="AlertTriangle" [size]="15" /> Pago pendiente</span>
@@ -236,13 +228,12 @@ export class AdminBillingComponent implements OnInit {
   readonly TrendingUp = TrendingUp;
   readonly Users = Users;
   readonly AlertTriangle = AlertTriangle;
-  readonly Clock = Clock;
   readonly ClipboardCheck = ClipboardCheck;
   readonly money = money;
   readonly planName = planName;
   readonly periodLabel = PERIOD_LABEL;
   readonly plans = PLAN_OPTIONS;
-  readonly statusOptions = Object.entries(SUB_STATUS).filter(([k]) => k !== 'legacy').map(([id, v]) => ({ id, label: v.label }));
+  readonly statusOptions = Object.entries(SUB_STATUS).filter(([k]) => k !== 'legacy' && k !== 'trialing').map(([id, v]) => ({ id, label: v.label }));
   readonly tabs: { id: Tab; label: string }[] = [
     { id: 'summary', label: 'Resumen' },
     { id: 'subscriptions', label: 'Suscripciones' },

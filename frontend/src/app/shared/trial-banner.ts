@@ -6,13 +6,13 @@ import { LucideAngularModule, Clock, Lock, Download } from 'lucide-angular';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
 import { ToastService } from './toast';
-import { BillingStatusService, daysLeft } from './billing-status.service';
+import { BillingStatusService } from './billing-status.service';
 
 const PERIOD_PARAM: Record<string, string> = { monthly: 'mensual', quarterly: 'trimestral', annual: 'anual' };
 
 /**
- * Aviso de la prueba gratis en el shell (HU41): días restantes, tono de aviso
- * los últimos 3 días y solo lectura al vencer.
+ * Aviso de cobro en el shell (HU41, HU51): pago fallido y solo lectura. La
+ * prueba gratis ya no existe (HU87).
  */
 @Component({
   selector: 'app-trial-banner',
@@ -126,14 +126,8 @@ export class TrialBannerComponent implements OnInit {
           : 'No pudimos cobrar tu plan. Actualiza tu medio de pago para no perder el acceso.',
       };
     }
-    if (s.status !== 'trialing' || !s.trialEndsAt) return null;
-    const left = daysLeft(s.trialEndsAt, this.now()());
-    return {
-      tone: left <= 3 ? 'warn' : 'info',
-      text: left === 1
-        ? `Te queda 1 día de prueba gratis del plan ${s.planName}.`
-        : `Te quedan ${left} días de prueba gratis del plan ${s.planName}.`,
-    };
+    // Sin prueba gratis (HU87): fuera de impago o solo lectura no hay aviso.
+    return null;
   });
 
   ngOnInit() {

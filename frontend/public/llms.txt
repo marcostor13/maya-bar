@@ -55,8 +55,9 @@ showrooms, productoras de eventos, y agencias o consultoras que gestionan varias
 ## Cómo se contrata
 
 Planes publicados con precio (ver "Precios" abajo), pago con Mercado Pago (tarjeta,
-Yape en pagos únicos, PagoEfectivo) y boleta o factura electrónica. Prueba gratis de
-14 días sin tarjeta y sin permanencia; los datos se pueden exportar en cualquier momento.
+Yape en pagos únicos, PagoEfectivo) y boleta o factura electrónica. No hay prueba gratis:
+antes de contratar se pide una demo en vivo por WhatsApp. Sin permanencia; los datos se
+pueden exportar en cualquier momento.
 Opcionalmente, el equipo de Maya hace la puesta en marcha (importación de la base,
 formularios, conexión de WhatsApp y entrenamiento del agente de IA).
 

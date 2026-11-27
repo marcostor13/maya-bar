@@ -94,15 +94,26 @@ describe('TenantsService', () => {
       return captured;
     }
 
-    it('HU41 C1: nace en prueba de 14 días con el plan Crece', async () => {
-      jest.useFakeTimers().setSystemTime(new Date('2026-12-01T10:00:00Z'));
+    it('HU87: endUnpaidTrial vence solo una prueba sin pago', async () => {
+      tenantModel.updateOne = jest.fn(() => ({
+        exec: jest.fn().mockResolvedValue({}),
+      }));
+      await service.endUnpaidTrial('507f1f77bcf86cd799439011');
+      expect(tenantModel.updateOne).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439011', 'subscription.status': 'trialing' },
+        {
+          $set: { 'subscription.status': 'expired' },
+          $unset: { trialEndsAt: 1 },
+        },
+      );
+    });
+
+    it('HU87 C2: nace con el plan Crece y sin prueba gratis', async () => {
       const captured = captureCreated();
       await service.create({ name: 'Nueva', email: 'n@n.pe' });
       expect(captured.data.plan).toBe('crece');
-      expect(captured.data.subscription).toEqual({ status: 'trialing' });
-      expect(captured.data.trialEndsAt.toISOString()).toBe(
-        '2026-12-15T10:00:00.000Z',
-      );
+      expect(captured.data.subscription).toBeUndefined();
+      expect(captured.data.trialEndsAt).toBeUndefined();
     });
 
     it('HU41: alargar la prueba reabre una prueba vencida', async () => {
@@ -139,18 +150,6 @@ describe('TenantsService', () => {
         phone: '999888777',
         slug: 'cafe-nandu-cia',
       });
-    });
-
-    it('arranca con 14 días de prueba', async () => {
-      jest.useFakeTimers();
-      jest.setSystemTime(new Date(2026, 0, 10, 12, 0, 0));
-      const captured = captureCreated();
-
-      await service.create({ name: 'Maya', email: 'hola@maya.pe' });
-
-      expect(captured.data.trialEndsAt).toEqual(
-        new Date(2026, 0, 24, 12, 0, 0),
-      );
     });
 
     it('busca duplicados por email o por slug', async () => {

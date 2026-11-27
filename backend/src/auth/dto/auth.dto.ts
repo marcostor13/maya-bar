@@ -9,9 +9,7 @@ import {
   MinLength,
   IsBoolean,
   IsIn,
-  ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 
 export class LoginDto {
   @IsEmail()
@@ -26,56 +24,6 @@ export class LoginDto {
   @IsString()
   @MaxLength(2000)
   deviceToken?: string;
-}
-
-/** Origen del registro (HU84): primer toque de UTM y de Meta, y el consentimiento. */
-export class AcquisitionDto {
-  @IsOptional() @IsString() @MaxLength(200) utmSource?: string;
-  @IsOptional() @IsString() @MaxLength(200) utmMedium?: string;
-  @IsOptional() @IsString() @MaxLength(200) utmCampaign?: string;
-  @IsOptional() @IsString() @MaxLength(200) utmContent?: string;
-  @IsOptional() @IsString() @MaxLength(200) utmTerm?: string;
-  @IsOptional() @IsString() @MaxLength(500) fbclid?: string;
-  @IsOptional() @IsString() @MaxLength(600) fbc?: string;
-  @IsOptional() @IsString() @MaxLength(200) fbp?: string;
-  @IsOptional() @IsString() @MaxLength(300) landingPath?: string;
-  @IsOptional() @IsString() @MaxLength(500) referrer?: string;
-  @IsBoolean() consent!: boolean;
-}
-
-export class RegisterTenantDto {
-  @IsString()
-  @IsNotEmpty()
-  name!: string;
-
-  @IsOptional()
-  @IsString()
-  ruc?: string;
-
-  @IsEmail()
-  email!: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @IsString()
-  @IsNotEmpty()
-  ownerName!: string;
-
-  @IsString()
-  @MinLength(8)
-  ownerPassword!: string;
-
-  /** Token del widget de Cloudflare Turnstile. */
-  @IsOptional()
-  @IsString()
-  captchaToken?: string;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => AcquisitionDto)
-  acquisition?: AcquisitionDto;
 }
 
 export class VerifyEmailDto {

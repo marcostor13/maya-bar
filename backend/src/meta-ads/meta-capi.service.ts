@@ -74,7 +74,7 @@ export class MetaCapiService {
         eventTime: new Date(),
         sourceUrl: `${this.siteUrl}/register`,
         customData: {
-          content_name: 'Registro prueba 14 días',
+          content_name: 'Registro',
           status: 'verified',
         },
       });

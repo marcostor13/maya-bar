@@ -52,6 +52,10 @@ export class UsageLedger extends Document {
   @Prop({ default: false })
   byok: boolean;
 
+  /** La llamada usó la cuenta de IA de la plataforma (HU85): 0 créditos, con costo. */
+  @Prop({ default: false })
+  platformAi: boolean;
+
   @Prop()
   provider?: string;
 

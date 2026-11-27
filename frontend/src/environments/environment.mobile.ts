@@ -10,7 +10,7 @@ export const environment = {
   apiUrl: 'https://api.mayacrm.site',
   siteUrl: 'https://mayacrm.site',
   /** Número de WhatsApp al que apunta cada CTA de la landing (E.164 sin +). */
-  whatsappNumber: '51975760418',
+  whatsappNumber: '51991172822',
   /** Clave pública de Cloudflare Turnstile (captcha del registro). Vacía = sin captcha. */
   turnstileSiteKey: '0x4AAAAAAFyRq2FkWFMu0uNq',
   /** Píxel de Meta de la publicidad propia (HU84). Vacío = sin medición ni aviso de cookies. */
