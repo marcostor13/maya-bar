@@ -223,6 +223,7 @@ export class BillingController {
       planName: PLANS[plan].name,
       legacy: !!snap?.legacy,
       ...state,
+      demo: !!snap?.demo,
       subscription: snap?.subscription
         ? {
             period: snap.subscription.period,

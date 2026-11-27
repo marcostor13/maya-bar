@@ -31,7 +31,7 @@ export class BillingAccessService {
     const snap = Types.ObjectId.isValid(tenantId)
       ? await this.tenants
           .findById(tenantId)
-          .select('plan legacy trialEndsAt subscription isActive')
+          .select('plan legacy trialEndsAt subscription isActive demo')
           .lean<BillingSnapshot>()
           .exec()
       : null;
@@ -43,7 +43,8 @@ export class BillingAccessService {
     const snap = await this.snapshot(tenantId);
     // Sin empresa (superadmin o borrada): otras capas deciden.
     if (!snap) return { status: 'legacy', readOnly: false };
-    return accessOf(snap, now);
+    const state = accessOf(snap, now);
+    return snap.demo ? { ...state, demo: true } : state;
   }
 
   /** ¿Pueden correr sus procesos automáticos (agente IA, campañas)? */

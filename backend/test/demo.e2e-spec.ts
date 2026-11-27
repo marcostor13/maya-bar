@@ -173,4 +173,183 @@ describe('Cuenta demo (HU86, e2e)', () => {
         .countDocuments({ tenantId: current!._id }),
     ).toBeGreaterThan(0);
   });
+
+  describe('solo lectura (HU88)', () => {
+    let body: ResetBody;
+    let demo: Session;
+    beforeAll(async () => {
+      // C7 deja la demo anterior sin la marca: se la devolvemos para poder restablecer.
+      const tenants = app.get<Model<Tenant>>(getModelToken(Tenant.name));
+      await tenants
+        .updateOne({ slug: 'maya-demo' }, { $set: { demo: true } })
+        .exec();
+      body = (
+        await api().post('/admin/demo/reset').set(bearer(admin)).expect(200)
+      ).body as ResetBody;
+      demo = await login(app, body.email, body.password);
+    });
+
+    it('C1: la demo no puede crear datos', async () => {
+      const before = size(
+        (await api().get('/customers').set(bearer(demo)).expect(200))
+          .body as Leads,
+      );
+      const res = await api()
+        .post('/customers')
+        .set(bearer(demo))
+        .send({ name: 'Intruso', phone: '51911111111' })
+        .expect(403);
+      expect((res.body as { code: string }).code).toBe('DEMO_READ_ONLY');
+      const after = size(
+        (await api().get('/customers').set(bearer(demo)).expect(200))
+          .body as Leads,
+      );
+      expect(after).toBe(before);
+    });
+
+    it('C2: no puede cambiar la contraseña ni crear usuarios; la clave sigue sirviendo', async () => {
+      await api()
+        .patch('/auth/change-password')
+        .set(bearer(demo))
+        .send({ currentPassword: body.password, newPassword: 'OtraClave-123' })
+        .expect(403);
+      await api()
+        .post('/users')
+        .set(bearer(demo))
+        .send({
+          name: 'Nuevo',
+          email: 'nuevo@x.pe',
+          password: 'Clave-Segura-1',
+          role: 'AGENT',
+        })
+        .expect(403);
+      await login(app, body.email, body.password);
+    });
+
+    it('C3: puede ver todo', async () => {
+      const res = await api().get('/customers').set(bearer(demo)).expect(200);
+      expect(size(res.body as Leads)).toBeGreaterThan(0);
+      const status = await api()
+        .get('/billing/status')
+        .set(bearer(demo))
+        .expect(200);
+      expect(status.body).toMatchObject({ demo: true });
+    });
+
+    it('C4, C5: el superadmin restablece y otra empresa escribe normal', async () => {
+      await api().post('/admin/demo/reset').set(bearer(admin)).expect(200);
+      await api()
+        .post('/customers')
+        .set(bearer(other))
+        .send({ name: 'Cliente real 4', phone: '51987654304' })
+        .expect(201);
+    });
+  });
+
+  it('HU89: todas las pantallas de la demo tienen datos y nada queda pendiente de enviar', async () => {
+    const tenants = app.get<Model<Tenant>>(getModelToken(Tenant.name));
+    await tenants
+      .updateOne({ slug: 'maya-demo' }, { $set: { demo: true } })
+      .exec();
+    const body = (
+      await api().post('/admin/demo/reset').set(bearer(admin)).expect(200)
+    ).body as ResetBody;
+    for (const m of [
+      'Campaign',
+      'CampaignRecipient',
+      'WaTemplate',
+      'MessageTemplate',
+      'EmailTemplate',
+      'ShortLink',
+      'LinkClick',
+      'ContactForm',
+      'FormSubmission',
+      'ContactList',
+      'Automation',
+      'AutomationRun',
+      'RecoveryPlan',
+      'Prospect',
+      'Quote',
+      'Call',
+      'SuppressionEntry',
+      'RoutingRule',
+      'ContactActivity',
+      'LeadActivity',
+      'Report',
+      'AuditEntry',
+      'KnowledgeDoc',
+    ])
+      expect({ m, n: body.counts[m] > 0 }).toEqual({ m, n: true });
+
+    const demo = await login(app, body.email, body.password);
+    type LeadRow = { _id: string; stage: string };
+    const raw = (await api().get('/leads').set(bearer(demo)).expect(200))
+      .body as LeadRow[] | { items?: LeadRow[] };
+    const leads: LeadRow[] = Array.isArray(raw) ? raw : (raw.items ?? []);
+    const won = leads.find((l) => l.stage === 'won');
+    for (const path of [
+      '/campaigns',
+      '/automations',
+      '/recovery',
+      '/links',
+      '/email-templates',
+      '/message-templates',
+      '/whatsapp-templates',
+      '/forms',
+      '/lists',
+      '/prospecting/searches',
+      '/prospecting/prospects',
+      '/calls',
+      '/suppression',
+      '/reports',
+      '/routing/rules',
+      '/routing/log',
+      '/audit',
+      '/products',
+      ...(won ? [`/quotes?leadId=${won._id}`] : []),
+    ]) {
+      const res = await api().get(path).set(bearer(demo));
+      expect({ path, status: res.status }).toEqual({ path, status: 200 });
+      expect({ path, empty: size(res.body as Leads) === 0 }).toEqual({
+        path,
+        empty: false,
+      });
+    }
+    const analytics = await api()
+      .get('/dashboard/analytics')
+      .set(bearer(demo))
+      .expect(200);
+    expect(JSON.stringify(analytics.body)).toContain('instagram');
+
+    // Nada que los procesos en segundo plano puedan tomar y enviar.
+    const db = tenants.db.db!;
+    const tid = new tenants.base.Types.ObjectId(body.tenantId);
+    const pending = {
+      campaigns: await db.collection('campaigns').countDocuments({
+        tenantId: tid,
+        status: { $in: ['scheduled', 'sending'] },
+      }),
+      runs: await db
+        .collection('automation_runs')
+        .countDocuments({ tenantId: tid, status: 'active' }),
+      recovery: await db.collection('recoveryplans').countDocuments({
+        tenantId: tid,
+        status: { $in: ['analyzing', 'scheduled', 'sending'] },
+      }),
+      searches: await db
+        .collection('prospectsearches')
+        .countDocuments({ tenantId: tid, status: 'searching' }),
+      calls: await db.collection('calls').countDocuments({
+        tenantId: tid,
+        status: { $in: ['ringing', 'connecting', 'active'] },
+      }),
+    };
+    expect(pending).toEqual({
+      campaigns: 0,
+      runs: 0,
+      recovery: 0,
+      searches: 0,
+      calls: 0,
+    });
+  });
 });

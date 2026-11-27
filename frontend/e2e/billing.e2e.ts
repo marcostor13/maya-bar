@@ -6,7 +6,7 @@ test.describe('Mi plan y consumo', () => {
   let account: Account;
 
   test.beforeAll(async ({ request }) => {
-    account = await registerByApi(request);
+    account = await registerByApi(request, { paidPlan: true });
   });
 
   test('se ve completo a 375 px', async ({ page }) => {

@@ -78,4 +78,42 @@ describe('ReadOnlyInterceptor (HU41)', () => {
       lastValueFrom(ok.intercept(ctx('POST', '/customers', user), handler)),
     ).resolves.toBe('ok');
   });
+
+  describe('cuenta demo (HU88)', () => {
+    const demo = new ReadOnlyInterceptor({
+      access: jest.fn().mockResolvedValue({ readOnly: false, demo: true }),
+    } as never);
+    const run = (method: string, url: string, u: object = user) =>
+      lastValueFrom(demo.intercept(ctx(method, url, u), handler));
+
+    it.each([
+      ['POST', '/customers'],
+      ['DELETE', '/customers/c1'],
+      ['PATCH', '/auth/change-password'],
+      ['PATCH', '/users/me'],
+      ['PATCH', '/tenants/me'],
+      ['POST', '/billing/checkout'],
+      ['POST', '/notifications/read-all'],
+    ])('C6: %s %s responde 403 DEMO_READ_ONLY', async (method, url) => {
+      await expect(run(method, url)).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'DEMO_READ_ONLY' },
+      });
+    });
+
+    it('C6: renovar y cerrar la sesión siguen funcionando', async () => {
+      await expect(run('POST', '/auth/refresh')).resolves.toBe('ok');
+      await expect(run('POST', '/auth/logout')).resolves.toBe('ok');
+    });
+
+    it('C6: ver (GET) sigue funcionando', async () => {
+      await expect(run('GET', '/customers')).resolves.toBe('ok');
+    });
+
+    it('C6: el superadmin no queda limitado', async () => {
+      await expect(
+        run('POST', '/demo/reset', { role: 'SUPERADMIN' }),
+      ).resolves.toBe('ok');
+    });
+  });
 });

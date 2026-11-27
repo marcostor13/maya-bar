@@ -1,6 +1,7 @@
 import {
   CallHandler,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
@@ -22,6 +23,12 @@ const ALWAYS_ALLOWED = [
   '/tenants/me',
   '/users/me',
 ];
+
+/** Lo único que la cuenta demo puede escribir: mantener y cerrar su sesión (HU88). */
+const DEMO_ALLOWED = ['/auth/refresh', '/auth/logout'];
+
+export const DEMO_READ_ONLY_MESSAGE =
+  'Esta es una cuenta demo: puedes ver todo, pero no hacer cambios. Para usar Maya CRM con tus datos, elige un plan en mayacrm.site.';
 
 interface Req {
   method: string;
@@ -56,13 +63,22 @@ export class ReadOnlyInterceptor implements NestInterceptor {
     if (
       !tenantId ||
       req.user?.role === 'SUPERADMIN' ||
-      SAFE_METHODS.includes(req.method) ||
-      ALWAYS_ALLOWED.some((p) => path === p || path.startsWith(`${p}/`))
+      SAFE_METHODS.includes(req.method)
     )
       return next.handle();
+    const under = (prefixes: string[]) =>
+      prefixes.some((p) => path === p || path.startsWith(`${p}/`));
 
     return from(this.access.access(tenantId)).pipe(
       switchMap((state) => {
+        // La demo es solo para mirar (HU88): ni perfil, ni contraseña, ni pagos.
+        if (state.demo && !under(DEMO_ALLOWED))
+          throw new ForbiddenException({
+            statusCode: 403,
+            code: 'DEMO_READ_ONLY',
+            message: DEMO_READ_ONLY_MESSAGE,
+          });
+        if (under(ALWAYS_ALLOWED)) return next.handle();
         if (state.readOnly)
           throw new SubscriptionRequiredException(
             state.reason ?? 'Tu plan no está activo',

@@ -11,6 +11,8 @@ export interface BillingStatus {
   trialEndsAt?: string;
   trialDaysLeft?: number;
   reason?: string;
+  /** Cuenta demo: solo para mirar (HU88). */
+  demo?: boolean;
   subscription?: {
     period?: 'monthly' | 'quarterly' | 'annual';
     currency?: 'PEN' | 'USD';

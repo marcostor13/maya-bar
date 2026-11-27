@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, input, signal } from '@angular/cor
 import { PLAN_ADMIN_ROLE, UPGRADE_ROUTE } from './plan-limit';
 import { AuthService } from '../auth/auth.service';
 import { RouterLink } from '@angular/router';
-import { LucideAngularModule, Clock, Lock, Download } from 'lucide-angular';
+import { LucideAngularModule, Clock, Lock, Download, Eye } from 'lucide-angular';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
 import { ToastService } from './toast';
@@ -21,9 +21,9 @@ const PERIOD_PARAM: Record<string, string> = { monthly: 'mensual', quarterly: 't
   template: `
     @if (view(); as v) {
       <div class="trial" [class.warn]="v.tone === 'warn'" [class.locked]="v.tone === 'locked'" [attr.role]="v.tone === 'locked' ? 'alert' : 'status'" aria-live="polite">
-        <lucide-icon [img]="v.tone === 'locked' ? Lock : Clock" [size]="16" [strokeWidth]="2.4" />
+        <lucide-icon [img]="v.demo ? Eye : v.tone === 'locked' ? Lock : Clock" [size]="16" [strokeWidth]="2.4" />
         <span class="msg">{{ v.text }}</span>
-        @if (isAdmin()) {
+        @if (isAdmin() && !v.demo) {
           @if (readOnly()) {
             <button type="button" class="btn btn-sm btn-ghost" (click)="exportConversations()" [disabled]="exporting()">
               <lucide-icon [img]="Download" [size]="14" /> Exportar conversaciones
@@ -95,10 +95,14 @@ export class TrialBannerComponent implements OnInit {
 
   readonly Clock = Clock;
   readonly Lock = Lock;
+  readonly Eye = Eye;
 
-  view = computed((): { tone: 'info' | 'warn' | 'locked'; text: string; pay?: Record<string, string> } | null => {
+  view = computed((): { tone: 'info' | 'warn' | 'locked'; text: string; pay?: Record<string, string>; demo?: boolean } | null => {
     const s = this.billing.status();
     if (!s) return null;
+    // Cuenta demo (HU88): se ve todo, no se guarda nada.
+    if (s.demo)
+      return { tone: 'info', demo: true, text: 'Estás en la cuenta demo: puedes ver todo, pero no hacer cambios.' };
     // Cobro fallido (HU51): el pago se rehace con el mismo plan, periodo y moneda.
     const failed = s.status === 'past_due' || (s.readOnly && !!s.subscription?.graceEndsAt);
     const pay = failed

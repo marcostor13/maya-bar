@@ -113,7 +113,7 @@ export class DemoService {
     data: ReturnType<typeof buildDemoData>,
     hash: string,
   ): Promise<Record<string, number>> {
-    const counts = {
+    const counts: Record<string, number> = {
       users: await this.insert(
         this.users,
         data.users.map((u) => ({ ...u, password: hash })),
@@ -127,6 +127,12 @@ export class DemoService {
       messages: await this.insert(this.messages, data.messages),
       leads: await this.insert(this.leads, data.leads),
     };
+    // El resto de módulos (HU89), con el modelo registrado de cada uno.
+    for (const { model, docs } of data.extras) {
+      const m = this.connection.models[model] as Model<unknown> | undefined;
+      if (!m) throw new Error(`Modelo no registrado para la demo: ${model}`);
+      counts[model] = await this.insert(m, docs);
+    }
     // La empresa al final: si algo falla antes, no queda una demo a medias visible.
     await this.insert(this.tenants, [data.tenant]);
     return counts;

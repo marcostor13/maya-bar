@@ -12,6 +12,8 @@ export interface BillingSnapshot {
   legacy?: boolean;
   trialEndsAt?: Date | string | null;
   subscription?: TenantSubscription | null;
+  /** Empresa demo (HU86): solo para mirar (HU88). */
+  demo?: boolean;
 }
 
 export interface AccessState {
@@ -24,6 +26,8 @@ export interface AccessState {
   trialDaysLeft?: number;
   /** Mensaje para el usuario cuando está en solo lectura. */
   reason?: string;
+  /** Empresa demo: ninguna escritura pasa, ni las que el cobro deja abiertas (HU88). */
+  demo?: boolean;
 }
 
 const toDate = (v?: Date | string | null) => (v ? new Date(v) : undefined);

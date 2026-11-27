@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { LEAD_STAGES } from '../leads/lead-stages.catalog';
+import { buildDemoExtras, type DemoExtras } from './demo-extra';
 
 /**
  * Datos ficticios de la empresa demo (HU86): una clínica dental. Generador puro
@@ -25,6 +26,8 @@ export interface DemoData {
   conversations: Doc[];
   messages: Doc[];
   leads: Doc[];
+  /** El resto de módulos (HU89): campañas, plantillas, links, formularios… */
+  extras: DemoExtras;
 }
 
 /** PRNG pequeño (mulberry32) para que la demo sea siempre igual. */
@@ -455,7 +458,7 @@ export function buildDemoData(now = new Date(), seed = 86): DemoData {
     }
   }
 
-  return {
+  const base = {
     tenant,
     users,
     whatsappAccount,
@@ -465,4 +468,7 @@ export function buildDemoData(now = new Date(), seed = 86): DemoData {
     messages,
     leads,
   };
+  // Los extras completan contactos y conversaciones (puntaje, canales), por eso van antes.
+  const extras = buildDemoExtras(base, now);
+  return { ...base, extras };
 }

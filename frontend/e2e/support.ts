@@ -22,19 +22,45 @@ export function newAccount(): Account {
   };
 }
 
-/** Da de alta una empresa por la API, sin pasar por la interfaz. */
-export async function registerByApi(request: APIRequestContext): Promise<Account> {
+/**
+ * Da de alta una empresa como lo hace el superadmin (no hay registro público
+ * desde HU87). Devuelve la contraseña temporal; con `keepTemporary: false`
+ * (por defecto) la cambia por la de `account` para entrar directo al CRM.
+ */
+export async function registerByApi(
+  request: APIRequestContext,
+  opts: { keepTemporary?: boolean; paidPlan?: boolean } = {},
+): Promise<Account & { temporary: string }> {
   const account = newAccount();
-  const res = await request.post(`${API}/auth/register`, {
-    data: {
-      name: account.company,
-      email: account.email,
-      ownerName: 'Dueña de Prueba',
-      ownerPassword: account.password,
-    },
+  const token = async (email: string, password: string) => {
+    const res = await request.post(`${API}/auth/login`, { data: { email, password } });
+    expect(res.status()).toBeLessThan(300);
+    return ((await res.json()) as { access_token: string }).access_token;
+  };
+  const admin = await token(ADMIN.email, ADMIN.password);
+  const created = await request.post(`${API}/tenants`, {
+    headers: { Authorization: `Bearer ${admin}` },
+    data: { name: account.company, email: account.email, ownerName: 'Dueña de Prueba' },
   });
-  expect(res.status()).toBe(201);
-  return account;
+  expect(created.status()).toBe(201);
+  const body = (await created.json()) as { tenant: { _id: string }; credentials: { password: string } };
+  const temporary = body.credentials.password;
+  // Un cliente real nace al pagar: el superadmin registra el pago y el plan queda activo.
+  if (opts.paidPlan) {
+    const paid = await request.post(`${API}/billing/admin/subscriptions/${body.tenant._id}/manual-payment`, {
+      headers: { Authorization: `Bearer ${admin}` },
+      data: { plan: 'crece', period: 'monthly', currency: 'PEN', total: 293.82, method: 'transfer', reference: 'E2E' },
+    });
+    expect(paid.status()).toBe(201);
+  }
+  if (opts.keepTemporary) return { ...account, temporary };
+  const owner = await token(account.email, temporary);
+  const changed = await request.patch(`${API}/auth/change-password`, {
+    headers: { Authorization: `Bearer ${owner}` },
+    data: { currentPassword: temporary, newPassword: account.password },
+  });
+  expect(changed.status()).toBeLessThan(300);
+  return { ...account, temporary };
 }
 
 export async function loginByUi(page: Page, email: string, password: string) {

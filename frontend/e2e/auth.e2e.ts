@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, loginByUi, newAccount, registerByApi } from './support';
+import { ADMIN, loginByUi, registerByApi } from './support';
 
 test.describe('Acceso', () => {
   test('la landing pública carga sin sesión', async ({ page }) => {
@@ -34,24 +34,22 @@ test.describe('Acceso', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('registro, onboarding, cierre de sesión y nuevo ingreso', async ({ page }) => {
-    const account = newAccount();
+  test('sin registro gratis: /register lleva al checkout con el plan (HU87)', async ({ page }) => {
+    await page.goto('/register?plan=crece&pago=anual');
+    await expect(page).toHaveURL(/\/checkout\?.*plan=crece/);
+    await expect(page).toHaveURL(/periodo=anual/);
+  });
 
-    await page.goto('/register');
-    await page.getByPlaceholder('Ej: Restaurante La Mar S.A.C.').fill(account.company);
-    await page.getByPlaceholder('contacto@tunegocio.com').fill(account.email);
-    await page.getByPlaceholder('Juan Pérez').fill('Dueña de Prueba');
+  test('cuenta nueva: cambia la clave temporal, entra, sale y vuelve a entrar', async ({ page, request }) => {
+    const account = await registerByApi(request, { keepTemporary: true });
+
+    await loginByUi(page, account.email, account.temporary);
+    await expect(page).toHaveURL(/\/change-password/);
+    await page.getByPlaceholder('Contraseña recibida').fill(account.temporary);
     await page.getByPlaceholder('Mínimo 8 caracteres').fill(account.password);
-    await page.getByRole('button', { name: 'Crear cuenta gratis' }).click();
-
-    await expect(page).toHaveURL(/\/onboarding/);
-    await page.locator('.type-card').first().click();
-    await page.getByRole('button', { name: /Continuar/ }).click();
-    await page.getByPlaceholder('Ej: La Mar Cebichería').fill('Local Central');
-    await page.getByRole('button', { name: /Continuar/ }).click();
-    await page.getByRole('button', { name: 'Crear mi local' }).click();
-
-    await expect(page).toHaveURL(/\/dashboard/);
+    await page.getByPlaceholder('Repite la nueva contraseña').fill(account.password);
+    await page.locator('button[type="submit"]').click();
+    await expect(page).not.toHaveURL(/\/change-password/);
     await expect(page.locator('nav.nav')).toBeVisible();
 
     await page.locator('.logout-btn').click();

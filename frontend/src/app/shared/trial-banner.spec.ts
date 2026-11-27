@@ -43,6 +43,14 @@ describe('TrialBannerComponent (HU41 C3)', () => {
     expect(el.textContent).not.toContain('prueba gratis');
   });
 
+  it('HU88 C7: cuenta demo, aviso de solo lectura sin botones de pago', async () => {
+    const el = await render({ status: 'legacy', readOnly: false, demo: true });
+    expect(el.querySelector('.trial')!.textContent).toContain('cuenta demo');
+    expect(el.textContent).not.toContain('Elegir plan');
+    expect(el.textContent).not.toContain('Exportar');
+    expect(el.querySelector('a.btn, button.btn')).toBeNull();
+  });
+
   it('vencida: solo lectura con "Elegir plan"', async () => {
     const el = await render({ status: 'expired', readOnly: true, reason: 'Tu prueba terminó, elige un plan' });
     expect(el.querySelector('.trial.locked')!.textContent).toContain('Tu prueba terminó');
