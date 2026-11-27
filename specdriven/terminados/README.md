@@ -5,6 +5,7 @@ La más reciente arriba. Cada carpeta contiene `hu.md`, `spec.md`, `plan.md`,
 
 | Fecha | Historia | Estado | Verificación |
 |---|---|---|---|
+| 2026-11-27 | [HU90 — Demo sin contraseña](2026-11-27-hu90-demo-sin-contrasena/cierre.md) | Terminada | C1–C6 CUMPLE |
 | 2026-11-26 | [HU89 — La demo muestra todas las funcionalidades](2026-11-26-hu89-demo-completa/cierre.md) | Terminada | C1–C5 CUMPLE |
 | 2026-11-26 | [HU88 — Cuenta demo de solo lectura](2026-11-26-hu88-demo-solo-lectura/cierre.md) | Terminada | C1–C8 CUMPLE |
 | 2026-11-26 | [HU87 — Quitar la prueba gratis: el alta es con pago](2026-11-26-hu87-sin-prueba-gratis/cierre.md) | Terminada (pendiente deploy) | 6 CUMPLE · C5 corregido · C8 verde |

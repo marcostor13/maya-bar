@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -16,6 +17,7 @@ import { TenantsService } from '../tenants/tenants.service';
 import { MailService } from '../mail/mail.service';
 import { RefreshToken } from './refresh-token.schema';
 import type { User } from '../users/user.schema';
+import { DEMO_EMAIL } from '../demo/demo-data';
 
 /** Cuánto dura la sesión sin volver a escribir la contraseña. */
 const REFRESH_TOKEN_TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 días
@@ -324,6 +326,29 @@ export class AuthService {
     if (user.tenantId)
       await this.tenantsService.endUnpaidTrial(String(user.tenantId));
     return this.login(plano, userAgent);
+  }
+
+  /**
+   * Entrada a la demo sin contraseña (HU90): abre sesión con el usuario
+   * principal de la empresa demo, que es de solo lectura (HU88). Nunca entra a
+   * una empresa real aunque comparta el correo.
+   */
+  async demoLogin(userAgent?: string) {
+    const unavailable = new NotFoundException(
+      'La demo no está disponible en este momento',
+    );
+    const user = await this.usersService.findOneByEmailAnyStatus(DEMO_EMAIL);
+    if (!user || user.isActive === false) throw unavailable;
+    const tenantId = this.tenantOf(user);
+    if (
+      !(await this.tenantsService.isDemo(tenantId)) ||
+      !(await this.tenantsService.isActive(tenantId))
+    )
+      throw unavailable;
+    const plano = (
+      user as unknown as { toObject: () => Record<string, any> }
+    ).toObject();
+    return this.login({ ...plano, mustChangePassword: false }, userAgent);
   }
 
   /** Respuesta idéntica exista o no la cuenta: no sirve para enumerar emails. */

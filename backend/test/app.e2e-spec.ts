@@ -18,7 +18,7 @@ import {
  */
 const PUBLIC_ROUTES: RegExp[] = [
   /^GET \/$/,
-  /^POST \/auth\/(login|refresh|logout|register|forgot-password|reset-password|verify-email|resend-verification|access|access\/resend|2fa\/(verify|resend|enroll\/start|enroll\/confirm))$/,
+  /^POST \/auth\/(login|refresh|logout|register|demo|forgot-password|reset-password|verify-email|resend-verification|access|access\/resend|2fa\/(verify|resend|enroll\/start|enroll\/confirm))$/,
   /^(GET|POST|PATCH) \/public\//,
   // Webhooks de Meta: se autentican con verify token o firma, no con JWT.
   /^(GET|POST) \/(wa|ig|messenger)\/webhook/,

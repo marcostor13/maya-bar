@@ -102,6 +102,13 @@ export class AuthService {
     );
   }
 
+  /** Entrada a la demo de solo lectura, sin contraseña (HU90). */
+  demoLogin(): Observable<any> {
+    return this.http.post(`${this.apiUrl}/auth/demo`, {}).pipe(
+      tap((res: any) => this.saveSession(res)),
+    );
+  }
+
   resendAccess(email: string): Observable<{ message: string }> {
     return this.http.post<{ message: string }>(`${this.apiUrl}/auth/access/resend`, { email });
   }

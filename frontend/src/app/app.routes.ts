@@ -92,6 +92,11 @@ export const routes: Routes = [
       import('./pages/change-password/change-password').then(m => m.ChangePasswordComponent),
     canActivate: [authGuard],
   },
+  // Demo de solo lectura sin contraseña (HU90).
+  {
+    path: 'demo',
+    loadComponent: () => import('./pages/demo/demo').then(m => m.DemoComponent),
+  },
   // Enlace de acceso tras pagar (HU47): público, el token va en la URL.
   {
     path: 'acceso',

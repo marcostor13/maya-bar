@@ -74,6 +74,20 @@ export class AuthController {
     return this.authService.login(user, ua);
   }
 
+  /** Entrada a la demo de solo lectura, sin contraseña (HU90). */
+  @Post('demo')
+  @Throttle({ default: { limit: 10, ttl: MINUTE } })
+  async demo(@Ip() ip: string, @Headers('user-agent') ua?: string) {
+    const session = await this.authService.demoLogin(ua);
+    await this.audit.loginOk(
+      { ...session.user, _id: session.user.id },
+      ip,
+      ua,
+      'demo',
+    );
+    return session;
+  }
+
   /**
    * Renueva la sesión con el refresh token y lo rota. No lleva guard: el
    * access token puede estar ya caducado, que es justo cuando se llama.

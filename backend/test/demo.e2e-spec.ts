@@ -352,4 +352,55 @@ describe('Cuenta demo (HU86, e2e)', () => {
       calls: 0,
     });
   });
+
+  describe('sin contraseña (HU90)', () => {
+    type DemoSession = {
+      access_token: string;
+      refresh_token: string;
+      user: { email: string; tenantId: string };
+    };
+    const tenants = () => app.get<Model<Tenant>>(getModelToken(Tenant.name));
+    beforeAll(async () => {
+      await tenants()
+        .updateOne({ slug: 'maya-demo' }, { $set: { demo: true } })
+        .exec();
+      await api().post('/admin/demo/reset').set(bearer(admin)).expect(200);
+    });
+
+    it('C1, C2: entra a la demo sin contraseña, ve todo y no puede escribir', async () => {
+      const res = await api().post('/auth/demo').send({}).expect(201);
+      const s = res.body as DemoSession;
+      expect(s.access_token).toBeTruthy();
+      expect(s.refresh_token).toBeTruthy();
+      expect(s.user.email).toBe('demo@demo.mayacrm.site');
+      const t = await tenants().findById(s.user.tenantId).lean().exec();
+      expect(t?.demo).toBe(true);
+      const auth = { Authorization: `Bearer ${s.access_token}` };
+      const list = await api().get('/customers').set(auth).expect(200);
+      expect(size(list.body as Leads)).toBeGreaterThan(0);
+      const w = await api()
+        .post('/customers')
+        .set(auth)
+        .send({ name: 'Intruso', phone: '51911111112' })
+        .expect(403);
+      expect((w.body as { code: string }).code).toBe('DEMO_READ_ONLY');
+      await api()
+        .post('/auth/refresh')
+        .send({ refreshToken: s.refresh_token })
+        .expect(201);
+    });
+
+    it('C3: si la empresa del correo demo no es la demo, no abre sesión', async () => {
+      await tenants()
+        .updateOne({ slug: 'maya-demo' }, { $unset: { demo: 1 } })
+        .exec();
+      const res = await api().post('/auth/demo').send({}).expect(404);
+      expect(
+        (res.body as { access_token?: string }).access_token,
+      ).toBeUndefined();
+      await tenants()
+        .updateOne({ slug: 'maya-demo' }, { $set: { demo: true } })
+        .exec();
+    });
+  });
 });

@@ -323,6 +323,14 @@ export class TenantsService {
     return tenant;
   }
 
+  /** ¿Es la empresa demo (HU86)? */
+  async isDemo(tenantId?: string | null): Promise<boolean> {
+    if (!tenantId || !Types.ObjectId.isValid(tenantId)) return false;
+    return !!(await this.tenantModel
+      .exists({ _id: tenantId, demo: true })
+      .exec());
+  }
+
   /**
    * ¿La empresa puede usar la plataforma? (HU16). Sin empresa (SUPERADMIN) o si
    * no existe el campo, sí. Se cachea un minuto; `update` invalida al momento.
