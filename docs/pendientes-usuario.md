@@ -59,7 +59,7 @@ tarda hasta 20 días). Resultado de la primera solicitud:
 | Meta Ads: Instagram | Falta poner el enlace de la biografía desde la app del celular (`docs/meta-ads-contenido.md`). |
 | HU85, IA de la plataforma | Tras desplegar: en `/admin/ai` pegar la API key, elegir el modelo, "Probar", activar y guardar; luego probar un agente de una empresa sin key propia (`docs/ia-de-la-plataforma.md`). |
 | HU86, cuenta demo | Tras desplegar: Empresas > "Crear / restablecer demo" (carga los datos de HU89) y abrir https://mayacrm.site/demo en una ventana de incógnito: entra sin contraseña (HU90). Es de solo lectura (HU88); restablecerla solo si quieres fechas frescas, el prompt de ventas no cambia. Desde la demo no se puede enviar por WhatsApp (no tiene token). |
-| HU87, sin prueba gratis | La web usa por defecto el 51991172822 (agente de ventas). Si Coolify define `WHATSAPP_NUMBER` para el frontend con otro número, cambiarlo o borrarlo. Ya no hay registro gratis: las cuentas nacen al pagar en /checkout. |
+| HU87, sin prueba gratis | Hecho el 2026-11-27: la web abre el 51991172822 (agente de ventas); `WHATSAPP_NUMBER` del frontend en Coolify (producción) ya tiene ese número. Ya no hay registro gratis: las cuentas nacen al pagar en /checkout. |
 | Meta Ads: campañas | Los borradores A y B se borraron el 2026-11-26 (había prueba gratis). Plan nuevo con videos en `docs/meta-ads-guiones.md`: grabar y pasarme los videos; los subo como borradores y tú publicas. |
 
 ## 4. Fuera de lo hecho
