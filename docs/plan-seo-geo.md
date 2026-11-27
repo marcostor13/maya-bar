@@ -50,6 +50,23 @@ Perplexity, Claude y los resúmenes con IA de Google.
 - Pendiente del usuario: Search Console/Bing, perfiles de marca, HSTS, caso de cliente real y revisión trimestral de precios de la competencia (`docs/pendientes-usuario.md`).
 - Siguiente: medir 4–6 semanas en Search Console antes de añadir más páginas; panel mensual de 30 preguntas en asistentes de IA.
 
+## Estado (2026-11-27)
+- Search Console verificado (dominio, TXT en Cloudflare). Sitemap enviado: 21 URL leídas. La portada ya estaba indexada; `/crm-whatsapp` figuraba "Descubierta: sin indexar". Indexación pedida: `/`, `/crm-whatsapp`, `/agentes-ia-whatsapp`, `/campanas-whatsapp`, `/comparar/kommo`, `/comparar/hubspot`, `/recursos`. El informe de páginas estará al día siguiente.
+- HSTS activo (`max-age=31536000`, desde `server.ts`, solo en mayacrm.site).
+- Bing Webmaster: pendiente de inicio de sesión del usuario.
+- LinkedIn: página "Maya CRM" preparada, falta la confirmación del representante.
+
+### Panel GEO — primera medición (2026-11-27)
+| Pregunta | Asistente | ¿Menciona Maya? | Quién aparece |
+|---|---|---|---|
+| Mejor CRM con WhatsApp e IA para una pyme en Perú | ChatGPT (con búsqueda) | No | Kommo, IRENE, Respond.io, Leadsales, JAM CRM, Zoho, HubSpot |
+| Alternativa barata a HubSpot en español con WhatsApp | ChatGPT | No | Kommo, Clientify, Bitrix24, Zoho, Leadsales |
+| Chatbot con IA para WhatsApp Business que venda, Perú | ChatGPT | No | VozIA, WATI, Manychat, Respond.io |
+| ¿Qué es Maya CRM (mayacrm.site)? | ChatGPT | Sí | Describe bien módulos y precios, pero dice "14 días de prueba sin tarjeta" (dato viejo) y recomienda precaución por falta de reputación pública |
+| Mejor CRM con WhatsApp e IA en Perú + ¿conoces Maya CRM? | Gemini | Solo por nombre | Kommo y otros en la lista; a Maya la describe bien como "producto nuevo / emergente" |
+
+Lectura: los asistentes ya leen mayacrm.site, pero sin fuentes externas no la recomiendan. Fuentes que citan: kommo.com, leadsales, whaticket, JAM CRM, publicita, pmsuite. Prioridad: perfiles de marca, Bing (para que ChatGPT actualice el dato de la prueba), listados "mejores CRM para WhatsApp" y reseñas. Perplexity exige cuenta para preguntar.
+
 ## 2. Plan de campaña SEO + GEO (90 días)
 
 ### Objetivo
