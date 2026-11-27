@@ -36,6 +36,13 @@ describe('Landing: precios (HU56)', () => {
     expect(el.querySelectorAll('a[href*="wa.me/"]').length).toBeGreaterThan(2);
   });
 
+  it('HU90: "Ver demo" lleva a /demo en la cabecera, el hero y el cierre', async () => {
+    const { el } = await render();
+    const demo = Array.from(el.querySelectorAll('a[href="/demo"]'));
+    expect(demo.length).toBeGreaterThanOrEqual(3);
+    expect(demo.every(a => a.textContent?.includes('Ver demo'))).toBe(true);
+  });
+
   it('C2: el botón de Crece en anual lleva al checkout de Crece anual', async () => {
     const { f, el } = await render();
     const annual = [...el.querySelectorAll('.billing-toggle button')].find(b => b.textContent!.includes('Anual')) as HTMLButtonElement;

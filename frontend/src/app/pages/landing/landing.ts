@@ -3,7 +3,6 @@ import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
   type LucideIconData,
-  ArrowRight,
   Bot,
   Building2,
   Check,
@@ -27,6 +26,7 @@ import {
   Upload,
   Users,
   X,
+  Eye,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { SeoService } from '../../shared/seo';
@@ -89,6 +89,7 @@ const DESCRIPTION =
 
         <div class="header-actions">
           <a class="btn btn-secondary btn-sm" routerLink="/login">Ingresar</a>
+          <a class="btn btn-secondary btn-sm" routerLink="/demo">Ver demo</a>
           <a class="btn btn-primary btn-sm" [href]="waDemo()" target="_blank" rel="noopener">Pide tu demo</a>
         </div>
 
@@ -111,6 +112,7 @@ const DESCRIPTION =
           <a href="#preguntas" (click)="menuOpen.set(false)">Preguntas</a>
           <div class="header-mobile-actions">
             <a class="btn btn-secondary" routerLink="/login">Ingresar</a>
+            <a class="btn btn-secondary" routerLink="/demo">Ver demo</a>
             <a class="btn btn-primary" [href]="waDemo()" target="_blank" rel="noopener">Pide tu demo</a>
           </div>
         </div>
@@ -140,9 +142,9 @@ const DESCRIPTION =
                 <lucide-icon [img]="MessageCircle" [size]="18" />
                 Habla con nosotros por WhatsApp
               </a>
-              <a class="btn btn-secondary btn-lg" href="#plataforma">
-                Ver todo lo que incluye
-                <lucide-icon [img]="ArrowRight" [size]="18" />
+              <a class="btn btn-secondary btn-lg" routerLink="/demo">
+                <lucide-icon [img]="Eye" [size]="18" />
+                Ver demo
               </a>
             </div>
             <ul class="hero-trust">
@@ -572,6 +574,7 @@ const DESCRIPTION =
               <lucide-icon [img]="MessageCircle" [size]="18" />
               Escribir por WhatsApp
             </a>
+            <a class="btn btn-lg cta-ghost" routerLink="/demo">Ver demo</a>
             <a class="btn btn-lg cta-ghost" href="#precios">Ver planes</a>
           </div>
         </div>
@@ -1413,11 +1416,11 @@ export class LandingComponent implements OnInit {
     HeartPulse, Store, Sparkles,
   };
 
-  readonly ArrowRight = ArrowRight;
   readonly Check = Check;
   readonly Info = Info;
   readonly Menu = Menu;
   readonly MessageCircle = MessageCircle;
+  readonly Eye = Eye;
   readonly ShieldCheck = ShieldCheck;
   readonly Sparkles = Sparkles;
   readonly X = X;
