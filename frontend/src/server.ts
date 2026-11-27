@@ -140,6 +140,11 @@ app.get(
 const SITE_HOST = new URL(environment.siteUrl).host;
 app.use((req, res, next) => {
   const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(',')[0].trim().toLowerCase();
+  // HSTS solo en nuestro dominio y por https: los dominios propios de los
+  // clientes (eventos) deciden su propia política.
+  const https = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim() === 'https';
+  if (https && (host === SITE_HOST || host === `www.${SITE_HOST}`))
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   if (host === `www.${SITE_HOST}`) res.redirect(301, `https://${SITE_HOST}${req.originalUrl}`);
   else next();
 });
