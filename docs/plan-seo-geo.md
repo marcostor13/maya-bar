@@ -53,8 +53,9 @@ Perplexity, Claude y los resúmenes con IA de Google.
 ## Estado (2026-11-27)
 - Search Console verificado (dominio, TXT en Cloudflare). Sitemap enviado: 21 URL leídas. La portada ya estaba indexada; `/crm-whatsapp` figuraba "Descubierta: sin indexar". Indexación pedida: `/`, `/crm-whatsapp`, `/agentes-ia-whatsapp`, `/campanas-whatsapp`, `/comparar/kommo`, `/comparar/hubspot`, `/recursos`. El informe de páginas estará al día siguiente.
 - HSTS activo (`max-age=31536000`, desde `server.ts`, solo en mayacrm.site).
-- Bing Webmaster: pendiente de inicio de sesión del usuario.
-- LinkedIn: página "Maya CRM" preparada, falta la confirmación del representante.
+- Bing Webmaster verificado (CNAME en Cloudflare). Nunca había rastreado el sitio (falló el DNS en su intento anterior); la prueba en vivo pasa. Sitemap enviado y las 21 URL enviadas a indexar.
+- LinkedIn creado (linkedin.com/company/mayacrm) con descripción y sede; `sameAs` del JSON-LD con LinkedIn, Facebook e Instagram.
+- Meta descripción de la portada acortada a 141 caracteres (Bing la marcaba fuera de rango).
 
 ### Panel GEO — primera medición (2026-11-27)
 | Pregunta | Asistente | ¿Menciona Maya? | Quién aparece |

@@ -57,8 +57,16 @@ import {
 
 const CURRENCY_KEY = 'maya-landing-currency';
 const TITLE = 'Maya CRM — CRM de ventas y marketing con WhatsApp e IA';
+/** Buscadores: entre 120 y 160 caracteres (Bing marca error fuera de ese rango). */
 const DESCRIPTION =
-  'Capta contactos, respóndeles en segundos por WhatsApp con agentes de IA y envía campañas segmentadas. Formularios, eventos, listas y bandeja unificada en un solo CRM. Planes desde US$' + PLANS[0].prices!.usd.monthly + ' al mes. Pide una demo en vivo.';
+  'CRM con WhatsApp e IA para pymes: capta contactos, responde en segundos con agentes de IA y envía campañas. Desde US$' + PLANS[0].prices!.usd.monthly + ' al mes. Pide tu demo.';
+
+/** Perfiles oficiales de la marca (JSON-LD `sameAs`): ayudan a buscadores e IA a reconocerla. */
+const SAME_AS = [
+  'https://www.linkedin.com/company/mayacrm/',
+  'https://www.facebook.com/profile.php?id=61597195430544',
+  'https://www.instagram.com/mayacrmperu/',
+];
 
 @Component({
   selector: 'app-landing',
@@ -1521,6 +1529,7 @@ export class LandingComponent implements OnInit {
       logo: `${siteUrl}/logo.png?v=2`,
       description: DESCRIPTION,
       areaServed: 'Latinoamérica',
+      sameAs: SAME_AS,
       address: {
         '@type': 'PostalAddress',
         streetAddress: 'Av. San Felipe 1035, Of. 1205',
