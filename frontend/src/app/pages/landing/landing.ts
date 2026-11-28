@@ -66,6 +66,7 @@ const SAME_AS = [
   'https://www.linkedin.com/company/mayacrm/',
   'https://www.facebook.com/profile.php?id=61597195430544',
   'https://www.instagram.com/mayacrmperu/',
+  'https://www.youtube.com/@mayacrm',
 ];
 
 @Component({
